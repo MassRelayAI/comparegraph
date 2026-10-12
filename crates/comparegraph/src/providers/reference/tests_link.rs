@@ -86,6 +86,7 @@ pub fn tests_edges(files: &[ParsedFile], edges: &[Edge]) -> Vec<Edge> {
         }
     }
     for f in files.iter().filter(|f| is_test_path(&f.rel_path)) {
+        super::mark_file(&f.rel_path);
         if let Some(subj) = subject_of_test_file(&f.rel_path) {
             let same: Vec<&str> = by_stem.get(subj.as_str()).into_iter().flatten().copied().filter(|p| same_family(&f.rel_path, p)).collect();
             if let [only] = same.as_slice() {

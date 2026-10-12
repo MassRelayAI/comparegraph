@@ -378,6 +378,12 @@
               "compact",
               "full"
             ]
+          },
+          "max_callers": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "cap on callers and callees listed, default 50; a truncated list is reported in limitations"
           }
         },
         "required": [

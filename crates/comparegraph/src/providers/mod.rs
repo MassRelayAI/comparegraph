@@ -72,6 +72,8 @@ pub enum ProviderError {
     Io(#[from] std::io::Error),
     #[error("provider {0} is not available: {1}")]
     Unavailable(String, String),
+    #[error("resolution panicked while processing {0}: {1}")]
+    Panicked(String, String),
 }
 
 pub trait GraphProvider {

@@ -203,6 +203,7 @@ pub fn inherit_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
     }
     let mut out = Vec::new();
     for f in files {
+        super::mark_file(&f.rel_path);
         let raws = find(&f.language, &f.lines.join("\n"));
         if raws.is_empty() {
             continue;

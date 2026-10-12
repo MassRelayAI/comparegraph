@@ -38,7 +38,8 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_search", "Full-text search over symbols of each repo's latest run. Returns a compact, paged envelope of hits with licence-lane labels.", schema(search_props, &["query"])),
         tool("comparegraph_show", "One symbol with callers, callees, community and licence lane. Compact by default; detail=full adds its current source lines.", schema(json!({
             "repo": {"type":"string"}, "qualified_name": {"type":"string"},
-            "detail": {"type":"string","enum":["compact","full"]} }), &["repo", "qualified_name"])),
+            "detail": {"type":"string","enum":["compact","full"]},
+            "max_callers": {"type":"integer","minimum":1,"maximum":2000,"description":"cap on callers and callees listed, default 50; a truncated list is reported in limitations"} }), &["repo", "qualified_name"])),
         tool("comparegraph_communities", "Module clusters of a repo's latest run (label, keywords, cohesion, size). Returns a compact, paged envelope.", schema(comm_props, &["repo"])),
         tool("comparegraph_check", "Verify the store: schema, determinism, locations. Returns a compact envelope listing problems, if any.", schema(json!({}), &[])),
         tool("comparegraph_families", "Registered taxonomy families with feature counts. Returns a compact envelope.", schema(json!({}), &[])),
@@ -126,7 +127,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
     let known: &[&str] = match name {
         "comparegraph_repos" | "comparegraph_check" | "comparegraph_doctor" => &[],
         "comparegraph_search" => &["query", "repo", "kind", "limit", "cursor"],
-        "comparegraph_show" => &["repo", "qualified_name", "detail"],
+        "comparegraph_show" => &["repo", "qualified_name", "detail", "max_callers"],
         "comparegraph_communities" => &["repo", "limit", "cursor"],
         "comparegraph_traverse" => &[
             "repo", "qualified_name", "direction", "depth", "max_nodes", "kinds", "min_confidence",
@@ -171,6 +172,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             repo: req(a, "repo")?,
             qualified_name: req(a, "qualified_name")?,
             detail: str_arg(a, "detail")?,
+            max_callers: uint_arg(a, "max_callers", 50)?,
         },
         "comparegraph_traverse" => Cmd::Traverse {
             repo: req(a, "repo")?,

@@ -228,7 +228,7 @@ fn class_method(f: &ParsedFile, q: &[String], caller: &str, callee: &str) -> Opt
 
 /// The class a declaration in `text` gives `recv`: `recv: Type`, `recv?: Type`, `recv = new Type(`, `recv = Type(`, or (Java/C#) `Type recv` followed by `=`, `;`, `,` or `)`.
 /// An argument next to a constructor (`new Wrapper(inner)`) is none of these.
-fn declared_type<'a>(text: &'a str, recv: &str) -> Option<&'a str> {
+pub(super) fn declared_type<'a>(text: &'a str, recv: &str) -> Option<&'a str> {
     let is_id = |c: char| c.is_alphanumeric() || c == '_';
     let upper = |t: &str| t.chars().next().is_some_and(char::is_uppercase);
     let ident_at = |from: usize| -> &'a str {
@@ -266,7 +266,7 @@ fn declared_type<'a>(text: &'a str, recv: &str) -> Option<&'a str> {
         if after.starts_with(['=', ';', ',', ')']) && !after.starts_with("==") {
             let before = text[..i].trim_end_matches([' ', '\t']);
             if before.len() < i {
-                let t_start = before.rfind(|c: char| !is_id(c)).map_or(0, |k| k + 1);
+                let t_start = before.rfind(|c: char| !is_id(c)).map_or(0, |k| k + before[k..].chars().next().map_or(1, char::len_utf8));
                 let t = &before[t_start..];
                 if upper(t) {
                     return Some(t);
@@ -860,6 +860,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         .map(|f| (f.language == "rust").then(|| rust_ctx::analyze(&f.lines.join("\n"))))
         .collect();
     for (fi, (f, q)) in files.iter().zip(&qns).enumerate() {
+        super::mark_file(&f.rel_path);
         if let Some(info) = &rust[fi] {
             for t in rust_ctx::mod_files(&f.rel_path, &info.mods, &file_set) {
                 out.push((EdgeKind::Imports, f.rel_path.clone(), t, 1.0));
