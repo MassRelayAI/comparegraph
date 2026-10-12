@@ -21,7 +21,7 @@ pub fn qualified_names(file: &ParsedFile) -> Vec<String> {
         .collect()
 }
 
-fn resolve_import_target(from: &str, source: &str, files: &HashMap<String, ()>) -> Option<String> {
+pub(super) fn resolve_import_target(from: &str, source: &str, files: &HashMap<String, ()>) -> Option<String> {
     if from.ends_with(".py") {
         return resolve_py_import(from, source, files);
     }

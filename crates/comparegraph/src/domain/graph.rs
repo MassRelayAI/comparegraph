@@ -49,6 +49,7 @@ pub enum EdgeKind {
     Imports,
     Calls,
     Implements,
+    Extends,
     Tests,
     RoutesTo,
 }
@@ -60,6 +61,7 @@ impl EdgeKind {
             Self::Imports => "imports",
             Self::Calls => "calls",
             Self::Implements => "implements",
+            Self::Extends => "extends",
             Self::Tests => "tests",
             Self::RoutesTo => "routes_to",
         }
@@ -70,6 +72,7 @@ impl EdgeKind {
             "imports" => Self::Imports,
             "calls" => Self::Calls,
             "implements" => Self::Implements,
+            "extends" => Self::Extends,
             "tests" => Self::Tests,
             "routes_to" => Self::RoutesTo,
             _ => return None,
@@ -133,6 +136,7 @@ mod tests {
             EdgeKind::Imports,
             EdgeKind::Calls,
             EdgeKind::Implements,
+            EdgeKind::Extends,
             EdgeKind::Tests,
             EdgeKind::RoutesTo,
         ] {

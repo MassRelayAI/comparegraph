@@ -1,3 +1,4 @@
+pub mod inherit;
 pub mod resolve;
 pub mod vendor;
 pub mod walker;
@@ -117,7 +118,13 @@ impl GraphProvider for ReferenceProvider {
             .iter()
             .map(|s| s.to_string())
             .collect(),
-            edge_kinds: vec![EdgeKind::Contains, EdgeKind::Imports, EdgeKind::Calls],
+            edge_kinds: vec![
+                EdgeKind::Contains,
+                EdgeKind::Imports,
+                EdgeKind::Calls,
+                EdgeKind::Extends,
+                EdgeKind::Implements,
+            ],
             communities: false,
             embeddings: false,
         }
@@ -241,6 +248,16 @@ impl GraphProvider for ReferenceProvider {
             }
         }
         out.edges_by_qn = resolve::resolve_edges(&parsed);
+        out.edges_by_qn.extend(inherit::inherit_edges(&parsed));
+        out.edges_by_qn
+            .sort_by(|a, b| (a.0.as_str(), &a.1, &a.2).cmp(&(b.0.as_str(), &b.1, &b.2)));
+        out.edges_by_qn.dedup();
+        if parsed.iter().any(|p| p.language == "go") {
+            out.limitations.push(Limitation::new(
+                "no_inheritance_go",
+                "go has structural typing: no extends/implements edges are produced",
+            ));
+        }
         Ok(out)
     }
 }
