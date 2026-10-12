@@ -1,10 +1,14 @@
 pub mod builtins;
 pub mod inherit;
+pub mod js_ctx;
+pub mod py_ctx;
 pub mod resolve;
 pub mod rust_ctx;
 pub mod tests_link;
 pub mod vendor;
 pub mod walker;
+#[cfg(test)]
+mod tests_recall;
 use super::{
     BuildOptions, BuildOutput, Capabilities, GraphProvider, ProviderError, ProviderStatus,
 };
@@ -178,6 +182,7 @@ impl GraphProvider for ReferenceProvider {
                     .push(Limitation::new(code, format!("{n} {what}")));
             }
         }
+        let mut minified = walked.minified;
         let version = self.version();
         let mut fresh: Vec<(String, String, String, Vec<u8>)> = Vec::new();
         let mut parsed: Vec<ParsedFile> = Vec::new();
@@ -199,6 +204,10 @@ impl GraphProvider for ReferenceProvider {
                 ));
                 continue;
             };
+            if source.lines().any(|l| l.len() > walker::MINIFIED_LINE_CHARS) {
+                minified += 1;
+                continue;
+            }
             let hash = hex_sha256(source.as_bytes());
             let cached = opts
                 .cache
@@ -243,6 +252,12 @@ impl GraphProvider for ReferenceProvider {
                     format!("{}: {e}", f.rel_path),
                 )),
             }
+        }
+        if minified > 0 {
+            out.limitations.push(Limitation::new(
+                "skipped_minified",
+                format!("{minified} minified or bundled files (*.min.js, *.min.css, *.bundle.js, or a line over {} chars)", walker::MINIFIED_LINE_CHARS),
+            ));
         }
         if let Some(c) = &opts.cache {
             c.put_many(&fresh);

@@ -21,6 +21,29 @@ pub struct RustInfo {
     /// (type name, first line, last line) of every `impl X` / `impl Trait for X`
     pub impls: Vec<(String, u32, u32)>,
     pub fns: Vec<FnVars>,
+    /// first and last line of every `#[test]` function and every inline `#[cfg(test)] mod`
+    pub tests: Vec<(u32, u32)>,
+}
+
+/// Attribute text (`#[test]`, `#[cfg(test)]`) directly above an item.
+fn attrs_above<'a>(n: Node, src: &'a str) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut p = n.prev_sibling();
+    while let Some(x) = p {
+        match x.kind() {
+            "attribute_item" => out.push(text(x, src)),
+            "line_comment" | "block_comment" => {}
+            _ => break,
+        }
+        p = x.prev_sibling();
+    }
+    out
+}
+
+fn is_test_attr(a: &str) -> bool {
+    let inner = a.trim().trim_start_matches("#[").trim_end_matches(']').trim();
+    let head = inner.split('(').next().unwrap_or(inner).trim();
+    head == "test" || head.ends_with("::test") || inner.replace(' ', "") == "cfg(test)"
 }
 
 fn text<'a>(n: Node, src: &'a str) -> &'a str {
@@ -144,6 +167,9 @@ pub fn analyze(src: &str) -> RustInfo {
                 continue;
             }
             "mod_item" => {
+                if n.child_by_field_name("body").is_some() && attrs_above(n, src).iter().any(|a| a.replace(' ', "").contains("cfg(test)")) {
+                    info.tests.push((s, e));
+                }
                 if n.child_by_field_name("body").is_none() {
                     if let Some(name) = n.child_by_field_name("name") {
                         info.mods.push(text(name, src).to_string());
@@ -156,6 +182,9 @@ pub fn analyze(src: &str) -> RustInfo {
                 }
             }
             "function_item" => {
+                if attrs_above(n, src).iter().any(|a| is_test_attr(a)) {
+                    info.tests.push((s, e));
+                }
                 let mut f = FnVars { start: s, end: e, ..Default::default() };
                 collect_vars(n, src, &mut f.vars);
                 info.fns.push(f);
@@ -169,6 +198,7 @@ pub fn analyze(src: &str) -> RustInfo {
     info.uses.dedup();
     info.mods.sort();
     info.impls.sort();
+    info.tests.sort();
     info.fns.sort_by_key(|f| (f.start, f.end));
     info
 }
@@ -198,10 +228,56 @@ struct Module {
     file: String,
 }
 
+/// Cargo packages by crate name (`-` is `_`), so `use <crate_name>::a::b` resolves like `crate::a::b` from anywhere in the repo,
+/// including from a package's own `tests/` and from sibling workspace crates.
+#[derive(Debug, Default, Clone)]
+pub struct CrateMap {
+    /// crate name → its `src` directory
+    pub by_name: HashMap<String, String>,
+    /// directories holding a `Cargo.toml` with a `[package]`
+    pub pkgs: Vec<String>,
+}
+
+impl CrateMap {
+    /// Read `[package] name = "x"` out of one manifest (`dir` is the manifest's directory, "" for the repo root).
+    pub fn add_manifest(&mut self, dir: &str, lines: &[String]) {
+        let mut in_package = false;
+        for l in lines {
+            let t = l.trim();
+            if t.starts_with('[') {
+                in_package = t == "[package]";
+            } else if in_package {
+                if let Some(v) = t.strip_prefix("name").map(str::trim_start).and_then(|r| r.strip_prefix('=')) {
+                    let name = v.trim().trim_matches(|c| c == '"' || c == '\'').replace('-', "_");
+                    if !name.is_empty() {
+                        self.by_name.insert(name, join(dir, "src"));
+                        self.pkgs.push(dir.to_string());
+                    }
+                    return;
+                }
+            }
+        }
+    }
+    /// The nearest enclosing package directory of a file; None when no manifest encloses it.
+    pub fn pkg_dir(&self, from: &str) -> Option<&str> {
+        self.pkgs
+            .iter()
+            .filter(|d| d.is_empty() || from.starts_with(&format!("{d}/")))
+            .max_by_key(|d| d.len())
+            .map(String::as_str)
+    }
+    /// What bounds a crate in the repo: its package directory, else the `src` directory.
+    pub fn crate_key(&self, from: &str) -> Option<String> {
+        self.pkg_dir(from).map(str::to_string).or_else(|| crate_src(from))
+    }
+}
+
 fn module_of_file(from: &str) -> Module {
     let (dir, name) = from.rsplit_once('/').unwrap_or(("", from));
     let stem = name.trim_end_matches(".rs");
-    let child_dir = if matches!(stem, "lib" | "main" | "mod") { dir.to_string() } else { join(dir, stem) };
+    // every file directly in `tests/`, `benches/` or `examples/` is the root of a crate of its own
+    let target_root = matches!(dir.rsplit('/').next(), Some("tests" | "benches" | "examples"));
+    let child_dir = if matches!(stem, "lib" | "main" | "mod") || target_root { dir.to_string() } else { join(dir, stem) };
     Module { dir: child_dir, file: from.to_string() }
 }
 
@@ -239,9 +315,14 @@ pub fn mod_files(from: &str, mods: &[String], files: &HashMap<String, ()>) -> Ve
 
 /// A `use`/path walked through modules: the file of the module it ends in, and the item name when the last segment is an item
 /// (not a child module). External crates and unknown modules → None.
-pub fn resolve_path(from: &str, path: &[String], files: &HashMap<String, ()>) -> Option<(String, Option<String>)> {
+pub fn resolve_path(from: &str, path: &[String], files: &HashMap<String, ()>, cm: &CrateMap) -> Option<(String, Option<String>)> {
     let first = path.first()?;
     let (mut m, rest): (Module, &[String]) = match first.as_str() {
+        n if cm.by_name.contains_key(n) && child(&module_of_file(from), n, files).is_none() => {
+            let src = &cm.by_name[n];
+            let root = ["lib.rs", "main.rs"].iter().map(|r| join(src, r)).find(|c| files.contains_key(c))?;
+            (Module { dir: src.clone(), file: root }, &path[1..])
+        }
         "crate" => (crate_root(from, files)?, &path[1..]),
         "self" => (module_of_file(from), &path[1..]),
         "super" => {
@@ -288,16 +369,34 @@ mod tests {
         let v = &i.fns[0].vars;
         assert_eq!((v["p"].as_str(), v["q"].as_str(), v["r"].as_str()), ("Parser", "Other", "Third"));
     }
+    fn resolve_path_t(from: &str, p: &[String], f: &HashMap<String, ()>) -> Option<(String, Option<String>)> {
+        resolve_path(from, p, f, &CrateMap::default())
+    }
+    #[test]
+    fn crate_names_and_integration_tests() {
+        let f = set(&["Cargo.toml", "src/lib.rs", "src/util.rs", "tests/util.rs", "tests/common/mod.rs", "w/b/src/lib.rs", "w/b/src/q.rs"]);
+        let mut cm = CrateMap::default();
+        cm.add_manifest("", &["[package]".into(), "name = \"demo-app\"".into(), "[dependencies]".into(), "name = \"no\"".into()]);
+        cm.add_manifest("w/b", &["[package]".into(), "name = 'bee'".into()]);
+        let p = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(resolve_path("tests/util.rs", &p(&["demo_app", "util", "double"]), &f, &cm), Some(("src/util.rs".into(), Some("double".into()))));
+        assert_eq!(resolve_path("src/util.rs", &p(&["bee", "q", "X"]), &f, &cm), Some(("w/b/src/q.rs".into(), Some("X".into()))));
+        assert_eq!(resolve_path("tests/util.rs", &p(&["common", "Env"]), &f, &cm), Some(("tests/common/mod.rs".into(), Some("Env".into()))));
+        assert_eq!(resolve_path("tests/util.rs", &p(&["serde", "X"]), &f, &cm), None);
+        assert_eq!(cm.pkg_dir("w/b/src/q.rs"), Some("w/b"));
+        assert_eq!(cm.pkg_dir("tests/util.rs"), Some(""));
+        assert_eq!(cm.by_name.len(), 2);
+    }
     #[test]
     fn paths_map_to_files() {
         let f = set(&["c/src/lib.rs", "c/src/util.rs", "c/src/a/mod.rs", "c/src/a/b.rs", "c/src/a/c.rs"]);
         let p = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert_eq!(resolve_path("c/src/lib.rs", &p(&["crate", "util", "Parser"]), &f), Some(("c/src/util.rs".into(), Some("Parser".into()))));
-        assert_eq!(resolve_path("c/src/a/b.rs", &p(&["super", "c", "X"]), &f), Some(("c/src/a/c.rs".into(), Some("X".into()))));
-        assert_eq!(resolve_path("c/src/a/b.rs", &p(&["super", "super", "util"]), &f), Some(("c/src/util.rs".into(), None)));
-        assert_eq!(resolve_path("c/src/a/mod.rs", &p(&["self", "b", "Y"]), &f), Some(("c/src/a/b.rs".into(), Some("Y".into()))));
-        assert_eq!(resolve_path("c/src/lib.rs", &p(&["std", "fmt"]), &f), None);
-        assert_eq!(resolve_path("c/src/lib.rs", &p(&["crate", "Top"]), &f), Some(("c/src/lib.rs".into(), Some("Top".into()))));
+        assert_eq!(resolve_path_t("c/src/lib.rs", &p(&["crate", "util", "Parser"]), &f), Some(("c/src/util.rs".into(), Some("Parser".into()))));
+        assert_eq!(resolve_path_t("c/src/a/b.rs", &p(&["super", "c", "X"]), &f), Some(("c/src/a/c.rs".into(), Some("X".into()))));
+        assert_eq!(resolve_path_t("c/src/a/b.rs", &p(&["super", "super", "util"]), &f), Some(("c/src/util.rs".into(), None)));
+        assert_eq!(resolve_path_t("c/src/a/mod.rs", &p(&["self", "b", "Y"]), &f), Some(("c/src/a/b.rs".into(), Some("Y".into()))));
+        assert_eq!(resolve_path_t("c/src/lib.rs", &p(&["std", "fmt"]), &f), None);
+        assert_eq!(resolve_path_t("c/src/lib.rs", &p(&["crate", "Top"]), &f), Some(("c/src/lib.rs".into(), Some("Top".into()))));
         assert_eq!(mod_files("c/src/lib.rs", &p(&["util", "zzz"]), &f), vec!["c/src/util.rs".to_string()]);
     }
 }

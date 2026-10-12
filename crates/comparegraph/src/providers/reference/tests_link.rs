@@ -2,7 +2,7 @@
 //! (a) a resolved `calls` edge whose source lives in a test file and whose target lives in a non-test file keeps its confidence;
 //! (b) naming convention at 0.5: test file `test_foo.py` / `foo_test.go` / `foo.test.ts` / `FooTest.java` / `tests/foo.rs` → the
 //! unique non-test file with stem `foo`/`Foo`; test function `test_bar` → the unique non-test symbol named `bar`.
-use super::{is_test_path, resolve, ParsedFile};
+use super::{is_test_path, resolve, rust_ctx, ParsedFile};
 use crate::domain::EdgeKind;
 use std::collections::HashMap;
 
@@ -37,6 +37,14 @@ fn subject_of_test_file(path: &str) -> Option<String> {
 }
 
 pub fn tests_edges(files: &[ParsedFile], edges: &[Edge]) -> Vec<Edge> {
+    // Rust `#[test]` functions and inline `#[cfg(test)] mod`s are test code wherever they live
+    let spans: HashMap<&str, Vec<(u32, u32)>> = files
+        .iter()
+        .filter(|f| f.language == "rust" && !is_test_path(&f.rel_path))
+        .map(|f| (f.rel_path.as_str(), rust_ctx::analyze(&f.lines.join("\n")).tests))
+        .filter(|(_, t)| !t.is_empty())
+        .collect();
+    let mut sym_line: HashMap<String, u32> = HashMap::new();
     let mut sym_path: HashMap<String, &str> = HashMap::new();
     let mut by_name: HashMap<&str, Vec<String>> = HashMap::new();
     let mut by_stem: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -51,6 +59,7 @@ pub fn tests_edges(files: &[ParsedFile], edges: &[Edge]) -> Vec<Edge> {
         }
         for (s, qn) in f.symbols.iter().zip(resolve::qualified_names(f)) {
             sym_path.insert(qn.clone(), &f.rel_path);
+            sym_line.insert(qn.clone(), s.line_start);
             if test {
                 test_syms.push((&s.name, qn));
             } else {
@@ -64,7 +73,11 @@ pub fn tests_edges(files: &[ParsedFile], edges: &[Edge]) -> Vec<Edge> {
             continue;
         }
         if let (Some(pa), Some(pb)) = (sym_path.get(a), sym_path.get(b)) {
-            if is_test_path(pa) && !is_test_path(pb) {
+            let in_test = |p: &str, qn: &str| {
+                is_test_path(p)
+                    || spans.get(p).is_some_and(|v| sym_line.get(qn).is_some_and(|l| v.iter().any(|(x, y)| x <= l && l <= y)))
+            };
+            if in_test(pa, a) && !in_test(pb, b) {
                 out.push((EdgeKind::Tests, a.clone(), b.clone(), *c));
             }
         }

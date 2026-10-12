@@ -68,7 +68,18 @@ pub struct WalkResult {
     pub truncated: usize,
     pub oversize: usize,
     pub skipped_dirs: usize,
+    /// files skipped by name (`*.min.js`, `*.min.css`, `*.bundle.js`)
+    pub minified: usize,
 }
+
+/// A minified or bundled artifact by file name.
+pub fn is_minified_name(path: &Path) -> bool {
+    let n = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
+    n.ends_with(".min.js") || n.ends_with(".min.css") || n.ends_with(".bundle.js")
+}
+
+/// A single line this long is generated or minified code, never source a person wrote.
+pub const MINIFIED_LINE_CHARS: usize = 5_000;
 
 /// Gitignore-aware walk (the `ignore` crate honours .gitignore and .ignore). Collects everything, sorts by rel_path, THEN truncates to
 /// `max_files`, so the kept set is deterministic whatever the directory order. Reports what it dropped.
@@ -102,6 +113,10 @@ pub fn walk(root: &Path, opts: &BuildOptions) -> WalkResult {
         let Some(language) = language_for(entry.path()) else {
             continue;
         };
+        if is_minified_name(entry.path()) {
+            res.minified += 1;
+            continue;
+        }
         let bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
         if bytes > opts.max_file_bytes {
             res.oversize += 1;
@@ -166,6 +181,18 @@ mod tests {
         );
         assert_eq!(language_for(std::path::Path::new("x.tsx")), Some("tsx"));
         assert_eq!(language_for(std::path::Path::new("x.unknown")), None);
+    }
+    #[test]
+    fn minified_names_are_skipped_and_counted() {
+        let d = tempfile::tempdir().unwrap();
+        for f in ["a.js", "a.min.js", "b.bundle.js", "c.min.css", "d.css"] {
+            std::fs::write(d.path().join(f), "x{}\n").unwrap();
+        }
+        let res = walk(d.path(), &BuildOptions::default());
+        let mut rel: Vec<_> = res.files.iter().map(|f| f.rel_path.as_str()).collect();
+        rel.sort();
+        assert_eq!(rel, vec!["a.js", "d.css"]);
+        assert_eq!(res.minified, 3);
     }
     #[test]
     fn truncation_keeps_the_alphabetically_first_files_and_counts_the_rest() {
