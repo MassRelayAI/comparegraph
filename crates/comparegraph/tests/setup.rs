@@ -20,10 +20,18 @@ impl Env {
         }
     }
     fn run(&self, bin: &str, args: &[&str]) -> Value {
+        self.run_with(Some(bin), args)
+    }
+    fn run_with(&self, bin: Option<&str>, args: &[&str]) -> Value {
         let mut c = Command::cargo_bin("comparegraph").unwrap();
         c.env("HOME", self.home.path())
             .env("XDG_CONFIG_HOME", self.xdg.path())
-            .env("COMPAREGRAPH_BIN", bin)
+            .env("COMPAREGRAPH_NOW", "1700000000")
+            .env_remove("COMPAREGRAPH_BIN");
+        if let Some(b) = bin {
+            c.env("COMPAREGRAPH_BIN", b);
+        }
+        c
             .current_dir(self.proj.path())
             .arg("--root")
             .arg(self.ws.path())
@@ -94,9 +102,9 @@ fn dry_run_is_the_default_and_writes_nothing() {
 #[test]
 fn all_skips_clients_that_are_not_installed() {
     let e = Env::new();
-    std::fs::create_dir_all(e.user(".cursor")).unwrap();
+    std::fs::create_dir_all(e.user(".gemini")).unwrap();
     let v = e.setup(&["--apply"]);
-    assert_eq!(row(&v, "cursor")["written"], true);
+    assert_eq!(row(&v, "gemini")["written"], true);
     assert_eq!(row(&v, "codex")["action"], "skip");
     assert_eq!(row(&v, "codex")["written"], false);
     assert!(!e.user(".codex").exists());
@@ -108,12 +116,14 @@ fn apply_writes_each_clients_documented_shape() {
     let e = Env::new();
     let ws = e.ws_str();
     let args = json!(["--root", ws, "mcp"]);
-    for c in ["claude", "codex", "cursor", "gemini", "opencode", "hermes"] {
+    for c in ["claude", "codex", "gemini", "opencode", "hermes"] {
         let v = e.setup(&["--client", c, "--apply"]);
         assert_eq!(row(&v, c)["written"], true, "{c}: {v}");
     }
+    let v = e.setup(&["--client", "cursor", "--scope", "project", "--apply"]);
+    assert_eq!(row(&v, "cursor")["written"], true, "{v}");
     assert_eq!(read_json(&e.user(".claude.json"))["mcpServers"]["comparegraph"], json!({"command": BIN, "args": args}));
-    assert_eq!(read_json(&e.user(".cursor/mcp.json"))["mcpServers"]["comparegraph"], json!({"command": BIN, "args": args}));
+    assert_eq!(read_json(&e.proj.path().join(".cursor/mcp.json"))["mcpServers"]["comparegraph"], json!({"command": BIN, "args": args}));
     assert_eq!(read_json(&e.user(".gemini/settings.json"))["mcpServers"]["comparegraph"], json!({"command": BIN, "args": args}));
     let oc = read_json(&e.xdg.path().join("opencode/opencode.json"));
     assert_eq!(oc["mcp"]["comparegraph"], json!({"type": "local", "command": [BIN, "--root", ws, "mcp"]}));
@@ -122,7 +132,7 @@ fn apply_writes_each_clients_documented_shape() {
     let yaml = std::fs::read_to_string(e.user(".hermes/config.yaml")).unwrap();
     assert_eq!(yaml, format!("mcp_servers:\n  comparegraph:\n    command: \"{BIN}\"\n    args: [\"--root\",\"{ws}\",\"mcp\"]\n"));
     // 2-space indent
-    assert!(std::fs::read_to_string(e.user(".cursor/mcp.json")).unwrap().contains("\n  \"mcpServers\": {\n    \"comparegraph\""));
+    assert!(std::fs::read_to_string(e.proj.path().join(".cursor/mcp.json")).unwrap().contains("\n  \"mcpServers\": {\n    \"comparegraph\""));
 }
 
 #[test]
@@ -153,22 +163,22 @@ fn apply_is_idempotent_and_backs_up_what_it_changes() {
 fn a_conflicting_entry_is_untouched_unless_forced() {
     let e = Env::new();
     let other = "{\"mcpServers\":{\"comparegraph\":{\"command\":\"/elsewhere/cg\",\"args\":[\"--root\",\"/other\",\"mcp\"]}}}\n";
-    std::fs::write(e.user(".cursor/mcp.json").parent().map(|p| { std::fs::create_dir_all(p).unwrap(); p.join("mcp.json") }).unwrap(), other).unwrap();
-    let v = e.setup(&["--client", "cursor", "--apply"]);
-    assert_eq!(row(&v, "cursor")["state"], "conflict");
-    assert_eq!(row(&v, "cursor")["action"], "skip");
-    assert_eq!(row(&v, "cursor")["written"], false);
-    assert_eq!(std::fs::read_to_string(e.user(".cursor/mcp.json")).unwrap(), other);
-    assert!(baks(&e.user(".cursor")).is_empty());
+    std::fs::write(e.user(".gemini/settings.json").parent().map(|p| { std::fs::create_dir_all(p).unwrap(); p.join("settings.json") }).unwrap(), other).unwrap();
+    let v = e.setup(&["--client", "gemini", "--apply"]);
+    assert_eq!(row(&v, "gemini")["state"], "conflict");
+    assert_eq!(row(&v, "gemini")["action"], "skip");
+    assert_eq!(row(&v, "gemini")["written"], false);
+    assert_eq!(std::fs::read_to_string(e.user(".gemini/settings.json")).unwrap(), other);
+    assert!(baks(&e.user(".gemini")).is_empty());
     assert_eq!(v["evidence"]["limitations"][0]["code"], "conflict");
     // doctor says conflict too
     let d = e.run(BIN, &["doctor"]);
-    let cur = d["data"]["clients"].as_array().unwrap().iter().find(|r| r["client"] == "cursor" && r["scope"] == "user").unwrap();
+    let cur = d["data"]["clients"].as_array().unwrap().iter().find(|r| r["client"] == "gemini" && r["scope"] == "user").unwrap();
     assert_eq!(cur["state"], "conflict");
-    let f = e.setup(&["--client", "cursor", "--apply", "--force"]);
-    assert_eq!(row(&f, "cursor")["action"], "replace");
-    assert_eq!(read_json(&e.user(".cursor/mcp.json"))["mcpServers"]["comparegraph"]["command"], BIN);
-    assert_eq!(baks(&e.user(".cursor")).len(), 1);
+    let f = e.setup(&["--client", "gemini", "--apply", "--force"]);
+    assert_eq!(row(&f, "gemini")["action"], "replace");
+    assert_eq!(read_json(&e.user(".gemini/settings.json"))["mcpServers"]["comparegraph"]["command"], BIN);
+    assert_eq!(baks(&e.user(".gemini")).len(), 1);
 }
 
 #[test]
@@ -179,7 +189,10 @@ fn a_different_binary_path_is_stale_and_setup_refreshes_it() {
     let g = d["data"]["clients"].as_array().unwrap().iter().find(|r| r["client"] == "gemini" && r["scope"] == "user").unwrap();
     assert_eq!(g["state"], "stale");
     let v = e.run("/new/place/comparegraph", &["setup", "--client", "gemini", "--apply"]);
-    assert_eq!(row(&v, "gemini")["action"], "update");
+    assert_eq!(row(&v, "gemini")["action"], "skip", "stale is a conflict: plain apply leaves it");
+    assert_eq!(read_json(&e.user(".gemini/settings.json"))["mcpServers"]["comparegraph"]["command"], BIN);
+    let v = e.run("/new/place/comparegraph", &["setup", "--client", "gemini", "--apply", "--force"]);
+    assert_eq!(row(&v, "gemini")["action"], "replace");
     assert_eq!(read_json(&e.user(".gemini/settings.json"))["mcpServers"]["comparegraph"]["command"], "/new/place/comparegraph");
     let d = e.run("/new/place/comparegraph", &["doctor"]);
     let g = d["data"]["clients"].as_array().unwrap().iter().find(|r| r["client"] == "gemini" && r["scope"] == "user").unwrap();
@@ -194,7 +207,8 @@ fn doctor_reports_missing_aligned_and_never_writes() {
     assert_eq!(d["ok"], true);
     let rows = d["data"]["clients"].as_array().unwrap();
     assert_eq!(rows.iter().filter(|r| r["scope"] == "user").count(), 6);
-    assert!(rows.iter().all(|r| r["state"] == "missing"));
+    assert!(rows.iter().filter(|r| r["client"] != "cursor").all(|r| r["state"] == "missing"));
+    assert!(rows.iter().any(|r| r["client"] == "cursor" && r["scope"] == "user" && r["state"] == "unverified"));
     assert_eq!(e.files(), before);
     e.setup(&["--client", "opencode", "--apply"]);
     let d = e.run(BIN, &["doctor"]);
@@ -256,4 +270,140 @@ fn project_scope_writes_into_the_current_directory() {
     assert_eq!(bad["error"]["code"], "invalid_arguments");
     let bad = e.setup(&["--client", "nope"]);
     assert_eq!(bad["error"]["code"], "invalid_arguments");
+}
+
+#[test]
+fn cursor_user_scope_is_unverified_and_skipped() {
+    let e = Env::new();
+    std::fs::create_dir_all(e.user(".cursor")).unwrap();
+    let v = e.setup(&["--client", "cursor", "--apply"]);
+    assert_eq!(row(&v, "cursor")["state"], "unverified");
+    assert_eq!(row(&v, "cursor")["action"], "skip");
+    assert_eq!(row(&v, "cursor")["written"], false);
+    assert!(!e.user(".cursor/mcp.json").exists());
+    let v = e.setup(&["--apply"]);
+    assert_eq!(row(&v, "cursor")["state"], "unverified");
+    let v = e.setup(&["--client", "cursor", "--scope", "project", "--apply"]);
+    assert_eq!(row(&v, "cursor")["written"], true);
+}
+
+#[test]
+fn dev_builds_are_never_registered() {
+    let e = Env::new();
+    let v = e.run_with(None, &["setup", "--client", "gemini", "--apply"]);
+    assert_eq!(v["ok"], false);
+    assert_eq!(v["error"]["code"], "invalid_arguments");
+    assert!(v["error"]["message"].as_str().unwrap().contains("build directory"));
+    assert!(!e.user(".gemini").exists());
+    let v = e.run_with(None, &["setup", "--client", "gemini", "--bin", "/opt/x/comparegraph"]);
+    assert_eq!(v["ok"], true);
+    let d = e.run_with(None, &["doctor"]);
+    assert!(d["evidence"]["limitations"].as_array().unwrap().iter().any(|l| l["code"] == "dev_build"));
+    let d = e.run_with(None, &["doctor", "--bin", "/opt/x/comparegraph"]);
+    assert!(d["evidence"]["limitations"].as_array().unwrap().iter().all(|l| l["code"] != "dev_build"));
+}
+
+#[test]
+fn json_round_trip_keeps_key_order_and_number_text_except_exponent_sign() {
+    let e = Env::new();
+    std::fs::create_dir_all(e.user(".gemini")).unwrap();
+    std::fs::write(e.user(".gemini/settings.json"), "{\n  \"zeta\": 100000000000000000000001,\n  \"alpha\": 1.50,\n  \"mcpServers\": {\"zz\": {}, \"aa\": {}}\n}\n").unwrap();
+    e.setup(&["--client", "gemini", "--apply"]);
+    let t = std::fs::read_to_string(e.user(".gemini/settings.json")).unwrap();
+    assert!(t.contains("\"zeta\": 100000000000000000000001") && t.contains("\"alpha\": 1.50"), "{t}");
+    assert!(t.find("zeta").unwrap() < t.find("alpha").unwrap() && t.find("alpha").unwrap() < t.find("mcpServers").unwrap());
+    assert!(t.find("\"zz\"").unwrap() < t.find("\"aa\"").unwrap() && t.find("\"aa\"").unwrap() < t.find("comparegraph").unwrap());
+}
+
+#[test]
+fn a_symlinked_config_stays_a_symlink_and_its_target_is_updated() {
+    let e = Env::new();
+    let real = e.proj.path().join("dotfiles/claude.json");
+    std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+    std::fs::write(&real, "{\"a\": 1}\n").unwrap();
+    std::os::unix::fs::symlink(&real, e.user(".claude.json")).unwrap();
+    e.setup(&["--client", "claude", "--apply"]);
+    assert!(std::fs::symlink_metadata(e.user(".claude.json")).unwrap().file_type().is_symlink());
+    assert_eq!(read_json(&real)["mcpServers"]["comparegraph"]["command"], BIN);
+    let bak = baks(real.parent().unwrap());
+    assert_eq!(bak.len(), 1, "{bak:?}");
+    assert_eq!(std::fs::read_to_string(real.parent().unwrap().join(&bak[0])).unwrap(), "{\"a\": 1}\n");
+    assert!(baks(e.home.path()).is_empty());
+}
+
+#[test]
+fn two_backups_in_the_same_second_do_not_collide() {
+    let e = Env::new(); // the clock is fixed at 1700000000
+    let orig = "{\"mcpServers\":{\"comparegraph\":{\"command\":\"/a\",\"args\":[]}}}\n";
+    std::fs::create_dir_all(e.user(".gemini")).unwrap();
+    std::fs::write(e.user(".gemini/settings.json"), orig).unwrap();
+    e.setup(&["--client", "gemini", "--apply", "--force"]);
+    let second = std::fs::read_to_string(e.user(".gemini/settings.json")).unwrap();
+    e.run("/b/cg", &["setup", "--client", "gemini", "--apply", "--force"]);
+    let mut b = baks(&e.user(".gemini"));
+    b.sort();
+    assert_eq!(b, vec!["settings.json.bak-1700000000", "settings.json.bak-1700000000-2"]);
+    assert_eq!(std::fs::read_to_string(e.user(".gemini/settings.json.bak-1700000000")).unwrap(), orig);
+    assert_eq!(std::fs::read_to_string(e.user(".gemini/settings.json.bak-1700000000-2")).unwrap(), second);
+}
+
+#[test]
+fn a_relative_bin_is_made_absolute() {
+    let e = Env::new();
+    std::fs::create_dir_all(e.proj.path().join("rel")).unwrap();
+    std::fs::write(e.proj.path().join("rel/cg"), "").unwrap();
+    let v = e.run_with(None, &["setup", "--client", "gemini", "--bin", "./rel/cg", "--apply"]);
+    let want = std::fs::canonicalize(e.proj.path().join("rel/cg")).unwrap();
+    assert_eq!(v["data"]["bin"], want.to_string_lossy().as_ref());
+    let v = e.run_with(None, &["setup", "--client", "gemini", "--bin", "./nope/cg"]);
+    let got = v["data"]["bin"].as_str().unwrap();
+    assert!(Path::new(got).is_absolute() && got.ends_with("nope/cg"), "{got}");
+}
+
+#[test]
+fn crlf_and_a_missing_final_newline_are_preserved() {
+    let e = Env::new();
+    let ws = e.ws_str();
+    std::fs::create_dir_all(e.user(".codex")).unwrap();
+    std::fs::write(e.user(".codex/config.toml"), "model = \"x\"\r\n[mcp_servers.o]\r\ncommand = \"o\"").unwrap();
+    e.setup(&["--client", "codex", "--apply"]);
+    let t = std::fs::read_to_string(e.user(".codex/config.toml")).unwrap();
+    assert_eq!(t, format!("model = \"x\"\r\n[mcp_servers.o]\r\ncommand = \"o\"\r\n\r\n[mcp_servers.comparegraph]\r\ncommand = \"{BIN}\"\r\nargs = [\"--root\",\"{ws}\",\"mcp\"]"));
+    assert_eq!(row(&e.setup(&["--client", "codex"]), "codex")["state"], "aligned");
+}
+
+#[test]
+fn quoted_yaml_keys_and_hash_inside_quoted_values() {
+    let e = Env::new();
+    let ws = e.ws_str();
+    std::fs::create_dir_all(e.user(".hermes")).unwrap();
+    std::fs::write(e.user(".hermes/config.yaml"), format!("mcp_servers:\n  \"comparegraph\":\n    command: \"{BIN}\"\n    args: [\"--root\",\"{ws}\",\"mcp\"]\n")).unwrap();
+    assert_eq!(row(&e.setup(&["--client", "hermes"]), "hermes")["state"], "aligned");
+    std::fs::create_dir_all(e.user(".codex")).unwrap();
+    std::fs::write(e.user(".codex/config.toml"), format!("[mcp_servers.comparegraph]\ncommand = \"{BIN}\"\nargs = [\"--root\", \"{ws}\", \"mcp\"] # note # more\n")).unwrap();
+    assert_eq!(row(&e.setup(&["--client", "codex"]), "codex")["state"], "aligned");
+    let hashed = format!("{ws}/a #b");
+    let _ = hashed; // a quoted value with " #" is parsed as a string first
+    std::fs::write(e.user(".codex/config.toml"), "[mcp_servers.comparegraph]\ncommand = \"/p #q/cg\"\nargs = [\"x\"]\n").unwrap();
+    let v = e.setup(&["--client", "codex"]);
+    assert_eq!(row(&v, "codex")["state"], "conflict");
+}
+
+#[test]
+fn all_with_project_scope_and_the_opencode_jsonc_conflict() {
+    let e = Env::new();
+    std::fs::create_dir_all(e.proj.path().join(".codex")).unwrap();
+    let v = e.setup(&["--scope", "project", "--apply"]);
+    assert_eq!(row(&v, "codex")["written"], true);
+    assert!(e.proj.path().join(".codex/config.toml").is_file());
+    assert_eq!(row(&v, "claude")["action"], "skip");
+    assert!(!e.proj.path().join(".mcp.json").exists());
+    assert!(v["data"]["clients"].as_array().unwrap().iter().all(|r| r["client"] != "hermes"));
+    // opencode.jsonc
+    std::fs::create_dir_all(e.xdg.path().join("opencode")).unwrap();
+    std::fs::write(e.xdg.path().join("opencode/opencode.jsonc"), "{ // c\n}\n").unwrap();
+    let v = e.setup(&["--client", "opencode", "--apply", "--force"]);
+    assert_eq!(row(&v, "opencode")["state"], "conflict");
+    assert_eq!(row(&v, "opencode")["written"], false);
+    assert!(!e.xdg.path().join("opencode/opencode.json").exists());
 }

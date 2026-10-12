@@ -55,9 +55,10 @@ impl Client {
     pub fn parse(s: &str) -> Option<Client> {
         ALL.into_iter().find(|c| c.name() == s)
     }
-    /// A client whose shape could not be verified is reported `unverified` and never written. All six are verified today.
-    pub fn verified(self) -> bool {
-        true
+    /// A client/scope whose shape could not be verified is reported `unverified` and never written.
+    /// Cursor's project file `.cursor/mcp.json` is documented; the user-level path is not stated in the docs read.
+    pub fn verified(self, scope: Scope) -> bool {
+        !(self == Client::Cursor && scope == Scope::User)
     }
 }
 impl Scope {
@@ -75,6 +76,10 @@ pub struct Ctx {
     pub xdg: Option<PathBuf>,
     pub project: PathBuf,
     pub bin: String,
+    /// the command came from `--bin` / COMPAREGRAPH_BIN rather than the running executable
+    pub explicit_bin: bool,
+    /// the running executable sits under a `target/` directory (a build tree)
+    pub dev_build: bool,
     pub workspace: String,
 }
 impl Ctx {
@@ -85,11 +90,14 @@ impl Ctx {
             .filter(|h| !h.is_empty())
             .map(PathBuf::from)
             .or_else(|| home.as_ref().map(|h| h.join(".config")));
-        let bin = bin
-            .map(str::to_string)
-            .or_else(|| std::env::var("COMPAREGRAPH_BIN").ok().filter(|b| !b.is_empty()))
-            .or_else(|| std::env::current_exe().ok().map(|p| p.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| "comparegraph".into());
+        let explicit = bin.map(str::to_string).or_else(|| std::env::var("COMPAREGRAPH_BIN").ok().filter(|b| !b.is_empty()));
+        let exe = std::env::current_exe().ok();
+        let dev_build = exe.as_ref().is_some_and(|p| p.components().any(|c| c.as_os_str() == "target"));
+        let explicit_bin = explicit.is_some();
+        let bin = match explicit {
+            Some(b) => absolutise(&b, &cwd),
+            None => exe.map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "comparegraph".into()),
+        };
         let ws = std::fs::canonicalize(root).unwrap_or_else(|_| {
             if root.is_absolute() {
                 root.to_path_buf()
@@ -97,7 +105,7 @@ impl Ctx {
                 cwd.join(root)
             }
         });
-        Ctx { home, xdg, project: cwd, bin, workspace: ws.to_string_lossy().into_owned() }
+        Ctx { home, xdg, project: cwd, bin, explicit_bin, dev_build, workspace: ws.to_string_lossy().into_owned() }
     }
     fn args(&self) -> Vec<String> {
         vec!["--root".into(), self.workspace.clone(), "mcp".into()]
@@ -123,6 +131,32 @@ impl Ctx {
             (Client::Hermes, Scope::User) => home.map(|h| (h.join(".hermes/config.yaml"), h.join(".hermes"))),
             (Client::Hermes, Scope::Project) => None,
         }
+    }
+}
+
+/// A relative command path becomes absolute (canonical if it exists, else joined with the cwd); a bare name stays a PATH lookup.
+fn absolutise(b: &str, cwd: &Path) -> String {
+    if !b.contains('/') && !b.contains('\\') {
+        return b.to_string();
+    }
+    let p = Path::new(b);
+    if let Ok(c) = std::fs::canonicalize(p) {
+        return c.to_string_lossy().into_owned();
+    }
+    if p.is_absolute() {
+        b.to_string()
+    } else {
+        let mut out = cwd.to_path_buf();
+        for c in p.components() {
+            match c {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    out.pop();
+                }
+                o => out.push(o),
+            }
+        }
+        out.to_string_lossy().into_owned()
     }
 }
 
@@ -272,8 +306,8 @@ fn plan_json(c: Client, ctx: &Ctx, path: &Path) -> Plan {
             Cmp::Stale => Plan {
                 state: State::Stale,
                 note: Some("same arguments, a different binary path".into()),
-                new,
-                forced: None,
+                new: None,
+                forced: new,
                 file_exists: exists,
             },
             Cmp::Other => Plan::conflict("a `comparegraph` entry points elsewhere", new, exists),
@@ -283,13 +317,24 @@ fn plan_json(c: Client, ctx: &Ctx, path: &Path) -> Plan {
 
 // ---------- text blocks (TOML, YAML) ----------
 
-fn lines_of(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
+/// A text file split into lines, remembering its line ending and whether it ended with one.
+struct Doc {
+    lines: Vec<String>,
+    eol: &'static str,
+    final_nl: bool,
 }
-fn join_lines(lines: &[String]) -> String {
-    let mut s = lines.join("\n");
-    s.push('\n');
-    s
+impl Doc {
+    fn new(text: &str) -> Doc {
+        let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+        Doc { lines: text.lines().map(str::to_string).collect(), eol, final_nl: text.is_empty() || text.ends_with('\n') }
+    }
+    fn join(&self, lines: &[String]) -> String {
+        let mut s = lines.join(self.eol);
+        if self.final_nl {
+            s.push_str(self.eol);
+        }
+        s
+    }
 }
 fn indent_of(l: &str) -> usize {
     l.len() - l.trim_start().len()
@@ -305,10 +350,16 @@ fn field(lines: &[String], key: &str, sep: char) -> Option<(usize, Value)> {
         if let Some(rest) = t.strip_prefix(key) {
             let rest = rest.trim_start();
             if let Some(v) = rest.strip_prefix(sep) {
-                let v = v.split(" #").next().unwrap_or(v).trim();
-                let parsed = serde_json::from_str::<Value>(v)
-                    .ok()
-                    .or_else(|| if sep == ':' && !v.is_empty() && !v.starts_with(['[', '{', '"', '\'']) { Some(json!(v)) } else { None });
+                let v = v.trim();
+                // parse the quoted string / array first, so a ` #` inside a value is not taken for a comment
+                let parsed = serde_json::Deserializer::from_str(v).into_iter::<Value>().next().and_then(|r| r.ok()).or_else(|| {
+                    let plain = v.split(" #").next().unwrap_or(v).trim();
+                    if sep == ':' && !plain.is_empty() && !plain.starts_with(['[', '{', '"', '\'']) {
+                        Some(json!(plain))
+                    } else {
+                        None
+                    }
+                });
                 return Some((i, parsed.unwrap_or(Value::Null)));
             }
         }
@@ -340,7 +391,8 @@ fn plan_toml(ctx: &Ctx, path: &Path) -> Plan {
     } else {
         String::new()
     };
-    let mut lines = lines_of(&text);
+    let doc = Doc::new(&text);
+    let mut lines = doc.lines.clone();
     let header = |l: &String| {
         let t = l.trim();
         t == format!("[mcp_servers.{SERVER}]") || t == format!("[mcp_servers.\"{SERVER}\"]")
@@ -362,7 +414,7 @@ fn plan_toml(ctx: &Ctx, path: &Path) -> Plan {
             all.push(String::new());
         }
         all.extend(toml_block(ctx));
-        return Plan { state: State::Missing, note: None, new: Some(join_lines(&all)), forced: None, file_exists: exists };
+        return Plan { state: State::Missing, note: None, new: Some(doc.join(&all)), forced: None, file_exists: exists };
     };
     let end = (start + 1..lines.len()).find(|&i| lines[i].trim_start().starts_with('[')).unwrap_or(lines.len());
     let body: Vec<String> = lines[start + 1..end].iter().filter(|l| !blank_or_comment(l)).cloned().collect();
@@ -374,7 +426,7 @@ fn plan_toml(ctx: &Ctx, path: &Path) -> Plan {
     }
     let replace_all = |lines: &mut Vec<String>| {
         lines.splice(start..real_end, toml_block(ctx));
-        join_lines(lines)
+        doc.join(lines)
     };
     match cmp {
         Cmp::Equal => Plan { state: State::Aligned, note: None, new: None, forced: None, file_exists: exists },
@@ -384,8 +436,8 @@ fn plan_toml(ctx: &Ctx, path: &Path) -> Plan {
             Plan {
                 state: State::Stale,
                 note: Some("same arguments, a different binary path".into()),
-                new: Some(join_lines(&lines)),
-                forced: None,
+                new: None,
+                forced: Some(doc.join(&lines)),
                 file_exists: exists,
             }
         }
@@ -414,7 +466,8 @@ fn plan_yaml(ctx: &Ctx, path: &Path) -> Plan {
     } else {
         String::new()
     };
-    let mut lines = lines_of(&text);
+    let doc = Doc::new(&text);
+    let mut lines = doc.lines.clone();
     let top = lines.iter().position(|l| l.starts_with("mcp_servers:"));
     let Some(top) = top else {
         let mut all = lines;
@@ -423,7 +476,7 @@ fn plan_yaml(ctx: &Ctx, path: &Path) -> Plan {
         }
         all.push("mcp_servers:".into());
         all.extend(yaml_entry(ctx, 2));
-        return Plan { state: State::Missing, note: None, new: Some(join_lines(&all)), forced: None, file_exists: exists };
+        return Plan { state: State::Missing, note: None, new: Some(doc.join(&all)), forced: None, file_exists: exists };
     };
     let after = lines[top]["mcp_servers:".len()..].trim();
     if !after.is_empty() && !after.starts_with('#') {
@@ -431,10 +484,10 @@ fn plan_yaml(ctx: &Ctx, path: &Path) -> Plan {
     }
     let block_end = (top + 1..lines.len()).find(|&i| !blank_or_comment(&lines[i]) && indent_of(&lines[i]) == 0).unwrap_or(lines.len());
     let child_ind = (top + 1..block_end).find(|&i| !blank_or_comment(&lines[i])).map(|i| indent_of(&lines[i])).unwrap_or(2);
-    let me = (top + 1..block_end).find(|&i| indent_of(&lines[i]) == child_ind && lines[i].trim() == format!("{SERVER}:"));
+    let me = (top + 1..block_end).find(|&i| indent_of(&lines[i]) == child_ind && [format!("{SERVER}:"), format!("\"{SERVER}\":"), format!("'{SERVER}':")].contains(&lines[i].trim().to_string()));
     let Some(me) = me else {
         lines.splice(top + 1..top + 1, yaml_entry(ctx, child_ind));
-        return Plan { state: State::Missing, note: None, new: Some(join_lines(&lines)), forced: None, file_exists: exists };
+        return Plan { state: State::Missing, note: None, new: Some(doc.join(&lines)), forced: None, file_exists: exists };
     };
     let mut me_end = (me + 1..block_end).find(|&i| !blank_or_comment(&lines[i]) && indent_of(&lines[i]) <= child_ind).unwrap_or(block_end);
     while me_end > me + 1 && blank_or_comment(&lines[me_end - 1]) {
@@ -451,14 +504,14 @@ fn plan_yaml(ctx: &Ctx, path: &Path) -> Plan {
             Plan {
                 state: State::Stale,
                 note: Some("same arguments, a different binary path".into()),
-                new: Some(join_lines(&lines)),
-                forced: None,
+                new: None,
+                forced: Some(doc.join(&lines)),
                 file_exists: exists,
             }
         }
         Cmp::Other => {
             lines.splice(me..me_end, yaml_entry(ctx, child_ind));
-            Plan::conflict("a `comparegraph` entry points elsewhere", Some(join_lines(&lines)), exists)
+            Plan::conflict("a `comparegraph` entry points elsewhere", Some(doc.join(&lines)), exists)
         }
     }
 }
@@ -518,7 +571,7 @@ pub fn registrations(ctx: &Ctx) -> Vec<Row> {
             if scope == Scope::Project && !path.exists() {
                 continue;
             }
-            if !c.verified() {
+            if !c.verified(scope) {
                 rows.push(Row { client: c, scope, path, state: State::Unverified, action: "skip", written: false, backup: None, note: Some("config shape not verified".into()) });
                 continue;
             }
@@ -539,26 +592,54 @@ pub struct Options {
 }
 
 fn unix_seconds() -> u64 {
+    // COMPAREGRAPH_NOW fixes the clock (tests)
+    if let Some(n) = std::env::var("COMPAREGRAPH_NOW").ok().and_then(|n| n.parse().ok()) {
+        return n;
+    }
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
-fn write_file(path: &Path, content: &str, backup: bool) -> Result<Option<PathBuf>> {
+fn write_file(nominal: &Path, content: &str, backup: bool) -> Result<Option<PathBuf>> {
+    use std::io::Write;
+    // a symlinked config is written through: the resolved file is replaced, the link stays
+    let path = std::fs::canonicalize(nominal).unwrap_or_else(|_| nominal.to_path_buf());
+    let path = path.as_path();
     let io = |e| AppError::Io(path.to_path_buf(), e);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(io)?;
     }
     let mut bak = None;
     if backup && path.is_file() {
-        let name = format!("{}.bak-{}", path.file_name().unwrap().to_string_lossy(), unix_seconds());
-        let b = path.with_file_name(name);
-        std::fs::copy(path, &b).map_err(io)?;
-        bak = Some(b);
+        let original = std::fs::read(path).map_err(io)?;
+        let base = format!("{}.bak-{}", path.file_name().unwrap().to_string_lossy(), unix_seconds());
+        let mut n = 1u32;
+        loop {
+            let name = if n == 1 { base.clone() } else { format!("{base}-{n}") };
+            let b = path.with_file_name(name);
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&b) {
+                Ok(mut f) => {
+                    f.write_all(&original).and_then(|_| f.sync_all()).map_err(io)?;
+                    bak = Some(b);
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+                Err(e) => return Err(io(e)),
+            }
+        }
     }
-    let tmp = path.with_file_name(format!(".{}.cgtmp", path.file_name().unwrap().to_string_lossy()));
-    std::fs::write(&tmp, content).map_err(io)?;
-    if let Ok(meta) = std::fs::metadata(path) {
-        let _ = std::fs::set_permissions(&tmp, meta.permissions());
+    let tmp = path.with_file_name(format!(".{}.cgtmp-{}", path.file_name().unwrap().to_string_lossy(), std::process::id()));
+    let result = (|| -> std::io::Result<()> {
+        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        f.write_all(content.as_bytes())?;
+        if let Ok(meta) = std::fs::metadata(path) {
+            let _ = f.set_permissions(meta.permissions());
+        }
+        f.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(io(e));
     }
-    std::fs::rename(&tmp, path).map_err(io)?;
     Ok(bak)
 }
 
@@ -572,7 +653,7 @@ pub fn run(ctx: &Ctx, o: &Options) -> Result<Vec<Row>> {
             continue;
         };
         let mut row = Row { client: c, scope: o.scope, path: path.clone(), state: State::Missing, action: "skip", written: false, backup: None, note: None };
-        if !c.verified() {
+        if !c.verified(o.scope) {
             row.state = State::Unverified;
             row.note = Some("config shape not verified; skipped".into());
             rows.push(row);
@@ -589,7 +670,11 @@ pub fn run(ctx: &Ctx, o: &Options) -> Result<Vec<Row>> {
         let (content, action) = match plan.state {
             State::Aligned => (None, "none"),
             State::Missing => (plan.new, if plan.file_exists { "add" } else { "create" }),
-            State::Stale => (plan.new, "update"),
+            State::Stale if o.force => (plan.forced, "replace"),
+            State::Stale => {
+                row.note = Some("same arguments, a different binary path; untouched (use --force to replace)".into());
+                (None, "skip")
+            }
             State::Conflict if o.force && plan.forced.is_some() => (plan.forced, "replace"),
             State::Conflict => {
                 row.note = Some(format!(
