@@ -44,7 +44,7 @@ fn type_of_annotation(n: Node, src: &str) -> Option<String> {
     (name.chars().next().is_some_and(char::is_uppercase) && name.chars().all(|c| c.is_alphanumeric() || c == '_')).then(|| name.to_string())
 }
 
-fn new_type(v: Node, src: &str) -> Option<String> {
+pub(super) fn new_type(v: Node, src: &str) -> Option<String> {
     if v.kind() != "new_expression" {
         return None;
     }

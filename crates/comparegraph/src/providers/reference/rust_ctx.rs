@@ -23,6 +23,10 @@ pub struct RustInfo {
     pub fns: Vec<FnVars>,
     /// first and last line of every `#[test]` function and every inline `#[cfg(test)] mod`
     pub tests: Vec<(u32, u32)>,
+    /// free function → type named by its declared `-> T` (a function without one is absent)
+    pub returns: HashMap<String, String>,
+    /// struct → field → declared field type
+    pub structs: HashMap<String, HashMap<String, String>>,
 }
 
 /// Attribute text (`#[test]`, `#[cfg(test)]`) directly above an item.
@@ -125,8 +129,15 @@ fn collect_vars(n: Node, src: &str, vars: &mut HashMap<String, String>) {
                         "struct_expression" => type_name(text(v.child_by_field_name("name")?, src)),
                         "call_expression" => {
                             let f = v.child_by_field_name("function")?;
+                            // `let x = make()` / `let x = util::make()`: the type is whatever `make` is declared to return ("()" marks it)
+                            if f.kind() == "identifier" {
+                                return Some(format!("(){}", text(f, src)));
+                            }
                             if f.kind() != "scoped_identifier" {
                                 return None;
+                            }
+                            if f.child_by_field_name("path").is_some_and(|p| text(p, src).rsplit("::").next().is_some_and(|l| l.chars().next().is_some_and(char::is_lowercase))) {
+                                return Some(format!("(){}", text(f, src).replace(' ', "")));
                             }
                             let path = text(f.child_by_field_name("path")?, src);
                             type_name(path).filter(|t| t.chars().next().is_some_and(char::is_uppercase))
@@ -157,6 +168,7 @@ pub fn analyze(src: &str) -> RustInfo {
         return info;
     };
     let mut stack = vec![tree.root_node()];
+    let mut dup_fns: Vec<String> = Vec::new();
     while let Some(n) = stack.pop() {
         let (s, e) = (n.start_position().row as u32 + 1, n.end_position().row as u32 + 1);
         match n.kind() {
@@ -176,12 +188,43 @@ pub fn analyze(src: &str) -> RustInfo {
                     }
                 }
             }
+            "struct_item" => {
+                if let (Some(name), Some(body)) = (n.child_by_field_name("name"), n.child_by_field_name("body")) {
+                    let mut fields = HashMap::new();
+                    let mut c = body.walk();
+                    for fd in body.named_children(&mut c).filter(|x| x.kind() == "field_declaration") {
+                        if let (Some(fname), Some(t)) = (fd.child_by_field_name("name"), fd.child_by_field_name("type").and_then(|t| type_name(text(t, src)))) {
+                            fields.insert(text(fname, src).to_string(), t);
+                        }
+                    }
+                    info.structs.insert(text(name, src).to_string(), fields);
+                }
+            }
             "impl_item" => {
                 if let Some(t) = n.child_by_field_name("type").and_then(|t| type_name(text(t, src))) {
                     info.impls.push((t, s, e));
                 }
             }
             "function_item" => {
+                let free = n.parent().is_some_and(|p| p.kind() == "source_file" || (p.kind() == "declaration_list" && p.parent().is_some_and(|g| g.kind() == "mod_item")));
+                if let (true, Some(name), Some(rt)) = (free, n.child_by_field_name("name"), n.child_by_field_name("return_type")) {
+                    let ret = type_name(text(rt, src)).filter(|t| t != "Self");
+                    let name = text(name, src).to_string();
+                    match ret {
+                        Some(t) if !dup_fns.contains(&name) && !info.returns.contains_key(&name) => {
+                            info.returns.insert(name, t);
+                        }
+                        _ => {
+                            info.returns.remove(&name);
+                            dup_fns.push(name);
+                        }
+                    }
+                } else if let (true, Some(name)) = (free, n.child_by_field_name("name")) {
+                    // a free function without a declared type that shares a name with a typed one types nothing
+                    let name = text(name, src).to_string();
+                    info.returns.remove(&name);
+                    dup_fns.push(name);
+                }
                 if attrs_above(n, src).iter().any(|a| is_test_attr(a)) {
                     info.tests.push((s, e));
                 }

@@ -1,4 +1,5 @@
 pub mod builtins;
+pub mod decl_types;
 pub mod inherit;
 pub mod js_ctx;
 pub mod module_ctx;
@@ -10,6 +11,8 @@ pub mod vendor;
 pub mod walker;
 #[cfg(test)]
 mod tests_recall;
+#[cfg(test)]
+mod tests_a2;
 use super::{
     BuildOptions, BuildOutput, Capabilities, GraphProvider, ProviderError, ProviderStatus,
 };

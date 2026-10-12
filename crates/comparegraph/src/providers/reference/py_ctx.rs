@@ -41,6 +41,8 @@ pub struct PyInfo {
     pub module_vars: HashMap<String, String>,
     /// function name → class named by its `-> T` annotation
     pub returns: HashMap<String, String>,
+    /// function name → the class of each element of its `-> tuple[A, B]` / `Tuple[A, B]` annotation ("" = not a class)
+    pub tuples: HashMap<String, Vec<String>>,
 }
 
 fn text<'a>(n: Node, src: &'a str) -> &'a str {
@@ -64,6 +66,30 @@ pub fn annotation_type(t: &str) -> Option<String> {
     one = one.split('[').next()?;
     let last = one.rsplit('.').next()?;
     (class_like(last) && last.chars().all(|c| c.is_alphanumeric() || c == '_')).then(|| last.to_string())
+}
+
+/// `tuple[A, B]`, `Tuple[A, B]`, `typing.Tuple[A, B]` → one class name per element ("" for an element that is no class). A `...` makes none.
+pub fn tuple_annotation(t: &str) -> Option<Vec<String>> {
+    let t: String = t.trim().trim_matches(|c| c == '"' || c == '\'').chars().filter(|c| !c.is_whitespace()).collect();
+    let inner = ["tuple[", "Tuple[", "typing.Tuple["].iter().find_map(|p| t.strip_prefix(p))?.strip_suffix(']')?;
+    let (mut parts, mut depth, mut cur) = (vec![], 0i32, String::new());
+    for ch in inner.chars() {
+        match ch {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(std::mem::take(&mut cur));
+                continue;
+            }
+            _ => {}
+        }
+        cur.push(ch);
+    }
+    parts.push(cur);
+    if depth != 0 || parts.iter().any(|p| p == "..." || p.is_empty()) || parts.len() < 2 {
+        return None;
+    }
+    Some(parts.iter().map(|p| annotation_type(p).unwrap_or_default()).collect())
 }
 
 /// `Foo(...)`, `pkg.Foo(...)` → `Foo` (a capitalised callee is a class by convention; `await` and parentheses are looked through).
@@ -181,6 +207,9 @@ fn walk(n: Node, src: &str, info: &mut PyInfo, cx: &Cx) {
             if let (Some(name), Some(ty)) = (n.child_by_field_name("name"), n.child_by_field_name("return_type").and_then(|t| annotation_type(text(t, src)))) {
                 info.returns.entry(text(name, src).to_string()).or_insert(ty);
             }
+            if let (Some(name), Some(els)) = (n.child_by_field_name("name"), n.child_by_field_name("return_type").and_then(|t| tuple_annotation(text(t, src)))) {
+                info.tuples.entry(text(name, src).to_string()).or_insert(els);
+            }
             let inner = Cx { scope: Some(info.scopes.len() - 1), class: cx.class };
             if let Some(ps) = n.child_by_field_name("parameters") {
                 let mut c = ps.walk();
@@ -218,6 +247,17 @@ fn walk(n: Node, src: &str, info: &mut PyInfo, cx: &Cx) {
                 if let (None, "identifier", Some(sc)) = (&ty, left.kind(), cx.scope) {
                     if !info.scopes[sc].globals.iter().any(|g| g == text(left, src)) {
                         info.scopes[sc].vars.entry(text(left, src).to_string()).or_default();
+                    }
+                }
+                // `a, b = pair()`: element i of what `pair` is annotated to return (`()pair#i/n`, settled by the resolver)
+                if matches!(left.kind(), "pattern_list" | "tuple_pattern") {
+                    let mut c = left.walk();
+                    let names: Vec<Node> = left.named_children(&mut c).collect();
+                    let func = ty.as_deref().and_then(|t| t.strip_prefix("()")).filter(|f| !f.contains('#'));
+                    if let (Some(func), true) = (func, names.iter().all(|x| x.kind() == "identifier")) {
+                        for (i, x) in names.iter().enumerate() {
+                            bind(info, cx, text(*x, src), format!("(){func}#{i}/{}", names.len()));
+                        }
                     }
                 }
                 if let Some(ty) = ty {
