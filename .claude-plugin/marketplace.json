@@ -1,0 +1,18 @@
+{
+  "name": "comparegraph",
+  "owner": {
+    "name": "Nicholas Andrea Sujitno"
+  },
+  "metadata": {
+    "description": "CompareGraph: compare cloned repositories against taxonomy packs"
+  },
+  "plugins": [
+    {
+      "name": "comparegraph",
+      "version": "0.1.0",
+      "source": "./",
+      "description": "Skills for the CompareGraph method: add clones, define families, map features, write claims, read the matrix, record decisions.",
+      "category": "development"
+    }
+  ]
+}
