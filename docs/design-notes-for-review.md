@@ -64,3 +64,4 @@ Task 6 (2026-10-12): `typed_receiver_method` resolves `r.m()` from a type declar
 | MCP default `min_confidence` 0.5 includes guessed hops (labelled in evidence) | default 1.0 | recall first, the label says so | an agent that ignores the label |
 | name-only binds (a bare call with no import, a unique-name base class) are capped at 0.5 and never bind a method; a base imported from outside the repo binds nothing | bind at 1.0 | a name match is not a proof | none beyond the lost recall |
 
+| a JS/TS test case node keeps its `calls` edge beside the `tests` edge (as Python `test_*` does) | tests edge only | one rule for every language; `calls` shows what the case runs | callers/impact of a function list test cases (they are test-path nodes) |

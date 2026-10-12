@@ -23,18 +23,38 @@ fn is_callback(n: Node) -> bool {
     matches!(n.kind(), "arrow_function" | "function_expression" | "function")
 }
 
-/// `it`, `test`, `it.only`, `test.skip` → true for a case; `beforeEach` etc. → true for a hook.
-fn runner_kind(call: Node, src: &str) -> bool {
-    let Some(f) = call.child_by_field_name("function") else { return false };
-    let base = match f.kind() {
-        "identifier" => text(f, src),
-        "member_expression" => match f.child_by_field_name("object") {
-            Some(o) if o.kind() == "identifier" => text(o, src),
-            _ => return false,
+#[derive(PartialEq)]
+enum Kind {
+    Case,
+    Hook,
+    Describe,
+    Other,
+}
+
+const CASE_MODIFIERS: &[&str] = &["skip", "only", "todo", "concurrent", "fails"];
+
+/// `it`/`test` (optionally `.skip/.only/.todo/.concurrent/.fails`) is a case; `beforeEach` etc. and `test.beforeEach` a hook;
+/// `describe`, `suite`, `context` and `test.describe` a group; anything else (`test.step`, `expect.…`) is none of them.
+fn classify(call: Node, src: &str) -> Kind {
+    let Some(f) = call.child_by_field_name("function") else { return Kind::Other };
+    let (base, member) = match f.kind() {
+        "identifier" => (text(f, src), None),
+        "member_expression" => match (f.child_by_field_name("object"), f.child_by_field_name("property")) {
+            (Some(o), Some(p)) if o.kind() == "identifier" => (text(o, src), Some(text(p, src))),
+            _ => return Kind::Other,
         },
-        _ => return false,
+        _ => return Kind::Other,
     };
-    CASES.contains(&base) || HOOKS.contains(&base)
+    match (base, member) {
+        (b, None) if CASES.contains(&b) => Kind::Case,
+        (b, Some(m)) if CASES.contains(&b) && CASE_MODIFIERS.contains(&m) => Kind::Case,
+        (b, None) if HOOKS.contains(&b) => Kind::Hook,
+        ("test", Some(m)) if HOOKS.contains(&m) => Kind::Hook,
+        (b, _) if HOOKS.contains(&b) => Kind::Hook,
+        ("describe" | "suite" | "context", _) => Kind::Describe,
+        ("test", Some("describe")) => Kind::Describe,
+        _ => Kind::Other,
+    }
 }
 
 fn type_of_annotation(n: Node, src: &str) -> Option<String> {
@@ -98,6 +118,17 @@ pub struct Case {
 /// The `caller` of a call site made inside case number `i` (see `test_cases`).
 pub const CASE_PREFIX: &str = "\u{0}case:";
 
+/// The caller key of a call made in a case: the case's symbol name and the line its span starts on.
+pub fn case_key(c: &Case) -> String {
+    format!("{CASE_PREFIX}{}:{}", c.line_start, c.name)
+}
+
+/// Split a caller key back into `(line_start, symbol name)`.
+pub fn parse_case_key(caller: &str) -> Option<(u32, &str)> {
+    let (l, n) = caller.strip_prefix(CASE_PREFIX)?.split_once(':')?;
+    Some((l.parse().ok()?, n))
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Who {
     Nobody,
@@ -106,15 +137,6 @@ enum Who {
 }
 
 const TITLE_MAX: usize = 80;
-
-fn base_ident<'a>(call: Node, src: &'a str) -> Option<&'a str> {
-    let f = call.child_by_field_name("function")?;
-    match f.kind() {
-        "identifier" => Some(text(f, src)),
-        "member_expression" => f.child_by_field_name("object").filter(|o| o.kind() == "identifier").map(|o| text(o, src)),
-        _ => None,
-    }
-}
 
 /// The first argument as a plain string (quotes, or a template without substitutions).
 fn title_arg(call: Node, src: &str) -> Option<String> {
@@ -144,7 +166,7 @@ fn collect(n: Node, src: &str, vars: &HashMap<String, String>, who: Who, acc: &m
             if let Some(f) = n.child_by_field_name("function") {
                 if who != Who::Nobody {
                     let caller = match who {
-                        Who::Case(i) => format!("{CASE_PREFIX}{i}"),
+                        Who::Case(i) => case_key(&acc.cases[i]),
                         _ => CALLER_FILE.to_string(),
                     };
                     let (callee, receiver) = if f.kind() == "member_expression" {
@@ -161,14 +183,15 @@ fn collect(n: Node, src: &str, vars: &HashMap<String, String>, who: Who, acc: &m
                         acc.calls.push(CallSite { caller, callee, receiver, line, kind: "calls".into() });
                     }
                 }
-                if runner_kind(n, src) {
-                    let is_case = base_ident(n, src).is_some_and(|b| CASES.contains(&b));
+                let kind = classify(n, src);
+                if kind == Kind::Case || kind == Kind::Hook {
+                    let is_case = kind == Kind::Case;
                     // the callback arguments are test bodies
                     let inner = if is_case {
                         let own = title_arg(n, src).unwrap_or_else(|| "case".into());
                         let mut full = acc.titles.iter().cloned().chain([own]).collect::<Vec<_>>().join(" > ");
                         if full.chars().count() > TITLE_MAX {
-                            full = full.chars().take(TITLE_MAX).collect::<String>().trim_end().to_string();
+                            full = full.chars().take(TITLE_MAX).collect::<String>().trim_end().to_string(); // by chars: UTF-8 safe
                         }
                         acc.cases.push(Case { name: format!("it: {full}"), line_start: line, line_end: n.end_position().row as u32 + 1 });
                         Who::Case(acc.cases.len() - 1)
@@ -189,7 +212,7 @@ fn collect(n: Node, src: &str, vars: &HashMap<String, String>, who: Who, acc: &m
                     return;
                 }
                 // `describe("title", () => { … })` prefixes the titles of the cases inside it
-                if base_ident(n, src).is_some_and(|b| b == "describe" || b == "suite" || b == "context") {
+                if kind == Kind::Describe {
                     acc.titles.push(title_arg(n, src).unwrap_or_default());
                     let mut c = n.walk();
                     for ch in n.named_children(&mut c) {
@@ -205,7 +228,7 @@ fn collect(n: Node, src: &str, vars: &HashMap<String, String>, who: Who, acc: &m
                 let name = text(c, src).rsplit('.').next().unwrap_or("");
                 if name.chars().next().is_some_and(char::is_uppercase) {
                     let caller = match who {
-                        Who::Case(i) => format!("{CASE_PREFIX}{i}"),
+                        Who::Case(i) => case_key(&acc.cases[i]),
                         _ => CALLER_FILE.to_string(),
                     };
                     acc.calls.push(CallSite { caller, callee: name.to_string(), receiver: None, line: n.start_position().row as u32 + 1, kind: "instantiates".into() });

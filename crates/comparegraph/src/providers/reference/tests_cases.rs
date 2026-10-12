@@ -88,3 +88,63 @@ fn a_rust_cfg_test_fn_calling_a_function_yields_a_tests_edge() {
     ]);
     assert!(has(&o, EdgeKind::Tests, "src/lib.rs::parses", "src/lib.rs::parse"), "{:?}", o.edges_by_qn);
 }
+
+fn parsed(path: &str, lang: &str, src: &str, with_cases: bool) -> super::ParsedFile {
+    let r = super::vendor::parse(path, src, lang).unwrap();
+    let mut symbols = r.symbols;
+    if with_cases {
+        symbols.extend(super::js_ctx::test_cases(src, lang).0.into_iter().map(|c| super::vendor::Symbol {
+            name: c.name,
+            kind: super::vendor::SymbolKind::Function,
+            line_start: c.line_start,
+            line_end: c.line_end,
+            signature: None,
+            doc: None,
+        }));
+    }
+    super::ParsedFile { rel_path: path.into(), language: lang.into(), lines: src.lines().map(String::from).collect(), symbols, call_sites: r.call_sites, imports: r.imports }
+}
+
+#[test]
+fn case_calls_bind_by_name_and_line_not_by_position() {
+    let t = "import { parse, other } from './p';\nit('a', () => { parse(1); });\nit('b', () => { other(); });\n";
+    let mut tf = parsed("src/p.test.ts", "typescript", t, true);
+    // reverse the case symbols and put an unrelated symbol after them
+    tf.symbols.reverse();
+    tf.symbols.push(super::vendor::Symbol { name: "tail".into(), kind: super::vendor::SymbolKind::Function, line_start: 9, line_end: 9, signature: None, doc: None });
+    let files = vec![parsed("src/p.ts", "typescript", SRC, false), tf];
+    let e = super::resolve::resolve_edges(&files);
+    let tests = |a: &str, b: &str| e.iter().any(|x| x.0 == EdgeKind::Calls && x.1 == a && x.2 == b);
+    assert!(tests("src/p.test.ts::it: a", "src/p.ts::parse"), "{e:?}");
+    assert!(tests("src/p.test.ts::it: b", "src/p.ts::other"), "{e:?}");
+    assert!(!tests("src/p.test.ts::it: a", "src/p.ts::other"));
+}
+
+#[test]
+fn case_calls_without_case_symbols_make_no_edges() {
+    let t = "import { parse } from './p';\nit('a', () => { parse(1); });\n";
+    let files = vec![parsed("src/p.ts", "typescript", SRC, false), parsed("src/p.test.ts", "typescript", t, false)];
+    let e = super::resolve::resolve_edges(&files);
+    assert!(!e.iter().any(|x| x.0 == EdgeKind::Calls && x.2 == "src/p.ts::parse"), "{e:?}");
+}
+
+#[test]
+fn playwright_test_members_are_not_cases() {
+    let t = "import { parse } from './p';\ntest.describe('grp', () => {\n  test.beforeEach(() => { parse(0); });\n  test('real', async () => {\n    await test.step('s', async () => { parse(1); });\n  });\n  test.skip('skipped', () => { parse(2); });\n});\n";
+    let o = build(&[("src/p.ts", SRC), ("src/p.test.ts", t)]);
+    let names: Vec<_> = o.nodes.iter().filter(|n| n.name.starts_with("it:")).map(|n| n.name.as_str()).collect();
+    assert_eq!(names, vec!["it: grp > real", "it: grp > skipped"], "{names:?}");
+    assert!(has(&o, EdgeKind::Tests, "src/p.test.ts::it: grp > real", "src/p.ts::parse"));
+    assert!(has(&o, EdgeKind::Tests, "src/p.test.ts", "src/p.ts::parse"), "hook call stays file-sourced");
+}
+
+#[test]
+fn multibyte_titles_are_cut_on_a_char_boundary_and_repeated_describes_are_numbered() {
+    let title = "é".repeat(100);
+    let t = format!("import {{ parse }} from './p';\nit('{title}', () => {{ parse(1); }});\ndescribe('d', () => {{ it('x', () => {{ parse(1); }}); }});\ndescribe('d', () => {{ it('x', () => {{ parse(2); }}); }});\n");
+    let o = build(&[("src/p.ts", SRC), ("src/p.test.ts", &t)]);
+    let cut = o.nodes.iter().find(|n| n.name.starts_with("it: é")).expect("multibyte case");
+    assert_eq!(cut.name.chars().count(), 4 + 80);
+    assert!(o.nodes.iter().any(|n| n.qualified_name == "src/p.test.ts::it: d > x"));
+    assert!(o.nodes.iter().any(|n| n.qualified_name == "src/p.test.ts::it: d > x#2"));
+}
