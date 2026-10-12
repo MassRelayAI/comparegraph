@@ -1,6 +1,7 @@
 pub mod builtins;
 pub mod inherit;
 pub mod js_ctx;
+pub mod module_ctx;
 pub mod py_ctx;
 pub mod resolve;
 pub mod rust_ctx;
@@ -285,7 +286,8 @@ impl GraphProvider for ReferenceProvider {
                 line_end: n_lines.max(1),
                 content_hash: content_hash(&refs),
                 language: pf.language.clone(),
-                provider_ref: None,
+                // the marker `graph::is_entry_file` reads: a script that runs its own code
+                provider_ref: (pf.language == "python" && module_ctx::has_main_guard(&pf.lines)).then(|| "entry-file".to_string()),
             });
             // vendored Symbol lines are already 1-based (tree-sitter row + 1)
             for (s, qn) in pf.symbols.iter().zip(resolve::qualified_names(pf)) {

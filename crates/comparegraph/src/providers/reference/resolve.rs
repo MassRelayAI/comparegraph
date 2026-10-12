@@ -429,9 +429,20 @@ impl PyCall<'_> {
         if matches!(recv, "self" | "cls" | "super") || !recv.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
             return None;
         }
-        let caller = f.symbols.iter().find(|s| s.name == c.caller)?;
+        let caller = f.symbols.iter().find(|s| s.name == c.caller);
+        if caller.is_none() && c.caller != js_ctx::CALLER_FILE {
+            return None;
+        }
         // a class named in the file or imported (`Foo(...).m()` chained on a constructor, `K.static()`), else a variable of declared type
-        let ty = if py_ctx::class_like(recv) { Some(recv.to_string()) } else { self.var_type(info, caller, recv) };
+        // (a module-level call sees only the module's own variables)
+        let ty = if py_ctx::class_like(recv) {
+            Some(recv.to_string())
+        } else {
+            match caller {
+                Some(caller) => self.var_type(info, caller, recv),
+                None => info.module_vars.get(recv).cloned(),
+            }
+        };
         // `x = make(...)` where `make` is annotated `-> Foo`: x is a Foo
         let ty = match ty.as_deref().and_then(|t| t.strip_prefix("()")) {
             Some(func) => self.returned_class(fi, info, func),
@@ -623,6 +634,11 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             }
         }
     }
+    let fn_qns: std::collections::HashSet<&str> = files
+        .iter()
+        .zip(&qns)
+        .flat_map(|(f, q)| f.symbols.iter().zip(q).filter(|(s, _)| matches!(s.kind, SymbolKind::Function | SymbolKind::Method)).map(|(_, qn)| qn.as_str()))
+        .collect();
     let py: Vec<Option<PyInfo>> = files
         .iter()
         .map(|f| (f.language == "python").then(|| py_ctx::analyze(&f.lines.join("\n"))))
@@ -668,8 +684,10 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             .collect();
         // the calls in `it(...)` / `test(...)` bodies belong to no symbol: they are the test file's own (item: tests, not calls)
         let case_calls = if super::is_test_path(&f.rel_path) { js_ctx::test_case_calls(&f.lines.join("\n"), &f.language) } else { vec![] };
+        // calls and table references outside any function body: the file is the caller
+        let module_calls = super::module_ctx::module_calls(&f.lines.join("\n"), &f.language);
         let edges_before = out.len();
-        for c in f.call_sites.iter().chain(&case_calls) {
+        for c in f.call_sites.iter().chain(&case_calls).chain(&module_calls) {
             let caller_qn: &String = if c.caller == js_ctx::CALLER_FILE {
                 &f.rel_path
             } else if let Some(q) = local.get(c.caller.as_str()) {
@@ -678,6 +696,15 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 continue;
             };
             let recv = c.receiver.as_deref();
+            // a table reference names a function: bound only through an import or in this file, never by a name guess
+            if c.kind == "refs" {
+                let imported = imports.iter().filter(|(imp, targets)| !targets.is_empty() && imp.specifiers.contains(&c.callee)).find_map(|(_, targets)| symbol_in(targets, &file_syms, &c.callee));
+                let hit = imported.or_else(|| local.get(c.callee.as_str()).map(|t| ((*t).clone(), local_counts[c.callee.as_str()] == 1)));
+                if let Some((t, true)) = hit.filter(|(t, _)| fn_qns.contains(t.as_str())) {
+                    out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
+                }
+                continue;
+            }
             if let Some(info) = &rust[fi] {
                 let rc = RustCall { files, qns: &qns, rust: &rust, file_set: &file_set, cm: &cm, file_syms: &file_syms };
                 if let Some(t) = rc.resolve(fi, info, c) {
@@ -796,7 +823,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         }
         let tail: Vec<_> = out.drain(edges_before..).collect();
         out.extend(tail.into_iter().filter_map(|mut e| {
-            if e.0 == EdgeKind::Calls && e.1 == f.rel_path {
+            if e.0 == EdgeKind::Calls && e.1 == f.rel_path && super::is_test_path(&f.rel_path) {
                 // a test file calling another test file's helper tests nothing
                 if super::is_test_path(e.2.split("::").next().unwrap_or("")) {
                     return None;

@@ -168,6 +168,87 @@ pub fn test_case_calls(src: &str, language: &str) -> Vec<CallSite> {
     out
 }
 
+const FUNCTION_LIKE: &[&str] = &["function_declaration", "generator_function_declaration", "method_definition", "function_expression", "function", "generator_function", "arrow_function"];
+
+fn module_collect(n: Node, src: &str, vars: &HashMap<String, String>, out: &mut Vec<CallSite>) {
+    let line = n.start_position().row as u32 + 1;
+    match n.kind() {
+        // a function body belongs to the function (or to nobody, when it is an anonymous callback)
+        k if FUNCTION_LIKE.contains(&k) => return,
+        "import_statement" | "type_alias_declaration" | "interface_declaration" => return,
+        "call_expression" => {
+            if let Some(f) = n.child_by_field_name("function") {
+                let (callee, receiver) = match f.kind() {
+                    "member_expression" => (
+                        f.child_by_field_name("property").map(|p| text(p, src).to_string()),
+                        f.child_by_field_name("object").map(|o| extract_receiver_name(o, src)),
+                    ),
+                    "identifier" => (Some(text(f, src).to_string()), None),
+                    _ => (None, None),
+                };
+                let on_runner = receiver.as_deref().is_some_and(|r| RUNNER.contains(&r));
+                if let Some(callee) = callee.filter(|c| !on_runner && !RUNNER.contains(&c.as_str()) && c.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '$')) {
+                    let receiver = receiver.map(|r| vars.get(&r).cloned().unwrap_or(r));
+                    out.push(CallSite { caller: CALLER_FILE.into(), callee, receiver, line, kind: "calls".into() });
+                }
+            }
+        }
+        "new_expression" => {
+            if let Some(c) = n.child_by_field_name("constructor") {
+                let name = text(c, src).rsplit('.').next().unwrap_or("");
+                if name.chars().next().is_some_and(char::is_uppercase) && name.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '$') {
+                    out.push(CallSite { caller: CALLER_FILE.into(), callee: name.to_string(), receiver: None, line, kind: "instantiates".into() });
+                }
+            }
+        }
+        // module tables: `{ data: onData }`, `{ onData }`, `[a, b]` name functions by a bare identifier
+        "object" => {
+            let mut c = n.walk();
+            for p in n.named_children(&mut c) {
+                let v = match p.kind() {
+                    "pair" => p.child_by_field_name("value").filter(|v| v.kind() == "identifier"),
+                    "shorthand_property_identifier" => Some(p),
+                    _ => None,
+                };
+                if let Some(v) = v {
+                    out.push(CallSite { caller: CALLER_FILE.into(), callee: text(v, src).to_string(), receiver: None, line: v.start_position().row as u32 + 1, kind: "refs".into() });
+                }
+            }
+        }
+        "array" => {
+            let mut c = n.walk();
+            for v in n.named_children(&mut c).filter(|v| v.kind() == "identifier") {
+                out.push(CallSite { caller: CALLER_FILE.into(), callee: text(v, src).to_string(), receiver: None, line: v.start_position().row as u32 + 1, kind: "refs".into() });
+            }
+        }
+        _ => {}
+    }
+    let mut c = n.walk();
+    for ch in n.named_children(&mut c) {
+        module_collect(ch, src, vars, out);
+    }
+}
+
+/// Call sites and table references outside any function body (see `module_ctx`), attributed to the file.
+pub fn module_calls(src: &str, language: &str) -> Vec<CallSite> {
+    let lang: tree_sitter::Language = match language {
+        "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
+        "javascript" | "jsx" | "mjs" => tree_sitter_javascript::LANGUAGE.into(),
+        _ => return vec![],
+    };
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&lang).is_err() {
+        return vec![];
+    }
+    let Some(tree) = parser.parse(src, None) else { return vec![] };
+    let root = tree.root_node();
+    let vars = var_types(root, src);
+    let mut out = Vec::new();
+    module_collect(root, src, &vars, &mut out);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
