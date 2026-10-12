@@ -69,7 +69,8 @@ pub fn tools() -> Vec<Value> {
             "depth": {"type":"integer","minimum":1,"maximum":10}, "max_nodes": {"type":"integer","minimum":1,"maximum":2000},
             "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
         tool("comparegraph_tests_for", "Tests linked to a symbol directly or through at most 3 call hops.", schema(json!({
-            "repo": {"type":"string"}, "qualified_name": {"type":"string"}, "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo", "qualified_name"])),
+            "repo": {"type":"string"}, "qualified_name": {"type":"string"}, "max_nodes": {"type":"integer","minimum":1,"maximum":2000},
+            "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo", "qualified_name"])),
         tool("comparegraph_entry_points", "Symbols nothing calls that are exported, handler-named or main. Paged.", schema(json!({
             "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500}, "cursor": {"type":"string"},
             "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
@@ -133,7 +134,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         "comparegraph_impact" => &[
             "repo", "qualified_name", "files", "depth", "max_nodes", "min_confidence",
         ],
-        "comparegraph_tests_for" => &["repo", "qualified_name", "min_confidence"],
+        "comparegraph_tests_for" => &["repo", "qualified_name", "max_nodes", "min_confidence"],
         "comparegraph_entry_points" | "comparegraph_dead_code" => {
             &["repo", "limit", "cursor", "min_confidence"]
         }
@@ -202,6 +203,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         "comparegraph_tests_for" => Cmd::TestsFor {
             repo: req(a, "repo")?,
             qualified_name: req(a, "qualified_name")?,
+            max_nodes: uint_arg(a, "max_nodes", 200)?,
             min_confidence: conf_arg(a)?,
         },
         "comparegraph_entry_points" => Cmd::EntryPoints {

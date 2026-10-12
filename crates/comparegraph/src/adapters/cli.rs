@@ -110,6 +110,8 @@ pub enum Cmd {
     TestsFor {
         repo: String,
         qualified_name: String,
+        #[arg(long, default_value_t = 200)]
+        max_nodes: usize,
         #[arg(long, default_value_t = 0.5)]
         min_confidence: f64,
     },
@@ -519,8 +521,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         Cmd::TestsFor {
             repo,
             qualified_name,
+            max_nodes,
             min_confidence,
-        } => g::tests_for(&cli.root, repo, qualified_name, *min_confidence)?,
+        } => g::tests_for(&cli.root, repo, qualified_name, *max_nodes, *min_confidence)?,
         Cmd::EntryPoints {
             repo,
             limit,

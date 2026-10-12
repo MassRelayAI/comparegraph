@@ -228,7 +228,12 @@ pub fn inherit_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                     }
                 }
             }
-            if hit.is_none() {
+            // a base imported from outside the repo is external, whatever a same-named repo class is
+            let external = hit.is_none()
+                && f.imports.iter().any(|i| {
+                    i.specifiers.contains(&r.base) && resolve_import_target(&f.rel_path, &i.source, &file_set).is_none()
+                });
+            if hit.is_none() && !external {
                 if let Some([(qn, k)]) = by_name.get(r.base.as_str()).map(Vec::as_slice) {
                     hit = Some((qn.clone(), k, 0.5));
                 }
@@ -273,6 +278,14 @@ mod tests {
         (k, a.into(), b.into(), c)
     }
 
+    #[test]
+    fn external_imported_base_is_not_bound_to_a_same_named_repo_class() {
+        let got = edges(&[
+            ("pkg/model.py", "class Model:\n    pass\n"),
+            ("pkg/mine.py", "from django.db import Model\n\nclass Mine(Model):\n    pass\n"),
+        ]);
+        assert!(got.is_empty(), "{got:?}");
+    }
     #[test]
     fn python_imported_base_is_extends_and_external_base_is_dropped() {
         let got = edges(&[

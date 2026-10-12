@@ -131,6 +131,22 @@ fn a_wide_impact_is_cut_at_max_nodes_and_says_so() {
 }
 
 #[test]
+fn tests_for_honours_max_nodes_and_says_so() {
+    let mut t = String::from("from src.wide import target\n");
+    for i in 0..30 {
+        t.push_str(&format!("\ndef test_c{i}():\n    target()\n"));
+    }
+    let (ws, _c) = ws_with(&[("src/wide.py", "def target():\n    pass\n"), ("tests/test_wide.py", &t)]);
+    let v = json(cc(ws.path()).args(["tests-for", "r", "src/wide.py::target", "--max-nodes", "5"]).assert().success());
+    assert_eq!(v["data"]["truncated"], true);
+    assert!(codes(&v).contains(&"truncated".to_string()));
+    let full = json(cc(ws.path()).args(["tests-for", "r", "src/wide.py::target"]).assert().success());
+    assert_eq!(full["data"]["truncated"], false);
+    assert!(!codes(&full).contains(&"truncated".to_string()));
+    cc(ws.path()).args(["tests-for", "r", "src/wide.py::target", "--max-nodes", "9999"]).assert().failure();
+}
+
+#[test]
 fn impact_by_file_follows_imports_and_lists_the_tests() {
     let (ws, _c) = ws_with(&[("src/app.py", APP), ("tests/test_app.py", TEST_APP)]);
     let v = json(

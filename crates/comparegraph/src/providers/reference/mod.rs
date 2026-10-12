@@ -94,7 +94,8 @@ impl GraphProvider for ReferenceProvider {
         "reference"
     }
     fn version(&self) -> String {
-        env!("CARGO_PKG_VERSION").to_string()
+        // the vendored parser's hash is part of the cache key: a parser change with the same crate version must not reuse old parses
+        format!("{}+{}", env!("CARGO_PKG_VERSION"), env!("COMPAREGRAPH_PARSER_HASH"))
     }
     fn detect(&self) -> ProviderStatus {
         ProviderStatus {

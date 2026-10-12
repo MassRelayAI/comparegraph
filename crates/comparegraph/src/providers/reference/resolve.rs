@@ -219,7 +219,58 @@ fn class_method(f: &ParsedFile, q: &[String], caller: &str, callee: &str) -> Opt
         .map(|(_, qn)| qn.clone())
 }
 
-/// `r.m()` where the caller's own lines declare `r` with a class type (`Square r`, `r: Square`, `r = new Square(`): the method `callee`
+/// The class a declaration in `text` gives `recv`: `recv: Type`, `recv?: Type`, `recv = new Type(`, `recv = Type(`, or (Java/C#) `Type recv` followed by `=`, `;`, `,` or `)`.
+/// An argument next to a constructor (`new Wrapper(inner)`) is none of these.
+fn declared_type<'a>(text: &'a str, recv: &str) -> Option<&'a str> {
+    let is_id = |c: char| c.is_alphanumeric() || c == '_';
+    let upper = |t: &str| t.chars().next().is_some_and(char::is_uppercase);
+    let ident_at = |from: usize| -> &'a str {
+        let rest = &text[from..];
+        let end = rest.find(|c: char| !is_id(c)).unwrap_or(rest.len());
+        &rest[..end]
+    };
+    let mut start = 0;
+    while let Some(off) = text[start..].find(recv) {
+        let i = start + off;
+        let j = i + recv.len();
+        start = j;
+        if text[..i].chars().next_back().is_some_and(|c| is_id(c) || c == '.') || text[j..].chars().next().is_some_and(is_id) {
+            continue;
+        }
+        let after = text[j..].trim_start_matches([' ', '\t']);
+        // `recv: Type` / `recv?: Type`
+        if let Some(r) = after.strip_prefix("?:").or_else(|| after.strip_prefix(':')) {
+            let r = r.trim_start();
+            let t = ident_at(text.len() - r.len());
+            if upper(t) {
+                return Some(t);
+            }
+        }
+        // `recv = new Type(` / `recv = Type(`
+        if let Some(r) = after.strip_prefix('=').filter(|r| !r.starts_with('=')) {
+            let r = r.trim_start();
+            let r = r.strip_prefix("new ").map_or(r, str::trim_start);
+            let t = ident_at(text.len() - r.len());
+            if upper(t) && r[t.len()..].trim_start().starts_with('(') {
+                return Some(t);
+            }
+        }
+        // `Type recv` then `=`, `;`, `,` or `)`
+        if after.starts_with(['=', ';', ',', ')']) && !after.starts_with("==") {
+            let before = text[..i].trim_end_matches([' ', '\t']);
+            if before.len() < i {
+                let t_start = before.rfind(|c: char| !is_id(c)).map_or(0, |k| k + 1);
+                let t = &before[t_start..];
+                if upper(t) {
+                    return Some(t);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `r.m()` where the caller's own lines declare `r` with a class type (see `declared_type`): the method `callee`
 /// inside that class, wherever the class lives. A declared type only; no inference.
 fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFile, caller: &str, recv: &str, callee: &str) -> Option<String> {
     if !recv.chars().all(|c| c.is_alphanumeric() || c == '_') || recv.chars().next().is_none_or(char::is_uppercase) {
@@ -229,20 +280,7 @@ fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFi
     let lo = (c.line_start as usize).saturating_sub(1);
     let hi = (c.line_end as usize).min(f.lines.len());
     let text = f.lines.get(lo..hi)?.join("\n");
-    let toks: Vec<&str> = text
-        .split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
-        .filter(|t| !t.is_empty())
-        .collect();
-    let ty = toks.windows(2).find_map(|w| {
-        // `Type recv` (Java, Go-style `recv Type` handled below) and `recv Type` / `recv: Type`
-        if w[1] == recv && w[0].chars().next().is_some_and(char::is_uppercase) {
-            Some(w[0])
-        } else if w[0] == recv && w[1].chars().next().is_some_and(char::is_uppercase) {
-            Some(w[1])
-        } else {
-            None
-        }
-    })?;
+    let ty = declared_type(&text, recv)?;
     for (g, q) in files.iter().zip(qns) {
         if g.language != f.language {
             continue;
@@ -557,7 +595,7 @@ impl RustCall<'_> {
 pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
     let file_set: HashMap<String, ()> = files.iter().map(|f| (f.rel_path.clone(), ())).collect();
     // name → (qn, duplicates_in_that_file)
-    let mut by_name: HashMap<&str, Vec<(String, bool, &str)>> = HashMap::new();
+    let mut by_name: HashMap<&str, Vec<(String, bool, &str, bool)>> = HashMap::new();
     let mut out = Vec::new();
     let qns: Vec<Vec<String>> = files.iter().map(qualified_names).collect();
     // file → name → (first qn, name unique in that file)
@@ -581,7 +619,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 by_name
                     .entry(s.name.as_str())
                     .or_default()
-                    .push((qn.clone(), counts[s.name.as_str()] > 1, lang_family(&f.language)));
+                    .push((qn.clone(), counts[s.name.as_str()] > 1, lang_family(&f.language), matches!(s.kind, SymbolKind::Method)));
             }
         }
     }
@@ -747,19 +785,13 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             if shadowed_callee || builtins::is_builtin(fam, &c.callee) {
                 continue;
             }
-            let cands: Vec<&(String, bool, &str)> = by_name
+            let cands: Vec<&(String, bool, &str, bool)> = by_name
                 .get(c.callee.as_str())
-                .map(|v| v.iter().filter(|e| e.2 == fam).collect())
+                .map(|v| v.iter().filter(|e| e.2 == fam && !e.3).collect())
                 .unwrap_or_default();
-            match cands.as_slice() {
-                [(t, dup, _)] => out.push((
-                    EdgeKind::Calls,
-                    caller_qn.clone(),
-                    t.clone(),
-                    if *dup { 0.5 } else { 1.0 },
-                )),
-                [first, ..] => out.push((EdgeKind::Calls, caller_qn.clone(), first.0.clone(), 0.5)),
-                [] => {}
+            // a name-only rule never yields 1.0
+            if let Some(first) = cands.first() {
+                out.push((EdgeKind::Calls, caller_qn.clone(), first.0.clone(), 0.5));
             }
         }
         let tail: Vec<_> = out.drain(edges_before..).collect();
@@ -1075,6 +1107,50 @@ mod tests {
     fn calls_of(e: &[(EdgeKind, String, String, f64)]) -> Vec<&(EdgeKind, String, String, f64)> {
         e.iter().filter(|x| x.0 == EdgeKind::Calls).collect()
     }
+    fn with_lines(mut p: ParsedFile, lines: &[&str]) -> ParsedFile {
+        p.lines = lines.iter().map(|l| l.to_string()).collect();
+        p
+    }
+    fn wrapper_file(l: &str, path: &str) -> ParsedFile {
+        lang(pf(path, vec![span("Wrapper", SymbolKind::Class, 1, 4), span("run", SymbolKind::Method, 2, 3)], vec![], vec![]), l)
+    }
+    #[test]
+    fn argument_next_to_a_constructor_is_not_a_declared_type() {
+        let a = with_lines(
+            lang(pf("a.ts", vec![span("go", SymbolKind::Function, 1, 3)], vec![call("go", "run", Some("inner"))], vec![]), "typescript"),
+            &["function go(inner: any){", "  const w = new Wrapper(inner); inner.run();", "}"],
+        );
+        let e = resolve_edges(&[a, wrapper_file("typescript", "b.ts")]);
+        assert!(calls_of(&e).is_empty(), "{e:?}");
+    }
+    #[test]
+    fn real_declaration_shapes_still_type_the_receiver() {
+        let cases: [(&str, &str, &str, &str); 5] = [
+            ("typescript", "a.ts", "function go(w: Wrapper){", "  w.run();"),
+            ("typescript", "a.ts", "function go(){", "  const w = new Wrapper(1); w.run();"),
+            ("python", "a.py", "def go(w: Wrapper):", "    w.run()"),
+            ("python", "a.py", "def go():", "    w = Wrapper(1); w.run()"),
+            ("java", "A.java", "void go() {", "  Wrapper w = make(); w.run();"),
+        ];
+        for (l, path, l1, l2) in cases {
+            let a = with_lines(
+                lang(pf(path, vec![span("go", SymbolKind::Function, 1, 3)], vec![call("go", "run", Some("w"))], vec![]), l),
+                &[l1, l2, "}"],
+            );
+            let b = wrapper_file(l, &format!("w/{path}"));
+            let e = resolve_edges(&[a, b]);
+            assert!(has_call(&e, &format!("{path}::go"), &format!("w/{path}::run"), 1.0), "{l1} {l2}: {e:?}");
+        }
+    }
+    #[test]
+    fn repo_wide_bare_name_bind_is_half_confidence_and_never_a_method() {
+        let a = lang(pf("a.ts", vec![sym("f", 1)], vec![call("f", "helper", None), call("f", "area", None)], vec![]), "typescript");
+        let b = lang(pf("b.ts", vec![sym("helper", 1)], vec![], vec![]), "typescript");
+        let c = lang(pf("c.ts", vec![span("Sq", SymbolKind::Class, 1, 4), span("area", SymbolKind::Method, 2, 3)], vec![], vec![]), "typescript");
+        let e = resolve_edges(&[a, b, c]);
+        assert!(has_call(&e, "a.ts::f", "b.ts::helper", 0.5), "{e:?}");
+        assert_eq!(calls_of(&e).len(), 1, "{e:?}");
+    }
     #[test]
     fn unknown_receiver_method_call_writes_no_edge() {
         let a = lang(pf("a.py", vec![sym("run", 1)], vec![call("run", "get", Some("x"))], vec![]), "python");
@@ -1091,7 +1167,7 @@ mod tests {
         let b = lang(pf("b.py", vec![sym("len", 1), sym("print", 5), sym("helper", 9)], vec![], vec![]), "python");
         let e = resolve_edges(&[a, b]);
         assert_eq!(calls_of(&e).len(), 1, "{e:?}");
-        assert!(has_call(&e, "a.py::run", "b.py::helper", 1.0));
+        assert!(has_call(&e, "a.py::run", "b.py::helper", 0.5));
     }
     #[test]
     fn rust_std_method_names_do_not_bind_across_files() {
@@ -1146,7 +1222,7 @@ mod tests {
         let mut c = pf("lib/x.py", vec![sym("fetchRows", 1)], vec![], vec![]);
         c.language = "python".into();
         let e = resolve_edges(&[a, b, c]);
-        assert!(has_call(&e, "src/a.ts::f", "assets/d3.js::fetchRows", 1.0), "{e:?}");
+        assert!(has_call(&e, "src/a.ts::f", "assets/d3.js::fetchRows", 0.5), "{e:?}");
         assert!(!e.iter().any(|x| x.0 == EdgeKind::Calls && x.2 == "lib/x.py::fetchRows"));
     }
     #[test]

@@ -417,11 +417,11 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
     ))
 }
 
-pub fn tests_for(root: &Path, repo: &str, qn: &str, min_conf: f64) -> Result<Value> {
-    check_conf(min_conf)?;
+pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: f64) -> Result<Value> {
+    check_bounds(1, max_nodes, min_conf)?;
     let c = load(root, repo)?;
     let start = c.node(qn)?;
-    let (v, truncated) = bfs(&c, &[start], Direction::Callers, &[EdgeKind::Calls], min_conf, 3, 200);
+    let (v, truncated) = bfs(&c, &[start], Direction::Callers, &[EdgeKind::Calls], min_conf, 3, max_nodes);
     let mut found: HashMap<String, Value> = HashMap::new();
     let mut put = |id: i64, hop: usize, conf: f64, link: &str| {
         let n = &c.nodes[&id];
@@ -479,7 +479,7 @@ pub fn tests_for(root: &Path, repo: &str, qn: &str, min_conf: f64) -> Result<Val
     Ok(answer(
         json!({ "repo": c.repo, "symbol": qn, "items": items, "total": total, "truncated": truncated }),
         guessed,
-        limitations(truncated, 200, guessed),
+        limitations(truncated, max_nodes, guessed),
         "",
     ))
 }
