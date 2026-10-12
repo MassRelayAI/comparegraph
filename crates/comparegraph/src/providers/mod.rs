@@ -1,4 +1,9 @@
 pub mod reference;
+
+/// The `provider_ref` of a FILE node whose module-level code runs on its own (a Python script with an `if __name__ == "__main__":`
+/// guard). The provider writes it; `application::graph` reads it to let a module-level call from that file rescue a callee in
+/// dead-code and entry-points. Any other file node has no `provider_ref`.
+pub const ENTRY_FILE_REF: &str = "entry-file";
 use crate::domain::{EdgeKind, Limitation, Node};
 use std::path::Path;
 

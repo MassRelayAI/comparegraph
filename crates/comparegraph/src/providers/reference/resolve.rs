@@ -1,4 +1,5 @@
 use super::builtins;
+use super::decl_types::{self, TsDecls};
 use super::js_ctx;
 use super::py_ctx::{self, PyInfo};
 use super::rust_ctx::{self, RustInfo};
@@ -303,6 +304,75 @@ fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFi
     None
 }
 
+/// The symbol a call site sits in: the smallest symbol of the caller's name whose lines contain the call (two classes may both have a `render`).
+fn caller_at<'a>(f: &'a ParsedFile, c: &CallSite) -> Option<&'a vendor::Symbol> {
+    f.symbols.iter().filter(|s| s.name == c.caller && s.line_start <= c.line && c.line <= s.line_end).min_by_key(|s| s.line_end - s.line_start)
+}
+
+/// The file holding class `ty` as file `gi` means it: defined there, else brought in by one of its imports. An unresolved name is none.
+fn declared_class_home(files: &[ParsedFile], file_set: &HashMap<String, ()>, gi: usize, ty: &str) -> Option<usize> {
+    let has = |i: usize| files[i].symbols.iter().any(|s| s.name == ty && matches!(s.kind, SymbolKind::Class));
+    if has(gi) {
+        return Some(gi);
+    }
+    let g = &files[gi];
+    g.imports
+        .iter()
+        .filter(|i| i.specifiers.iter().any(|s| s == ty))
+        .flat_map(|i| import_files(&g.rel_path, i, file_set))
+        .find_map(|t| files.iter().position(|h| h.rel_path == t).filter(|h| has(*h)))
+}
+
+/// `this.<recv>.<callee>()` as the syntax tree sees it: the declared type of the field in the smallest class holding the call line.
+fn field_type(d: &TsDecls, recv: &str, c: &CallSite) -> Option<String> {
+    d.member_calls.iter().find(|m| m.0 == c.line && m.1 == recv && m.2 == c.callee)?;
+    let class = d.classes.iter().filter(|k| k.start <= c.line && c.line <= k.end).min_by_key(|k| k.end - k.start)?;
+    class.fields.get(recv).cloned()
+}
+
+/// `const x = make(); x.m()`: the declared return type of `make` (this file, else the file an import of `make` points to) and the
+/// file whose imports must resolve that type name. A local declaration named `make` hides an imported one.
+fn local_return_type(files: &[ParsedFile], file_set: &HashMap<String, ()>, ts: &[Option<TsDecls>], fi: usize, recv: &str, caller: &vendor::Symbol) -> Option<(String, usize)> {
+    let (f, d) = (&files[fi], ts[fi].as_ref()?);
+    let mut locals = d.locals.iter().filter(|l| l.1 == recv && caller.line_start <= l.0 && l.0 <= caller.line_end);
+    let func = &locals.next()?.2;
+    if locals.any(|l| &l.2 != func) {
+        return None;
+    }
+    if let Some(t) = d.returns.get(func) {
+        return Some((t.clone(), fi));
+    }
+    if d.untyped.iter().any(|u| &u.1 == func && (u.2 || (caller.line_start <= u.0 && u.0 <= caller.line_end))) {
+        return None;
+    }
+    f.imports.iter().filter(|i| i.specifiers.iter().any(|s| s == func)).flat_map(|i| import_files(&f.rel_path, i, file_set)).find_map(|t| {
+        let gi = files.iter().position(|h| h.rel_path == t)?;
+        Some((ts[gi].as_ref()?.returns.get(func)?.clone(), gi))
+    })
+}
+
+/// `this.reader.read()` / `x.read()` (JS/TS) where the type comes from a DECLARATION: a class field (`private reader: Reader;`,
+/// `reader = new Reader()`, a constructor parameter property) or the declared return type of the function `x = make()` called.
+/// Never inferred from a body; a type that does not resolve to a class of the repo types nothing.
+fn declared_member_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &HashMap<String, ()>, ts: &[Option<TsDecls>], fi: usize, c: &CallSite) -> Option<String> {
+    let (f, recv) = (&files[fi], c.receiver.as_deref()?);
+    let d = ts[fi].as_ref()?;
+    let caller = caller_at(f, c)?;
+    let (ty, def) = match field_type(d, recv, c) {
+        Some(t) => (t, fi),
+        None if d.member_calls.iter().any(|m| m.0 == c.line && m.1 == recv && m.2 == c.callee) => return None,
+        None => local_return_type(files, file_set, ts, fi, recv, caller)?,
+    };
+    let gi = declared_class_home(files, file_set, def, &ty)?;
+    let g = &files[gi];
+    let class = g.symbols.iter().find(|s| s.name == ty && matches!(s.kind, SymbolKind::Class))?;
+    g.symbols
+        .iter()
+        .zip(&qns[gi])
+        .find(|(s, _)| s.name == c.callee && !matches!(s.kind, SymbolKind::Class) && class.line_start <= s.line_start && s.line_end <= class.line_end)
+        .map(|(_, qn)| qn.clone())
+}
+
 /// `Foo.bar()` where `Foo` is a class defined in the repo (same language): the method `callee` inside it, only when unique.
 fn static_class_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFile, recv: &str, callee: &str) -> Option<String> {
     if !recv.chars().next().is_some_and(char::is_uppercase) || !recv.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -384,17 +454,31 @@ impl PyCall<'_> {
         hits.next().is_none().then(|| (first, ty.to_string()))
     }
 
+    /// The file and real name of a function imported into file `fi` under the name `func` (`from m import f as func`).
+    fn imported_fn(&self, fi: usize, info: &PyInfo, func: &str) -> Option<(usize, String)> {
+        let imp = info.imports.iter().find(|i| i.alias == func && i.name.is_some())?;
+        let real = imp.name.as_deref()?;
+        let gi = self.module_files(&self.files[fi].rel_path, &imp.module, None).iter().find_map(|t| self.files.iter().position(|g| &g.rel_path == t))?;
+        Some((gi, real.to_string()))
+    }
+
     /// The class a function is annotated to return: defined in this file, or imported (alias or not).
     fn returned_class(&self, fi: usize, info: &PyInfo, func: &str) -> Option<String> {
         if let Some(t) = info.returns.get(func) {
             return Some(t.clone());
         }
-        let imp = info.imports.iter().find(|i| i.alias == func && i.name.is_some())?;
-        let real = imp.name.as_deref()?;
-        self.module_files(&self.files[fi].rel_path, &imp.module, None)
-            .iter()
-            .find_map(|t| self.files.iter().position(|g| &g.rel_path == t))
-            .and_then(|gi| self.py[gi].as_ref()?.returns.get(real).cloned())
+        let (gi, real) = self.imported_fn(fi, info, func)?;
+        self.py[gi].as_ref()?.returns.get(&real).cloned()
+    }
+
+    /// Element `ix` of `n` of what `func` is annotated to return as a tuple (this file, or imported).
+    fn returned_tuple_class(&self, fi: usize, info: &PyInfo, func: &str, ix: usize, n: usize) -> Option<String> {
+        let pick = |els: &Vec<String>| (els.len() == n).then(|| els.get(ix).cloned()).flatten().filter(|t| !t.is_empty());
+        if let Some(els) = info.tuples.get(func) {
+            return pick(els);
+        }
+        let (gi, real) = self.imported_fn(fi, info, func)?;
+        self.py[gi].as_ref()?.tuples.get(&real).and_then(pick)
     }
 
     /// Is `recv` a local (or parameter) of the caller, hiding any import of the same name?
@@ -429,12 +513,29 @@ impl PyCall<'_> {
         if matches!(recv, "self" | "cls" | "super") || !recv.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
             return None;
         }
-        let caller = f.symbols.iter().find(|s| s.name == c.caller)?;
+        let caller = f.symbols.iter().find(|s| s.name == c.caller);
+        if caller.is_none() && c.caller != js_ctx::CALLER_FILE {
+            return None;
+        }
         // a class named in the file or imported (`Foo(...).m()` chained on a constructor, `K.static()`), else a variable of declared type
-        let ty = if py_ctx::class_like(recv) { Some(recv.to_string()) } else { self.var_type(info, caller, recv) };
+        // (a module-level call sees only the module's own variables)
+        let ty = if py_ctx::class_like(recv) {
+            Some(recv.to_string())
+        } else {
+            match caller {
+                Some(caller) => self.var_type(info, caller, recv),
+                None => info.module_vars.get(recv).cloned(),
+            }
+        };
         // `x = make(...)` where `make` is annotated `-> Foo`: x is a Foo
         let ty = match ty.as_deref().and_then(|t| t.strip_prefix("()")) {
-            Some(func) => self.returned_class(fi, info, func),
+            Some(func) => match func.split_once('#') {
+                Some((func, at)) => at
+                    .split_once('/')
+                    .and_then(|(i, n)| Some((i.parse().ok()?, n.parse().ok()?)))
+                    .and_then(|(i, n)| self.returned_tuple_class(fi, info, func, i, n)),
+                None => self.returned_class(fi, info, func),
+            },
             None => ty,
         };
         if let Some(ty) = ty {
@@ -536,9 +637,43 @@ impl RustCall<'_> {
         homes.next().is_none().then(|| (home, last.clone()))
     }
 
+    /// The type a call `make()` / `util::make()` is DECLARED to return, seen from the file defining the function: (file, type name).
+    fn returned_home(&self, fi: usize, info: &RustInfo, path: &str) -> Option<(usize, String)> {
+        let path: Vec<String> = path.split("::").map(str::to_string).collect();
+        let (def, name) = if path.len() == 1 && info.returns.contains_key(&path[0]) {
+            (fi, path[0].clone())
+        } else {
+            let mut full = path.clone();
+            if let Some((_, p)) = info.uses.iter().find(|(a, _)| Some(a) == path.first()) {
+                full = p.iter().cloned().chain(path[1..].iter().cloned()).collect();
+            }
+            let (file, item) = rust_ctx::resolve_path(&self.files[fi].rel_path, &full, self.file_set, self.cm)?;
+            (self.files.iter().position(|g| g.rel_path == file)?, item?)
+        };
+        let dinfo = self.rust[def].as_ref()?;
+        let ty = dinfo.returns.get(&name)?;
+        self.type_home(def, dinfo, std::slice::from_ref(ty))
+    }
+
+    /// The type DECLARED for field `field` of struct `strukt` (this file, else the one such struct of the crate): (file, type name).
+    fn field_home(&self, fi: usize, strukt: &str, field: &str) -> Option<(usize, String)> {
+        let key = self.cm.crate_key(&self.files[fi].rel_path);
+        let has = |i: usize| self.rust[i].as_ref().is_some_and(|r| r.structs.get(strukt).is_some_and(|m| m.contains_key(field)));
+        let def = if has(fi) {
+            fi
+        } else {
+            let mut hits = (0..self.files.len()).filter(|i| self.rust[*i].is_some() && self.cm.crate_key(&self.files[*i].rel_path) == key && has(*i));
+            let first = hits.next()?;
+            hits.next().is_none().then_some(first)?
+        };
+        let dinfo = self.rust[def].as_ref()?;
+        let ty = dinfo.structs.get(strukt)?.get(field)?;
+        self.type_home(def, dinfo, std::slice::from_ref(ty))
+    }
+
     fn resolve(&self, fi: usize, info: &RustInfo, c: &CallSite) -> Option<String> {
         let f = &self.files[fi];
-        let caller = f.symbols.iter().find(|s| s.name == c.caller)?;
+        let caller = caller_at(f, c)?;
         let in_caller = |a: u32, b: u32| a <= caller.line_start && caller.line_end <= b;
         let impl_ty = info
             .impls
@@ -554,6 +689,14 @@ impl RustCall<'_> {
         };
         let ty = match recv {
             "self" | "Self" => impl_ty.map(|t| (fi, t.to_string())),
+            // `self.reader.read()`: the receiver the vendored extractor names `reader` is a field of the enclosing impl's struct
+            v if !v.contains("::")
+                && v.chars().next().is_some_and(char::is_lowercase)
+                && impl_ty.is_some()
+                && info.self_calls.iter().any(|m| m.0 == c.line && m.1 == v && m.2 == c.callee) =>
+            {
+                self.field_home(fi, impl_ty?, v)
+            }
             v if !v.contains("::") && v.chars().next().is_some_and(char::is_lowercase) => {
                 let var = info
                     .fns
@@ -562,7 +705,10 @@ impl RustCall<'_> {
                     .min_by_key(|g| g.end - g.start)
                     .and_then(|g| g.vars.get(v));
                 match var {
-                    Some(t) => self.type_home(fi, info, std::slice::from_ref(t)),
+                    Some(t) => match t.strip_prefix("()") {
+                        Some(func) => self.returned_home(fi, info, func),
+                        None => self.type_home(fi, info, std::slice::from_ref(t)),
+                    },
                     None => None,
                 }
             }
@@ -623,10 +769,27 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             }
         }
     }
+    // the only targets a table reference may bind: top-level functions (never a method, never a class member, never a `#n` duplicate)
+    let fn_qns: std::collections::HashSet<&str> = files
+        .iter()
+        .zip(&qns)
+        .flat_map(|(f, q)| {
+            f.symbols
+                .iter()
+                .zip(q)
+                .filter(move |(s, qn)| {
+                    matches!(s.kind, SymbolKind::Function)
+                        && !qn.contains('#')
+                        && !f.symbols.iter().any(|c| matches!(c.kind, SymbolKind::Class) && c.line_start <= s.line_start && s.line_end <= c.line_end && !(c.line_start == s.line_start && c.line_end == s.line_end))
+                })
+                .map(|(_, qn)| qn.as_str())
+        })
+        .collect();
     let py: Vec<Option<PyInfo>> = files
         .iter()
         .map(|f| (f.language == "python").then(|| py_ctx::analyze(&f.lines.join("\n"))))
         .collect();
+    let ts: Vec<Option<TsDecls>> = files.iter().map(|f| decl_types::analyze(&f.lines.join("\n"), &f.language)).collect();
     let mut cm = rust_ctx::CrateMap::default();
     for f in files.iter().filter(|f| f.language == "toml" && f.rel_path.rsplit('/').next() == Some("Cargo.toml")) {
         cm.add_manifest(f.rel_path.rsplit_once('/').map_or("", |d| d.0), &f.lines);
@@ -668,8 +831,10 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             .collect();
         // the calls in `it(...)` / `test(...)` bodies belong to no symbol: they are the test file's own (item: tests, not calls)
         let case_calls = if super::is_test_path(&f.rel_path) { js_ctx::test_case_calls(&f.lines.join("\n"), &f.language) } else { vec![] };
+        // calls and table references outside any function body: the file is the caller
+        let module_calls = super::module_ctx::module_calls(&f.lines.join("\n"), &f.language);
         let edges_before = out.len();
-        for c in f.call_sites.iter().chain(&case_calls) {
+        for c in f.call_sites.iter().chain(&case_calls).chain(&module_calls) {
             let caller_qn: &String = if c.caller == js_ctx::CALLER_FILE {
                 &f.rel_path
             } else if let Some(q) = local.get(c.caller.as_str()) {
@@ -678,6 +843,28 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 continue;
             };
             let recv = c.receiver.as_deref();
+            // a table reference names a function: bound only through an import or in this file, never by a name guess
+            if c.kind == "refs" {
+                let hit: Option<(String, bool)> = if let Some(r) = recv {
+                    // `m.f` in a table: through a module alias only
+                    let mut hit = None;
+                    if let Some(pi) = &py[fi] {
+                        let pc = PyCall { py: &py, files, qns: &qns, file_set: &file_set, file_syms: &file_syms };
+                        let probe = CallSite { kind: "calls".into(), ..c.clone() };
+                        hit = pc.resolve(fi, pi, &probe).map(|(t, conf)| (t, conf == 1.0));
+                    }
+                    hit.or_else(|| {
+                        imports.iter().filter(|(imp, t)| !t.is_empty() && is_module_alias(&f.rel_path, imp, r)).find_map(|(_, t)| symbol_in(t, &file_syms, &c.callee))
+                    })
+                } else {
+                    let imported = imports.iter().filter(|(imp, targets)| !targets.is_empty() && imp.specifiers.contains(&c.callee)).find_map(|(_, targets)| symbol_in(targets, &file_syms, &c.callee));
+                    imported.or_else(|| local.get(c.callee.as_str()).map(|t| ((*t).clone(), local_counts[c.callee.as_str()] == 1)))
+                };
+                if let Some((t, true)) = hit.filter(|(t, _)| fn_qns.contains(t.as_str())) {
+                    out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
+                }
+                continue;
+            }
             if let Some(info) = &rust[fi] {
                 let rc = RustCall { files, qns: &qns, rust: &rust, file_set: &file_set, cm: &cm, file_syms: &file_syms };
                 if let Some(t) = rc.resolve(fi, info, c) {
@@ -724,6 +911,13 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                         out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
                         continue;
                     }
+                }
+            }
+            // 1c. a receiver typed by a declared return type or a declared field (`this.reader.m()`, `const x = make(); x.m()`)
+            if recv.is_some() {
+                if let Some(t) = declared_member_method(files, &qns, &file_set, &ts, fi, c) {
+                    out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
+                    continue;
                 }
             }
             // 2. mod.func(): `mod` is an imported module alias → that module's own symbol
@@ -796,7 +990,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         }
         let tail: Vec<_> = out.drain(edges_before..).collect();
         out.extend(tail.into_iter().filter_map(|mut e| {
-            if e.0 == EdgeKind::Calls && e.1 == f.rel_path {
+            if e.0 == EdgeKind::Calls && e.1 == f.rel_path && super::is_test_path(&f.rel_path) {
                 // a test file calling another test file's helper tests nothing
                 if super::is_test_path(e.2.split("::").next().unwrap_or("")) {
                     return None;
