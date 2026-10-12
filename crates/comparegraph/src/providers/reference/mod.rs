@@ -13,6 +13,8 @@ pub mod walker;
 mod tests_recall;
 #[cfg(test)]
 mod tests_a2;
+#[cfg(test)]
+mod tests_cases;
 use super::{
     BuildOptions, BuildOutput, Capabilities, GraphProvider, ProviderError, ProviderStatus,
 };
@@ -242,11 +244,23 @@ impl GraphProvider for ReferenceProvider {
             };
             match parsed_now {
                 Ok(r) => {
+                    let mut symbols = dedupe_symbols(r.symbols);
+                    // one node per JS/TS test case, after the extractor's symbols (the resolver counts on that order)
+                    if is_test_path(&f.rel_path) {
+                        symbols.extend(js_ctx::test_cases(&source, &f.language).0.into_iter().map(|c| vendor::Symbol {
+                            name: c.name,
+                            kind: vendor::SymbolKind::Function,
+                            line_start: c.line_start,
+                            line_end: c.line_end,
+                            signature: None,
+                            doc: None,
+                        }));
+                    }
                     parsed.push(ParsedFile {
                         rel_path: f.rel_path.clone(),
                         language: f.language.clone(),
                         lines: source.lines().map(String::from).collect(),
-                        symbols: dedupe_symbols(r.symbols),
+                        symbols,
                         call_sites: r.call_sites,
                         imports: r.imports,
                     });

@@ -49,6 +49,9 @@ pub fn tests_edges(files: &[ParsedFile], edges: &[Edge]) -> Vec<Edge> {
     let mut by_name: HashMap<&str, Vec<String>> = HashMap::new();
     let mut by_stem: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut test_syms: Vec<(&str, String)> = Vec::new(); // (name, qn) in test files
+    // naming links stay within one language family: `test_x.py` never tests `x.ts`
+    let family_of: HashMap<&str, &str> = files.iter().map(|f| (f.rel_path.as_str(), resolve::lang_family(&f.language))).collect();
+    let same_family = |a: &str, b: &str| family_of.contains_key(a) && family_of.get(a) == family_of.get(b);
     for f in files {
         let test = is_test_path(&f.rel_path);
         if !test {
@@ -84,7 +87,8 @@ pub fn tests_edges(files: &[ParsedFile], edges: &[Edge]) -> Vec<Edge> {
     }
     for f in files.iter().filter(|f| is_test_path(&f.rel_path)) {
         if let Some(subj) = subject_of_test_file(&f.rel_path) {
-            if let Some([only]) = by_stem.get(subj.as_str()).map(Vec::as_slice) {
+            let same: Vec<&str> = by_stem.get(subj.as_str()).into_iter().flatten().copied().filter(|p| same_family(&f.rel_path, p)).collect();
+            if let [only] = same.as_slice() {
                 out.push((
                     EdgeKind::Tests,
                     f.rel_path.clone(),
@@ -96,8 +100,10 @@ pub fn tests_edges(files: &[ParsedFile], edges: &[Edge]) -> Vec<Edge> {
     }
     for (name, qn) in test_syms {
         if let Some(bar) = name.strip_prefix("test_").filter(|b| !b.is_empty()) {
-            if let Some([only]) = by_name.get(bar).map(Vec::as_slice) {
-                out.push((EdgeKind::Tests, qn, only.clone(), 0.5));
+            let tp = sym_path.get(&qn).copied().unwrap_or("");
+            let same: Vec<&String> = by_name.get(bar).into_iter().flatten().filter(|q| sym_path.get(*q).is_some_and(|p| same_family(tp, p))).collect();
+            if let [only] = same.as_slice() {
+                out.push((EdgeKind::Tests, qn, (*only).clone(), 0.5));
             }
         }
     }

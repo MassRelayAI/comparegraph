@@ -149,9 +149,9 @@ fn resolve_py_import(from: &str, source: &str, files: &HashMap<String, ()>) -> O
 }
 
 /// TypeScript and JavaScript call each other; every other language is its own family.
-fn lang_family(l: &str) -> &str {
+pub(super) fn lang_family(l: &str) -> &str {
     match l {
-        "typescript" | "tsx" | "javascript" | "jsx" => "js",
+        "typescript" | "tsx" | "javascript" | "jsx" | "mjs" => "js",
         o => o,
     }
 }
@@ -830,13 +830,21 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             .map(|i| (i, import_files(&f.rel_path, i, &file_set)))
             .collect();
         // the calls in `it(...)` / `test(...)` bodies belong to no symbol: they are the test file's own (item: tests, not calls)
-        let case_calls = if super::is_test_path(&f.rel_path) { js_ctx::test_case_calls(&f.lines.join("\n"), &f.language) } else { vec![] };
+        let (_, case_calls) = if super::is_test_path(&f.rel_path) { js_ctx::test_cases(&f.lines.join("\n"), &f.language) } else { (vec![], vec![]) };
         // calls and table references outside any function body: the file is the caller
         let module_calls = super::module_ctx::module_calls(&f.lines.join("\n"), &f.language);
         let edges_before = out.len();
         for c in f.call_sites.iter().chain(&case_calls).chain(&module_calls) {
             let caller_qn: &String = if c.caller == js_ctx::CALLER_FILE {
                 &f.rel_path
+            } else if c.caller.starts_with(js_ctx::CASE_PREFIX) {
+                // a case is found by its own name and start line; no match, no edge
+                let hit = js_ctx::parse_case_key(&c.caller)
+                    .and_then(|(l, n)| f.symbols.iter().position(|s| s.name == n && s.line_start == l));
+                match hit {
+                    Some(i) => &q[i],
+                    None => continue,
+                }
             } else if let Some(q) = local.get(c.caller.as_str()) {
                 q
             } else {

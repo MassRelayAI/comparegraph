@@ -106,7 +106,7 @@ fn python_module_and_function_aliases_bind() {
 }
 
 #[test]
-fn it_bodies_become_tests_edges_from_the_test_file() {
+fn it_bodies_become_tests_edges_from_the_case_node() {
     let o = build(&[
         ("src/user.ts", "export class UserService {\n  getUser(id: number) { return id; }\n}\nexport function parse(x: number) { return x; }\n"),
         (
@@ -115,7 +115,7 @@ fn it_bodies_become_tests_edges_from_the_test_file() {
         ),
     ]);
     for t in ["src/user.ts::getUser", "src/user.ts::parse"] {
-        assert!(has(&o, EdgeKind::Tests, "src/user.test.ts", t), "{t}: {:?}", o.edges_by_qn);
+        assert!(has(&o, EdgeKind::Tests, "src/user.test.ts::it: u > gets", t), "{t}: {:?}", o.edges_by_qn);
     }
     // the runner's own `expect(...)`/`toBe` bind to nothing and no calls edge hangs off the file node
     assert!(!o.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && e.1 == "src/user.test.ts"));
