@@ -200,3 +200,48 @@ fn single_line_main_guard_and_double_extension_stems() {
     assert!(s.contains("entry_file_heuristic"), "{s}");
     assert_eq!(s.matches("entry_file_heuristic").count(), 1, "once per run");
 }
+
+#[test]
+fn python_init_reexport_resolves_in_both_call_shapes() {
+    let (ws, _c) = ws_with(&[
+        ("pkg/__init__.py", "from .impl import run\n"),
+        ("pkg/impl.py", "def run():\n    pass\n"),
+        ("other/run.py", "def run():\n    pass\n"),
+        ("a.py", "from pkg import run\n\ndef go():\n    run()\n"),
+        ("b.py", "import pkg\n\ndef go():\n    pkg.run()\n"),
+    ]);
+    for f in ["a.py::go", "b.py::go"] {
+        let c = callees(ws.path(), f);
+        assert_eq!(c, vec![("pkg/impl.py::run".to_string(), 1.0)], "{f}: {c:?}");
+    }
+}
+
+#[test]
+fn python_two_level_reexport_chain_and_a_cycle_terminates() {
+    let (ws, _c) = ws_with(&[
+        ("top/__init__.py", "from .mid import run\n"),
+        ("top/mid/__init__.py", "from .impl import run\n"),
+        ("top/mid/impl.py", "def run():\n    pass\n"),
+        ("a.py", "from top import run\n\ndef go():\n    run()\n"),
+        ("ca/__init__.py", "from cb import thing\n"),
+        ("cb/__init__.py", "from ca import thing\n"),
+        ("c.py", "from ca import thing\n\ndef go():\n    thing()\n"),
+    ]);
+    let c = callees(ws.path(), "a.py::go");
+    assert_eq!(c, vec![("top/mid/impl.py::run".to_string(), 1.0)], "{c:?}");
+    assert!(callees(ws.path(), "c.py::go").iter().all(|(_, conf)| *conf < 1.0));
+}
+
+#[test]
+fn python_name_used_as_object_binds_a_class_or_instance_never_a_function() {
+    let (ws, _c) = ws_with(&[
+        ("m.py", "class Ring:\n    def since(self):\n        pass\n\ndef ring():\n    pass\n\ndef since():\n    pass\n"),
+        ("n.py", "class Ring:\n    def since(self):\n        pass\n\nring = Ring()\n"),
+        ("a.py", "from m import ring\n\ndef go():\n    ring.since()\n"),
+        ("b.py", "from n import ring\n\ndef go():\n    ring.since()\n"),
+    ]);
+    let a = callees(ws.path(), "a.py::go");
+    assert!(a.is_empty(), "a function is no object: {a:?}");
+    let b = callees(ws.path(), "b.py::go");
+    assert_eq!(b, vec![("n.py::since".to_string(), 1.0)], "{b:?}");
+}
