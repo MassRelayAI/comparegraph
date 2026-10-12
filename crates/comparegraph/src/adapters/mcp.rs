@@ -58,6 +58,24 @@ pub fn tools() -> Vec<Value> {
             "at": {"type":"array","items":{"type":"string"},"description":"citations, path:start-end or path:line, relative to the clone"},
             "searched": {"type":"string","description":"terms the absence was checked with (none)"},
             "note": {"type":"string"} }), &["repo", "feature", "verdict", "author"])),
+        tool("comparegraph_traverse", "Nodes reachable from a symbol over calls/extends/implements (kinds), with hop distance, path_confidence and the path to each. Bounded: depth<=10, max_nodes<=2000; truncation is recorded in evidence.limitations.", schema(json!({
+            "repo": {"type":"string"}, "qualified_name": {"type":"string"},
+            "direction": {"type":"string","enum":["callers","callees","both"]},
+            "depth": {"type":"integer","minimum":1,"maximum":10}, "max_nodes": {"type":"integer","minimum":1,"maximum":2000},
+            "kinds": {"type":"string","description":"comma list of calls,extends,implements,imports,tests"},
+            "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo", "qualified_name"])),
+        tool("comparegraph_impact", "Blast radius: everything that transitively depends on a symbol or on file(s), grouped by hop with its community, plus the tests that reach it.", schema(json!({
+            "repo": {"type":"string"}, "qualified_name": {"type":"string"}, "files": {"type":"array","items":{"type":"string"}},
+            "depth": {"type":"integer","minimum":1,"maximum":10}, "max_nodes": {"type":"integer","minimum":1,"maximum":2000},
+            "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
+        tool("comparegraph_tests_for", "Tests linked to a symbol directly or through at most 3 call hops.", schema(json!({
+            "repo": {"type":"string"}, "qualified_name": {"type":"string"}, "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo", "qualified_name"])),
+        tool("comparegraph_entry_points", "Symbols nothing calls that are exported, handler-named or main. Paged.", schema(json!({
+            "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500}, "cursor": {"type":"string"},
+            "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
+        tool("comparegraph_dead_code", "Dead-code CANDIDATES (confidence unknown: dynamic dispatch is invisible). Paged.", schema(json!({
+            "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500}, "cursor": {"type":"string"},
+            "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
         tool("comparegraph_doctor", "Report the store and every provider. Returns a compact envelope.", schema(json!({}), &[])),
     ]
 }
@@ -82,6 +100,24 @@ fn limit_arg(a: &Value) -> Result<usize, String> {
     }
 }
 
+fn uint_arg(a: &Value, k: &str, default: usize) -> Result<usize, String> {
+    match a.get(k) {
+        None | Some(Value::Null) => Ok(default),
+        Some(v) => v
+            .as_u64()
+            .map(|n| n as usize)
+            .ok_or_else(|| format!("{k} must be a non-negative integer")),
+    }
+}
+fn conf_arg(a: &Value) -> Result<f64, String> {
+    match a.get("min_confidence") {
+        None | Some(Value::Null) => Ok(0.5),
+        Some(v) => v
+            .as_f64()
+            .ok_or_else(|| "min_confidence must be a number".to_string()),
+    }
+}
+
 fn command(name: &str, a: &Value) -> Result<Cmd, String> {
     if !a.is_object() {
         return Err("arguments must be an object".into());
@@ -91,6 +127,16 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         "comparegraph_search" => &["query", "repo", "kind", "limit", "cursor"],
         "comparegraph_show" => &["repo", "qualified_name", "detail"],
         "comparegraph_communities" => &["repo", "limit", "cursor"],
+        "comparegraph_traverse" => &[
+            "repo", "qualified_name", "direction", "depth", "max_nodes", "kinds", "min_confidence",
+        ],
+        "comparegraph_impact" => &[
+            "repo", "qualified_name", "files", "depth", "max_nodes", "min_confidence",
+        ],
+        "comparegraph_tests_for" => &["repo", "qualified_name", "min_confidence"],
+        "comparegraph_entry_points" | "comparegraph_dead_code" => {
+            &["repo", "limit", "cursor", "min_confidence"]
+        }
         "comparegraph_families" => &[],
         "comparegraph_map" => &["repo", "family", "feature", "limit"],
         "comparegraph_relate" => &["repo", "family"],
@@ -124,6 +170,51 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             repo: req(a, "repo")?,
             qualified_name: req(a, "qualified_name")?,
             detail: str_arg(a, "detail")?,
+        },
+        "comparegraph_traverse" => Cmd::Traverse {
+            repo: req(a, "repo")?,
+            qualified_name: req(a, "qualified_name")?,
+            direction: str_arg(a, "direction")?.unwrap_or_else(|| "both".into()),
+            depth: uint_arg(a, "depth", 3)?,
+            max_nodes: uint_arg(a, "max_nodes", 200)?,
+            kinds: str_arg(a, "kinds")?.unwrap_or_else(|| "calls,extends,implements".into()),
+            min_confidence: conf_arg(a)?,
+        },
+        "comparegraph_impact" => Cmd::Impact {
+            repo: req(a, "repo")?,
+            qualified_name: str_arg(a, "qualified_name")?,
+            file: match a.get("files") {
+                None | Some(Value::Null) => vec![],
+                Some(Value::Array(v)) => v
+                    .iter()
+                    .map(|x| {
+                        x.as_str()
+                            .map(String::from)
+                            .ok_or_else(|| "files must be an array of strings".to_string())
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                Some(_) => return Err("files must be an array of strings".into()),
+            },
+            depth: uint_arg(a, "depth", 5)?,
+            max_nodes: uint_arg(a, "max_nodes", 500)?,
+            min_confidence: conf_arg(a)?,
+        },
+        "comparegraph_tests_for" => Cmd::TestsFor {
+            repo: req(a, "repo")?,
+            qualified_name: req(a, "qualified_name")?,
+            min_confidence: conf_arg(a)?,
+        },
+        "comparegraph_entry_points" => Cmd::EntryPoints {
+            repo: req(a, "repo")?,
+            limit: limit_arg(a)?,
+            cursor: str_arg(a, "cursor")?,
+            min_confidence: conf_arg(a)?,
+        },
+        "comparegraph_dead_code" => Cmd::DeadCode {
+            repo: req(a, "repo")?,
+            limit: limit_arg(a)?,
+            cursor: str_arg(a, "cursor")?,
+            min_confidence: conf_arg(a)?,
         },
         "comparegraph_families" => Cmd::Family {
             what: FamilyCmd::List,

@@ -6,6 +6,7 @@ pub mod communities;
 pub mod conform;
 pub mod decide;
 pub mod export;
+pub mod graph;
 pub mod family;
 pub mod lines;
 pub mod map;

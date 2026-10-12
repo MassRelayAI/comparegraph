@@ -1,4 +1,5 @@
 use crate::adapters::envelope::Envelope;
+use crate::application::graph as g;
 use crate::application::{
     add::add_repo,
     build::build_repo,
@@ -73,6 +74,61 @@ pub enum Cmd {
         qualified_name: String,
         #[arg(long)]
         detail: Option<String>,
+    },
+    /// Nodes reachable from a symbol over calls/extends/implements, with hop distance and the path to each
+    Traverse {
+        repo: String,
+        qualified_name: String,
+        #[arg(long, default_value = "both")]
+        direction: String,
+        #[arg(long, default_value_t = 3)]
+        depth: usize,
+        #[arg(long, default_value_t = 200)]
+        max_nodes: usize,
+        #[arg(long, default_value = "calls,extends,implements")]
+        kinds: String,
+        #[arg(long, default_value_t = 0.5)]
+        min_confidence: f64,
+    },
+    /// Everything that transitively depends on a symbol or file(s), by hop, plus the tests that reach it
+    Impact {
+        repo: String,
+        qualified_name: Option<String>,
+        #[arg(long = "file")]
+        file: Vec<String>,
+        #[arg(long, default_value_t = 5)]
+        depth: usize,
+        #[arg(long, default_value_t = 500)]
+        max_nodes: usize,
+        #[arg(long, default_value_t = 0.5)]
+        min_confidence: f64,
+    },
+    /// Tests linked to a symbol directly or through at most 3 call hops
+    TestsFor {
+        repo: String,
+        qualified_name: String,
+        #[arg(long, default_value_t = 0.5)]
+        min_confidence: f64,
+    },
+    /// Symbols nothing calls that are exported, handlers or main
+    EntryPoints {
+        repo: String,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long, default_value_t = 0.5)]
+        min_confidence: f64,
+    },
+    /// Candidates nothing references (dynamic dispatch is invisible)
+    DeadCode {
+        repo: String,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long, default_value_t = 0.5)]
+        min_confidence: f64,
     },
     /// Report the store and every provider
     Doctor,
@@ -213,6 +269,11 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::Export { .. } => "export",
         Cmd::Search { .. } => "search",
         Cmd::Show { .. } => "show",
+        Cmd::Traverse { .. } => "traverse",
+        Cmd::Impact { .. } => "impact",
+        Cmd::TestsFor { .. } => "tests-for",
+        Cmd::EntryPoints { .. } => "entry-points",
+        Cmd::DeadCode { .. } => "dead-code",
         Cmd::Doctor => "doctor",
         Cmd::Repos => "repos",
         Cmd::Mcp => "mcp",
@@ -264,6 +325,13 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
                     Some("derived") => "derived",
                     _ => "unknown",
                 }
+            } else if let Some(c) = v["evidence_confidence"].as_str() {
+                match c {
+                    "derived" => "derived",
+                    "inferred" => "inferred",
+                    "unknown" => "unknown",
+                    _ => "observed",
+                }
             } else if matches!(cli.cmd, Cmd::Show { .. }) {
                 if v["stale"] == serde_json::Value::Bool(true) {
                     "unknown"
@@ -274,6 +342,9 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
                 "observed"
             };
             let mut v = v;
+            if let Some(o) = v.as_object_mut() {
+                o.remove("evidence_confidence");
+            }
             let lims: Vec<crate::domain::Limitation> = v
                 .as_object_mut()
                 .and_then(|o| o.remove("limitation_items"))
@@ -401,6 +472,61 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             };
             serde_json::to_value(show(&cli.root, repo, qualified_name, full)?).unwrap()
         }
+        Cmd::Traverse {
+            repo,
+            qualified_name,
+            direction,
+            depth,
+            max_nodes,
+            kinds,
+            min_confidence,
+        } => g::traverse(
+            &cli.root,
+            repo,
+            &g::TraverseOpts {
+                qualified_name,
+                direction: g::Direction::parse(direction)?,
+                depth: *depth,
+                max_nodes: *max_nodes,
+                kinds: g::parse_kinds(kinds)?,
+                min_conf: *min_confidence,
+            },
+        )?,
+        Cmd::Impact {
+            repo,
+            qualified_name,
+            file,
+            depth,
+            max_nodes,
+            min_confidence,
+        } => g::impact(
+            &cli.root,
+            repo,
+            &g::ImpactOpts {
+                qualified_name: qualified_name.as_deref(),
+                files: file,
+                depth: *depth,
+                max_nodes: *max_nodes,
+                min_conf: *min_confidence,
+            },
+        )?,
+        Cmd::TestsFor {
+            repo,
+            qualified_name,
+            min_confidence,
+        } => g::tests_for(&cli.root, repo, qualified_name, *min_confidence)?,
+        Cmd::EntryPoints {
+            repo,
+            limit,
+            cursor,
+            min_confidence,
+        } => g::entry_points(&cli.root, repo, *limit, cursor.as_deref(), *min_confidence)?,
+        Cmd::DeadCode {
+            repo,
+            limit,
+            cursor,
+            min_confidence,
+        } => g::dead_code(&cli.root, repo, *limit, cursor.as_deref(), *min_confidence)?,
         Cmd::Map {
             repo,
             family,

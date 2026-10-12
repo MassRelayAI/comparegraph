@@ -236,7 +236,7 @@ fn vault_has_family_and_feature_notes_that_resolve_and_are_deterministic() {
 }
 
 #[test]
-fn mcp_exposes_twelve_tools_and_the_analysis_verbs() {
+fn mcp_exposes_seventeen_tools_and_the_analysis_verbs() {
     let (ws, _a, _p) = analysed();
     let out = session(
         ws.path(),
@@ -275,7 +275,7 @@ fn mcp_exposes_twelve_tools_and_the_analysis_verbs() {
         ],
     );
     let tools = out[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 12);
+    assert_eq!(tools.len(), 17);
     for t in tools {
         assert_eq!(t["inputSchema"]["additionalProperties"], false);
     }
