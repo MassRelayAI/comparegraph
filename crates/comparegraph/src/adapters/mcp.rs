@@ -159,7 +159,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
     Ok(match name {
         "comparegraph_repos" => Cmd::Repos,
         "comparegraph_check" => Cmd::Check,
-        "comparegraph_doctor" => Cmd::Doctor,
+        "comparegraph_doctor" => Cmd::Doctor { bin: None },
         "comparegraph_search" => Cmd::Search {
             query: req(a, "query")?,
             repo: str_arg(a, "repo")?,

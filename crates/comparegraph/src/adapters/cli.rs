@@ -1,10 +1,12 @@
+#![allow(clippy::result_large_err)] // serde_json::Value is larger with arbitrary_precision
 use crate::adapters::envelope::Envelope;
 use crate::application::graph as g;
 use crate::application::{
     add::add_repo,
     build::build_repo,
     check::check,
-    export::export_json,
+    export::{export_csv, export_json},
+    setup,
     search::{search, SearchQuery},
     show::show,
     AppError,
@@ -135,8 +137,38 @@ pub enum Cmd {
         #[arg(long, default_value_t = 0.5)]
         min_confidence: f64,
     },
-    /// Report the store and every provider
-    Doctor,
+    /// Report the store, every provider and each agent client's registration of the MCP server
+    Doctor {
+        /// compare registrations against this command instead of the running executable
+        #[arg(long)]
+        bin: Option<String>,
+    },
+    /// Register the MCP server with agent clients: a plan by default, `--apply` writes (additive, backed up)
+    Setup {
+        /// claude, codex, cursor, gemini, opencode, hermes, or all (installed clients only)
+        #[arg(long, default_value = "all")]
+        client: String,
+        /// user (the client's own config) or project (the current directory)
+        #[arg(long, default_value = "user")]
+        scope: String,
+        #[arg(long)]
+        apply: bool,
+        /// replace a `comparegraph` entry that differs: another workspace or shape (conflict) or a moved binary (stale); both are left untouched without it
+        #[arg(long)]
+        force: bool,
+        /// the command to register (default: this binary)
+        #[arg(long)]
+        bin: Option<String>,
+    },
+    /// Print the MCP tool catalog as JSON (redirect to docs/catalog.json); --check compares it with the committed file
+    Catalog {
+        /// exit 1 (error catalog_stale) when the file differs byte-for-byte from the live catalog
+        #[arg(long)]
+        check: bool,
+        /// the file --check compares against (default docs/catalog.json, relative to the current directory)
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
     /// Registered repos with their latest run summary
     Repos,
     /// Module clusters of a repo's latest run
@@ -259,6 +291,13 @@ pub enum ExportWhat {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// RFC 4180 CSV files (LF line endings): nodes, edges, claims, decisions, one matrix per family
+    Csv {
+        #[arg(long)]
+        repo: Option<String>,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// An Obsidian-style markdown vault, regenerated whole
     Vault {
         #[arg(long)]
@@ -279,7 +318,9 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::TestsFor { .. } => "tests-for",
         Cmd::EntryPoints { .. } => "entry-points",
         Cmd::DeadCode { .. } => "dead-code",
-        Cmd::Doctor => "doctor",
+        Cmd::Doctor { .. } => "doctor",
+        Cmd::Setup { .. } => "setup",
+        Cmd::Catalog { .. } => "catalog",
         Cmd::Repos => "repos",
         Cmd::Mcp => "mcp",
         Cmd::Communities { .. } => "communities",
@@ -299,6 +340,10 @@ pub fn run() -> i32 {
     let cli = Cli::parse();
     if matches!(cli.cmd, Cmd::Mcp) {
         crate::adapters::mcp::serve(&cli.root, std::io::stdin().lock(), std::io::stdout().lock());
+        return 0;
+    }
+    if let Cmd::Catalog { check: false, .. } = cli.cmd {
+        print!("{}", crate::application::catalog::render(crate::adapters::mcp::tools()));
         return 0;
     }
     let env = envelope_for(&cli);
@@ -364,6 +409,12 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
         Err((e, data)) => {
             eprintln!("comparegraph: {e}");
             let mut env = Envelope::err(verb, &e);
+            if matches!(cli.cmd, Cmd::Catalog { .. }) && matches!(e, AppError::CheckFailed(_)) {
+                if let Some(b) = env.error.as_mut() {
+                    b.code = "catalog_stale";
+                    b.hint = Some("run `comparegraph catalog > docs/catalog.json`".into());
+                }
+            }
             if let Some(d) = data {
                 env.data = d;
             }
@@ -426,6 +477,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 v
             }
         }
+        Cmd::Export {
+            what: ExportWhat::Csv { repo, out },
+        } => export_csv(&cli.root, repo.as_deref(), out)?,
         Cmd::Export {
             what: ExportWhat::Vault { out },
         } => {
@@ -662,15 +716,70 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 }
             }
         }
-        Cmd::Doctor => {
+        Cmd::Doctor { bin } => {
             let providers: Vec<_> = ["reference"].iter().map(|n| { let p = by_name(n).unwrap(); serde_json::json!({ "name": n, "status": p.detect(), "capabilities": p.capabilities() }) }).collect();
+            let ctx = setup::Ctx::from_env(&cli.root, bin.as_deref());
+            let mut limitations = Vec::new();
+            if !ctx.explicit_bin && ctx.dev_build {
+                limitations.push(serde_json::json!({ "code": "dev_build", "detail": "compared against a binary in a build directory; pass --bin <installed path>" }));
+            }
+            let clients: Vec<_> = setup::registrations(&ctx).iter().map(|r| r.to_json(false)).collect();
             if !cli.root.join(".comparegraph").join("comparegraph.db").is_file() {
                 return Ok(Ok(
-                    serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "providers": providers }),
+                    serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "providers": providers, "clients": clients, "limitation_items": limitations }),
                 ));
             }
             let store = Store::open_existing(&cli.root)?;
-            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": store.repos()?.len(), "providers": providers })
+            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": store.repos()?.len(), "providers": providers, "clients": clients, "limitation_items": limitations })
+        }
+        Cmd::Setup { client, scope, apply, force, bin } => {
+            let scope = match scope.as_str() {
+                "user" => setup::Scope::User,
+                "project" => setup::Scope::Project,
+                o => return Err(AppError::InvalidArguments(format!("unknown scope {o} (user|project)"))),
+            };
+            let (clients, detect) = if client == "all" {
+                (setup::ALL.to_vec(), true)
+            } else {
+                match setup::Client::parse(client) {
+                    Some(c) => (vec![c], false),
+                    None => return Err(AppError::InvalidArguments(format!("unknown client {client} (claude|codex|cursor|gemini|opencode|hermes|all)"))),
+                }
+            };
+            let ctx = setup::Ctx::from_env(&cli.root, bin.as_deref());
+            if !ctx.explicit_bin && ctx.dev_build {
+                return Err(AppError::InvalidArguments("running from a build directory; pass --bin <installed path>".into()));
+            }
+            if ctx.home.is_none() {
+                return Err(AppError::InvalidArguments("HOME is not set".into()));
+            }
+            let rows = setup::run(&ctx, &setup::Options { clients, detect, scope, apply: *apply, force: *force })?;
+            let limitations: Vec<_> = rows
+                .iter()
+                .filter(|r| matches!(r.state, setup::State::Conflict | setup::State::Stale) && !r.written)
+                .map(|r| serde_json::json!({ "code": r.state.name(), "detail": format!("{} ({}): {}", r.client.name(), r.path.display(), r.note.as_deref().unwrap_or("")) }))
+                .collect();
+            serde_json::json!({
+                "apply": apply, "force": force, "scope": scope.name(), "bin": ctx.bin, "workspace": ctx.workspace,
+                "dry_run": !apply,
+                "clients": rows.iter().map(|r| r.to_json(true)).collect::<Vec<_>>(),
+                "limitation_items": limitations,
+            })
+        }
+        Cmd::Catalog { check, file } => {
+            let live = crate::application::catalog::render(crate::adapters::mcp::tools());
+            if !*check {
+                return Ok(Ok(serde_json::json!({ "catalog": serde_json::from_str::<serde_json::Value>(&live).unwrap() })));
+            }
+            let p = file.clone().unwrap_or_else(|| PathBuf::from("docs/catalog.json"));
+            let disk = std::fs::read_to_string(&p).map_err(|e| AppError::Io(p.clone(), e))?;
+            if disk != live {
+                return Ok(Err((
+                    AppError::CheckFailed(format!("{} differs from the live catalog", p.display())),
+                    Some(serde_json::json!({ "file": p, "stale": true })),
+                )));
+            }
+            serde_json::json!({ "file": p, "stale": false })
         }
         Cmd::Mcp => unreachable!("mcp is served by run()"),
         Cmd::Repos => {

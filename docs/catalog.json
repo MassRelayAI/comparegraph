@@ -1,0 +1,485 @@
+{
+  "schema": 1,
+  "version": "0.1.0",
+  "tools": [
+    {
+      "name": "comparegraph_check",
+      "description": "Verify the store: schema, determinism, locations. Returns a compact envelope listing problems, if any.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_claim",
+      "description": "WRITE: record a claim (has|partial|none|unknown) about a feature in a clone. author is required; has/partial need at least one citation in `at` (path:start-end) that resolves now; none needs `searched` terms that find nothing.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "feature": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string",
+            "description": "disambiguates a feature id that exists in several families"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "has",
+              "partial",
+              "none",
+              "unknown"
+            ]
+          },
+          "author": {
+            "type": "string",
+            "description": "who makes the claim; required"
+          },
+          "at": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "citations, path:start-end or path:line, relative to the clone"
+          },
+          "searched": {
+            "type": "string",
+            "description": "terms the absence was checked with (none)"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "feature",
+          "verdict",
+          "author"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_claims",
+      "description": "Latest claim per (clone, feature) with its citations; history=true lists every row with its supersede chain.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "feature": {
+            "type": "string"
+          },
+          "history": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_communities",
+      "description": "Module clusters of a repo's latest run (label, keywords, cohesion, size). Returns a compact, paged envelope.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "page size, default 50"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "opaque cursor from a previous page"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_dead_code",
+      "description": "Dead-code CANDIDATES (confidence unknown: dynamic dispatch is invisible). Paged.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "min_confidence": {
+            "type": "number",
+            "enum": [
+              0.5,
+              1.0
+            ]
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_doctor",
+      "description": "Report the store and every provider. Returns a compact envelope.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_entry_points",
+      "description": "Symbols nothing calls that are exported, handler-named or main. Paged.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "min_confidence": {
+            "type": "number",
+            "enum": [
+              0.5,
+              1.0
+            ]
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_families",
+      "description": "Registered taxonomy families with feature counts. Returns a compact envelope.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_impact",
+      "description": "Blast radius: everything that transitively depends on a symbol or on file(s), grouped by hop with its community, plus the tests that reach it.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "qualified_name": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "min_confidence": {
+            "type": "number",
+            "enum": [
+              0.5,
+              1.0
+            ]
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_map",
+      "description": "Candidate symbols and communities per feature of a family in one clone. Candidates are never verdicts; writes nothing.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "feature": {
+            "type": "string",
+            "description": "one feature id"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "symbols per feature, default 5"
+          }
+        },
+        "required": [
+          "repo",
+          "family"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_matrix",
+      "description": "Active features of a family against every clone: verdicts, prevalence, gaps and differentiators.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "family": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "family"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_relate",
+      "description": "Latest stored relatedness band per (clone, family). Reads only: it does not compute; run `comparegraph relate` to refresh.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_repos",
+      "description": "List registered repos (name, licence, lane, role, head) with the latest run summary (status, nodes, communities, store_hash). Returns a compact envelope.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_search",
+      "description": "Full-text search over symbols of each repo's latest run. Returns a compact, paged envelope of hits with licence-lane labels.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "words to find in symbol names and paths"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "node kind, e.g. function, class, file"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "page size, default 50"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "opaque cursor from a previous page"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_show",
+      "description": "One symbol with callers, callees, community and licence lane. Compact by default; detail=full adds its current source lines.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "qualified_name": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "full"
+            ]
+          }
+        },
+        "required": [
+          "repo",
+          "qualified_name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_tests_for",
+      "description": "Tests linked to a symbol directly or through at most 3 call hops.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "qualified_name": {
+            "type": "string"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "min_confidence": {
+            "type": "number",
+            "enum": [
+              0.5,
+              1.0
+            ]
+          }
+        },
+        "required": [
+          "repo",
+          "qualified_name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_traverse",
+      "description": "Nodes reachable from a symbol over calls/extends/implements (kinds), with hop distance, path_confidence and the path to each. Bounded: depth<=10, max_nodes<=2000; truncation is recorded in evidence.limitations.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "qualified_name": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "callers",
+              "callees",
+              "both"
+            ]
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "kinds": {
+            "type": "string",
+            "description": "comma list of calls,extends,implements,imports,tests"
+          },
+          "min_confidence": {
+            "type": "number",
+            "enum": [
+              0.5,
+              1.0
+            ]
+          }
+        },
+        "required": [
+          "repo",
+          "qualified_name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "error_codes": [
+    "below_floor",
+    "catalog_stale",
+    "check_failed",
+    "empty",
+    "invalid_arguments",
+    "io_error",
+    "not_found",
+    "provider_unavailable",
+    "store_error"
+  ]
+}
