@@ -148,3 +148,108 @@ yet protect a reader. code-review-graph's own false edges in the part we share w
   rather than forced.
 - Both engines include vendored, minified and fixture files; no filtering was applied to either side.
 - Nothing here measures query latency or answer quality on real tasks.
+
+## After the precision and recall pass (2026-10-13)
+
+The sections above are the first measurement and are left as written. This section re-measures after the precision pass (`4d14fee`:
+unknown-receiver and builtin-name calls bind nothing, scoped self-recursion, max-confidence dedup, best-confidence paths) and the
+recall pass (`4e00187`: same-crate and workspace Rust types and crate-name paths, Python declared types and import aliases, Rust
+`#[test]` and `#[cfg(test)]`, `it()` bodies, minified files skipped).
+
+Method, unchanged from the first run: `scripts/compare-engines.sh` with code-review-graph 2.3.9 from the same venv, a fresh copy of
+the three upstream commits, CompareGraph release build at `4e00187`, `nice -n 10`, seed 7, medians of 3 cold builds on the shared host.
+Samples: 20 resolved call edges only code-review-graph has (all three projects; srclight has only 14 left, so all 14 were read) and
+the first 10 of the script's 20 edges only we have. Every sampled call site was read with its callee's definition.
+The first-run reverse sample was drawn as 10; this one is the first 10 of a 20-draw, a different random subset.
+
+### Jaccards and edge counts, before to after
+
+| measure | graphmind | srclight | code-review-graph |
+|---|---|---|---|
+| symbols (function+method+class+type) | 0.946 to 0.946 | 0.988 to 0.988 | 0.854 to 0.939 |
+| calls, resolved | 0.507 to 0.712 | 0.700 to 0.969 | 0.714 to 0.960 |
+| imports, file to file | 0.441 to 0.647 | 0.384 to 0.904 | 0.901 to 0.901 |
+| tests | 0.001 to 0.118 | 0.435 to 0.605 | 0.440 to 0.512 |
+| extends + implements | 0.938 to 0.938 | 0.667 to 0.667 | 0.730 to 0.730 |
+| call edges both | 2,328 to 2,487 | 3,006 to 3,173 | 11,277 to 11,196 |
+| call edges only code-review-graph | 424 to 265 | 181 to 14 | 304 to 385 |
+| call edges only ours | 1,841 to 739 | 1,105 to 89 | 4,216 to 78 |
+| our call edges below 1.0 (the 0.5 share) | 563 of 4,171 (13.5 pct) to 6 of 3,228 (0.2) | 683 of 4,114 (16.6) to 9 of 3,262 (0.3) | 1,848 of 15,500 (11.9) to 51 of 11,274 (0.5) |
+
+The symbol change in the third project is the minified bundle: 894 extras fell to 123 once `d3.v7.min.js` and its kind were skipped
+(`skipped_minified`). Our resolved call edges fell by 21 to 27 percent in total while "both" rose in two projects; the third lost 81 shared edges
+(not diagnosed). The imports gain in
+srclight is package-absolute Python paths under `src/` (`from srclight.server import ...`): a dotted path of two or more names now
+resolves to the one repo file that ends with it. graphmind imports: no edge only code-review-graph has remains (303 of 303 shared);
+our 165 extras were not sampled. The remaining 83 in the third project are not diagnosed.
+
+### Build time (seconds, median of 3 cold builds; final run)
+
+| project | code-review-graph full | CompareGraph cold | unchanged rebuild | speed-up | first run: cold, speed-up |
+|---|---|---|---|---|---|
+| graphmind | 6.28 | 2.57 | 2.09 | 2.4x | 1.76, 3.2x |
+| srclight | 5.97 | 1.48 | 1.01 | 4.0x | 0.91, 6.0x |
+| code-review-graph | 18.95 | 6.50 | 4.34 | 2.9x | 8.04, 2.1x |
+
+The host was busier for this run (code-review-graph's own times rose 9 to 12 percent against the first run), and the run just
+before it, one small change earlier, gave CompareGraph 2.24 / 1.20 / 6.15 s. The new Rust and Python context passes cost roughly 0.5 to 0.8 s on graphmind and 0.3 to 0.6 s on
+srclight; the third project got faster because the bundle is no longer parsed. We stay ahead, by a smaller margin on the first two.
+
+### Samples read by hand
+
+Edges only code-review-graph has (54 read: 20, 14 and 20):
+
+| project | our miss | their false edge | ambiguous |
+|---|---|---|---|
+| graphmind | 12 | 8 | 0 |
+| srclight (all 14) | 13 | 1 | 0 |
+| code-review-graph | 18 | 1 | 1 |
+| total of 54 | 43 | 10 | 1 |
+
+Before: 56 of 60 were our misses and 2 their false. The 43 misses now split into: 10 calls at module level (`main()` under
+`if __name__`, decorator arguments, `LANGUAGES = {... LanguageConfig(...)}`: no function encloses them, and a file-level caller
+would change `entry-points` and `dead-code`, so it was not added); 10 on a local whose type comes from a function return or a tuple
+unpack (`ctx = setup(); ctx.dispatch()`, `root, store = _make_repo()`); 13 in TypeScript and TSX (JSX components, `this.reader.m()`
+field types, an imported instance, a closure parameter, a function nested in a component); 9 in languages whose extractor we do not
+extend (Dart 5, Objective-C, Scala, ReScript, a notebook); 1 in a file with two classes of the same method name.
+Of their 10 false edges, 9 are library methods bound to a repo method of that name (`get` 4 on maps and a database row, `HashMap::remove`, `Sha256::update`,
+tree-sitter `Parser::parse` bound to our `parse`, `ignore`'s `.build()`, an emitter's `dispose`) and one is a local callable
+(`is_available = getattr(...); is_available()`), the same class as before. Their ambiguous one is an ansible `notify:` handler
+link in a YAML fixture, which is a reference rather than a call.
+
+Edges only we have (30 read: 10 each):
+
+| project | correct | false | ambiguous |
+|---|---|---|---|
+| graphmind | 8 | 0 | 2 |
+| srclight | 10 | 0 | 0 |
+| code-review-graph | 8 | 2 | 0 |
+| total of 30 | 26 | 2 | 2 |
+
+Before: 7 correct, 16 false, 7 ambiguous. The two false are a bare call to a re-exported function bound to a same-named method in
+another file at 0.5 (`from code_review_graph.tools import get_impact_radius`, twice). The two ambiguous are enum-variant
+constructors bound to their enum (`EmbedError::NotConfigured(..)`). The reading found and fixed three defects of our own in
+earlier iterations of this pass, each now pinned by a test: a Rust variable named like a function (`let hooks_dir = ...;
+hooks_dir.join()`) was taken for a type and bound to the function; a Python local named like an imported module
+(`daemon = env["d"]; daemon.run()`) bound to the module; a parameter called by name (`normalise(x)`) bound to a same-named function
+in another file. One more shape is left alone on purpose: a same-file function with the name of a pytest fixture parameter stays bound
+(`def test_x(serve): serve(...)`), because the parameter is that fixture; this keeps 32 edges code-review-graph also has.
+
+### Verdict per area, now
+
+| area | before | now | what would close the rest |
+|---|---|---|---|
+| symbol extraction | on par | on par (0.946, 0.988, 0.939) | nothing needed; config keys are still `type` nodes |
+| containment | on par by symbol | unchanged | nothing |
+| inheritance | on par on small counts | unchanged (0.938, 0.667, 0.730) | the 3 srclight `extends` and 12 in the third project, not diagnosed |
+| call recall | behind (56 of 60 misses) | on par for Python (srclight 14 edges lacking of 3,187; 0.969), close for the third project (385 of 11,581; 0.960), behind for Rust and TS/JSX (graphmind 265 of 2,752; 0.712) | return-type propagation for locals (`x = f()` where `f` is annotated, `a, b = f()`), field types (`self.cache`, `this.reader`), JSX components, a file-level caller for module code, Dart/Go/ObjC constructors |
+| call precision | behind (16 of 30 false) | ahead of its own earlier state, and the surplus is now mostly right: 2 false, 2 ambiguous, 26 correct of 30; its own false edges (10 of 54 sampled) remain | none needed on our side; the two remaining false ones are re-exports (`from pkg import f` where `pkg/__init__` re-exports) |
+| imports | behind (0.44, 0.38) | recall on par: 0 of 303, 19 of 198 and 83 of 841 lacking; Jaccard 0.647, 0.904, 0.901 (graphmind lowered by 165 extras we add, not sampled) | follow Python re-exports through `__init__`; sample the Rust extras |
+| test links | behind (0.00 to 0.44) | still behind (0.118, 0.605, 0.512), up in all three | per-case `it`/`describe` nodes (it makes one per case; we attribute to the file); module-level and fixture-parameter calls from tests |
+| build speed | ahead 2.1x to 6.0x | ahead 2.4x to 4.0x | not applicable |
+| incremental build, semantic search, flows, diff review, hub and refactor analyses | behind | unchanged | each is a feature, not a fix |
+| multi-repo comparison, claims, vault | ahead | unchanged | nothing |
+
+Caveats of this section: one host, one final run (timings vary 5 to 15 percent run to run, see above); the 54 + 30 classifications are
+by one reader; the re-measure was run several times while the pass was finished, and the numbers above are from the last run at
+`4e00187` only; the surplus that remains in graphmind (739 edges only we have) was sampled at 10.
