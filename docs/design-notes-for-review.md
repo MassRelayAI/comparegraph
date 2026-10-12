@@ -47,9 +47,9 @@ Task 6 (2026-10-12): `typed_receiver_method` resolves `r.m()` from a type declar
 
 | decision or known limit | alternative | why | who it hurts |
 |---|---|---|---|
-| module-level calls have no file-level caller | a file node as caller | the largest remaining miss class, but it changes `entry-points` and `dead-code` | calls under `if __name__`, decorators and module tables are missing |
-| return-typed and tuple-unpacked locals are not typed (`ctx = setup(); ctx.run()`, `a, b = f()`) | return-type propagation | needs an inference pass | method calls on such locals bind nothing |
-| TS/JSX field types are not read (`this.reader.m()`) | field type table | not built | TypeScript and JSX call recall stays behind |
+| module-level calls (Plan 5 A1: now attributed to the file node, or to an `it:` case node in JS/TS; an entry-file heuristic decides whether they rescue dead-code candidates) | a describe-block node for TS test bodies (Plan 6 A1) | calls in `describe()` bodies still have no enclosing node | TS test-body calls are missed (hono gold recall 0.31) |
+| return-typed and tuple-unpacked locals (Plan 5 A2: typed from DECLARED return annotations and class fields only; `a, b = f()` only with `-> tuple[A, B]`) | inference from bodies | declarations only, by rule | a factory without an annotation types nothing |
+| TS/JSX field types (Plan 5 A2: `decl_types.rs` reads class fields, constructor parameter properties and `new T()` initialisers; field access detected from the AST) | — | done | Go receiver types are the remaining gap (caddy gold recall 0.25; Plan 6 A2) |
 | a re-exported function can bind a same-named method at 0.5 | follow re-exports through `__init__` | not built | rare false 0.5 edges |
 | an imported name used as an object binds any same-named symbol in the module file | require a class | cheap rule | a function and an object of one name in a module |
 | `class_method` picks the first same-named method when a file has two | pick by receiver type | the span rule has no type | edges to the wrong class in a file with two |
@@ -65,3 +65,20 @@ Task 6 (2026-10-12): `typed_receiver_method` resolves `r.m()` from a type declar
 | name-only binds (a bare call with no import, a unique-name base class) are capped at 0.5 and never bind a method; a base imported from outside the repo binds nothing | bind at 1.0 | a name match is not a proof | none beyond the lost recall |
 
 | a JS/TS test case node keeps its `calls` edge beside the `tests` edge (as Python `test_*` does) | tests edge only | one rule for every language; `calls` shows what the case runs | callers/impact of a function list test cases (they are test-path nodes) |
+
+## Plan 5 (recall and distribution) — 2026-10-13
+
+| decision or known limit | alternative | why | who it hurts |
+|---|---|---|---|
+| a bare module-level reference binds only an imported or same-file top-level FUNCTION at 1.0, never a method, never at 0.5 | bind methods too | a method name collides with any class | module tables pointing at methods are missed |
+| `if __name__` guard matched by prefix (`!= "__main__"` also matches); class spans by line range; nested functions bindable as table targets | AST conditions | cheap | rare false entry marks |
+| two same-named methods in one file: the caller lookup by name picks the FIRST as the source of both edges (targets correct) | caller by span | pre-dates A2 | source-side precision on such files — Plan 6 |
+| `it:` case nodes keyed by name+line; same-title cases on one line share a key; `test.describe.serial/only` lose the title prefix; Playwright `test.*` members other than skip/only/todo/concurrent/fails are not cases | — | measured on hono | cosmetic |
+| a duplicate alias from conditional imports in `__init__` binds the first at 1.0; star/external/own-definition re-export guards untested; the cycle test is vacuous | drop duplicate aliases | small | rare |
+| a reused (no-op) run keeps its old limitations even when a new unparseable file appeared; rename/binary/cap/version cases untested | compare walk counters | the graph is identical | stale limitation text |
+| `setup`: a bare `--bin` name relies on the client's PATH; dangling symlinks are not followed; `COMPAREGRAPH_NOW` is a test hook in production; serde_json `preserve_order` + `arbitrary_precision` are crate-global (envelope keys now in insertion order; `1e5` round-trips as `1e+5`); the `result_large_err` clippy allow should become a boxed variant | — | shipped | none observed |
+| `catalog` prints raw JSON (not an envelope) so it can be redirected; ERROR_CODES is a hand-kept list with no cross-check test; matrix CSVs ignore `--repo` | — | documented | drift risk on a new error code |
+| the vault's description lines are template-built from stored facts, never summaries | model-written summaries | deterministic, model-free | thin triage text |
+| crash fix: the only unsafe byte-index site was resolve.rs:269; a panic in resolution now fails the run as `Panicked(file)`; pre-loop passes are not file-marked; `show` caps callers/callees at 50 (`--max-callers` 1..2000) and reports totals | — | measured on hermes-agent and openclaw | a panic in a pre-loop pass names "an unknown file" |
+| scale: openclaw (38k files) took 1,866 s with every parse a cache hit — resolution is super-linear | indexed lookups, incremental edges | measured in the proof | large monorepos — Plan 6 B1–B3 |
+| measured after Plan 5 (five projects, two readers, gold): precision on par or ahead; recall on par Python, ahead Rust, BEHIND TypeScript (0.31 vs 0.56) and Go (0.25 vs 0.65); speed ahead (ratios, loaded host) | — | `docs/reports/2026-10-12-engine-parity.md` | Plan 6 targets |
