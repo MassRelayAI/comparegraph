@@ -1,9 +1,9 @@
 ---
 title: Engine parity with code-review-graph, measured on three projects
 date: 2026-10-12
-valid_until: 2027-01-10
+valid_until: 2027-01-13
 lane: plan-4
-verdict: symbols on par; calls on par for Python, close on mixed Python/JS, behind on Rust and TS/JSX; call precision sampled at 26 correct of 30; imports on par for Python; tests behind; build 2.4-4x faster; ahead on cross-repo comparison and evidence; absent - embeddings, flows, diff review
+verdict: calls behind on recall (gold 0.63 vs 0.71 pooled; Go 0.25 vs 0.65, TS 0.31 vs 0.56), ahead on precision (0.98 vs 0.95), on par for Python, ahead on Rust+TS; symbols and imports on par; tests behind; build 1.6-3.4x faster; ahead on cross-repo comparison; absent - embeddings, flows, diff review
 status: decided
 ---
 
@@ -279,3 +279,164 @@ Reading: recall did not move (the Jaccards are within 0.003), and the "only ours
 bare-name binds that were 1.0 are now 0.5: that is the intended change (a name match is no longer reported as certain), and a
 `--min-confidence 1.0` query drops them. Cold build medians on the busy host: 2.30 / 1.12 / 5.16 s against code-review-graph's
 6.03 / 5.34 / 16.67 s.
+
+## After Plan 5 — five projects, two readers, a gold standard (2026-10-13)
+
+The sections above are left as written. This section re-measures at main `1dba411` (release build, not rebuilt), code-review-graph
+2.3.9, five projects, `scripts/compare-engines.sh --sample-size 100 --gold 150 --gold-seed 11`, seed 7, three cold builds per
+engine per project alternated (ours, crg, crg-raw, ours, ...) at `nice -n 10`, medians. Run started 2026-10-13T02:36:57+07:00.
+Projects (upstream, commit): graphmind https://github.com/aouicher/graphmind @4a90a7e · srclight https://github.com/srclight/srclight
+@23924ff · code-review-graph https://github.com/tirth8205/code-review-graph @6b12d11 · hono https://github.com/honojs/hono @552ea02
+(TypeScript-first, new) · caddy https://github.com/caddyserver/caddy @d293dcf (Go, new). Gold labels are committed under
+`fixtures/gold/<project>/calls.jsonl` (draw method and rubric in `fixtures/gold/README.md`).
+
+### Automated comparison
+
+Symbol = function+method+class+type by (path, name); calls, imports, tests are resolved distinct edges.
+
+| project | symbol J | call J (resolved) | import J | test J | 0.5 share (our call edges below 1.0) | ours cold s | crg cold s | ratio crg/ours |
+|---|---|---|---|---|---|---|---|---|
+| graphmind | 0.9457 | 0.7411 | 0.6474 | 0.1185 | 66 of 3331 (2.0 pct) | 3.24 | 5.96 | 1.84x |
+| srclight | 0.988 | 0.9695 | 0.904 | 0.6052 | 14 of 3271 (0.4 pct) | 1.61 | 5.51 | 3.42x |
+| code-review-graph | 0.9352 | 0.9647 | 0.9013 | 0.5221 | 60 of 11575 (0.5 pct) | 7.60 | 17.03 | 2.24x |
+| hono | 0.191 | 0.0116 | 0.9413 | 0.0 | 909 of 3722 (24.4 pct) | 6.93 | 11.30 | 1.63x |
+| caddy | 0.7772 | 0.2412 | 0.0 | 0.1053 | 698 of 2088 (33.4 pct) | 2.68 | 8.93 | 3.33x |
+
+Speed caveat, verbatim: the host (40 cores) ran at load 37-73 during the whole run because other sessions shared it; absolute seconds
+are inflated and noisy, the alternation keeps the ratio fair — read the ratios only. The 2026-10-12 table was taken on a different load.
+
+Resolved distinct edges (crg / ours / both): calls graphmind 2,752 / 3,328 / 2,588 · srclight 3,187 / 3,271 / 3,179 ·
+code-review-graph 11,581 / 11,575 / 11,370 · hono 5,267 / 3,463 / 100 · caddy 5,105 / 2,088 / 1,398. Imports (crg / ours / both):
+303 / 468 / 303 · 198 / 179 / 179 · 841 / 758 / 758 · 937 / 882 / 882 · 0 / 389 / 0. Unchanged rebuilds reused the cache on all five.
+
+### Inter-reader agreement
+
+Two independent readers, neither saw the other's labels. Cohen's kappa over the label sets: crg-only (our_miss / their_false / ambiguous), ours-only (correct / false / ambiguous), gold: `is_call` (yes/no) and, over the rows both call `yes`, the target (path separators normalised, `#n` ignored, `external` and `unknown` as labels).
+
+| project | crg-only raw / kappa (disagree of n) | ours-only raw / kappa (disagree of n) | gold is_call raw / kappa (disagree) | gold target raw / kappa (disagree of both-yes) |
+|---|---|---|---|---|
+| graphmind | 0.75 / 0.58 (25 of 100) | 0.99 / 0.90 (1 of 100) | 1.00 / 1.00 (0) | 0.98 / 0.98 (2 of 130) |
+| srclight | 1.00 / 1.00 (0 of 8) | 0.99 / 0.85 (1 of 92) | 1.00 / 1.00 (0) | 0.98 / 0.96 (3 of 134) |
+| code-review-graph | 0.95 / 0.86 (5 of 100) | 0.95 / 0.88 (5 of 100) | 0.99 / 0.96 (1) | 1.00 / 1.00 (0 of 137) |
+| hono | 0.84 / 0.62 (16 of 100) | 0.96 / 0.84 (4 of 100) | 1.00 / 1.00 (0) | 0.94 / 0.89 (9 of 146) |
+| caddy | 0.98 / 0.96 (2 of 100) | 0.86 / 0.10 (14 of 100) | 0.97 / 0.43 (5) | 0.95 / 0.92 (7 of 143) |
+| pooled | 0.88 / 0.76 (48 of 408) | 0.95 / 0.77 (25 of 492) | 0.99 / 0.94 (6 of 750) | 0.97 / 0.95 (21 of 690) |
+
+Reading: gold labelling is reliable (kappa 0.94 to 0.95 pooled). The sample classifications are weaker on two cells. caddy ours-only
+has raw agreement 0.86 but kappa 0.10: 96 of 100 rows are `correct` for reader 1, so chance agreement is near 1 and kappa collapses;
+the real disagreement is that reader 2 marked 11 Go type conversions (`HandlerFunc(...)`, `WeakString(...)`) `ambiguous` where reader 1
+called them correct calls. The crg-only kappas of graphmind (0.58) and hono (0.62) come from the same split on JSX components and
+interface/trait-object receivers (reader 2 `ambiguous`: 24 rows in graphmind, 10 in hono). Gold disagreements are mostly one rubric
+point: a call through a local closure or fixture-returned function (reader 1 named the closure, reader 2 said `unknown`) and dynamically
+assigned `app.get` in hono (reader 1 named the declaring property, reader 2 `unknown`).
+
+#### Five example disagreements per project (R1 / R2 labels, then their notes)
+
+**graphmind**
+
+- crg-only `crates/graphmind-desktop/src/pages/Setup.tsx:888` `StepAddProject`: R1 `our_miss` / R2 `ambiguous`. R1: JSX component use in same file. R2: JSX.
+- ours-only `crates/graphmind-config/src/config.rs:77` `LicenseConfig`: R1 `false` / R2 `ambiguous`. R1: caller McpConfig::default never mentions LicenseConfig. R2: LicenseConfig::default().
+- gold `crates/graphmind-cli/tests/cli_claude_hooks_e2e.rs:358` `git`: R1 `crates/graphmind-cli/tests/cli_claude_hooks_e2e.rs::git` / R2 `unknown`. R1: local closure git. R2: git is a local closure in the test.
+- crg-only `crates/graphmind-embeddings/tests/embedding_pipeline.rs:561` `embed_batch`: R1 `their_false` / R2 `ambiguous`. R1: engine is a Voyage engine built from config; target is the MockEngine impl. R2: trait-object.
+- gold `crates/graphmind-desktop/src/pages/Integrations.tsx:40` `refresh`: R1 `crates/graphmind-desktop/src/hooks/useClients.ts::refresh` / R2 `unknown`. R1: (no note). R2: refresh is destructured from a hook return.
+
+**srclight**
+
+- ours-only `src/srclight/server.py:3519` `close`: R1 `correct` / R2 `false`. R1: call text present, receiver is the imported module/instance of the target. R2: _workspace_db.
+- gold `tests/test_qualified_name_graph.py:180` `serve`: R1 `tests/test_qualified_name_graph.py::_serve` / R2 `unknown`. R1: fixture returns inner _serve. R2: serve is a pytest fixture returning a closure.
+- gold `tests/test_scan_gaps.py:419` `real`: R1 `src/srclight/indexer.py::_get_parser` / R2 `unknown`. R1: real = Indexer._get_parser. R2: real is a local variable holding the original method.
+
+**code-review-graph**
+
+- crg-only `tests/fixtures/sample.sv:41` `Adder`: R1 `our_miss` / R2 `ambiguous`. R1: SystemVerilog module instantiation. R2: SystemVerilog.
+- ours-only `code_review_graph/eval/runner.py:94` `run`: R1 `ambiguous` / R2 `false`. R1: module-level dict reference agent_baseline.run (line 37); shown subprocess.run is stdlib. R2: subprocess.run.
+- gold `code_review_graph/visualization.py:1695` `nodeToCommunity.get`: R1 `external` / R2 `not a call`. R1: (no note). R2: JavaScript.
+- crg-only `tests/fixtures/sample.sol:208` `mulPrecise`: R1 `our_miss` / R2 `ambiguous`. R1: call resolves to a definition in the repo. R2: Solidity.
+- ours-only `code-review-graph-vscode/src/views/treeView.ts:32` `StatsItem`: R1 `false` / R2 `ambiguous`. R1: caller getChildren (32-43) never creates StatsItem; that is another class. R2: same-named.
+
+**hono**
+
+- crg-only `src/jsx/streaming.test.tsx:96` `Content`: R1 `our_miss` / R2 `ambiguous`. R1: call resolves to a definition in the repo. R2: Content: cannot tell statically.
+- ours-only `src/jsx/dom/index.ts:20` `useEffect`: R1 `ambiguous` / R2 `false`. R1: export/re-export specifier, not a call. R2: line.
+- gold `adapters/aws-lambda/test/index.test.ts:84` `app.get`: R1 `src/hono-base.ts::get` / R2 `unknown`. R1: Hono.get is declared at hono-base.ts:104 and assigned dynamically in the constructor loop (line 131). R2: app.get is dynamically assigned in HonoBase.
+- crg-only `src/adapter/bun/websocket.test.ts:11` `send`: R1 `our_miss` / R2 `their_false`. R1: call resolves to a definition in the repo. R2: send: claimed target wrong: builtin/other-type method or not a call.
+- ours-only `src/jsx/children.test.ts:39` `createElement`: R1 `correct` / R2 `false`. R1: real call or instantiation, target resolves. R2: imports.
+
+**caddy**
+
+- crg-only `caddyconfig/load.go:59` `AdminHandlerFunc`: R1 `our_miss` / R2 `ambiguous`. R1: call resolves to a definition in the repo. R2: type.
+- ours-only `modules/caddyhttp/server_test.go:1159` `HandlerFunc`: R1 `correct` / R2 `ambiguous`. R1: real call or type conversion, target resolves. R2: type.
+- gold `admin.go:266` `addRoute`: R1 `admin.go::addRoute` / R2 `unknown`. R1: closure at admin.go:245. R2: addRoute is a local closure variable.
+- ours-only `caddyconfig/caddyfile/dispenser.go:535` `isNextOnNewLine`: R1 `false` / R2 `correct`. R1: call is to the package func isNextOnNewLine(t1,t2) in lexer.go; ours bound it to the method itself. R2: isNextOnNewLine: call resolves to claimed symbol.
+- gold `admin.go:270` `addRouteWithMetrics`: R1 `admin.go::addRouteWithMetrics` / R2 `unknown`. R1: closure at admin.go:235. R2: addRouteWithMetrics is a local closure variable.
+
+### Sample classifications, agreed rows only
+
+A row counts only when both readers gave the same label. Precision of code-review-graph's extra edges = our_miss / (our_miss + their_false); precision of our extra edges = correct / (correct + false). `ambiguous` rows are left out of both ratios. In brackets: reader 1 alone, reader 2 alone (the sensitivity band).
+
+| project | crg-only agreed n of drawn | our_miss / their_false / ambiguous | crg-edge precision (R1, R2) | ours-only agreed n of drawn | correct / false / ambiguous | our-extra precision (R1, R2) |
+|---|---|---|---|---|---|---|
+| graphmind | 75 of 100 | 46 / 29 / 0 | 0.61 (0.68, 0.62) | 99 of 100 | 95 / 0 / 4 | 1.00 (0.99, 1.00) |
+| srclight | 8 of 8 | 6 / 1 / 1 | 0.86 (0.86, 0.86) | 91 of 92 | 88 / 1 / 2 | 0.99 (0.99, 0.98) |
+| code-review-graph | 95 of 100 | 76 / 5 / 14 | 0.94 (0.94, 0.94) | 95 of 100 | 71 / 2 / 22 | 0.97 (0.96, 0.95) |
+| hono | 84 of 100 | 66 / 18 / 0 | 0.79 (0.79, 0.76) | 96 of 100 | 85 / 11 / 0 | 0.89 (0.88, 0.86) |
+| caddy | 98 of 100 | 59 / 26 / 13 | 0.69 (0.70, 0.69) | 86 of 100 | 85 / 1 / 0 | 0.99 (0.96, 0.99) |
+| pooled | 360 of 408 | 253 / 79 / 28 | 0.76 | 467 of 492 | 424 / 15 / 28 | 0.97 |
+
+Reading: edges only code-review-graph has are mostly real calls we lack (pooled majority our_miss); its extra edges are X
+percent of the time on graphmind, hono and caddy (bare-name binds, a local `reverse` bound to `Array.reverse`'s name). Our extra edges are
+correct 88 to 99 percent of the time. The sampled populations differ greatly in size (hono crg-only 5,167, caddy 3,707), so these are
+precision estimates for the sampled edge sets, not engine-wide accuracy. The hono false edges have three causes: `render()` bound to the
+benchmark copy `benchmarks/jsx/src/hono.ts::render` instead of `src/jsx/dom/render.ts` (8 of 12 reader-1 false rows), the global
+`new Response` bound to the type alias `src/client/types.ts::Response` (3), and a `setCount` destructured from `useState` bound to a `let` in another test (1).
+
+### Gold standard: 150 sites per project, scored against the labels
+
+An engine answers a site when the smallest function or method node of its own graph enclosing the line has a call edge whose target name equals the callee's last segment (`unresolved::` answers ignored). Precision = answered sites whose answer set contains the true target / answered sites with a known truth (an answer on an `external` site is a false answer). Recall = repo-target sites whose answer set contains the true target / repo-target sites. `final` = rows both readers agree on (disagreements dropped; their count below). The band is reader 1 alone and reader 2 alone (disagreements resolved in favour of each); the table gives min to max over final, R1, R2.
+
+| project | gold rows dropped (disagree) | repo-target sites (final) | ours precision | ours recall | crg precision | crg recall |
+|---|---|---|---|---|---|---|
+| graphmind | 2 | 48 | 0.973 (0.947 to 0.973) | 0.750 (0.720 to 0.750) | 0.963 (0.963 to 0.963) | 0.542 (0.520 to 0.542) |
+| srclight | 3 | 50 | 1.000 (0.951 to 1.000) | 0.780 (0.736 to 0.780) | 1.000 (0.949 to 1.000) | 0.740 (0.698 to 0.740) |
+| code-review-graph | 1 | 53 | 1.000 (1.000 to 1.000) | 0.925 (0.925 to 0.925) | 1.000 (1.000 to 1.000) | 1.000 (1.000 to 1.000) |
+| hono | 9 | 36 | 0.846 (0.846 to 0.857) | 0.306 (0.273 to 0.306) | 0.870 (0.840 to 0.870) | 0.556 (0.477 to 0.556) |
+| caddy | 12 | 48 | 1.000 (1.000 to 1.000) | 0.250 (0.245 to 0.250) | 0.886 (0.872 to 0.886) | 0.646 (0.607 to 0.646) |
+| pooled | 27 | 235 | 0.980 (0.962 to 0.980) | 0.626 (0.586 to 0.626) | 0.954 (0.934 to 0.954) | 0.711 (0.668 to 0.711) |
+
+Counts behind the pooled final row: ours 147 correct of 150 answered, 147 hits of 235 repo-target sites; code-review-graph 167 of 175
+answered, 167 of 235. Reader 1 alone (the A6a provisional): ours precision 150/156, recall 150/256; crg 171/183, 171/256. The dropped rows
+are mostly sites where reader 1 named a local closure or dynamic method that reader 2 called `unknown`; neither engine models them, so
+dropping them slightly flatters both recalls (hono ours 0.273 to 0.306, graphmind 0.72 to 0.75). Per-project sampling noise is about
++-0.1 (36 to 53 repo-target sites).
+
+### Verdict per area
+
+| area | verdict | the number that decides it |
+|---|---|---|
+| symbols | on par on Python, Rust+TS and mixed repos; not comparable on hono, behind on caddy | Jaccard 0.935 to 0.988 on graphmind, srclight, code-review-graph; caddy 0.777 (types: we emit 1,010 `type` nodes, crg 0); hono 0.191 (function 0.107, class 0.07, types 1,168 vs 0, keying) |
+| calls, Python (srclight, code-review-graph) | on par | gold recall 0.78 / 0.925 ours vs 0.74 / 1.0 crg, precision 1.0 both; resolved call J 0.970 and 0.965 |
+| calls, Rust + TS/JSX (graphmind) | ahead | gold recall 0.75 vs 0.54, precision 0.97 vs 0.96; call J 0.741; but 29 of 75 agreed crg-only rows were their_false, 46 our_miss |
+| calls, TypeScript (hono) | behind | gold recall 0.31 vs 0.56 (band 0.27 to 0.31 vs 0.48 to 0.56); precision 0.85 vs 0.87; call J 0.012 |
+| calls, Go (caddy) | behind | gold recall 0.25 vs 0.65, precision 1.0 vs 0.89; call J 0.241 |
+| calls, pooled | behind on recall, ahead on precision | recall 0.626 vs 0.711 (band 0.586 to 0.626 vs 0.668 to 0.711), precision 0.980 vs 0.954 |
+| imports | on par on Python and TS, ahead on Go and Rust+TS by superset | J 0.904 / 0.901 / 0.941 (srclight, code-review-graph, hono); graphmind 0.647 with ours a superset (468 vs 303); caddy: crg 0 Go imports, ours 389 |
+| tests | behind | J 0.12, 0.61, 0.52, 0.00, 0.11 (hono's 0.00: 2,683 ours vs 4,181 crg, 0 shared) |
+| speed | ahead | cold build 1.63x to 3.42x faster (ratios only, loaded host) |
+| comparison layer (matrix, relate, claims, vault) | ahead | absent in code-review-graph; not re-measured in this run |
+
+### What the numbers cannot show
+
+- Keying artefacts in hono symbol J (0.191): the two engines name `describe`/`it` blocks, class-like objects and type aliases under different kinds and names, so the (path, name) key overlaps little even where both found the code; hono's call J (0.012) is the same artefact compounded, and the gold recall is the trustworthy figure there.
+- Go imports are absent in code-review-graph (0 edges), so import J is 0.0 for caddy by emptiness, not by disagreement.
+- The host was loaded (37 to 73 on 40 cores): absolute seconds are not comparable with 2026-10-12; only the ratios are meaningful.
+- Callee extraction in the gold draw is a one-line, per-language regex, first call per line: it undersamples chained and multi-line calls and over-represents simple statement-start calls, and the scoring matches on callee name from the enclosing node, so a right name from the right function counts as a hit even when several same-name targets exist.
+- Two readers, one rubric author: kappa is high on gold but agreement on `ambiguous` is weak, and both readers are language-model agents, not independent humans. Samples are 36 to 53 repo-target sites per project (about +-0.1).
+- Recall is over repo-target sites only; the 79 to 96 external-call sites per project test only whether an engine wrongly answers them.
+
+### What would close each behind
+
+- TypeScript recall (hono 0.31 vs 0.56): 18 of 44 reader-1 repo-target sites sit in `describe()` bodies or at module level, with no enclosing function node in our graph (we create one node per `it`/`test`, none for `describe`), so only 26 of 44 are reachable; add describe-body and module-level function nodes (a file-level caller). Dynamically assigned `app.get/use/on` need the constructor loop modelled.
+- Go recall (caddy 0.25 vs 0.65): same-file calls on a receiver method (`s.handle()` where `s` is the enclosing method's receiver) are not bound; bind them by the receiver's declared type in the same file, then across the package.
+- hono false edges (11 of 96 agreed ours-only rows false): never bind a bare name to `benchmarks/**` copies when a non-benchmark definition of the same name is imported in the file (the `render()` case), and do not bind `new Response` / `Response(...)` to a type alias (the constructor is a global).
+- Tests (J 0.00 to 0.61): link a test to its callees through the new per-case nodes in TS and Go test files; hono's 0.00 is not diagnosed beyond the keying difference.
+- Symbols on caddy and hono: align the kind mapping (Go `type` declarations, TS type aliases) in `compare-engines.sh` before reading these Jaccards as disagreement.
