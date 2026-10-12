@@ -1,6 +1,7 @@
 pub mod inherit;
 pub mod resolve;
 pub mod rust_ctx;
+pub mod tests_link;
 pub mod vendor;
 pub mod walker;
 use super::{
@@ -29,9 +30,12 @@ fn kind_of(k: &vendor::SymbolKind) -> NodeKind {
         vendor::SymbolKind::Interface | vendor::SymbolKind::Type => NodeKind::Type,
     }
 }
-fn is_test_path(p: &str) -> bool {
+pub(crate) fn is_test_path(p: &str) -> bool {
     let l = p.to_ascii_lowercase();
-    l.contains("/tests/")
+    l.starts_with("tests/")
+        || l.starts_with("test/")
+        || l.ends_with("test.java")
+        || l.contains("/tests/")
         || l.contains("/test/")
         || l.contains("/__tests__/")
         || l.contains(".test.")
@@ -250,6 +254,8 @@ impl GraphProvider for ReferenceProvider {
         }
         out.edges_by_qn = resolve::resolve_edges(&parsed);
         out.edges_by_qn.extend(inherit::inherit_edges(&parsed));
+        let links = tests_link::tests_edges(&parsed, &out.edges_by_qn);
+        out.edges_by_qn.extend(links);
         out.edges_by_qn
             .sort_by(|a, b| (a.0.as_str(), &a.1, &a.2).cmp(&(b.0.as_str(), &b.1, &b.2)));
         out.edges_by_qn.dedup();
