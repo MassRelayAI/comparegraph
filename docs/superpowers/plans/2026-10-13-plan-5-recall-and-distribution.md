@@ -54,9 +54,22 @@ Our own pass per language (Python, TS/JS/JSX, Go `init`/package-level `var`, Rus
 - [ ] Tests first (tests/incremental.rs): no-op returns the same run id and hash; a changed file produces a new run; `--full` always a new run.
 - [ ] Commit `feat(build): a no-op build reuses the latest run`.
 
-### A6: Re-measure
-Run `scripts/compare-engines.sh` as before (fresh copies, code-review-graph 2.3.9, seed 7, 20 crg-only + 10 ours-only per project, hand-classified by reading). Append "After Plan 5 (2026-10-13)" to the parity report with before→after and refreshed per-area verdicts. Expect: call recall on Rust/TS up (module-level + field types), test links up (per-case nodes).
-- [ ] Commit `docs: parity re-measured after plan 5`.
+### A6: Re-measure — larger samples, two readers, two more projects, a gold standard
+Feedback folded in (the orchestrator, 2026-10-13): the earlier verdicts rest on 30/60-edge samples read once by one worker, on three
+projects of which two are Python; overlap with code-review-graph is agreement, not accuracy; and the speed headline mixes host loads.
+1. Add two study projects to the comparison set (clone into the study folder beside the others, never into the repo): one TypeScript-first
+   (a well-known MIT/Apache TS project of 300–1,500 source files) and one Go project of similar size. Record upstream URL and head.
+2. Samples: 100 crg-only and 100 ours-only call edges per project (seed 7), each classified by TWO independent readers (two separate
+   agents, neither sees the other's labels); report agreement (Cohen's kappa) and the disagreements, and count a label only when both agree.
+3. Gold standard: for each project, 150 call sites drawn at random (seed 11) from the source itself — not from either engine's output —
+   labelled by two readers with the true target symbol or "external/unknown"; score BOTH engines' precision and recall against it.
+   Commit the gold labels under `fixtures/gold/<project>/calls.jsonl` (path, line, callee text, target qualified name or null, two labels,
+   final) — project sources are not committed, only the labels with path:line.
+4. Speed: three cold builds each, same nice level, back to back in alternation (ours, crg, ours, crg, …), medians; state the host load.
+5. Append "After Plan 5 (2026-10-13)" to the parity report: before→after per project (now five), the two-reader samples with kappa,
+   the gold-standard precision/recall for both engines, the speed table with its caveat, refreshed per-area verdicts, and a short
+   "what the numbers cannot show" paragraph. Update `scripts/compare-engines.sh` to take the sample sizes and the second-reader mode.
+- [ ] Commit `docs: parity re-measured after plan 5 — five projects, two readers, a gold standard`.
 
 ## Lane B — distribution
 
