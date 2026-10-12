@@ -9,7 +9,7 @@
 ![Agents: 6](https://img.shields.io/badge/agents-6-purple.svg)
 ![100% local](https://img.shields.io/badge/100%25-local-brightgreen.svg)
 
-<!-- Cargo.toml: license = "Apache-2.0", rust-version = "1.85"; crates/comparegraph/src/adapters/mcp.rs: 17 tools. Languages 29: reference/mod.rs capabilities() lists 32 ids = 29 languages (tsx, jsx, mjs fold into typescript/javascript). Agents 6: application/setup.rs clients. CI badge: add when .github/workflows/ci.yml lands. -->
+<!-- sources: Cargo.toml (licence, rust-version); adapters/mcp.rs (17 tools); reference/mod.rs (29 languages); application/setup.rs (6 clients) -->
 
 CompareGraph parses many cloned repositories into one SQLite graph. It scores each clone against
 a taxonomy (a "family" of features) and records, per clone and feature, a verdict with a
@@ -63,11 +63,17 @@ field (`family propose` drafts the taxonomy), and coding agents that need compac
 
 ### 1. Install
 
+Clone the repository. The example family pack (`families/`) and the sample repositories (`fixtures/`) used below ship
+in the clone, not in the installed binary.
+
 ```bash
-cargo install --git https://github.com/nicholasandreasujitno/comparegraph comparegraph
+git clone https://github.com/nicholasandreasujitno/comparegraph
+cd comparegraph
+cargo install --locked --path crates/comparegraph
 ```
 
-`npm i -g comparegraph` arrives with the first release. Until then, build from source with Rust 1.85 or newer.
+`--locked` is required: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` pins a version
+that resolves. `npm i -g comparegraph` is coming with the first release. Build from source with Rust 1.85 or newer.
 
 ### 2. Wire up your agent
 
@@ -87,36 +93,41 @@ comparegraph setup --client claude --apply    # writes the entry, backs up the o
 
 `--client all` acts only on clients that look installed. Check the result with `comparegraph doctor`.
 
-### 3. Add and build your first clones
+### 3. Add and build your first clone
+
+Use a workspace folder next to the clone. The sample is `fixtures/python`, a four-file Python package that ships with the repository.
 
 ```bash
-comparegraph add ../tiny --name tiny       # register a clone (read, never run)
-comparegraph build tiny                    # parse it: one run, one store hash
-comparegraph search parse_config --repo tiny
-comparegraph show tiny "src/a.py::parse_config"   # callers, callees, community, licence lane
+mkdir ws && cd ws
+comparegraph add ../comparegraph/fixtures/python --name pyfix   # register a clone (read, never run)
+comparegraph build pyfix                                        # parse it: one run, one store hash
+comparegraph search add --repo pyfix                            # symbols whose name contains "add"
+comparegraph show pyfix "pkg/core.py::add"                      # callers, callees, community, licence lane
 ```
 
 ### 4. Compare
 
+The family pack comes from the clone: `../comparegraph/families/example-code-graph-tools`.
+
 ```bash
-comparegraph family add families/example-code-graph-tools   # load a taxonomy pack
+comparegraph family add ../comparegraph/families/example-code-graph-tools   # load a taxonomy pack
 comparegraph relate                                         # related | adjacent | unrelated
-comparegraph map tiny example-code-graph-tools              # candidate symbols per feature (writes nothing)
-comparegraph claim tiny symbols.extraction has --author me --at src/a.py:1-2
+comparegraph map pyfix example-code-graph-tools             # candidate symbols per feature (writes nothing)
+comparegraph claim pyfix symbols.extraction has --author me --at pkg/core.py:1-2
 comparegraph matrix example-code-graph-tools                # features x clones, prevalence, gaps
 comparegraph export vault --out ./vault                     # then open ./vault in Obsidian
 ```
 
-Every command prints one JSON envelope (add `--pretty` to indent it). Real output from a 9-line Python file, trimmed:
+`relate` says `unrelated` here, as it should: a four-file package is not a code-graph tool. The matrix has one
+claimed cell (`symbols.extraction`, `has`, prevalence 1.0) and nine unclaimed `-` cells.
+
+Every command prints one JSON envelope (add `--pretty` to indent it). Real output from the steps above (a fresh clone, an installed binary), trimmed:
 
 | Command | Shape of `data` |
 |---|---|
-| `build` | `{"run":1,"nodes":5,"edges":6,"files_parsed":1,"communities":1,"store_hash":"4606fbda..."}` |
-| `search` | `items[]` with `qualified_name`, `kind`, `path`, `line_start`, `line_end`, `score`, `"label":"candidate"` |
-| `show` | `node`, `community`, `callers[]`, `callees[]`, `stale`, `confidence` |
-| `claim` | `verdict`, `confidence:"derived"`, `author`, `locations[]` with `content_hash` and `stale:false` |
-| `matrix` | `columns[]`, `rows[]` with `cells[]`, `prevalence`, `gap`, `differentiator` |
-| `export vault` | `{"written":"./vault","repos":1,"files":21,"communities":1,"symbols":4}` |
+| `build` | `{"run":1,"nodes":14,"edges":20,"files_parsed":4,"communities":2,"store_hash":"580d220d..."}` |
+| `show` | `node`, `community:"pkg"`, `callers[]` (`pkg/cli.py::main`, `pkg/core.py::bump`, `pkg/test_core.py::test_add`), `stale`, `confidence` |
+| `export vault` | `{"written":"./vault","repos":1,"files":28,"communities":2,"symbols":10}` |
 
 ## Uninstall
 
@@ -126,7 +137,7 @@ Remove the `comparegraph` entry from each client you set up, then delete the wor
 |---|---|---|
 | Claude Code | `~/.claude.json` or `.mcp.json` | `mcpServers.comparegraph` |
 | Codex | `~/.codex/config.toml` or `.codex/config.toml` | the `[mcp_servers.comparegraph]` table |
-| Cursor | `.cursor/mcp.json` (or `~/.cursor/mcp.json`) | `mcpServers.comparegraph` |
+| Cursor | `.cursor/mcp.json` (project; user scope `~/.cursor/mcp.json` is unverified and not written) | `mcpServers.comparegraph` |
 | Gemini CLI | `~/.gemini/settings.json` or `.gemini/settings.json` | `mcpServers.comparegraph` |
 | OpenCode | `~/.config/opencode/opencode.json` or `opencode.json` | `mcp.comparegraph` |
 | Hermes | `~/.hermes/config.yaml` | `mcp_servers.comparegraph` |
@@ -251,8 +262,9 @@ language feature.
 
 ### Overlap with code-review-graph
 
-Jaccard over nodes keyed `(path, name)` and over resolved edges. Release build at `3afed80`, `nice -n 10`, seed 7,
-one run on one shared host. Symbols and extends/implements are from the earlier run at `4e00187`.
+Jaccard over nodes keyed `(path, name)` and over resolved edges. Seed 7, `nice -n 10`, one run on one shared host.
+Calls, imports, tests and the edge counts are from the run after the review fixes. Symbols and extends/implements are
+from the run before them; the review-fix run did not report those two.
 
 | Measure | graphmind (Rust + TS) | srclight (Python) | code-review-graph (Python + TS) |
 |---|---|---|---|
@@ -264,60 +276,44 @@ one run on one shared host. Symbols and extends/implements are from the earlier 
 | Call edges only they have / only we have | 265 / 736 | 14 / 89 | 364 / 69 |
 | Our call edges below confidence 1.0 | 66 (2.0 percent) | 14 (0.4) | 199 (1.8) |
 
-<!-- docs/reports/2026-10-12-engine-parity.md#after-the-review-fixes-2026-10-13: calls "0.712 to 0.713 | 0.969 to 0.969 | 0.960 to 0.963"; imports "0.647 | 0.904 | 0.901"; tests "0.118 to 0.119 | 0.605 | 0.512 to 0.513"; edge counts "265 / 739 to 265 / 736 | 14 / 89 to 14 / 89 | 385 / 78 to 364 / 69"; 0.5 share "6 (0.2 pct) to 66 (2.0) | 9 (0.3) to 14 (0.4) | 51 (0.5) to 199 (1.8)" -->
-<!-- docs/reports/2026-10-12-engine-parity.md#after-the-precision-and-recall-pass-2026-10-13: symbols "0.946 to 0.946 | 0.988 to 0.988 | 0.854 to 0.939"; extends "0.938 | 0.667 | 0.730"; edge counts 15 vs 16, 9 vs 6, 32 vs 32 from the first edges table -->
 
 The limit: code-review-graph resolves only 16 to 35 percent of its own call targets to an indexed node, so each edge
 Jaccard is over the comparable minority.
 <!-- docs/reports/2026-10-12-engine-parity.md#what-is-compared-and-its-limit -->
 
-Precision, as samples read by hand at `4e00187` by one reader:
+Precision, as samples read by hand by one reader, on the run before the review fixes:
 
 | Sample | Result |
 |---|---|
 | 30 call edges only CompareGraph has (10 per project) | 26 correct, 2 false, 2 ambiguous |
 | 54 call edges only code-review-graph has | 43 our misses, 10 their false edges, 1 ambiguous |
 
+<!-- engine-parity.md#after-the-review-fixes-2026-10-13: calls 0.713/0.969/0.963, imports 0.647/0.904/0.901, tests 0.119/0.605/0.513, edges 265/736, 14/89, 364/69, 0.5 share 66 (2.0), 14 (0.4), 199 (1.8); #after-the-precision-and-recall-pass-2026-10-13: symbols 0.946/0.988/0.939, extends 0.938/0.667/0.730 -->
 <!-- docs/reports/2026-10-12-engine-parity.md#samples-read-by-hand: "total of 30 | 26 | 2 | 2"; "total of 54 | 43 | 10 | 1" -->
 
-These are samples, not rates. The review fixes after them (`3afed80`) were not re-read by hand. The report says so.
+These are samples, not rates. The review fixes that came after were not re-read by hand. The report says so.
 
 ### Build time
 
-Seconds, median of 3 cold builds, same host and nice level. code-review-graph's figure includes Python start-up and its
-flows and community post-processing. CompareGraph's includes communities.
+Seconds, median of 3 cold builds, one run (the final run before the review fixes), same host and nice level.
+code-review-graph's figure includes Python start-up and its flows and community post-processing. CompareGraph's includes communities.
 
 | Project | code-review-graph full | CompareGraph cold | CompareGraph unchanged rebuild |
 |---|---|---|---|
-| graphmind (251 files) | 6.03 | 2.30 | 2.09 |
-| srclight (100 files) | 5.34 | 1.12 | 1.01 |
-| code-review-graph (470 files) | 16.67 | 5.16 | 4.34 |
+| graphmind (251 files) | 6.28 | 2.57 | 2.09 |
+| srclight (100 files) | 5.97 | 1.48 | 1.01 |
+| code-review-graph (470 files) | 18.95 | 6.50 | 4.34 |
 
-<!-- docs/reports/2026-10-12-engine-parity.md#after-the-review-fixes-2026-10-13: "Cold build medians on the busy host: 2.30 / 1.12 / 5.16 s against code-review-graph's 6.03 / 5.34 / 16.67 s."; unchanged rebuild from the 4e00187 table "2.09 / 1.01 / 4.34"; files from the first build table -->
+<!-- engine-parity.md#after-the-precision-and-recall-pass-2026-10-13, "Build time (seconds, median of 3 cold builds; final run)": 6.28/2.57/2.09, 5.97/1.48/1.01, 18.95/6.50/4.34; file counts from the first build table -->
 
-Caveats: a shared host, run-to-run variation of 5 to 15 percent, and no query latency or answer quality measured on
-real tasks. Treat the table as one machine's timings, not a speed-up claim.
-
-### The pipeline on three clones
-
-Release build, fresh workspace, one build per clone.
-
-| Clone | Build s | File nodes | Communities | Files in the largest community |
-|---|---|---|---|---|
-| graphmind | 0.71 | 174 | 40 | 32 (18.4 percent) |
-| srclight | 0.53 | 38 | 11 | 19 (50.0 percent) |
-| code-review-graph | 4.00 | 161 | 46 | 50 (31.1 percent) |
-
-<!-- docs/reports/2026-10-12-plan-1-proof.md#plan-2: "graphmind ... | 0.71 | 174 | 40 | 32 (18.4%) |" and the two rows below it -->
-
-Vault of all three clones: 12,722 files, 52 MB, 0.67 s. With family, feature and claim pages: 12,753 files, 0.70 s. A
-second build gave the same store hash on all three.
-<!-- docs/reports/2026-10-12-plan-1-proof.md#plan-2 "12722 files, 52 MB, 0.67 s"; #plan-3 "12753 files, 0.70 s"; Plan 1 table "hash equal on rerun yes" -->
+Caveats: a shared host (the report notes its own timings varied 5 to 15 percent run to run), and no query latency or answer
+quality measured on real tasks. Treat the table as one machine's timings, not a speed-up claim.
 
 srclight stays at 50 percent: its 38 files sit in one package directory, which the directory split cannot divide.
 
-Behind code-review-graph: call recall on Rust and TS/JSX, test links (Jaccard 0.119 to 0.605), semantic search,
-execution flows, diff-aware review. The graph is rewritten each run; unchanged files reuse a parse cache.
+Behind code-review-graph: call recall on Rust and TS/JSX; semantic search, execution flows and diff-aware review (absent).
+Test links are behind on all three projects: Jaccard 0.119 on graphmind (its Rust tests sit in the same files as the code),
+0.605 on srclight and 0.513 on code-review-graph (it makes one node per `it(...)` case; we attribute to the file). The graph is rewritten each run; unchanged files reuse a parse cache.
 <!-- docs/reports/2026-10-12-engine-parity.md "Verdict per area, now" -->
 
 ## What you get
@@ -331,17 +327,18 @@ Four levels. Each answer says how it knows.
 | Symbols | callers, callees, blast radius, tests that reach a symbol, entry points, dead-code candidates | `show`, `traverse`, `impact`, `tests-for`, `entry-points`, `dead-code` |
 | Claims | verdict, citation, author, trail of superseded rows | `claim`, `claims`, `matrix` |
 
-A real `show` answer from the quick start (trimmed):
+A real `show` answer from step 3 (trimmed):
 
 ```json
 {"ok":true,"verb":"show","schema":1,
- "data":{"repo":"tiny","licence":null,"lane":"study",
-  "node":{"kind":"function","qualified_name":"src/a.py::parse_config",
-          "path":"src/a.py","line_start":1,"line_end":2,"language":"python"},
-  "community":"src/a.py","callers":["src/a.py::push"],"callees":["src/a.py::load"],
-  "stale":false,"confidence":"observed"},
+ "data":{"repo":"pyfix","licence":null,"lane":"study",
+  "node":{"kind":"function","qualified_name":"pkg/core.py::add",
+          "path":"pkg/core.py","line_start":1,"line_end":2,"language":"python"},
+  "community":"pkg",
+  "callers":["pkg/cli.py::main","pkg/core.py::bump","pkg/test_core.py::test_add"],
+  "callees":[],"stale":false,"confidence":"observed"},
  "evidence":{"confidence":"observed","limitations":[]},
- "cost":{"rows":1,"bytes":434}}
+ "cost":{"rows":1,"bytes":453}}
 ```
 
 Envelope fields: `ok`, `verb`, `schema`, `data`, `evidence`, `page`, `cost`, `error`. The exit code is 0 when `ok`
@@ -423,6 +420,44 @@ Usage: comparegraph conform [OPTIONS] <PROVIDER>
 | `dead-code <REPO>` | Candidates nothing references. Dynamic dispatch is invisible. | `--limit`, `--cursor`, `--min-confidence` |
 
 <details>
+<summary><code>comparegraph tests-for</code></summary>
+
+```text
+Tests linked to a symbol directly or through at most 3 call hops
+Usage: comparegraph tests-for [OPTIONS] <REPO> <QUALIFIED_NAME>
+  <REPO>            
+  <QUALIFIED_NAME>  
+      --max-nodes <MAX_NODES>            [default: 200]
+      --min-confidence <MIN_CONFIDENCE>  [default: 0.5]
+```
+</details>
+
+<details>
+<summary><code>comparegraph entry-points</code></summary>
+
+```text
+Symbols nothing calls that are exported, handlers or main
+Usage: comparegraph entry-points [OPTIONS] <REPO>
+  <REPO>  
+      --limit <LIMIT>                    [default: 50]
+      --cursor <CURSOR>                  
+      --min-confidence <MIN_CONFIDENCE>  [default: 0.5]
+```
+</details>
+
+<details>
+<summary><code>comparegraph dead-code</code></summary>
+
+```text
+Candidates nothing references (dynamic dispatch is invisible)
+Usage: comparegraph dead-code [OPTIONS] <REPO>
+  <REPO>  
+      --limit <LIMIT>                    [default: 50]
+      --cursor <CURSOR>                  
+      --min-confidence <MIN_CONFIDENCE>  [default: 0.5]
+```
+</details>
+<details>
 <summary><code>comparegraph search</code></summary>
 
 ```text
@@ -444,17 +479,6 @@ Usage: comparegraph show [OPTIONS] <REPO> <QUALIFIED_NAME>
   <REPO>            
   <QUALIFIED_NAME>  
       --detail <DETAIL>  
-```
-</details>
-<details>
-<summary><code>comparegraph communities</code></summary>
-
-```text
-Module clusters of a repo's latest run
-Usage: comparegraph communities [OPTIONS] <REPO>
-  <REPO>  
-      --limit <LIMIT>    [default: 50]
-      --cursor <CURSOR>  
 ```
 </details>
 <details>
@@ -556,18 +580,6 @@ Usage: comparegraph claim [OPTIONS] --author <AUTHOR> <REPO> <FEATURE> <VERDICT>
 ```
 </details>
 <details>
-<summary><code>comparegraph claims</code></summary>
-
-```text
-Latest claim per (clone, feature); --history lists every row with its supersede chain
-Usage: comparegraph claims [OPTIONS]
-      --repo <REPO>        
-      --family <FAMILY>    
-      --feature <FEATURE>  
-      --history            
-```
-</details>
-<details>
 <summary><code>comparegraph decide</code></summary>
 
 ```text
@@ -596,7 +608,7 @@ Usage: comparegraph matrix <FAMILY>
 
 | Command | What it does | Flags that matter |
 |---|---|---|
-| `export json` | The graph as JSON. | `--repo` |
+| `export json` | The graph as JSON. | `--repo`, `--out` |
 | `export vault` | An Obsidian-style markdown vault, regenerated whole. | `--out` |
 | `mcp` | Serve the read verbs over MCP stdio (JSON-RPC, one object per line). | |
 | `setup` | Register the MCP server with agent clients. A plan by default. | `--client`, `--scope`, `--apply`, `--force`, `--bin` |
@@ -690,8 +702,8 @@ use comparegraph::providers::BuildOptions;
 use std::path::Path;
 
 let root = Path::new(".");
-add::add_repo(root, Path::new("../tiny"), Some("tiny"), false)?;
-let report = build::build_repo(root, "tiny", "reference", &BuildOptions::default())?;
+add::add_repo(root, Path::new("../comparegraph/fixtures/python"), Some("pyfix"), false)?;
+let report = build::build_repo(root, "pyfix", "reference", &BuildOptions::default())?;
 let m = matrix::matrix(root, "example-code-graph-tools")?;
 println!("{} nodes, {} comparators", report.nodes, m.comparators);
 ```
@@ -769,7 +781,7 @@ Every note starts with a front matter block that has a one-line `description:` b
 template, not by a model:
 
 ```text
-description: "function src/a.py::parse_config in src/a.py:1-2, 1 callers, 1 callees"
+description: "function pkg/core.py::add in pkg/core.py:1-2, 3 callers, 0 callees"
 ```
 
 An agent reads the descriptions first and opens a note only when the line is not enough.
@@ -798,10 +810,10 @@ relatedness score is vocabulary overlap, not evidence: in the proof all three cl
 example pack, and the bands do not tell close cousins apart.
 <!-- docs/design-notes-for-review.md; docs/reports/2026-10-12-plan-1-proof.md#plan-3 relatedness table -->
 
-### The method: six skills
+### The method: seven skills
 
-Plain markdown in [`method/`](method). Any agent can read them. Each gives when to use the verb, the exact
-commands, what the engine refuses, and how to check.
+Plain markdown in [`method/`](method): an entry skill, [`using-comparegraph`](method/using-comparegraph/SKILL.md),
+and the six below. Any agent can read them. Each gives when to use the verb, the exact commands, what the engine refuses, and how to check.
 
 | Skill | One line |
 |---|---|
