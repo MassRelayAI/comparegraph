@@ -12,6 +12,8 @@ pub mod walker;
 #[cfg(test)]
 mod tests_recall;
 #[cfg(test)]
+mod tests_unicode;
+#[cfg(test)]
 mod tests_a2;
 #[cfg(test)]
 mod tests_cases;
@@ -93,6 +95,27 @@ pub fn clamp_span(line_start: u32, line_end: u32, n_lines: u32) -> (u32, u32, bo
     } else {
         (ls, le, false)
     }
+}
+
+thread_local! {
+    static CURRENT_FILE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    #[cfg(test)]
+    pub(super) static PANIC_AT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+/// Record the file a resolution pass is working on, so a panic in it can name the file (see `build`).
+pub(super) fn mark_file(path: &str) {
+    CURRENT_FILE.with(|c| {
+        let mut c = c.borrow_mut();
+        c.clear();
+        c.push_str(path);
+    });
+    #[cfg(test)]
+    if PANIC_AT.with(|p| p.borrow().as_deref() == Some(path)) {
+        panic!("injected panic at {path}");
+    }
+}
+fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
+    p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "non-text panic".into())
 }
 
 impl GraphProvider for ReferenceProvider {
@@ -281,77 +304,86 @@ impl GraphProvider for ReferenceProvider {
         if let Some(c) = &opts.cache {
             c.put_many(&fresh);
         }
-        for pf in &parsed {
-            let n_lines = pf.lines.len() as u32;
-            let refs: Vec<&str> = pf.lines.iter().map(String::as_str).collect();
-            out.nodes.push(Node {
-                id: None,
-                kind: if is_test_path(&pf.rel_path) {
-                    NodeKind::Test
-                } else {
-                    NodeKind::File
-                },
-                name: pf
-                    .rel_path
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(&pf.rel_path)
-                    .to_string(),
-                qualified_name: pf.rel_path.clone(),
-                path: pf.rel_path.clone(),
-                line_start: 1,
-                line_end: n_lines.max(1),
-                content_hash: content_hash(&refs),
-                language: pf.language.clone(),
-                provider_ref: (pf.language == "python" && module_ctx::has_main_guard(&pf.lines)).then(|| crate::providers::ENTRY_FILE_REF.to_string()),
-            });
-            // vendored Symbol lines are already 1-based (tree-sitter row + 1)
-            for (s, qn) in pf.symbols.iter().zip(resolve::qualified_names(pf)) {
-                let (ls, le, clamped) = clamp_span(s.line_start, s.line_end, n_lines);
-                if clamped {
-                    out.limitations.push(Limitation::new(
-                        "clamped_line_end",
-                        format!("{}:{} {} → {}", pf.rel_path, s.name, s.line_end, le),
-                    ));
-                }
-                let slice: Vec<&str> = pf.lines
-                    [(ls as usize - 1).min(pf.lines.len())..(le as usize).min(pf.lines.len())]
-                    .iter()
-                    .map(String::as_str)
-                    .collect();
+        CURRENT_FILE.with(|c| c.borrow_mut().clear());
+        let resolved = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for pf in &parsed {
+                mark_file(&pf.rel_path);
+                let n_lines = pf.lines.len() as u32;
+                let refs: Vec<&str> = pf.lines.iter().map(String::as_str).collect();
                 out.nodes.push(Node {
                     id: None,
-                    kind: kind_of(&s.kind),
-                    name: s.name.clone(),
-                    qualified_name: qn,
+                    kind: if is_test_path(&pf.rel_path) {
+                        NodeKind::Test
+                    } else {
+                        NodeKind::File
+                    },
+                    name: pf
+                        .rel_path
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(&pf.rel_path)
+                        .to_string(),
+                    qualified_name: pf.rel_path.clone(),
                     path: pf.rel_path.clone(),
-                    line_start: ls,
-                    line_end: le,
-                    content_hash: content_hash(&slice),
+                    line_start: 1,
+                    line_end: n_lines.max(1),
+                    content_hash: content_hash(&refs),
                     language: pf.language.clone(),
-                    provider_ref: s.signature.clone(),
+                    provider_ref: (pf.language == "python" && module_ctx::has_main_guard(&pf.lines)).then(|| crate::providers::ENTRY_FILE_REF.to_string()),
                 });
+                // vendored Symbol lines are already 1-based (tree-sitter row + 1)
+                for (s, qn) in pf.symbols.iter().zip(resolve::qualified_names(pf)) {
+                    let (ls, le, clamped) = clamp_span(s.line_start, s.line_end, n_lines);
+                    if clamped {
+                        out.limitations.push(Limitation::new(
+                            "clamped_line_end",
+                            format!("{}:{} {} → {}", pf.rel_path, s.name, s.line_end, le),
+                        ));
+                    }
+                    let slice: Vec<&str> = pf.lines
+                        [(ls as usize - 1).min(pf.lines.len())..(le as usize).min(pf.lines.len())]
+                        .iter()
+                        .map(String::as_str)
+                        .collect();
+                    out.nodes.push(Node {
+                        id: None,
+                        kind: kind_of(&s.kind),
+                        name: s.name.clone(),
+                        qualified_name: qn,
+                        path: pf.rel_path.clone(),
+                        line_start: ls,
+                        line_end: le,
+                        content_hash: content_hash(&slice),
+                        language: pf.language.clone(),
+                        provider_ref: s.signature.clone(),
+                    });
+                }
             }
-        }
-        out.edges_by_qn = resolve::resolve_edges(&parsed);
-        out.edges_by_qn.extend(inherit::inherit_edges(&parsed));
-        let links = tests_link::tests_edges(&parsed, &out.edges_by_qn);
-        out.edges_by_qn.extend(links);
-        resolve::dedup_max_confidence(&mut out.edges_by_qn);
-        {
-            let paths: std::collections::HashSet<&str> = parsed.iter().map(|p| p.rel_path.as_str()).collect();
-            if out.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && paths.contains(e.1.as_str())) {
+            out.edges_by_qn = resolve::resolve_edges(&parsed);
+            out.edges_by_qn.extend(inherit::inherit_edges(&parsed));
+            let links = tests_link::tests_edges(&parsed, &out.edges_by_qn);
+            out.edges_by_qn.extend(links);
+            resolve::dedup_max_confidence(&mut out.edges_by_qn);
+            {
+                let paths: std::collections::HashSet<&str> = parsed.iter().map(|p| p.rel_path.as_str()).collect();
+                if out.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && paths.contains(e.1.as_str())) {
+                    out.limitations.push(Limitation::new(
+                        "entry_file_heuristic",
+                        "a call made at module level counts as a use only from an entry file (main, __main__, cli, index, or a Python script with an `if __name__ == \"__main__\":` guard); elsewhere it does not rescue its callee in dead-code",
+                    ));
+                }
+            }
+            if parsed.iter().any(|p| p.language == "go") {
                 out.limitations.push(Limitation::new(
-                    "entry_file_heuristic",
-                    "a call made at module level counts as a use only from an entry file (main, __main__, cli, index, or a Python script with an `if __name__ == \"__main__\":` guard); elsewhere it does not rescue its callee in dead-code",
+                    "no_inheritance_go",
+                    "go has structural typing: no extends/implements edges are produced",
                 ));
             }
-        }
-        if parsed.iter().any(|p| p.language == "go") {
-            out.limitations.push(Limitation::new(
-                "no_inheritance_go",
-                "go has structural typing: no extends/implements edges are produced",
-            ));
+        }));
+        if let Err(p) = resolved {
+            let file = CURRENT_FILE.with(|c| c.borrow().clone());
+            let at = if file.is_empty() { "an unknown file".to_string() } else { file };
+            return Err(ProviderError::Panicked(at, panic_text(p.as_ref())));
         }
         Ok(out)
     }

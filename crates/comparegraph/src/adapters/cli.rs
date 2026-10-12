@@ -8,7 +8,6 @@ use crate::application::{
     export::{export_csv, export_json},
     setup,
     search::{search, SearchQuery},
-    show::show,
     AppError,
 };
 use crate::providers::{by_name, BuildOptions};
@@ -79,6 +78,9 @@ pub enum Cmd {
         qualified_name: String,
         #[arg(long)]
         detail: Option<String>,
+        /// cap on the callers and on the callees listed (1..=2000); a truncated list says so in the limitations
+        #[arg(long, default_value_t = 50)]
+        max_callers: usize,
     },
     /// Nodes reachable from a symbol over calls/extends/implements, with hop distance and the path to each
     Traverse {
@@ -522,6 +524,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             repo,
             qualified_name,
             detail,
+            max_callers,
         } => {
             let full = match detail.as_deref() {
                 None | Some("compact") => false,
@@ -532,7 +535,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     )))
                 }
             };
-            serde_json::to_value(show(&cli.root, repo, qualified_name, full)?).unwrap()
+            serde_json::to_value(crate::application::show::show_with(&cli.root, repo, qualified_name, full, *max_callers)?).unwrap()
         }
         Cmd::Traverse {
             repo,

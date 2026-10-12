@@ -639,3 +639,28 @@ mod vault_tests {
         assert_eq!(slug(&"a".repeat(200)).len(), 80);
     }
 }
+
+#[test]
+fn show_records_truncated_callers_with_the_total_and_honours_max_callers() {
+    use comparegraph::application::show::{show_with, DEFAULT_MAX_CALLERS, MAX_CALLERS_LIMIT};
+    let ws = tempfile::tempdir().unwrap();
+    let mut src = String::from("def target():\n    return 1\n\n\n");
+    for i in 0..60 {
+        src.push_str(&format!("def caller_{i:02}():\n    return target()\n\n\n"));
+    }
+    let c = clone_with(&[("m.py", src.as_str())]);
+    add_repo(ws.path(), c.path(), Some("r"), false).unwrap();
+    build_repo(ws.path(), "r", "reference", &BuildOptions::default()).unwrap();
+    let qn = qn_of(ws.path(), "target");
+    let s = show_with(ws.path(), "r", &qn, false, DEFAULT_MAX_CALLERS).unwrap();
+    assert_eq!(s.callers.len(), 50);
+    assert_eq!(s.callers_total, 60);
+    let l = s.limitations.iter().find(|l| l.code == "truncated").expect("truncated limitation");
+    assert!(l.detail.contains("callers_total=60"), "{}", l.detail);
+    let all = show_with(ws.path(), "r", &qn, false, 100).unwrap();
+    assert_eq!(all.callers.len(), 60);
+    assert!(all.limitations.is_empty());
+    assert_eq!(show_with(ws.path(), "r", &qn, false, 0).unwrap_err().code(), show_with(ws.path(), "r", &qn, false, MAX_CALLERS_LIMIT + 1).unwrap_err().code());
+    // a plain `show` keeps the default cap
+    assert_eq!(comparegraph::application::show::show(ws.path(), "r", &qn, false).unwrap().callers.len(), 50);
+}
