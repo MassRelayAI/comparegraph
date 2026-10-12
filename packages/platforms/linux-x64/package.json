@@ -1,0 +1,19 @@
+{
+  "name": "@comparegraph/linux-x64",
+  "version": "0.1.0",
+  "description": "The comparegraph binary for linux-x64",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicholasandreasujitno/comparegraph.git"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@comparegraph/win32-x64",
+  "version": "0.0.0",
+  "description": "The comparegraph binary for win32-x64",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/nicholasandreasujitno/comparegraph.git" },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin/"]
+}

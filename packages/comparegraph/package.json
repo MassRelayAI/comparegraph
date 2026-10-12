@@ -1,0 +1,25 @@
+{
+  "name": "comparegraph",
+  "version": "0.1.0",
+  "description": "Compare codebases as graphs: a Rust CLI and MCP server for agents",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicholasandreasujitno/comparegraph.git"
+  },
+  "bin": {
+    "comparegraph": "bin/comparegraph.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@comparegraph/linux-x64": "0.1.0",
+    "@comparegraph/darwin-arm64": "0.1.0",
+    "@comparegraph/darwin-x64": "0.1.0",
+    "@comparegraph/win32-x64": "0.1.0"
+  }
+}
