@@ -1,0 +1,310 @@
+use comparegraph::application::{add::add_repo, build::build_repo};
+use comparegraph::providers::BuildOptions;
+use std::process::Command;
+
+fn clone_with(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let d = tempfile::tempdir().unwrap();
+    for (p, c) in files {
+        let f = d.path().join(p);
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(f, c).unwrap();
+    }
+    std::fs::write(
+        d.path().join("LICENSE"),
+        "MIT License\n\nCopyright (c) 2026 S\n",
+    )
+    .unwrap();
+    for args in [
+        vec!["init", "-q"],
+        vec!["add", "."],
+        vec![
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "x",
+        ],
+    ] {
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(d.path())
+            .args(&args)
+            .status()
+            .unwrap()
+            .success());
+    }
+    d
+}
+fn cc(root: &std::path::Path) -> assert_cmd::Command {
+    let mut c = assert_cmd::Command::cargo_bin("comparegraph").unwrap();
+    c.arg("--root").arg(root);
+    c
+}
+fn json(a: assert_cmd::assert::Assert) -> serde_json::Value {
+    serde_json::from_slice(&a.get_output().stdout).unwrap()
+}
+const PACK: &str = "---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n\
+| routing.retry | routing | Retry with backoff | Failed calls are retried | a retry loop | basics | 2 |\n\
+| memory.recall | memory | Recall | Past turns | a store read | extra | 1 |\n";
+
+fn setup() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
+    let ws = tempfile::tempdir().unwrap();
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(pack.path().join("rows.md"), PACK).unwrap();
+    cc(ws.path())
+        .args(["family", "add"])
+        .arg(pack.path())
+        .assert()
+        .success();
+    let a = clone_with(&[(
+        "src/net/a.py",
+        "def retry_with_backoff():\n    return 1\n\ndef recall_turns():\n    return 2\n",
+    )]);
+    add_repo(ws.path(), a.path(), Some("a"), false).unwrap();
+    build_repo(ws.path(), "a", "reference", &BuildOptions::default()).unwrap();
+    (ws, a, pack)
+}
+fn claim(ws: &std::path::Path, extra: &[&str]) -> assert_cmd::assert::Assert {
+    let mut c = cc(ws);
+    c.args(["claim", "a", "routing.retry"]);
+    c.args(extra);
+    c.assert()
+}
+
+#[test]
+fn has_with_resolving_location_is_derived_with_a_node() {
+    let (ws, _a, _p) = setup();
+    let v = json(
+        claim(
+            ws.path(),
+            &["has", "--author", "me", "--at", "src/net/a.py:1-2"],
+        )
+        .success(),
+    );
+    assert_eq!(v["evidence"]["confidence"], "derived", "{v}");
+    assert_eq!(v["data"]["verdict"], "has");
+    let l = &v["data"]["locations"][0];
+    assert!(l["node_id"].is_i64(), "{v}");
+    assert_eq!(l["path"], "src/net/a.py");
+    let one = json(
+        claim(
+            ws.path(),
+            &["partial", "--author", "me", "--at", "src/net/a.py:4"],
+        )
+        .success(),
+    );
+    assert_eq!(one["data"]["locations"][0]["line_start"], 4);
+    assert_eq!(one["data"]["locations"][0]["line_end"], 4);
+}
+
+#[test]
+fn has_without_at_or_author_is_refused() {
+    let (ws, _a, _p) = setup();
+    let v = json(claim(ws.path(), &["has", "--author", "me"]).failure());
+    assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
+    claim(ws.path(), &["unknown"]).failure();
+}
+
+#[test]
+#[cfg(unix)]
+fn unsafe_and_unresolvable_paths_are_refused_and_nothing_is_written() {
+    let (ws, a, _p) = setup();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "x\ny\n").unwrap();
+    std::os::unix::fs::symlink(outside.path().join("secret.txt"), a.path().join("link.txt"))
+        .unwrap();
+    for at in [
+        "../x:1",
+        "/etc/passwd:1",
+        "src/../../x:1",
+        "link.txt:1-2",
+        "src/net/missing.py:1",
+        "src/net/a.py:1-99",
+        "src/net/a.py:0-1",
+        "src/net/a.py:3-2",
+    ] {
+        let v = json(claim(ws.path(), &["has", "--author", "me", "--at", at]).failure());
+        assert_eq!(v["ok"], false, "{at}");
+    }
+    let v = json(cc(ws.path()).args(["claims"]).assert().success());
+    assert_eq!(v["data"]["items"].as_array().unwrap().len(), 0, "{v}");
+}
+
+#[test]
+fn none_needs_searched_terms_that_miss() {
+    let (ws, _a, _p) = setup();
+    let v = json(claim(ws.path(), &["none", "--author", "me"]).failure());
+    assert_eq!(v["error"]["code"], "invalid_arguments");
+    // either term hits (OR rule)
+    json(
+        claim(
+            ws.path(),
+            &["none", "--author", "me", "--searched", "zzzunknown retry"],
+        )
+        .failure(),
+    );
+    let ok = json(
+        claim(
+            ws.path(),
+            &[
+                "none",
+                "--author",
+                "me",
+                "--searched",
+                "zzzunknown qqqmissing",
+            ],
+        )
+        .success(),
+    );
+    assert!(
+        ok["data"]["note"]
+            .as_str()
+            .unwrap()
+            .starts_with("searched: zzzunknown qqqmissing → 0 hits"),
+        "{ok}"
+    );
+}
+
+#[test]
+fn a_second_claim_supersedes_and_history_shows_both() {
+    let (ws, _a, _p) = setup();
+    claim(
+        ws.path(),
+        &["has", "--author", "me", "--at", "src/net/a.py:1-2"],
+    )
+    .success();
+    let second = json(claim(ws.path(), &["unknown", "--author", "you"]).success());
+    let first_id = second["data"]["supersedes_id"].as_i64().unwrap();
+    let v = json(
+        cc(ws.path())
+            .args(["claims", "--repo", "a"])
+            .assert()
+            .success(),
+    );
+    assert_eq!(v["evidence"]["confidence"], "derived");
+    let items = v["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["verdict"], "unknown");
+    let h = json(
+        cc(ws.path())
+            .args([
+                "claims",
+                "--history",
+                "--feature",
+                "routing.retry",
+                "--family",
+                "fam",
+            ])
+            .assert()
+            .success(),
+    );
+    let hi = h["data"]["items"].as_array().unwrap();
+    assert_eq!(hi.len(), 2);
+    assert!(hi
+        .iter()
+        .any(|c| c["id"] == first_id && c["verdict"] == "has"));
+}
+
+#[test]
+fn a_stale_location_shows_the_claim_as_unknown() {
+    let (ws, a, _p) = setup();
+    claim(
+        ws.path(),
+        &["has", "--author", "me", "--at", "src/net/a.py:1-2"],
+    )
+    .success();
+    std::fs::write(a.path().join("src/net/a.py"), "changed\nlines\n").unwrap();
+    cc(ws.path()).arg("check").assert().failure();
+    let v = json(cc(ws.path()).args(["claims"]).assert().success());
+    assert_eq!(v["data"]["items"][0]["confidence"], "unknown", "{v}");
+}
+
+#[test]
+fn unknown_feature_is_not_found() {
+    let (ws, _a, _p) = setup();
+    let v = json(
+        cc(ws.path())
+            .args(["claim", "a", "nope.nothing", "unknown", "--author", "me"])
+            .assert()
+            .failure(),
+    );
+    assert_eq!(v["error"]["code"], "not_found");
+}
+
+#[test]
+fn a_retired_feature_refuses_claims() {
+    let (ws, _a, pack) = setup();
+    let slim = PACK.lines().take(7).collect::<Vec<_>>().join("\n") + "\n";
+    std::fs::write(pack.path().join("rows.md"), slim).unwrap();
+    cc(ws.path())
+        .args(["family", "add"])
+        .arg(pack.path())
+        .assert()
+        .success();
+    let v = json(
+        cc(ws.path())
+            .args(["claim", "a", "memory.recall", "unknown", "--author", "me"])
+            .assert()
+            .failure(),
+    );
+    assert_eq!(v["error"]["code"], "invalid_arguments");
+    assert!(
+        v["error"]["message"].as_str().unwrap().contains("retired"),
+        "{v}"
+    );
+}
+
+#[test]
+fn none_with_no_searchable_term_is_refused_and_nothing_is_written() {
+    let (ws, _a, _p) = setup();
+    for s in ["***", ","] {
+        let v = json(claim(ws.path(), &["none", "--author", "me", "--searched", s]).failure());
+        assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
+        assert!(
+            v["error"]["message"]
+                .to_string()
+                .contains("searchable term"),
+            "{v}"
+        );
+    }
+    let v = json(cc(ws.path()).args(["claims"]).assert().success());
+    assert_eq!(v["data"]["items"].as_array().unwrap().len(), 0, "{v}");
+}
+
+#[test]
+fn a_non_utf8_citation_is_invalid_arguments() {
+    let (ws, a, _p) = setup();
+    std::fs::write(a.path().join("bin.dat"), [0xff, 0xfe, 0x00, 0x0a, 0xff]).unwrap();
+    let v = json(claim(ws.path(), &["has", "--author", "me", "--at", "bin.dat:1"]).failure());
+    assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
+    assert!(
+        v["error"]["message"].to_string().contains("not UTF-8"),
+        "{v}"
+    );
+}
+
+#[test]
+fn vault_shows_a_stale_claim_as_unknown_star() {
+    let (ws, a, _p) = setup();
+    claim(
+        ws.path(),
+        &["has", "--author", "me", "--at", "src/net/a.py:1-2"],
+    )
+    .success();
+    std::fs::write(a.path().join("src/net/a.py"), "changed\nlines\n").unwrap();
+    cc(ws.path()).arg("check").assert().failure();
+    let out = tempfile::tempdir().unwrap();
+    cc(ws.path())
+        .args(["export", "vault", "--out"])
+        .arg(out.path().join("v"))
+        .assert()
+        .success();
+    let feat = std::fs::read_to_string(out.path().join("v/features/fam/routing-retry.md")).unwrap();
+    assert!(
+        feat.contains("unknown*") && !feat.contains("(stale)"),
+        "{feat}"
+    );
+}
