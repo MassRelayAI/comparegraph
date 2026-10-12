@@ -13,6 +13,7 @@ pub mod map;
 pub mod matrix;
 pub mod propose;
 pub mod search;
+pub mod setup;
 pub mod show;
 pub mod vault;
 use std::path::PathBuf;

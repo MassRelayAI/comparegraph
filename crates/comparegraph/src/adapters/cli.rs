@@ -5,6 +5,7 @@ use crate::application::{
     build::build_repo,
     check::check,
     export::export_json,
+    setup,
     search::{search, SearchQuery},
     show::show,
     AppError,
@@ -135,8 +136,25 @@ pub enum Cmd {
         #[arg(long, default_value_t = 0.5)]
         min_confidence: f64,
     },
-    /// Report the store and every provider
+    /// Report the store, every provider and each agent client's registration of the MCP server
     Doctor,
+    /// Register the MCP server with agent clients: a plan by default, `--apply` writes (additive, backed up)
+    Setup {
+        /// claude, codex, cursor, gemini, opencode, hermes, or all (installed clients only)
+        #[arg(long, default_value = "all")]
+        client: String,
+        /// user (the client's own config) or project (the current directory)
+        #[arg(long, default_value = "user")]
+        scope: String,
+        #[arg(long)]
+        apply: bool,
+        /// replace a `comparegraph` entry that points elsewhere
+        #[arg(long)]
+        force: bool,
+        /// the command to register (default: this binary)
+        #[arg(long)]
+        bin: Option<String>,
+    },
     /// Registered repos with their latest run summary
     Repos,
     /// Module clusters of a repo's latest run
@@ -280,6 +298,7 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::EntryPoints { .. } => "entry-points",
         Cmd::DeadCode { .. } => "dead-code",
         Cmd::Doctor => "doctor",
+        Cmd::Setup { .. } => "setup",
         Cmd::Repos => "repos",
         Cmd::Mcp => "mcp",
         Cmd::Communities { .. } => "communities",
@@ -664,13 +683,46 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         }
         Cmd::Doctor => {
             let providers: Vec<_> = ["reference"].iter().map(|n| { let p = by_name(n).unwrap(); serde_json::json!({ "name": n, "status": p.detect(), "capabilities": p.capabilities() }) }).collect();
+            let ctx = setup::Ctx::from_env(&cli.root, None);
+            let clients: Vec<_> = setup::registrations(&ctx).iter().map(|r| r.to_json(false)).collect();
             if !cli.root.join(".comparegraph").join("comparegraph.db").is_file() {
                 return Ok(Ok(
-                    serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "providers": providers }),
+                    serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "providers": providers, "clients": clients }),
                 ));
             }
             let store = Store::open_existing(&cli.root)?;
-            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": store.repos()?.len(), "providers": providers })
+            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": store.repos()?.len(), "providers": providers, "clients": clients })
+        }
+        Cmd::Setup { client, scope, apply, force, bin } => {
+            let scope = match scope.as_str() {
+                "user" => setup::Scope::User,
+                "project" => setup::Scope::Project,
+                o => return Err(AppError::InvalidArguments(format!("unknown scope {o} (user|project)"))),
+            };
+            let (clients, detect) = if client == "all" {
+                (setup::ALL.to_vec(), true)
+            } else {
+                match setup::Client::parse(client) {
+                    Some(c) => (vec![c], false),
+                    None => return Err(AppError::InvalidArguments(format!("unknown client {client} (claude|codex|cursor|gemini|opencode|hermes|all)"))),
+                }
+            };
+            let ctx = setup::Ctx::from_env(&cli.root, bin.as_deref());
+            if ctx.home.is_none() {
+                return Err(AppError::InvalidArguments("HOME is not set".into()));
+            }
+            let rows = setup::run(&ctx, &setup::Options { clients, detect, scope, apply: *apply, force: *force })?;
+            let limitations: Vec<_> = rows
+                .iter()
+                .filter(|r| r.state == setup::State::Conflict && !r.written)
+                .map(|r| serde_json::json!({ "code": "conflict", "detail": format!("{} ({}): {}", r.client.name(), r.path.display(), r.note.as_deref().unwrap_or("")) }))
+                .collect();
+            serde_json::json!({
+                "apply": apply, "force": force, "scope": scope.name(), "bin": ctx.bin, "workspace": ctx.workspace,
+                "dry_run": !apply,
+                "clients": rows.iter().map(|r| r.to_json(true)).collect::<Vec<_>>(),
+                "limitation_items": limitations,
+            })
         }
         Cmd::Mcp => unreachable!("mcp is served by run()"),
         Cmd::Repos => {
