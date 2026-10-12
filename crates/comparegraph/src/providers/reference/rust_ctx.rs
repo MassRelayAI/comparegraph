@@ -478,4 +478,9 @@ mod tests {
         assert_eq!(resolve_path_t("c/src/lib.rs", &p(&["crate", "Top"]), &f), Some(("c/src/lib.rs".into(), Some("Top".into()))));
         assert_eq!(mod_files("c/src/lib.rs", &p(&["util", "zzz"]), &f), vec!["c/src/util.rs".to_string()]);
     }
+    #[test]
+    fn same_named_structs_in_inline_mods_type_no_field() {
+        let i = analyze("struct A { r: Reader }\nmod m { struct A { r: Other } }\nstruct B { r: Reader }\n");
+        assert!(!i.structs.contains_key("A") && i.structs["B"]["r"] == "Reader", "{:?}", i.structs);
+    }
 }

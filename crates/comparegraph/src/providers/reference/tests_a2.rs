@@ -182,7 +182,7 @@ fn python_tuple_of_the_wrong_arity_or_without_annotation_types_nothing() {
         ("r.py", PY_READER),
         (
             "a.py",
-            "from r import Reader, Other\ndef pair() -> tuple[Reader, Other]:\n    pass\ndef bare():\n    pass\ndef go():\n    a, b, c = pair()\n    a.read()\n    d, e = bare()\n    d.read()\n}\n",
+            "from r import Reader, Other\ndef pair() -> tuple[Reader, Other]:\n    pass\ndef bare():\n    pass\ndef go():\n    a, b, c = pair()\n    a.read()\n    d, e = bare()\n    d.read()\n",
         ),
     ]);
     assert_eq!(calls_from(&o, "a.py::go"), 0, "{:?}", o.edges_by_qn);
