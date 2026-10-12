@@ -148,6 +148,7 @@ mod tests {
             &BuildOptions {
                 max_file_bytes: 1000,
                 max_files: 100,
+                ..BuildOptions::default()
             },
         );
         assert_eq!((res.oversize, res.truncated, res.skipped_dirs), (1, 0, 1));
@@ -176,6 +177,7 @@ mod tests {
             &BuildOptions {
                 max_file_bytes: 1000,
                 max_files: 1,
+                ..BuildOptions::default()
             },
         );
         assert_eq!(

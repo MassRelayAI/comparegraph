@@ -259,6 +259,7 @@ mod search_tests {
                 &BuildOptions {
                     max_file_bytes: 1_048_576,
                     max_files: 1000,
+                    ..BuildOptions::default()
                 },
             )
             .unwrap();
@@ -320,6 +321,7 @@ mod search_tests {
         let o = BuildOptions {
             max_file_bytes: 1_048_576,
             max_files: 1000,
+            ..BuildOptions::default()
         };
         build_repo(ws.path(), "alpha", "reference", &o).unwrap();
         std::fs::write(a.path().join("a.py"), "def newname():\n    pass\n").unwrap();
@@ -429,6 +431,7 @@ mod vault_tests {
             &BuildOptions {
                 max_file_bytes: 1_048_576,
                 max_files: 1000,
+                ..BuildOptions::default()
             },
         )
         .unwrap();

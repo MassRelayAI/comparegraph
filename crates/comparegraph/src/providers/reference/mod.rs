@@ -19,6 +19,20 @@ pub struct ParsedFile {
     pub imports: Vec<vendor::ResolvedImport>,
 }
 
+type CachedParse = (
+    Vec<vendor::Symbol>,
+    Vec<vendor::CallSite>,
+    Vec<vendor::ResolvedImport>,
+);
+
+fn hex_sha256(b: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(b)
+        .iter()
+        .map(|x| format!("{x:02x}"))
+        .collect()
+}
+
 #[derive(Debug, Default)]
 pub struct ReferenceProvider;
 
@@ -163,6 +177,8 @@ impl GraphProvider for ReferenceProvider {
                     .push(Limitation::new(code, format!("{n} {what}")));
             }
         }
+        let version = self.version();
+        let mut fresh: Vec<(String, String, String, Vec<u8>)> = Vec::new();
         let mut parsed: Vec<ParsedFile> = Vec::new();
         for f in &files {
             let bytes = match std::fs::read(repo_root.join(&f.rel_path)) {
@@ -182,7 +198,34 @@ impl GraphProvider for ReferenceProvider {
                 ));
                 continue;
             };
-            match vendor::parse(&f.rel_path, &source, &f.language) {
+            let hash = hex_sha256(source.as_bytes());
+            let cached = opts
+                .cache
+                .as_ref()
+                .and_then(|c| c.get(&hash, &f.language, &version))
+                .and_then(|b| serde_json::from_slice::<CachedParse>(&b).ok());
+            let parsed_now = match cached {
+                Some(c) => {
+                    out.cache_hits += 1;
+                    Ok(vendor::ParseResult {
+                        symbols: c.0,
+                        call_sites: c.1,
+                        imports: c.2,
+                    })
+                }
+                None => {
+                    let r = vendor::parse(&f.rel_path, &source, &f.language);
+                    if let (Ok(r), true) = (&r, opts.cache.is_some()) {
+                        out.cache_misses += 1;
+                        if let Ok(b) = serde_json::to_vec(&(&r.symbols, &r.call_sites, &r.imports))
+                        {
+                            fresh.push((hash, f.language.clone(), version.clone(), b));
+                        }
+                    }
+                    r
+                }
+            };
+            match parsed_now {
                 Ok(r) => {
                     parsed.push(ParsedFile {
                         rel_path: f.rel_path.clone(),
@@ -199,6 +242,9 @@ impl GraphProvider for ReferenceProvider {
                     format!("{}: {e}", f.rel_path),
                 )),
             }
+        }
+        if let Some(c) = &opts.cache {
+            c.put_many(&fresh);
         }
         for pf in &parsed {
             let n_lines = pf.lines.len() as u32;
@@ -374,6 +420,7 @@ mod tests {
                 &BuildOptions {
                     max_file_bytes: 1_000_000,
                     max_files: 1,
+                    ..BuildOptions::default()
                 },
             )
             .unwrap();

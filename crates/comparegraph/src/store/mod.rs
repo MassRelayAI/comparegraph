@@ -99,6 +99,28 @@ pub struct Store {
 }
 
 impl Store {
+    /// A cache read failure is a miss, never an error: the cache is an optimisation.
+    pub fn parse_cache_get(&self, hash: &str, language: &str, version: &str) -> Option<Vec<u8>> {
+        self.conn
+            .query_row(
+                "SELECT payload FROM parse_cache WHERE file_hash = ?1 AND language = ?2 AND provider_version = ?3",
+                params![hash, language, version],
+                |r| r.get(0),
+            )
+            .ok()
+    }
+    pub fn parse_cache_put_many(&self, entries: &[(String, String, String, Vec<u8>)]) {
+        let Ok(tx) = self.conn.unchecked_transaction() else {
+            return;
+        };
+        for (h, l, v, b) in entries {
+            let _ = tx.execute(
+                "INSERT OR REPLACE INTO parse_cache(file_hash, language, provider_version, payload) VALUES (?1, ?2, ?3, ?4)",
+                params![h, l, v, b],
+            );
+        }
+        let _ = tx.commit();
+    }
     /// Open a store that must already exist; never creates `.comparegraph`. Read verbs use this.
     pub fn open_existing(root: &Path) -> Result<Store> {
         if !root.join(".comparegraph").join("comparegraph.db").is_file() {

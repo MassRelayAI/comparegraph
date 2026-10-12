@@ -66,3 +66,7 @@ CREATE TRIGGER IF NOT EXISTS community_no_update BEFORE UPDATE ON community BEGI
 CREATE TRIGGER IF NOT EXISTS community_no_delete BEFORE DELETE ON community BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS community_member_no_update BEFORE UPDATE ON community_member BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS community_member_no_delete BEFORE DELETE ON community_member BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+-- per-file parse cache (incremental builds): prunable, so no append-only triggers.
+CREATE TABLE IF NOT EXISTS parse_cache (
+  file_hash TEXT NOT NULL, language TEXT NOT NULL, provider_version TEXT NOT NULL, payload BLOB NOT NULL,
+  PRIMARY KEY (file_hash, language, provider_version));

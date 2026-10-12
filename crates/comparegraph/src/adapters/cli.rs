@@ -48,6 +48,9 @@ pub enum Cmd {
         max_file_bytes: u64,
         #[arg(long, default_value_t = 50_000)]
         max_files: usize,
+        /// bypass the per-file parse cache
+        #[arg(long)]
+        full: bool,
     },
     /// Verify: schema, determinism, locations
     Check,
@@ -385,6 +388,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             provider,
             max_file_bytes,
             max_files,
+            full,
         } => serde_json::to_value(build_repo(
             &cli.root,
             repo,
@@ -392,6 +396,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             &BuildOptions {
                 max_file_bytes: *max_file_bytes,
                 max_files: *max_files,
+                full: *full,
+                ..BuildOptions::default()
             },
         )?)
         .unwrap(),

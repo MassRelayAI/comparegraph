@@ -2,16 +2,37 @@ pub mod reference;
 use crate::domain::{EdgeKind, Limitation, Node};
 use std::path::Path;
 
-#[derive(Debug, Clone)]
+/// A per-file parse cache the application layer supplies; the provider never knows what stores it.
+pub trait ParseCache {
+    fn get(&self, file_hash: &str, language: &str, provider_version: &str) -> Option<Vec<u8>>;
+    fn put_many(&self, entries: &[(String, String, String, Vec<u8>)]);
+}
+
+#[derive(Clone)]
 pub struct BuildOptions {
     pub max_file_bytes: u64,
     pub max_files: usize,
+    /// `build --full`: bypass the parse cache
+    pub full: bool,
+    pub cache: Option<std::rc::Rc<dyn ParseCache>>,
+}
+impl std::fmt::Debug for BuildOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BuildOptions")
+            .field("max_file_bytes", &self.max_file_bytes)
+            .field("max_files", &self.max_files)
+            .field("full", &self.full)
+            .field("cache", &self.cache.is_some())
+            .finish()
+    }
 }
 impl Default for BuildOptions {
     fn default() -> Self {
         Self {
             max_file_bytes: 1_048_576,
             max_files: 50_000,
+            full: false,
+            cache: None,
         }
     }
 }
@@ -36,6 +57,8 @@ pub struct BuildOutput {
     pub limitations: Vec<Limitation>,
     pub files_seen: usize,
     pub files_parsed: usize,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
 }
 
 #[derive(Debug, thiserror::Error)]

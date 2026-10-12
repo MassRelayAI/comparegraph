@@ -12,12 +12,25 @@ pub struct BuildReport {
     pub nodes: usize,
     pub edges: usize,
     pub files_parsed: usize,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
     pub limitations: usize,
     pub communities: usize,
     /// carried to the envelope's evidence.limitations by the CLI
     pub limitation_items: Vec<Limitation>,
     pub store_hash: String,
     pub seconds: f64,
+}
+
+/// The workspace db as the provider's parse cache (its own connection; written only after the parse loop).
+struct StoreCache(Store);
+impl crate::providers::ParseCache for StoreCache {
+    fn get(&self, h: &str, l: &str, v: &str) -> Option<Vec<u8>> {
+        self.0.parse_cache_get(h, l, v)
+    }
+    fn put_many(&self, entries: &[(String, String, String, Vec<u8>)]) {
+        self.0.parse_cache_put_many(entries);
+    }
 }
 
 pub fn build_repo(
@@ -51,7 +64,13 @@ pub fn build_repo(
         limitations: vec![],
         store_hash: None,
     })?;
-    let out = match provider.build(Path::new(&repo.path), opts) {
+    let mut opts = opts.clone();
+    if opts.full {
+        opts.cache = None;
+    } else if opts.cache.is_none() {
+        opts.cache = Some(std::rc::Rc::new(StoreCache(Store::open(root)?)));
+    }
+    let out = match provider.build(Path::new(&repo.path), &opts) {
         Ok(o) => o,
         Err(e) => {
             store.finish_run(
@@ -125,6 +144,8 @@ pub fn build_repo(
         nodes: n_nodes,
         edges: n_edges,
         files_parsed: out.files_parsed,
+        cache_hits: out.cache_hits,
+        cache_misses: out.cache_misses,
         limitations: out.limitations.len(),
         communities: n_comms,
         limitation_items: out.limitations,
