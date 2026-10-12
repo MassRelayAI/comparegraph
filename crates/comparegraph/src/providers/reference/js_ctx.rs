@@ -87,14 +87,66 @@ fn var_types(root: Node, src: &str) -> HashMap<String, String> {
     found.into_iter().filter_map(|(k, v)| v.map(|t| (k, t))).collect()
 }
 
-fn collect(n: Node, src: &str, vars: &HashMap<String, String>, in_case: bool, out: &mut Vec<CallSite>) {
+/// A test case found in a file: `it("…")` / `test("…")` (describe titles prefix it), spanning the call.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Case {
+    pub name: String,
+    pub line_start: u32,
+    pub line_end: u32,
+}
+
+/// The `caller` of a call site made inside case number `i` (see `test_cases`).
+pub const CASE_PREFIX: &str = "\u{0}case:";
+
+#[derive(Clone, Copy, PartialEq)]
+enum Who {
+    Nobody,
+    File,
+    Case(usize),
+}
+
+const TITLE_MAX: usize = 80;
+
+fn base_ident<'a>(call: Node, src: &'a str) -> Option<&'a str> {
+    let f = call.child_by_field_name("function")?;
+    match f.kind() {
+        "identifier" => Some(text(f, src)),
+        "member_expression" => f.child_by_field_name("object").filter(|o| o.kind() == "identifier").map(|o| text(o, src)),
+        _ => None,
+    }
+}
+
+/// The first argument as a plain string (quotes, or a template without substitutions).
+fn title_arg(call: Node, src: &str) -> Option<String> {
+    let args = call.child_by_field_name("arguments")?;
+    let a = args.named_child(0)?;
+    let raw = match a.kind() {
+        "string" => text(a, src),
+        "template_string" if !text(a, src).contains("${") => text(a, src),
+        _ => return None,
+    };
+    let t = raw.trim_matches(|c| c == '"' || c == '\'' || c == '`');
+    Some(t.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+struct Acc {
+    calls: Vec<CallSite>,
+    cases: Vec<Case>,
+    titles: Vec<String>,
+}
+
+fn collect(n: Node, src: &str, vars: &HashMap<String, String>, who: Who, acc: &mut Acc) {
     match n.kind() {
         // a named function is the vendored extractor's business
         "function_declaration" | "method_definition" | "generator_function_declaration" => return,
         "call_expression" => {
             let line = n.start_position().row as u32 + 1;
             if let Some(f) = n.child_by_field_name("function") {
-                if in_case {
+                if who != Who::Nobody {
+                    let caller = match who {
+                        Who::Case(i) => format!("{CASE_PREFIX}{i}"),
+                        _ => CALLER_FILE.to_string(),
+                    };
                     let (callee, receiver) = if f.kind() == "member_expression" {
                         let m = f.child_by_field_name("property").map(|p| text(p, src).to_string());
                         let r = f.child_by_field_name("object").map(|o| extract_receiver_name(o, src));
@@ -106,37 +158,57 @@ fn collect(n: Node, src: &str, vars: &HashMap<String, String>, in_case: bool, ou
                     if let Some(callee) = callee.filter(|c| !on_runner && !RUNNER.contains(&c.as_str()) && c.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '$')) {
                         // a receiver variable of known type is replaced by its type, which the resolver reads as `Type.method()`
                         let receiver = receiver.map(|r| vars.get(&r).cloned().unwrap_or(r));
-                        out.push(CallSite { caller: CALLER_FILE.into(), callee, receiver, line, kind: "calls".into() });
+                        acc.calls.push(CallSite { caller, callee, receiver, line, kind: "calls".into() });
                     }
                 }
                 if runner_kind(n, src) {
+                    let is_case = base_ident(n, src).is_some_and(|b| CASES.contains(&b));
                     // the callback arguments are test bodies
+                    let inner = if is_case {
+                        let own = title_arg(n, src).unwrap_or_else(|| "case".into());
+                        let mut full = acc.titles.iter().cloned().chain([own]).collect::<Vec<_>>().join(" > ");
+                        if full.chars().count() > TITLE_MAX {
+                            full = full.chars().take(TITLE_MAX).collect::<String>().trim_end().to_string();
+                        }
+                        acc.cases.push(Case { name: format!("it: {full}"), line_start: line, line_end: n.end_position().row as u32 + 1 });
+                        Who::Case(acc.cases.len() - 1)
+                    } else {
+                        Who::File
+                    };
                     if let Some(args) = n.child_by_field_name("arguments") {
                         let mut c = args.walk();
                         for a in args.named_children(&mut c) {
                             if is_callback(a) {
-                                collect(a, src, vars, true, out);
+                                collect(a, src, vars, inner, acc);
                             } else {
-                                collect(a, src, vars, in_case, out);
+                                collect(a, src, vars, who, acc);
                             }
                         }
                     }
-                    collect(f, src, vars, in_case, out);
+                    collect(f, src, vars, who, acc);
+                    return;
+                }
+                // `describe("title", () => { … })` prefixes the titles of the cases inside it
+                if base_ident(n, src).is_some_and(|b| b == "describe" || b == "suite" || b == "context") {
+                    acc.titles.push(title_arg(n, src).unwrap_or_default());
+                    let mut c = n.walk();
+                    for ch in n.named_children(&mut c) {
+                        collect(ch, src, vars, who, acc);
+                    }
+                    acc.titles.pop();
                     return;
                 }
             }
         }
-        "new_expression" if in_case => {
+        "new_expression" if who != Who::Nobody => {
             if let Some(c) = n.child_by_field_name("constructor") {
                 let name = text(c, src).rsplit('.').next().unwrap_or("");
                 if name.chars().next().is_some_and(char::is_uppercase) {
-                    out.push(CallSite {
-                        caller: CALLER_FILE.into(),
-                        callee: name.to_string(),
-                        receiver: None,
-                        line: n.start_position().row as u32 + 1,
-                        kind: "instantiates".into(),
-                    });
+                    let caller = match who {
+                        Who::Case(i) => format!("{CASE_PREFIX}{i}"),
+                        _ => CALLER_FILE.to_string(),
+                    };
+                    acc.calls.push(CallSite { caller, callee: name.to_string(), receiver: None, line: n.start_position().row as u32 + 1, kind: "instantiates".into() });
                 }
             }
         }
@@ -144,28 +216,36 @@ fn collect(n: Node, src: &str, vars: &HashMap<String, String>, in_case: bool, ou
     }
     let mut c = n.walk();
     for ch in n.named_children(&mut c) {
-        collect(ch, src, vars, in_case, out);
+        collect(ch, src, vars, who, acc);
     }
 }
 
-/// Call sites inside the `it`/`test`/hook callbacks of a test file.
-pub fn test_case_calls(src: &str, language: &str) -> Vec<CallSite> {
+fn parse_js(src: &str, language: &str) -> Option<tree_sitter::Tree> {
     let lang: tree_sitter::Language = match language {
         "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
         "javascript" | "jsx" | "mjs" => tree_sitter_javascript::LANGUAGE.into(),
-        _ => return vec![],
+        _ => return None,
     };
     let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&lang).is_err() {
-        return vec![];
-    }
-    let Some(tree) = parser.parse(src, None) else { return vec![] };
+    parser.set_language(&lang).ok()?;
+    parser.parse(src, None)
+}
+
+/// The `it`/`test` cases of a test file, and the call sites in their bodies (caller `CASE_PREFIX + index`) and in hook bodies
+/// (caller `CALLER_FILE`). Case names are `it: <describe > … > title>`, at most 80 characters of title.
+pub fn test_cases(src: &str, language: &str) -> (Vec<Case>, Vec<CallSite>) {
+    let Some(tree) = parse_js(src, language) else { return (vec![], vec![]) };
     let root = tree.root_node();
     let vars = var_types(root, src);
-    let mut out = Vec::new();
-    collect(root, src, &vars, false, &mut out);
-    out
+    let mut acc = Acc { calls: vec![], cases: vec![], titles: vec![] };
+    collect(root, src, &vars, Who::Nobody, &mut acc);
+    (acc.cases, acc.calls)
+}
+
+/// Call sites inside the `it`/`test`/hook callbacks of a test file.
+pub fn test_case_calls(src: &str, language: &str) -> Vec<CallSite> {
+    test_cases(src, language).1
 }
 
 const FUNCTION_LIKE: &[&str] = &["function_declaration", "generator_function_declaration", "method_definition", "function_expression", "function", "generator_function", "arrow_function"];
@@ -260,7 +340,7 @@ mod tests {
         for want in [("parse", None), ("getUser", Some("UserService")), ("UserService", None), ("skip", Some("other"))] {
             assert!(got.contains(&(want.0.to_string(), want.1.map(String::from))), "{got:?}");
         }
-        assert!(c.iter().all(|s| s.caller == CALLER_FILE));
+        assert!(c.iter().all(|s| s.caller == CALLER_FILE || s.caller.starts_with(CASE_PREFIX)));
         assert!(!got.iter().any(|(n, _)| n == "helper" || n == "inner" || n == "expect" || n == "toBe"), "{got:?}");
     }
 }
