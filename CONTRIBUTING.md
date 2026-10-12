@@ -19,7 +19,7 @@ need a ruling in the issue first. Code from copyleft or community-licensed proje
 licence of anything adapted in `docs/THIRD_PARTY_NOTICES.md`.
 
 ## Skills
-The markdown method skills live in `method/` (also reachable as `skills/`). Keep each skill short, command-first, and honest
+The markdown skills live in `skills/` (`method/` is a symlink to it). Keep each skill short, command-first, and honest
 about what the engine cannot see.
 
 By taking part you agree to the `CODE_OF_CONDUCT.md`. Contributions are licensed under Apache-2.0.

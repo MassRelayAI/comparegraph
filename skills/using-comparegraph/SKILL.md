@@ -1,6 +1,6 @@
 ---
 name: using-comparegraph
-description: Use first when comparing cloned repositories with CompareGraph - it says which of the method skills applies, the order of the workflow, and the two habits that keep verdicts honest.
+description: Use first when comparing cloned repositories with CompareGraph - it says which of the method skills applies, the order of the workflow, and the habits that keep verdicts honest.
 ---
 # Using CompareGraph
 
@@ -11,7 +11,7 @@ model and never decides: you read the code, you write the claim, a person record
 ```
 comparegraph setup --client claude --apply
 ```
-Without `--apply` it only prints its plan. It writes additively and leaves a timestamped backup. `comparegraph doctor`
+Available from 0.1.0. Without `--apply` it only prints its plan. It writes additively and leaves a timestamped backup. `comparegraph doctor`
 reports whether the registration is `aligned` or `stale`.
 
 ## Which skill, when
