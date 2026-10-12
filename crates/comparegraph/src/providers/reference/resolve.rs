@@ -1,3 +1,4 @@
+use super::vendor::{ResolvedImport, SymbolKind};
 use super::ParsedFile;
 use crate::domain::EdgeKind;
 use std::collections::HashMap;
@@ -24,6 +25,12 @@ pub fn qualified_names(file: &ParsedFile) -> Vec<String> {
 pub(super) fn resolve_import_target(from: &str, source: &str, files: &HashMap<String, ()>) -> Option<String> {
     if from.ends_with(".py") {
         return resolve_py_import(from, source, files);
+    }
+    if from.ends_with(".java") {
+        return resolve_java_import(source, files);
+    }
+    if from.ends_with(".go") {
+        return resolve_go_dir(source, files).into_iter().next();
     }
     if !source.starts_with('.') {
         return None;
@@ -58,6 +65,46 @@ pub(super) fn resolve_import_target(from: &str, source: &str, files: &HashMap<St
     .find(|cand| files.contains_key(cand))
 }
 
+/// Java: `a.b.C` is the file whose path ends in `a/b/C.java` under any source root; the shortest (then smallest) match wins. Wildcards find nothing.
+fn resolve_java_import(source: &str, files: &HashMap<String, ()>) -> Option<String> {
+    if source.ends_with('*') || source.is_empty() {
+        return None;
+    }
+    let suffix = format!("{}.java", source.replace('.', "/"));
+    let tail = format!("/{suffix}");
+    files
+        .keys()
+        .filter(|f| **f == suffix || f.ends_with(&tail))
+        .min_by(|a, b| (a.len(), *a).cmp(&(b.len(), *b)))
+        .cloned()
+}
+
+/// Go: the `.go` files (sorted) of the one repo directory an import path names: the directory whose path ends with the whole import path, else the one whose last segment equals the path's last segment. Several candidate directories → none.
+pub(super) fn resolve_go_dir(source: &str, files: &HashMap<String, ()>) -> Vec<String> {
+    let last = source.rsplit('/').next().unwrap_or(source);
+    if last.is_empty() || source.starts_with('.') {
+        return vec![];
+    }
+    let mut dirs: HashMap<&str, Vec<&String>> = HashMap::new();
+    for f in files.keys().filter(|f| f.ends_with(".go")) {
+        let dir = f.rsplit_once('/').map_or("", |d| d.0);
+        dirs.entry(dir).or_default().push(f);
+    }
+    let pick = |pred: &dyn Fn(&str) -> bool| -> Option<Vec<String>> {
+        let hits: Vec<&&str> = dirs.keys().filter(|d| pred(d)).collect();
+        if hits.len() != 1 {
+            return None;
+        }
+        let mut v: Vec<String> = dirs[*hits[0]].iter().map(|s| (*s).clone()).collect();
+        v.sort();
+        Some(v)
+    };
+    let tail = format!("/{source}");
+    pick(&|d| d == source || d.ends_with(&tail))
+        .or_else(|| pick(&|d| d.rsplit('/').next() == Some(last)))
+        .unwrap_or_default()
+}
+
 /// Python: `.core` / `..a.b` are relative to the importing file's package; `a.b` is a repo-relative dotted path. External modules find no file, so no edge.
 fn resolve_py_import(from: &str, source: &str, files: &HashMap<String, ()>) -> Option<String> {
     let dots = source.chars().take_while(|c| *c == '.').count();
@@ -86,13 +133,95 @@ fn resolve_py_import(from: &str, source: &str, files: &HashMap<String, ()>) -> O
     cands.into_iter().find(|c| files.contains_key(c))
 }
 
+/// TypeScript and JavaScript call each other; every other language is its own family.
+fn lang_family(l: &str) -> &str {
+    match l {
+        "typescript" | "tsx" | "javascript" | "jsx" => "js",
+        o => o,
+    }
+}
+
+/// The repo files an import resolves to: the module itself, plus (Python `from pkg import sub`) a submodule file named by a specifier.
+fn import_files(from: &str, imp: &ResolvedImport, files: &HashMap<String, ()>) -> Vec<String> {
+    if from.ends_with(".go") {
+        return resolve_go_dir(&imp.source, files);
+    }
+    let mut out: Vec<String> = resolve_import_target(from, &imp.source, files).into_iter().collect();
+    if from.ends_with(".py") && !imp.is_default {
+        for s in &imp.specifiers {
+            let sep = if imp.source.ends_with('.') { "" } else { "." };
+            if let Some(t) = resolve_import_target(from, &format!("{}{sep}{s}", imp.source), files) {
+                if !out.contains(&t) {
+                    out.push(t);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Does receiver `r` name this import as a module? TS/JS: a namespace (`* as u`) or default import; Python: `import utils` or a `from pkg import sub` submodule;
+/// Java: the imported class (static call); Go: the package name (last path segment).
+fn is_module_alias(from: &str, imp: &ResolvedImport, r: &str) -> bool {
+    let tail = |s: &str| s.rsplit([' ', '.', '/']).next().unwrap_or(s).to_string();
+    if from.ends_with(".java") {
+        return imp.specifiers.iter().any(|s| tail(s) == r);
+    }
+    if from.ends_with(".py") && !imp.is_default {
+        return imp.specifiers.iter().any(|s| s == r) && imp.source != r;
+    }
+    (imp.is_default || imp.specifiers.iter().any(|s| s.starts_with("* as ")))
+        && imp.specifiers.iter().any(|s| tail(s) == r)
+}
+
+/// A symbol named `name` in the first of `targets` that defines it → (qn, unique in that file).
+fn symbol_in(
+    targets: &[String],
+    file_syms: &HashMap<&str, HashMap<&str, (String, bool)>>,
+    name: &str,
+) -> Option<(String, bool)> {
+    targets
+        .iter()
+        .find_map(|t| file_syms.get(t.as_str()).and_then(|m| m.get(name)).cloned())
+}
+
+/// `self.m()` / `this.m()`: the method `callee` inside the smallest class (same file) whose line span contains the caller's.
+fn class_method(f: &ParsedFile, q: &[String], caller: &str, callee: &str) -> Option<String> {
+    let c = f.symbols.iter().find(|s| s.name == caller)?;
+    let class = f
+        .symbols
+        .iter()
+        .filter(|s| matches!(s.kind, SymbolKind::Class) && s.line_start <= c.line_start && c.line_end <= s.line_end)
+        .min_by_key(|s| s.line_end - s.line_start)?;
+    f.symbols
+        .iter()
+        .zip(q)
+        .find(|(s, _)| {
+            s.name == callee
+                && !matches!(s.kind, SymbolKind::Class)
+                && class.line_start <= s.line_start
+                && s.line_end <= class.line_end
+        })
+        .map(|(_, qn)| qn.clone())
+}
+
 /// Edges by qualified name: (kind, source_qn, target_qn, confidence).
 pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
     let file_set: HashMap<String, ()> = files.iter().map(|f| (f.rel_path.clone(), ())).collect();
     // name → (qn, duplicates_in_that_file)
-    let mut by_name: HashMap<&str, Vec<(String, bool)>> = HashMap::new();
+    let mut by_name: HashMap<&str, Vec<(String, bool, &str)>> = HashMap::new();
     let mut out = Vec::new();
     let qns: Vec<Vec<String>> = files.iter().map(qualified_names).collect();
+    // file → name → (first qn, name unique in that file)
+    let mut file_syms: HashMap<&str, HashMap<&str, (String, bool)>> = HashMap::new();
+    for (f, q) in files.iter().zip(&qns) {
+        let m = file_syms.entry(f.rel_path.as_str()).or_default();
+        for (s, qn) in f.symbols.iter().zip(q) {
+            m.entry(s.name.as_str())
+                .and_modify(|e| e.1 = false)
+                .or_insert((qn.clone(), true));
+        }
+    }
     for (f, q) in files.iter().zip(&qns) {
         let mut counts: HashMap<&str, usize> = HashMap::new();
         for s in &f.symbols {
@@ -104,7 +233,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 by_name
                     .entry(s.name.as_str())
                     .or_default()
-                    .push((qn.clone(), counts[s.name.as_str()] > 1));
+                    .push((qn.clone(), counts[s.name.as_str()] > 1, lang_family(&f.language)));
             }
         }
     }
@@ -121,11 +250,59 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             local.entry(s.name.as_str()).or_insert(qn);
             *local_counts.entry(s.name.as_str()).or_insert(0) += 1;
         }
+        // the caller's imports, resolved once: (file, specifier, is_default, source)
+        let imports: Vec<(&ResolvedImport, Vec<String>)> = f
+            .imports
+            .iter()
+            .map(|i| (i, import_files(&f.rel_path, i, &file_set)))
+            .collect();
         for c in &f.call_sites {
             let Some(caller_qn) = local.get(c.caller.as_str()) else {
                 continue;
             };
-            // 1. same file; 2. unique across the repo; a duplicated target name halves the confidence
+            let recv = c.receiver.as_deref();
+            // 1. self.m() / this.m(): a method of the caller's enclosing class
+            if matches!(recv, Some("self" | "this")) {
+                if let Some(t) = class_method(f, q, &c.caller, &c.callee) {
+                    out.push((EdgeKind::Calls, (*caller_qn).clone(), t, 1.0));
+                    continue;
+                }
+            }
+            // 2. mod.func(): `mod` is an imported module alias → that module's own symbol
+            if let Some(r) = recv {
+                let mut hit = None;
+                for (imp, targets) in &imports {
+                    if targets.is_empty() || !is_module_alias(&f.rel_path, imp, r) {
+                        continue;
+                    }
+                    if let Some(t) = symbol_in(targets, &file_syms, &c.callee) {
+                        hit = Some(t);
+                        break;
+                    }
+                }
+                if let Some((t, unique)) = hit {
+                    out.push((EdgeKind::Calls, (*caller_qn).clone(), t, if unique { 1.0 } else { 0.5 }));
+                    continue;
+                }
+            }
+            // 3. an imported name: the file the import resolves to defines it
+            if recv.is_none() {
+                let mut hit = None;
+                for (imp, targets) in &imports {
+                    if targets.is_empty() || !imp.specifiers.contains(&c.callee) {
+                        continue;
+                    }
+                    if let Some(t) = symbol_in(targets, &file_syms, &c.callee) {
+                        hit = Some(t);
+                        break;
+                    }
+                }
+                if let Some((t, unique)) = hit {
+                    out.push((EdgeKind::Calls, (*caller_qn).clone(), t, if unique { 1.0 } else { 0.5 }));
+                    continue;
+                }
+            }
+            // 4. same file; 5. unique across the repo; a duplicated target name halves the confidence
             if let Some(t) = local.get(c.callee.as_str()) {
                 let conf = if local_counts[c.callee.as_str()] > 1 {
                     0.5
@@ -135,20 +312,21 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 out.push((EdgeKind::Calls, (*caller_qn).clone(), (*t).clone(), conf));
                 continue;
             }
-            match by_name.get(c.callee.as_str()) {
-                Some(v) if v.len() == 1 => {
-                    let (t, dup) = &v[0];
-                    out.push((
-                        EdgeKind::Calls,
-                        (*caller_qn).clone(),
-                        t.clone(),
-                        if *dup { 0.5 } else { 1.0 },
-                    ));
-                }
-                Some(v) if !v.is_empty() => {
-                    out.push((EdgeKind::Calls, (*caller_qn).clone(), v[0].0.clone(), 0.5));
-                }
-                _ => {}
+            // name-only guess: same language family only (a Python call never lands on a JS bundle's method)
+            let fam = lang_family(&f.language);
+            let cands: Vec<&(String, bool, &str)> = by_name
+                .get(c.callee.as_str())
+                .map(|v| v.iter().filter(|e| e.2 == fam).collect())
+                .unwrap_or_default();
+            match cands.as_slice() {
+                [(t, dup, _)] => out.push((
+                    EdgeKind::Calls,
+                    (*caller_qn).clone(),
+                    t.clone(),
+                    if *dup { 0.5 } else { 1.0 },
+                )),
+                [first, ..] => out.push((EdgeKind::Calls, (*caller_qn).clone(), first.0.clone(), 0.5)),
+                [] => {}
             }
         }
     }
@@ -306,5 +484,135 @@ mod tests {
             edges.iter().filter(|e| e.0 != EdgeKind::Contains).count(),
             0
         );
+    }
+
+    fn call(caller: &str, callee: &str, recv: Option<&str>) -> CallSite {
+        CallSite {
+            caller: caller.into(),
+            callee: callee.into(),
+            receiver: recv.map(Into::into),
+            line: 2,
+            kind: "calls".into(),
+        }
+    }
+    fn imp(from: &str, source: &str, specs: &[&str], default: bool) -> ResolvedImport {
+        ResolvedImport {
+            source: source.into(),
+            specifiers: specs.iter().map(|s| s.to_string()).collect(),
+            line: 1,
+            is_default: default,
+            from_file: from.into(),
+        }
+    }
+    fn has_call(e: &[(EdgeKind, String, String, f64)], a: &str, b: &str, c: f64) -> bool {
+        e.contains(&(EdgeKind::Calls, a.into(), b.into(), c))
+    }
+    fn span(name: &str, kind: SymbolKind, a: u32, b: u32) -> Symbol {
+        Symbol { name: name.into(), kind, line_start: a, line_end: b, signature: None, doc: None }
+    }
+
+    #[test]
+    fn imported_run_beats_the_other_run() {
+        let a = pf("src/a.ts", vec![sym("f", 1)], vec![call("f", "run", None)], vec![imp("src/a.ts", "./b", &["run"], false)]);
+        let b = pf("src/b.ts", vec![sym("run", 1)], vec![], vec![]);
+        let c = pf("src/c.ts", vec![sym("run", 1)], vec![], vec![]);
+        let e = resolve_edges(&[a, b, c]);
+        assert!(has_call(&e, "src/a.ts::f", "src/b.ts::run", 1.0), "{e:?}");
+        assert_eq!(e.iter().filter(|x| x.0 == EdgeKind::Calls).count(), 1);
+    }
+    #[test]
+    fn self_call_resolves_to_the_enclosing_class_method() {
+        let mut a = pf(
+            "m.py",
+            vec![
+                span("A", SymbolKind::Class, 1, 6),
+                span("helper", SymbolKind::Method, 2, 3),
+                span("run", SymbolKind::Method, 4, 6),
+                span("B", SymbolKind::Class, 7, 9),
+                span("helper", SymbolKind::Method, 8, 9),
+            ],
+            vec![call("run", "helper", Some("self"))],
+            vec![],
+        );
+        a.language = "python".into();
+        let e = resolve_edges(&[a]);
+        assert!(has_call(&e, "m.py::run", "m.py::helper", 1.0), "{e:?}");
+        assert!(!has_call(&e, "m.py::run", "m.py::helper#2", 1.0));
+        assert!(!has_call(&e, "m.py::run", "m.py::helper#2", 0.5));
+    }
+    #[test]
+    fn self_call_in_second_class_picks_its_own_method() {
+        let a = pf(
+            "m.ts",
+            vec![
+                span("A", SymbolKind::Class, 1, 3),
+                span("helper", SymbolKind::Method, 2, 3),
+                span("B", SymbolKind::Class, 4, 8),
+                span("helper", SymbolKind::Method, 5, 6),
+                span("run", SymbolKind::Method, 7, 8),
+            ],
+            vec![call("run", "helper", Some("this"))],
+            vec![],
+        );
+        let e = resolve_edges(&[a]);
+        assert!(has_call(&e, "m.ts::run", "m.ts::helper#2", 1.0), "{e:?}");
+    }
+    #[test]
+    fn python_import_module_call() {
+        let mut a = pf("pkg/a.py", vec![sym("f", 1)], vec![call("f", "parse", Some("utils"))], vec![imp("pkg/a.py", "utils", &["utils"], true)]);
+        a.language = "python".into();
+        let u = pf("utils.py", vec![sym("parse", 1)], vec![], vec![]);
+        let other = pf("other.py", vec![sym("parse", 1)], vec![], vec![]);
+        let e = resolve_edges(&[a, u, other]);
+        assert!(has_call(&e, "pkg/a.py::f", "utils.py::parse", 1.0), "{e:?}");
+    }
+    #[test]
+    fn python_from_package_import_submodule() {
+        let mut a = pf("a.py", vec![sym("f", 1)], vec![call("f", "parse", Some("utils"))], vec![imp("a.py", "pkg", &["pkg", "utils"], false)]);
+        a.language = "python".into();
+        let init = pf("pkg/__init__.py", vec![], vec![], vec![]);
+        let u = pf("pkg/utils.py", vec![sym("parse", 1)], vec![], vec![]);
+        let e = resolve_edges(&[a, init, u]);
+        assert!(has_call(&e, "a.py::f", "pkg/utils.py::parse", 1.0), "{e:?}");
+    }
+    #[test]
+    fn ts_namespace_import_call() {
+        let a = pf("src/a.ts", vec![sym("f", 1)], vec![call("f", "parse", Some("u"))], vec![imp("src/a.ts", "./u", &["* as * as u"], false)]);
+        let u = pf("src/u.ts", vec![sym("parse", 1)], vec![], vec![]);
+        let o = pf("src/o.ts", vec![sym("parse", 1)], vec![], vec![]);
+        let e = resolve_edges(&[a, u, o]);
+        assert!(has_call(&e, "src/a.ts::f", "src/u.ts::parse", 1.0), "{e:?}");
+    }
+    #[test]
+    fn java_import_resolves_under_any_source_root() {
+        let files = |l: &[&str]| l.iter().map(|s| (s.to_string(), ())).collect::<HashMap<_, _>>();
+        let set = files(&["src/main/java/a/b/C.java", "x/Other.java"]);
+        assert_eq!(resolve_import_target("src/main/java/z/D.java", "a.b.C", &set).as_deref(), Some("src/main/java/a/b/C.java"));
+        assert_eq!(resolve_import_target("z/D.java", "a.b.*", &set), None);
+        assert_eq!(resolve_import_target("z/D.java", "java.util.List", &set), None);
+        let a = pf("z/D.java", vec![sym("run", 1)], vec![call("run", "go", Some("C"))], vec![imp("z/D.java", "a.b.C", &["C"], false)]);
+        let c = pf("src/main/java/a/b/C.java", vec![sym("go", 1)], vec![], vec![]);
+        let e = resolve_edges(&[a, c]);
+        assert!(has_call(&e, "z/D.java::run", "src/main/java/a/b/C.java::go", 1.0), "{e:?}");
+    }
+    #[test]
+    fn go_import_matches_a_directory_by_last_segment() {
+        let a = pf("cmd/main.go", vec![sym("run", 1)], vec![call("run", "Parse", Some("util"))], vec![imp("cmd/main.go", "example.com/m/internal/util", &["util"], true)]);
+        let u = pf("internal/util/p.go", vec![sym("Parse", 1)], vec![], vec![]);
+        let o = pf("internal/other/p.go", vec![sym("Parse", 1)], vec![], vec![]);
+        let e = resolve_edges(&[a, u, o]);
+        assert!(has_call(&e, "cmd/main.go::run", "internal/util/p.go::Parse", 1.0), "{e:?}");
+        assert!(e.contains(&(EdgeKind::Imports, "cmd/main.go".into(), "internal/util/p.go".into(), 1.0)));
+    }
+    #[test]
+    fn name_only_guess_stays_inside_the_language_family() {
+        let a = pf("src/a.ts", vec![sym("f", 1)], vec![call("f", "get", Some("m"))], vec![]);
+        let mut b = pf("assets/d3.js", vec![sym("get", 1)], vec![], vec![]);
+        b.language = "javascript".into();
+        let mut c = pf("lib/x.py", vec![sym("get", 1)], vec![], vec![]);
+        c.language = "python".into();
+        let e = resolve_edges(&[a, b, c]);
+        assert!(has_call(&e, "src/a.ts::f", "assets/d3.js::get", 1.0), "{e:?}");
+        assert!(!e.iter().any(|x| x.0 == EdgeKind::Calls && x.2 == "lib/x.py::get"));
     }
 }

@@ -310,6 +310,21 @@ mod tests {
         assert_eq!(got, vec![e(EdgeKind::Extends, "b.js::B", "a.js::A", 1.0)]);
     }
     #[test]
+    fn java_imported_base_resolves_at_one_even_when_the_name_is_not_unique() {
+        let got = edges(&[
+            ("src/main/java/a/b/Base.java", "package a.b;\npublic class Base {}\n"),
+            ("src/main/java/z/Base.java", "package z;\npublic class Base {}\n"),
+            (
+                "src/main/java/c/Sub.java",
+                "package c;\nimport a.b.Base;\npublic class Sub extends Base {}\n",
+            ),
+        ]);
+        assert_eq!(
+            got,
+            vec![e(EdgeKind::Extends, "src/main/java/c/Sub.java::Sub", "src/main/java/a/b/Base.java::Base", 1.0)]
+        );
+    }
+    #[test]
     fn java_extends_and_implements_by_unique_name_at_half() {
         let got = edges(&[
             ("p/Base.java", "package p;\npublic class Base {}\n"),
