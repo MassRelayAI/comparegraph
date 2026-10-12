@@ -1,3 +1,4 @@
+pub mod builtins;
 pub mod inherit;
 pub mod resolve;
 pub mod rust_ctx;
@@ -302,9 +303,7 @@ impl GraphProvider for ReferenceProvider {
         out.edges_by_qn.extend(inherit::inherit_edges(&parsed));
         let links = tests_link::tests_edges(&parsed, &out.edges_by_qn);
         out.edges_by_qn.extend(links);
-        out.edges_by_qn
-            .sort_by(|a, b| (a.0.as_str(), &a.1, &a.2).cmp(&(b.0.as_str(), &b.1, &b.2)));
-        out.edges_by_qn.dedup();
+        resolve::dedup_max_confidence(&mut out.edges_by_qn);
         if parsed.iter().any(|p| p.language == "go") {
             out.limitations.push(Limitation::new(
                 "no_inheritance_go",

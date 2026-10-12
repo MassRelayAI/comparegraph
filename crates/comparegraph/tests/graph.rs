@@ -243,3 +243,15 @@ fn name_guessed_hops_are_labelled_observed_with_a_count() {
     assert!(qns(&strict).is_empty());
     assert_eq!(strict["evidence"]["confidence"], "derived");
 }
+
+#[test]
+fn a_node_reached_by_a_full_path_and_a_shorter_guessed_one_reports_full_confidence() {
+    // go -> shared_name is a name-only guess (0.5, two candidates); go -> mid -> shared_name is 1.0 all the way
+    let a = "from b import mid\n\ndef go():\n    mid()\n    shared_name()\n";
+    let b = "def mid():\n    shared_name()\n\ndef shared_name():\n    pass\n";
+    let (ws, _c) = ws_with(&[("a.py", a), ("b.py", b), ("c.py", "def shared_name():\n    pass\n")]);
+    let v = json(cc(ws.path()).args(["traverse", "r", "a.py::go", "--direction", "callees"]).assert().success());
+    let items = v["data"]["items"].as_array().unwrap();
+    let it = items.iter().find(|i| i["qualified_name"] == "b.py::shared_name").unwrap_or_else(|| panic!("{v}"));
+    assert_eq!(it["path_confidence"], 1.0, "{v}");
+}

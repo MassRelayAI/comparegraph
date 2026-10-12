@@ -1,3 +1,4 @@
+use super::builtins;
 use super::rust_ctx::{self, RustInfo};
 use super::vendor::{CallSite, ResolvedImport, SymbolKind};
 use super::ParsedFile;
@@ -252,6 +253,31 @@ fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFi
     None
 }
 
+/// `Foo.bar()` where `Foo` is a class defined in the repo (same language): the method `callee` inside it, only when unique.
+fn static_class_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFile, recv: &str, callee: &str) -> Option<String> {
+    if !recv.chars().next().is_some_and(char::is_uppercase) || !recv.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let mut hits = vec![];
+    for (g, q) in files.iter().zip(qns) {
+        if lang_family(&g.language) != lang_family(&f.language) {
+            continue;
+        }
+        for class in g.symbols.iter().filter(|s| s.name == recv && matches!(s.kind, SymbolKind::Class)) {
+            for (s, qn) in g.symbols.iter().zip(q) {
+                if s.name == callee
+                    && !matches!(s.kind, SymbolKind::Class)
+                    && class.line_start <= s.line_start
+                    && s.line_end <= class.line_end
+                {
+                    hits.push(qn.clone());
+                }
+            }
+        }
+    }
+    (hits.len() == 1).then(|| hits.remove(0))
+}
+
 struct RustCall<'a> {
     files: &'a [ParsedFile],
     qns: &'a [Vec<String>],
@@ -498,6 +524,15 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                     continue;
                 }
             }
+            // A method call on a receiver of unknown type is never bound by name: `x.get()` and `other.search_symbols()` write
+            // no edge. `self`/`this` were decided above, typed receivers and module aliases before this point.
+            if let Some(r) = recv {
+                // `Foo.bar()`: a class named in the repo (same language), the method inside it
+                if let Some(t) = static_class_method(files, &qns, f, r, &c.callee) {
+                    out.push((EdgeKind::Calls, (*caller_qn).clone(), t, 1.0));
+                }
+                continue;
+            }
             // 4. same file; 5. unique across the repo; a duplicated target name halves the confidence
             if let Some(t) = local.get(c.callee.as_str()) {
                 let conf = if local_counts[c.callee.as_str()] > 1 {
@@ -510,6 +545,10 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             }
             // name-only guess: same language family only (a Python call never lands on a JS bundle's method)
             let fam = lang_family(&f.language);
+            // a builtin / standard-library name is the language's own function, not a same-named function elsewhere in the repo
+            if builtins::is_builtin(fam, &c.callee) {
+                continue;
+            }
             let cands: Vec<&(String, bool, &str)> = by_name
                 .get(c.callee.as_str())
                 .map(|v| v.iter().filter(|e| e.2 == fam).collect())
@@ -526,9 +565,18 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             }
         }
     }
-    out.sort_by(|a, b| (a.0.as_str(), &a.1, &a.2).cmp(&(b.0.as_str(), &b.1, &b.2)));
-    out.dedup();
+    dedup_max_confidence(&mut out);
     out
+}
+
+/// One row per (kind, source, target), sorted, keeping the highest confidence.
+pub fn dedup_max_confidence(out: &mut Vec<(EdgeKind, String, String, f64)>) {
+    out.sort_by(|a, b| {
+        (a.0.as_str(), &a.1, &a.2)
+            .cmp(&(b.0.as_str(), &b.1, &b.2))
+            .then(b.3.total_cmp(&a.3))
+    });
+    out.dedup_by(|b, a| a.0 == b.0 && a.1 == b.1 && a.2 == b.2);
 }
 
 #[cfg(test)]
@@ -811,6 +859,67 @@ mod tests {
         let e = resolve_edges(&[a, c]);
         assert!(has_call(&e, "z/D.java::run", "src/main/java/a/b/C.java::go", 1.0), "{e:?}");
     }
+    fn lang(mut p: ParsedFile, l: &str) -> ParsedFile {
+        p.language = l.into();
+        p
+    }
+    fn calls_of(e: &[(EdgeKind, String, String, f64)]) -> Vec<&(EdgeKind, String, String, f64)> {
+        e.iter().filter(|x| x.0 == EdgeKind::Calls).collect()
+    }
+    #[test]
+    fn unknown_receiver_method_call_writes_no_edge() {
+        let a = lang(pf("a.py", vec![sym("run", 1)], vec![call("run", "get", Some("x"))], vec![]), "python");
+        let b = lang(pf("b.py", vec![sym("get", 1)], vec![], vec![]), "python");
+        let e = resolve_edges(&[a, b]);
+        assert!(calls_of(&e).is_empty(), "{e:?}");
+    }
+    #[test]
+    fn builtin_bare_call_does_not_bind_across_files() {
+        let a = lang(
+            pf("a.py", vec![sym("run", 1)], vec![call("run", "len", None), call("run", "print", None), call("run", "helper", None)], vec![]),
+            "python",
+        );
+        let b = lang(pf("b.py", vec![sym("len", 1), sym("print", 5), sym("helper", 9)], vec![], vec![]), "python");
+        let e = resolve_edges(&[a, b]);
+        assert_eq!(calls_of(&e).len(), 1, "{e:?}");
+        assert!(has_call(&e, "a.py::run", "b.py::helper", 1.0));
+    }
+    #[test]
+    fn rust_std_method_names_do_not_bind_across_files() {
+        let a = lang(pf("a.rs", vec![sym("run", 1)], vec![call("run", "is_empty", None), call("run", "is_empty", Some("v"))], vec![]), "rust");
+        let b = lang(pf("b.rs", vec![sym("is_empty", 1)], vec![], vec![]), "rust");
+        assert!(calls_of(&resolve_edges(&[a, b])).is_empty());
+    }
+    #[test]
+    fn builtin_name_still_binds_in_the_same_file() {
+        let a = lang(pf("a.py", vec![sym("run", 1), sym("len", 5)], vec![call("run", "len", None)], vec![]), "python");
+        assert!(has_call(&resolve_edges(&[a]), "a.py::run", "a.py::len", 1.0));
+    }
+    #[test]
+    fn other_object_same_name_call_is_not_a_self_edge() {
+        let a = lang(
+            pf("server.py", vec![span("search_symbols", SymbolKind::Function, 1, 5)], vec![call("search_symbols", "search_symbols", Some("other"))], vec![]),
+            "python",
+        );
+        let e = resolve_edges(&[a]);
+        assert!(calls_of(&e).is_empty(), "{e:?}");
+    }
+    #[test]
+    fn duplicate_edges_collapse_to_max_confidence() {
+        let mut v = vec![
+            (EdgeKind::Tests, "a".to_string(), "b".to_string(), 0.5),
+            (EdgeKind::Tests, "a".to_string(), "b".to_string(), 1.0),
+            (EdgeKind::Tests, "a".to_string(), "b".to_string(), 0.5),
+        ];
+        dedup_max_confidence(&mut v);
+        assert_eq!(v, vec![(EdgeKind::Tests, "a".to_string(), "b".to_string(), 1.0)]);
+    }
+    #[test]
+    fn static_class_receiver_binds_the_class_method() {
+        let a = lang(pf("a.ts", vec![sym("run", 1)], vec![call("run", "make", Some("Factory"))], vec![]), "typescript");
+        let b = lang(pf("b.ts", vec![span("Factory", SymbolKind::Class, 1, 6), span("make", SymbolKind::Method, 2, 3)], vec![], vec![]), "typescript");
+        assert!(has_call(&resolve_edges(&[a, b]), "a.ts::run", "b.ts::make", 1.0));
+    }
     #[test]
     fn go_import_matches_a_directory_by_last_segment() {
         let a = pf("cmd/main.go", vec![sym("run", 1)], vec![call("run", "Parse", Some("util"))], vec![imp("cmd/main.go", "example.com/m/internal/util", &["util"], true)]);
@@ -822,14 +931,14 @@ mod tests {
     }
     #[test]
     fn name_only_guess_stays_inside_the_language_family() {
-        let a = pf("src/a.ts", vec![sym("f", 1)], vec![call("f", "get", Some("m"))], vec![]);
-        let mut b = pf("assets/d3.js", vec![sym("get", 1)], vec![], vec![]);
+        let a = pf("src/a.ts", vec![sym("f", 1)], vec![call("f", "fetchRows", None)], vec![]);
+        let mut b = pf("assets/d3.js", vec![sym("fetchRows", 1)], vec![], vec![]);
         b.language = "javascript".into();
-        let mut c = pf("lib/x.py", vec![sym("get", 1)], vec![], vec![]);
+        let mut c = pf("lib/x.py", vec![sym("fetchRows", 1)], vec![], vec![]);
         c.language = "python".into();
         let e = resolve_edges(&[a, b, c]);
-        assert!(has_call(&e, "src/a.ts::f", "assets/d3.js::get", 1.0), "{e:?}");
-        assert!(!e.iter().any(|x| x.0 == EdgeKind::Calls && x.2 == "lib/x.py::get"));
+        assert!(has_call(&e, "src/a.ts::f", "assets/d3.js::fetchRows", 1.0), "{e:?}");
+        assert!(!e.iter().any(|x| x.0 == EdgeKind::Calls && x.2 == "lib/x.py::fetchRows"));
     }
     #[test]
     fn rust_use_mod_and_impl_context_resolve_at_one() {

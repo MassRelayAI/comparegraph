@@ -185,6 +185,31 @@ fn bfs(
         }
     }
     let n_starts = v.len();
+    // best-confidence paths: exhaust the 1.0 edges first, then extend the frontier with the 0.5 edges (a node keeps the
+    // 1.0 path even when a shorter 0.5 path exists)
+    if min_conf < 1.0 {
+        if expand(c, &mut v, &mut seen, q.clone(), n_starts, dir, kinds, 1.0, depth, max_nodes) {
+            return (v, true);
+        }
+        q = (0..v.len()).collect();
+    }
+    let cut = expand(c, &mut v, &mut seen, q, n_starts, dir, kinds, min_conf, depth, max_nodes);
+    (v, cut)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn expand(
+    c: &Ctx,
+    v: &mut Vec<Reached>,
+    seen: &mut HashSet<i64>,
+    mut q: VecDeque<usize>,
+    n_starts: usize,
+    dir: Direction,
+    kinds: &[EdgeKind],
+    min_conf: f64,
+    depth: usize,
+    max_nodes: usize,
+) -> bool {
     let empty = vec![];
     while let Some(i) = q.pop_front() {
         let (id, hop, conf) = (v[i].id, v[i].hop, v[i].conf);
@@ -203,7 +228,7 @@ fn bfs(
                 continue;
             }
             if v.len() - n_starts >= max_nodes {
-                return (v, true);
+                return true;
             }
             seen.insert(*t);
             v.push(Reached {
@@ -215,7 +240,7 @@ fn bfs(
             q.push_back(v.len() - 1);
         }
     }
-    (v, false)
+    false
 }
 
 impl Ctx {
