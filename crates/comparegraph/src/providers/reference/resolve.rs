@@ -1,4 +1,5 @@
-use super::vendor::{ResolvedImport, SymbolKind};
+use super::rust_ctx::{self, RustInfo};
+use super::vendor::{CallSite, ResolvedImport, SymbolKind};
 use super::ParsedFile;
 use crate::domain::EdgeKind;
 use std::collections::HashMap;
@@ -205,6 +206,114 @@ fn class_method(f: &ParsedFile, q: &[String], caller: &str, callee: &str) -> Opt
         .map(|(_, qn)| qn.clone())
 }
 
+struct RustCall<'a> {
+    files: &'a [ParsedFile],
+    qns: &'a [Vec<String>],
+    rust: &'a [Option<RustInfo>],
+    file_set: &'a HashMap<String, ()>,
+    file_syms: &'a HashMap<&'a str, HashMap<&'a str, (String, bool)>>,
+}
+
+impl RustCall<'_> {
+    /// The method `name` defined inside an `impl ty` block: `prefer` file first, else the one crate-wide match.
+    fn method(&self, prefer: usize, ty: &str, name: &str) -> Option<String> {
+        let in_file = |i: usize| -> Option<String> {
+            let info = self.rust[i].as_ref()?;
+            let f = &self.files[i];
+            f.symbols.iter().zip(&self.qns[i]).find_map(|(s, qn)| {
+                (s.name == name
+                    && matches!(s.kind, SymbolKind::Method)
+                    && info.impls.iter().any(|(t, a, b)| t == ty && *a <= s.line_start && s.line_end <= *b))
+                .then(|| qn.clone())
+            })
+        };
+        if let Some(t) = in_file(prefer) {
+            return Some(t);
+        }
+        let root = rust_ctx::crate_src(&self.files[prefer].rel_path);
+        let mut hits = (0..self.files.len())
+            .filter(|i| *i != prefer && self.rust[*i].is_some())
+            .filter(|i| rust_ctx::crate_src(&self.files[*i].rel_path) == root)
+            .filter_map(in_file);
+        let first = hits.next()?;
+        hits.next().is_none().then_some(first)
+    }
+
+    fn item(&self, file: &str, name: &str) -> Option<String> {
+        self.file_syms.get(file)?.get(name).map(|e| e.0.clone())
+    }
+
+    /// A type name seen from file `fi` → (file defining it, bare type name): through `use`, else this file.
+    fn type_home(&self, fi: usize, info: &RustInfo, path: &[String]) -> Option<(usize, String)> {
+        let from = &self.files[fi].rel_path;
+        let mut full = path.to_vec();
+        if let Some((_, p)) = info.uses.iter().find(|(a, _)| Some(a) == path.first()) {
+            full = p.iter().cloned().chain(path[1..].iter().cloned()).collect();
+        }
+        if let Some((file, Some(item))) = rust_ctx::resolve_path(from, &full, self.file_set) {
+            let idx = self.files.iter().position(|f| f.rel_path == file)?;
+            return Some((idx, item));
+        }
+        let last = path.last()?;
+        (path.len() == 1 && self.file_syms.get(from.as_str()).is_some_and(|m| m.contains_key(last.as_str())))
+            .then(|| (fi, last.clone()))
+    }
+
+    fn resolve(&self, fi: usize, info: &RustInfo, c: &CallSite) -> Option<String> {
+        let f = &self.files[fi];
+        let caller = f.symbols.iter().find(|s| s.name == c.caller)?;
+        let in_caller = |a: u32, b: u32| a <= caller.line_start && caller.line_end <= b;
+        let impl_ty = info
+            .impls
+            .iter()
+            .filter(|(_, a, b)| in_caller(*a, *b))
+            .min_by_key(|(_, a, b)| b - a)
+            .map(|(t, _, _)| t.as_str());
+        let Some(recv) = c.receiver.as_deref() else {
+            // `Name(...)`: a function or tuple struct brought in by `use`
+            let (_, p) = info.uses.iter().find(|(a, _)| *a == c.callee)?;
+            let (file, item) = rust_ctx::resolve_path(&f.rel_path, p, self.file_set)?;
+            return self.item(&file, item.as_deref()?);
+        };
+        let ty = match recv {
+            "self" | "Self" => impl_ty.map(|t| (fi, t.to_string())),
+            v if !v.contains("::") && v.chars().next().is_some_and(char::is_lowercase) => {
+                let var = info
+                    .fns
+                    .iter()
+                    .filter(|g| in_caller(g.start, g.end))
+                    .min_by_key(|g| g.end - g.start)
+                    .and_then(|g| g.vars.get(v));
+                match var {
+                    Some(t) => self.type_home(fi, info, std::slice::from_ref(t)),
+                    None => None,
+                }
+            }
+            _ => None,
+        };
+        if matches!(recv, "self" | "Self") && ty.is_none() {
+            return None;
+        }
+        let path: Vec<String> = recv.split("::").map(str::to_string).collect();
+        let ty = ty.or_else(|| self.type_home(fi, info, &path));
+        if let Some((home, name)) = ty {
+            return self.method(home, &name, &c.callee).or_else(|| {
+                // `Name::new(...)` with no impl method found: the type itself
+                (recv != "self").then(|| self.item(&self.files[home].rel_path, &name)).flatten()
+            });
+        }
+        // `util::f(...)`: a module reached through `use` / `mod`
+        let mut full = path.clone();
+        if let Some((_, p)) = info.uses.iter().find(|(a, _)| Some(a) == path.first()) {
+            full = p.iter().cloned().chain(path[1..].iter().cloned()).collect();
+        }
+        match rust_ctx::resolve_path(&f.rel_path, &full, self.file_set)? {
+            (file, None) => self.item(&file, &c.callee),
+            _ => None,
+        }
+    }
+}
+
 /// Edges by qualified name: (kind, source_qn, target_qn, confidence).
 pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
     let file_set: HashMap<String, ()> = files.iter().map(|f| (f.rel_path.clone(), ())).collect();
@@ -237,7 +346,23 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             }
         }
     }
-    for (f, q) in files.iter().zip(&qns) {
+    let rust: Vec<Option<RustInfo>> = files
+        .iter()
+        .map(|f| (f.language == "rust").then(|| rust_ctx::analyze(&f.lines.join("\n"))))
+        .collect();
+    for (fi, (f, q)) in files.iter().zip(&qns).enumerate() {
+        if let Some(info) = &rust[fi] {
+            for t in rust_ctx::mod_files(&f.rel_path, &info.mods, &file_set) {
+                out.push((EdgeKind::Imports, f.rel_path.clone(), t, 1.0));
+            }
+            for (_, path) in &info.uses {
+                if let Some((t, _)) = rust_ctx::resolve_path(&f.rel_path, path, &file_set) {
+                    if t != f.rel_path {
+                        out.push((EdgeKind::Imports, f.rel_path.clone(), t, 1.0));
+                    }
+                }
+            }
+        }
         for imp in &f.imports {
             if let Some(t) = resolve_import_target(&f.rel_path, &imp.source, &file_set) {
                 out.push((EdgeKind::Imports, f.rel_path.clone(), t, 1.0));
@@ -261,6 +386,22 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 continue;
             };
             let recv = c.receiver.as_deref();
+            if let Some(info) = &rust[fi] {
+                let rc = RustCall { files, qns: &qns, rust: &rust, file_set: &file_set, file_syms: &file_syms };
+                if let Some(t) = rc.resolve(fi, info, c) {
+                    out.push((EdgeKind::Calls, (*caller_qn).clone(), t, 1.0));
+                    continue;
+                }
+                // `HashMap::new()`: a path ending in a type that is not ours is an external call, never a name guess
+                if recv.is_some_and(|r| {
+                    r.contains("::") || r.chars().next().is_some_and(char::is_uppercase)
+                }) && recv
+                    .and_then(|r| r.rsplit("::").next())
+                    .is_some_and(|l| l.chars().next().is_some_and(char::is_uppercase) && l != "Self")
+                {
+                    continue;
+                }
+            }
             // 1. self.m() / this.m(): a method of the caller's enclosing class
             if matches!(recv, Some("self" | "this")) {
                 if let Some(t) = class_method(f, q, &c.caller, &c.callee) {
@@ -614,5 +755,38 @@ mod tests {
         let e = resolve_edges(&[a, b, c]);
         assert!(has_call(&e, "src/a.ts::f", "assets/d3.js::get", 1.0), "{e:?}");
         assert!(!e.iter().any(|x| x.0 == EdgeKind::Calls && x.2 == "lib/x.py::get"));
+    }
+    #[test]
+    fn rust_use_mod_and_impl_context_resolve_at_one() {
+        use crate::providers::reference::vendor::parse;
+        let lib = "mod util;\nuse crate::util::Parser;\nuse crate::util::free as fr;\nstruct App;\nimpl App {\n    fn go(&self, p: &Parser) {\n        let q = Parser::new();\n        p.parse();\n        self.helper();\n        Self::assoc();\n        fr();\n        util::free();\n    }\n    fn helper(&self) {}\n    fn assoc() {}\n}\n";
+        let util = "pub struct Parser;\nimpl Parser {\n    pub fn new() -> Parser { Parser }\n    pub fn parse(&self) {}\n}\npub fn free() {}\nstruct Other;\nimpl Other { fn parse(&self) {} fn new() {} }\n";
+        let mk = |path: &str, src: &str| {
+            let r = parse(path, src, "rust").unwrap();
+            ParsedFile {
+                rel_path: path.into(),
+                language: "rust".into(),
+                lines: src.lines().map(String::from).collect(),
+                symbols: r.symbols,
+                call_sites: r.call_sites,
+                imports: r.imports,
+            }
+        };
+        let e = resolve_edges(&[mk("c/src/lib.rs", lib), mk("c/src/util.rs", util)]);
+        let go = "c/src/lib.rs::go";
+        for t in ["c/src/util.rs::new", "c/src/util.rs::parse", "c/src/lib.rs::helper", "c/src/lib.rs::assoc", "c/src/util.rs::free"] {
+            assert!(has_call(&e, go, t, 1.0), "{t}: {e:?}");
+        }
+        assert!(!e.iter().any(|x| x.0 == EdgeKind::Calls && (x.2.ends_with("::new#2") || x.2.ends_with("::parse#2"))));
+        assert!(e.contains(&(EdgeKind::Imports, "c/src/lib.rs".into(), "c/src/util.rs".into(), 1.0)));
+    }
+    #[test]
+    fn rust_external_type_path_call_is_not_a_name_guess() {
+        let mut a = pf("src/a.rs", vec![sym("f", 1)], vec![call("f", "new", Some("HashMap"))], vec![]);
+        a.language = "rust".into();
+        let mut b = pf("src/b.rs", vec![sym("new", 1)], vec![], vec![]);
+        b.language = "rust".into();
+        let e = resolve_edges(&[a, b]);
+        assert!(!e.iter().any(|x| x.0 == EdgeKind::Calls), "{e:?}");
     }
 }

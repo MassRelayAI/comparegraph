@@ -1,5 +1,6 @@
 pub mod inherit;
 pub mod resolve;
+pub mod rust_ctx;
 pub mod vendor;
 pub mod walker;
 use super::{
