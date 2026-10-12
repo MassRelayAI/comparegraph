@@ -155,3 +155,40 @@ Next steps, in order:
    compact mode) so a widest-symbol answer fits an agent's context.
 3. Extend the claims to all 12 basics for the product and goose, then re-read the matrix; consider an `unclaimed`
    cell state distinct from `-` so a missing claim is not mistaken for a gap.
+
+## After the crash fix (2026-10-13)
+
+Fix: the char search at `resolve.rs:269` now advances by `len_utf8`; an audit of every byte-index slice on source text in the
+reference provider and the application layer found no other char-search arithmetic. A panic in any resolution pass now fails
+the run with the file named (`resolution panicked while processing <file>`) instead of crashing the process. `show` reports
+`truncated` (with `callers_total`) when a list hits its cap and takes `--max-callers` (default 50, max 2000).
+Both comparators were rebuilt with the new release binary, parse results coming from the cache of the crashed attempts.
+
+| comparator | seconds | files parsed | nodes | edges | communities | limitations |
+|---|---|---|---|---|---|---|
+| github.com/NousResearch/hermes-agent | 162 | 10,288 | 166,253 | 443,009 | 967 | 236 (233 clamped_line_end, skipped_dir 1, skipped_minified 1, entry_file_heuristic 1) |
+| github.com/openclaw/openclaw | 1,866 | 38,258 | 433,887 | 1,321,920 | 4,254 | 614 (611 clamped_line_end, skipped_minified 1, entry_file_heuristic 1, no_inheritance_go 1) |
+
+The openclaw build took 31 minutes with every file already parsed (38,258 cache hits, 0 misses), so the time is the
+resolution and edge passes, not parsing. That is the next performance question; the product (51k nodes) took 3.5 minutes and
+the 434k-node comparator 31, which is worse than linear in nodes.
+
+`relate` now scores all four columns `related` (1.0) for `harness-agents`. Two claims were written on hermes-agent after reading
+the cited lines: `agents.mcp-tools` has (`tools/mcp_tool_discovery.py:207-238`, connects a configured MCP server and registers its
+tools) and `agents.subagents` has (`tools/delegate_tool.py:417-428`, `delegate_task` spawns child agents, single or batch, with
+list, steer and stop control). `check`: 4 repos, 4 runs done, 0 stale locations, 0 drifted runs, no problems.
+
+Matrix, `harness-agents`, all four columns (`-` is no claim, not an absence):
+
+| feature | product | goose | hermes-agent | openclaw | gap | differentiator |
+|---|---|---|---|---|---|---|
+| agents.audit-append-only | has | none | - | - | no | yes |
+| agents.loop-guards | has | - | - | - | no | yes |
+| agents.mcp-tools | - | has | has | - | yes | no |
+| agents.subagents | - | has | has | - | yes | no |
+| agents.tool-approval-hitl | - | has | - | - | yes | no |
+| the other 7 basics | - | - | - | - | no | no |
+
+Prevalence of `mcp-tools` and `subagents` among comparators is now 2 of 3 claimed columns only in the sense of claims made;
+openclaw has no claims yet, so the matrix still shows coverage of claims, not of the products. Next: claim openclaw, extend
+claims to all 12 basics, and profile the resolution passes on the 434k-node graph.
