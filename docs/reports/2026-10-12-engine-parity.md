@@ -3,7 +3,7 @@ title: Engine parity with code-review-graph, measured on three projects
 date: 2026-10-12
 valid_until: 2027-01-10
 lane: plan-4
-verdict: on par for symbols, containment and inheritance and 2-6x faster to build; behind on call recall, imports and test links; ours emits many false name-guess edges; no embeddings, flows or diff review
+verdict: symbols on par; calls on par for Python, close on mixed Python/JS, behind on Rust and TS/JSX; call precision sampled at 26 correct of 30; imports on par for Python; tests behind; build 2.4-4x faster; ahead on cross-repo comparison and evidence; absent - embeddings, flows, diff review
 status: decided
 ---
 
@@ -109,11 +109,11 @@ yet protect a reader. code-review-graph's own false edges in the part we share w
 |---|---|---|
 | search symbols | yes: FTS5 plus embeddings, `search.py`, `main.py:498` | partial: FTS only, `application/search.rs:102`, verb `search` |
 | callers and callees | yes: `query_graph` (`main.py:399`) | yes: verb `show`, `application/show.rs:26` |
-| multi-hop traversal | yes: `traverse_graph` (`main.py:1224`) | yes: verb `traverse`, `graph.rs:288` |
-| impact (blast radius) | yes: `graph.py:2745`, `get_impact_radius` | yes: verb `impact`, `graph.rs:312` |
-| related tests | yes: `query_graph tests_for`, TESTED_BY edges | partial: verb `tests-for`, `graph.rs:395`; test files only |
-| entry points | yes: `flows.py:156` | yes: verb `entry-points`, `graph.rs:511` |
-| dead code | yes: `refactor.py:235` | yes: verb `dead-code`, `graph.rs:531` |
+| multi-hop traversal | yes: `traverse_graph` (`main.py:1224`) | yes: verb `traverse`, `graph.rs:313` |
+| impact (blast radius) | yes: `graph.py:2745`, `get_impact_radius` | yes: verb `impact`, `graph.rs:337` |
+| related tests | yes: `query_graph tests_for`, TESTED_BY edges | partial: verb `tests-for`, `graph.rs:420`; test files only |
+| entry points | yes: `flows.py:156` | yes: verb `entry-points`, `graph.rs:536` |
+| dead code | yes: `refactor.py:235` | yes: verb `dead-code`, `graph.rs:556` |
 | communities | yes: `communities.py:797` | yes: verb `communities`, `communities.rs:110` |
 | incremental build | yes: git-diff driven, `incremental.py:1889` | partial: per-file parse cache (`build.rs`, cache_hits); the graph is rewritten each run |
 | embeddings / semantic search | yes: `embeddings.py:1157` | no |
@@ -243,7 +243,7 @@ in another file. One more shape is left alone on purpose: a same-file function w
 | containment | on par by symbol | unchanged | nothing |
 | inheritance | on par on small counts | unchanged (0.938, 0.667, 0.730) | the 3 srclight `extends` and 12 in the third project, not diagnosed |
 | call recall | behind (56 of 60 misses) | on par for Python (srclight 14 edges lacking of 3,187; 0.969), close for the third project (385 of 11,581; 0.960), behind for Rust and TS/JSX (graphmind 265 of 2,752; 0.712) | return-type propagation for locals (`x = f()` where `f` is annotated, `a, b = f()`), field types (`self.cache`, `this.reader`), JSX components, a file-level caller for module code, Dart/Go/ObjC constructors |
-| call precision | behind (16 of 30 false) | ahead of its own earlier state, and the surplus is now mostly right: 2 false, 2 ambiguous, 26 correct of 30; its own false edges (10 of 54 sampled) remain | none needed on our side; the two remaining false ones are re-exports (`from pkg import f` where `pkg/__init__` re-exports) |
+| call precision | behind (16 of 30 false) | ahead of its own earlier state, and the surplus is now mostly right: 2 false, 2 ambiguous, 26 correct of 30; its own false edges (10 of 54 sampled) remain | none claimed: the sample is 30 (26 correct, 2 false, 2 ambiguous); the two false ones are re-exports (`from pkg import f` where `pkg/__init__` re-exports) |
 | imports | behind (0.44, 0.38) | recall on par: 0 of 303, 19 of 198 and 83 of 841 lacking; Jaccard 0.647, 0.904, 0.901 (graphmind lowered by 165 extras we add, not sampled) | follow Python re-exports through `__init__`; sample the Rust extras |
 | test links | behind (0.00 to 0.44) | still behind (0.118, 0.605, 0.512), up in all three | per-case `it`/`describe` nodes (it makes one per case; we attribute to the file); module-level and fixture-parameter calls from tests |
 | build speed | ahead 2.1x to 6.0x | ahead 2.4x to 4.0x | not applicable |
@@ -253,3 +253,29 @@ in another file. One more shape is left alone on purpose: a same-file function w
 Caveats of this section: one host, one final run (timings vary 5 to 15 percent run to run, see above); the 54 + 30 classifications are
 by one reader; the re-measure was run several times while the pass was finished, and the numbers above are from the last run at
 `4e00187` only; the surplus that remains in graphmind (739 edges only we have) was sampled at 10.
+
+## After the review fixes (2026-10-13)
+
+The whole-branch review of `7c249d6` found three name-only paths that still bound at full confidence: a receiver "typed" by any
+adjacent capitalised token (`new Wrapper(inner); inner.run()` bound `run` to `Wrapper`), the repo-wide unique bare-name bind (1.0, and
+onto methods), and the inheritance fallback by unique repo name for a base imported from outside the repo. The fix (`3afed80`):
+declared-type shapes only for receivers, the bare-name bind capped at 0.5 and never onto a method, an externally imported base
+records no edge. The parse-cache key now includes a hash of the vendored parser sources.
+
+Method as above: `scripts/compare-engines.sh`, code-review-graph 2.3.9, fresh copies of the three upstream commits, release build at
+`3afed80`, `nice -n 10`, seed 7. **These are the script's automated numbers only. No edge was read or classified by hand in this
+note; the 54 + 30 hand classifications above describe `4e00187` and were not redone.**
+
+| measure | graphmind | srclight | code-review-graph |
+|---|---|---|---|
+| calls, resolved Jaccard | 0.712 to 0.713 | 0.969 to 0.969 | 0.960 to 0.963 |
+| imports Jaccard | 0.647 to 0.647 | 0.904 to 0.904 | 0.901 to 0.901 |
+| tests Jaccard | 0.118 to 0.119 | 0.605 to 0.605 | 0.512 to 0.513 |
+| our resolved call edges | 3,228 to 3,225 | 3,262 to 3,262 | 11,274 to 11,286 |
+| call edges only code-review-graph / only ours | 265 / 739 to 265 / 736 | 14 / 89 to 14 / 89 | 385 / 78 to 364 / 69 |
+| our call edges below 1.0 (the 0.5 share) | 6 (0.2 pct) to 66 (2.0) | 9 (0.3) to 14 (0.4) | 51 (0.5) to 199 (1.8) |
+
+Reading: recall did not move (the Jaccards are within 0.003), and the "only ours" surplus did not grow. The 0.5 share rose because
+bare-name binds that were 1.0 are now 0.5: that is the intended change (a name match is no longer reported as certain), and a
+`--min-confidence 1.0` query drops them. Cold build medians on the busy host: 2.30 / 1.12 / 5.16 s against code-review-graph's
+6.03 / 5.34 / 16.67 s.

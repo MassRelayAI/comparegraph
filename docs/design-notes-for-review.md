@@ -42,3 +42,25 @@ taxonomy author yet; each row says what would make us change it.
 - Wording in generated descriptions is not pluralised ("1 claims", "1 files"); cosmetic, template-level.
 
 Task 6 (2026-10-12): `typed_receiver_method` resolves `r.m()` from a type declared in the caller (`Square r`, `r: Square`), not inferred. The vendored Java extractor reports no call site for `new T()`; Rust integration tests that name the package crate (`use demo::util::x`) get no `imports` edge (needs Cargo.toml crate-name resolution). Both are recorded in fixtures/{java,rust}/NOTES.md.
+
+## Plan 4 (engine depth)
+
+| decision or known limit | alternative | why | who it hurts |
+|---|---|---|---|
+| module-level calls have no file-level caller | a file node as caller | the largest remaining miss class, but it changes `entry-points` and `dead-code` | calls under `if __name__`, decorators and module tables are missing |
+| return-typed and tuple-unpacked locals are not typed (`ctx = setup(); ctx.run()`, `a, b = f()`) | return-type propagation | needs an inference pass | method calls on such locals bind nothing |
+| TS/JSX field types are not read (`this.reader.m()`) | field type table | not built | TypeScript and JSX call recall stays behind |
+| a re-exported function can bind a same-named method at 0.5 | follow re-exports through `__init__` | not built | rare false 0.5 edges |
+| an imported name used as an object binds any same-named symbol in the module file | require a class | cheap rule | a function and an object of one name in a module |
+| `class_method` picks the first same-named method when a file has two | pick by receiver type | the span rule has no type | edges to the wrong class in a file with two |
+| naming-convention test links are not restricted to the same language family | restrict | not done | a `test_x.py` can link a same-named non-Python file |
+| Java `new T()` has no call site (vendored extractor) | patch the vendored file | vendored files stay byte-identical | constructors in Java are missing |
+| TOML emits `Cargo.toml::package` nodes | skip config keys | taken parser layer | config noise in search |
+| a trait method and its impl method share one qualified name | disambiguate by owner | qualified names are path plus name | one node stands for both |
+| interface-extends-interface is not covered; Go has no inheritance edges | extend the extractor | not built | thinner `extends` in TypeScript interfaces and Go |
+| an incremental build rewrites the whole graph each run | reuse the run when nothing changed | simple and correct | a no-op build is slower than it could be |
+| entry-point exported-ness is a heuristic | read export syntax per language | cheap | some exported symbols look unexported and the reverse |
+| dead-code confidence is `unknown` (dynamic dispatch is invisible) | a graded confidence | honest | candidates, never proof |
+| MCP default `min_confidence` 0.5 includes guessed hops (labelled in evidence) | default 1.0 | recall first, the label says so | an agent that ignores the label |
+| name-only binds (a bare call with no import, a unique-name base class) are capped at 0.5 and never bind a method; a base imported from outside the repo binds nothing | bind at 1.0 | a name match is not a proof | none beyond the lost recall |
+
