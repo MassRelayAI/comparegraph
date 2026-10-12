@@ -40,3 +40,5 @@ taxonomy author yet; each row says what would make us change it.
 - History was squashed into one clean root commit on 2026-10-12; the old history branch was deleted the same day.
 - Non-code files become symbols: the taken parser layer records a Dockerfile `FROM python:3.12-slim` as a `class` (seen on the srclight proof vault, 2026-10-12). Decide whether config/infra languages (Dockerfile, YAML, TOML, HCL, CSS, HTML) should produce symbols at all, or only file nodes, so communities, search and `map` are not polluted.
 - Wording in generated descriptions is not pluralised ("1 claims", "1 files"); cosmetic, template-level.
+
+Task 6 (2026-10-12): `typed_receiver_method` resolves `r.m()` from a type declared in the caller (`Square r`, `r: Square`), not inferred. The vendored Java extractor reports no call site for `new T()`; Rust integration tests that name the package crate (`use demo::util::x`) get no `imports` edge (needs Cargo.toml crate-name resolution). Both are recorded in fixtures/{java,rust}/NOTES.md.

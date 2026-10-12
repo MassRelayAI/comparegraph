@@ -8,3 +8,13 @@ class Store:
     def push(self, x):
         self.items.append(x)
         return len(self.items)
+
+
+class Base:
+    def reset(self):
+        return 0
+
+
+class Child(Base):
+    def bump(self):
+        return add(self.reset(), 1)

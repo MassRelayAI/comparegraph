@@ -1,0 +1,12 @@
+{ "nodes": ["util.go::Add", "util.go::Counter", "util.go::Inc", "util.go::Run", "util_test.go::TestAdd"],
+  "edges": [
+    "calls util.go::Inc util.go::Add",
+    "calls util.go::Run util.go::Add",
+    "calls util_test.go::TestAdd util.go::Add",
+    "contains util.go util.go::Add",
+    "contains util.go util.go::Counter",
+    "contains util.go util.go::Inc",
+    "contains util.go util.go::Run",
+    "contains util_test.go util_test.go::TestAdd",
+    "tests util_test.go util.go",
+    "tests util_test.go::TestAdd util.go::Add"] }

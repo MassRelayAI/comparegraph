@@ -1,0 +1,15 @@
+{ "nodes": ["src/main/java/demo/Base.java::Base", "src/main/java/demo/Base.java::id", "src/main/java/demo/Shape.java::Shape", "src/main/java/demo/Shape.java::area", "src/main/java/demo/Square.java::Square", "src/main/java/demo/Square.java::area", "src/test/java/demo/SquareTest.java::SquareTest", "src/test/java/demo/SquareTest.java::checkArea"],
+  "edges": [
+    "calls src/test/java/demo/SquareTest.java::checkArea src/main/java/demo/Square.java::area",
+    "contains src/main/java/demo/Base.java src/main/java/demo/Base.java::Base",
+    "contains src/main/java/demo/Base.java src/main/java/demo/Base.java::id",
+    "contains src/main/java/demo/Shape.java src/main/java/demo/Shape.java::Shape",
+    "contains src/main/java/demo/Shape.java src/main/java/demo/Shape.java::area",
+    "contains src/main/java/demo/Square.java src/main/java/demo/Square.java::Square",
+    "contains src/main/java/demo/Square.java src/main/java/demo/Square.java::area",
+    "contains src/test/java/demo/SquareTest.java src/test/java/demo/SquareTest.java::SquareTest",
+    "contains src/test/java/demo/SquareTest.java src/test/java/demo/SquareTest.java::checkArea",
+    "extends src/main/java/demo/Square.java::Square src/main/java/demo/Base.java::Base",
+    "implements src/main/java/demo/Square.java::Square src/main/java/demo/Shape.java::Shape",
+    "tests src/test/java/demo/SquareTest.java src/main/java/demo/Square.java",
+    "tests src/test/java/demo/SquareTest.java::checkArea src/main/java/demo/Square.java::area"] }
