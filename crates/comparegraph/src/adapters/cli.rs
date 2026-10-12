@@ -5,7 +5,7 @@ use crate::application::{
     add::add_repo,
     build::build_repo,
     check::check,
-    export::export_json,
+    export::{export_csv, export_json},
     setup,
     search::{search, SearchQuery},
     show::show,
@@ -160,6 +160,15 @@ pub enum Cmd {
         #[arg(long)]
         bin: Option<String>,
     },
+    /// Print the MCP tool catalog as JSON (redirect to docs/catalog.json); --check compares it with the committed file
+    Catalog {
+        /// exit 1 (error catalog_stale) when the file differs byte-for-byte from the live catalog
+        #[arg(long)]
+        check: bool,
+        /// the file --check compares against (default docs/catalog.json, relative to the current directory)
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
     /// Registered repos with their latest run summary
     Repos,
     /// Module clusters of a repo's latest run
@@ -282,6 +291,13 @@ pub enum ExportWhat {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// RFC 4180 CSV files (LF line endings): nodes, edges, claims, decisions, one matrix per family
+    Csv {
+        #[arg(long)]
+        repo: Option<String>,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// An Obsidian-style markdown vault, regenerated whole
     Vault {
         #[arg(long)]
@@ -304,6 +320,7 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::DeadCode { .. } => "dead-code",
         Cmd::Doctor { .. } => "doctor",
         Cmd::Setup { .. } => "setup",
+        Cmd::Catalog { .. } => "catalog",
         Cmd::Repos => "repos",
         Cmd::Mcp => "mcp",
         Cmd::Communities { .. } => "communities",
@@ -323,6 +340,10 @@ pub fn run() -> i32 {
     let cli = Cli::parse();
     if matches!(cli.cmd, Cmd::Mcp) {
         crate::adapters::mcp::serve(&cli.root, std::io::stdin().lock(), std::io::stdout().lock());
+        return 0;
+    }
+    if let Cmd::Catalog { check: false, .. } = cli.cmd {
+        print!("{}", crate::application::catalog::render(crate::adapters::mcp::tools()));
         return 0;
     }
     let env = envelope_for(&cli);
@@ -388,6 +409,12 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
         Err((e, data)) => {
             eprintln!("comparegraph: {e}");
             let mut env = Envelope::err(verb, &e);
+            if matches!(cli.cmd, Cmd::Catalog { .. }) && matches!(e, AppError::CheckFailed(_)) {
+                if let Some(b) = env.error.as_mut() {
+                    b.code = "catalog_stale";
+                    b.hint = Some("run `comparegraph catalog > docs/catalog.json`".into());
+                }
+            }
             if let Some(d) = data {
                 env.data = d;
             }
@@ -450,6 +477,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 v
             }
         }
+        Cmd::Export {
+            what: ExportWhat::Csv { repo, out },
+        } => export_csv(&cli.root, repo.as_deref(), out)?,
         Cmd::Export {
             what: ExportWhat::Vault { out },
         } => {
@@ -735,6 +765,21 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 "clients": rows.iter().map(|r| r.to_json(true)).collect::<Vec<_>>(),
                 "limitation_items": limitations,
             })
+        }
+        Cmd::Catalog { check, file } => {
+            let live = crate::application::catalog::render(crate::adapters::mcp::tools());
+            if !*check {
+                return Ok(Ok(serde_json::json!({ "catalog": serde_json::from_str::<serde_json::Value>(&live).unwrap() })));
+            }
+            let p = file.clone().unwrap_or_else(|| PathBuf::from("docs/catalog.json"));
+            let disk = std::fs::read_to_string(&p).map_err(|e| AppError::Io(p.clone(), e))?;
+            if disk != live {
+                return Ok(Err((
+                    AppError::CheckFailed(format!("{} differs from the live catalog", p.display())),
+                    Some(serde_json::json!({ "file": p, "stale": true })),
+                )));
+            }
+            serde_json::json!({ "file": p, "stale": false })
         }
         Cmd::Mcp => unreachable!("mcp is served by run()"),
         Cmd::Repos => {

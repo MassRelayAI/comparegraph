@@ -1,5 +1,6 @@
 pub mod add;
 pub mod build;
+pub mod catalog;
 pub mod check;
 pub mod claim;
 pub mod communities;
