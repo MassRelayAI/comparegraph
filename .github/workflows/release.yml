@@ -26,20 +26,26 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-${{ matrix.platform }}
-      - run: cargo build --release -p comparegraph
-      - name: Strip
-        if: runner.os != 'Windows'
-        run: strip target/release/${{ matrix.exe }}
-      - name: Stage binary as comparegraph-<platform>
+      - name: Package (builds on this host, stamps the version)
+        shell: bash
+        run: scripts/package-npm.sh "${GITHUB_REF_NAME#v}" ${{ matrix.platform }}
+      - name: Stage release asset and checksum
         shell: bash
         run: |
           mkdir -p dist
           ext=""; [ "${{ matrix.exe }}" = "comparegraph.exe" ] && ext=".exe"
-          cp "target/release/${{ matrix.exe }}" "dist/comparegraph-${{ matrix.platform }}$ext"
+          out="comparegraph-${{ matrix.platform }}$ext"
+          cp "packages/platforms/${{ matrix.platform }}/bin/${{ matrix.exe }}" "dist/$out"
+          (cd dist && (sha256sum "$out" 2>/dev/null || shasum -a 256 "$out") > "$out.sha256")
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bin-${{ matrix.platform }}
           path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pkg-${{ matrix.platform }}
+          path: packages/platforms/${{ matrix.platform }}
           if-no-files-found: error
 
   release:
@@ -55,7 +61,9 @@ jobs:
           merge-multiple: true
       - name: SHA256SUMS
         working-directory: dist
-        run: sha256sum comparegraph-* > SHA256SUMS
+        run: |
+          cat comparegraph-*.sha256 > SHA256SUMS
+          sha256sum -c SHA256SUMS
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*
@@ -84,10 +92,9 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         if: env.SKIP != '1'
         with:
-          path: dist
-          pattern: bin-*
-          merge-multiple: true
-      - name: Package and publish
+          pattern: pkg-*
+          path: packages/platforms-dl
+      - name: Verify versions and publish
         if: env.SKIP != '1'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -95,10 +102,13 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           for p in linux-x64 darwin-arm64 darwin-x64 win32-x64; do
-            bash scripts/package-npm.sh "$version" "$p"
+            cp -a "packages/platforms-dl/pkg-$p/." "packages/platforms/$p/"
+            v=$(node -p "require('./packages/platforms/$p/package.json').version")
+            [ "$v" = "$version" ] || { echo "platform $p version $v != tag $version"; exit 1; }
           done
+          sv=$(node -p "require('./packages/comparegraph/package.json').version")
+          [ "$sv" = "$version" ] || { echo "shell version $sv != tag $version"; exit 1; }
           # platform packages first, then the shell
-          for d in packages/comparegraph-*/ packages/comparegraph/; do
-            [ -f "$d/package.json" ] || continue
+          for d in packages/platforms/*/ packages/comparegraph/; do
             (cd "$d" && npm publish --provenance --access public)
           done
