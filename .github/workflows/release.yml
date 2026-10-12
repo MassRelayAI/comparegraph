@@ -10,22 +10,24 @@ concurrency:
 jobs:
   build:
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - { platform: linux-x64, os: ubuntu-latest, exe: comparegraph }
-          - { platform: darwin-arm64, os: macos-14, exe: comparegraph }
-          - { platform: darwin-x64, os: macos-13, exe: comparegraph }
+          - { platform: darwin-arm64, os: macos-15, exe: comparegraph }
+          - { platform: darwin-x64, os: macos-15-intel, exe: comparegraph }
           - { platform: win32-x64, os: windows-latest, exe: comparegraph.exe }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Toolchain (pinned by rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-${{ matrix.platform }}
+      # A tag whose version differs from Cargo.toml fails every job by design (exit 4):
+      # bump Cargo.toml in the tagged commit.
       - name: Package (builds on this host, stamps the version)
         shell: bash
         run: scripts/package-npm.sh "${GITHUB_REF_NAME#v}" ${{ matrix.platform }}
@@ -37,15 +39,24 @@ jobs:
           out="comparegraph-${{ matrix.platform }}$ext"
           cp "packages/platforms/${{ matrix.platform }}/bin/${{ matrix.exe }}" "dist/$out"
           (cd dist && (sha256sum "$out" 2>/dev/null || shasum -a 256 "$out") > "$out.sha256")
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bin-${{ matrix.platform }}
           path: dist/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Tar stamped package (artifacts drop file modes; tar keeps them)
+        shell: bash
+        run: tar -czf pkg-${{ matrix.platform }}.tgz -C packages/platforms ${{ matrix.platform }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: pkg-${{ matrix.platform }}
-          path: packages/platforms/${{ matrix.platform }}
+          path: pkg-${{ matrix.platform }}.tgz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: matrix.platform == 'linux-x64'
+        with:
+          name: shell-pkg
+          path: packages/comparegraph/package.json
           if-no-files-found: error
 
   release:
@@ -54,7 +65,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           pattern: bin-*
@@ -64,7 +75,7 @@ jobs:
         run: |
           cat comparegraph-*.sha256 > SHA256SUMS
           sha256sum -c SHA256SUMS
-      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: dist/*
           generate_release_notes: true
@@ -82,19 +93,18 @@ jobs:
       - name: Skip without token
         if: env.NPM_TOKEN == ''
         run: echo "NPM_TOKEN not set; nothing published." && echo "SKIP=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: env.SKIP != '1'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: env.SKIP != '1'
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         if: env.SKIP != '1'
         with:
-          pattern: pkg-*
-          path: packages/platforms-dl
-      - name: Verify versions and publish
+          path: art
+      - name: Verify, then publish (idempotent)
         if: env.SKIP != '1'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -102,13 +112,20 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           for p in linux-x64 darwin-arm64 darwin-x64 win32-x64; do
-            cp -a "packages/platforms-dl/pkg-$p/." "packages/platforms/$p/"
+            tar -xzf "art/pkg-$p/pkg-$p.tgz" -C packages/platforms
             v=$(node -p "require('./packages/platforms/$p/package.json').version")
             [ "$v" = "$version" ] || { echo "platform $p version $v != tag $version"; exit 1; }
+            case "$p" in win32-*) ;; *) test -x "packages/platforms/$p/bin/comparegraph" || { echo "$p binary not executable"; exit 1; } ;; esac
           done
+          cp art/shell-pkg/package.json packages/comparegraph/package.json
           sv=$(node -p "require('./packages/comparegraph/package.json').version")
           [ "$sv" = "$version" ] || { echo "shell version $sv != tag $version"; exit 1; }
           # platform packages first, then the shell
           for d in packages/platforms/*/ packages/comparegraph/; do
+            name=$(node -p "require('./$d/package.json').name")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "::notice::$name@$version already on npm; skipping"
+              continue
+            fi
             (cd "$d" && npm publish --provenance --access public)
           done

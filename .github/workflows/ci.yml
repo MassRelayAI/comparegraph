@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Toolchain (pinned by rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Test
         run: cargo test -p comparegraph
       - name: Clippy
@@ -29,3 +29,6 @@ jobs:
       - name: npm bin smoke test
         if: hashFiles('packages/comparegraph/test/bin.test.mjs') != ''
         run: node --test packages/comparegraph/test/bin.test.mjs
+      - name: npm packaging script test
+        if: hashFiles('packages/comparegraph/test/package-script.test.mjs') != ''
+        run: node --test packages/comparegraph/test/package-script.test.mjs
