@@ -304,6 +304,11 @@ fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFi
     None
 }
 
+/// The symbol a call site sits in: the smallest symbol of the caller's name whose lines contain the call (two classes may both have a `render`).
+fn caller_at<'a>(f: &'a ParsedFile, c: &CallSite) -> Option<&'a vendor::Symbol> {
+    f.symbols.iter().filter(|s| s.name == c.caller && s.line_start <= c.line && c.line <= s.line_end).min_by_key(|s| s.line_end - s.line_start)
+}
+
 /// The file holding class `ty` as file `gi` means it: defined there, else brought in by one of its imports. An unresolved name is none.
 fn declared_class_home(files: &[ParsedFile], file_set: &HashMap<String, ()>, gi: usize, ty: &str) -> Option<usize> {
     let has = |i: usize| files[i].symbols.iter().any(|s| s.name == ty && matches!(s.kind, SymbolKind::Class));
@@ -318,35 +323,45 @@ fn declared_class_home(files: &[ParsedFile], file_set: &HashMap<String, ()>, gi:
         .find_map(|t| files.iter().position(|h| h.rel_path == t).filter(|h| has(*h)))
 }
 
+/// `this.<recv>.<callee>()` as the syntax tree sees it: the declared type of the field in the smallest class holding the call line.
+fn field_type(d: &TsDecls, recv: &str, c: &CallSite) -> Option<String> {
+    d.member_calls.iter().find(|m| m.0 == c.line && m.1 == recv && m.2 == c.callee)?;
+    let class = d.classes.iter().filter(|k| k.start <= c.line && c.line <= k.end).min_by_key(|k| k.end - k.start)?;
+    class.fields.get(recv).cloned()
+}
+
+/// `const x = make(); x.m()`: the declared return type of `make` (this file, else the file an import of `make` points to) and the
+/// file whose imports must resolve that type name. A local declaration named `make` hides an imported one.
+fn local_return_type(files: &[ParsedFile], file_set: &HashMap<String, ()>, ts: &[Option<TsDecls>], fi: usize, recv: &str, caller: &vendor::Symbol) -> Option<(String, usize)> {
+    let (f, d) = (&files[fi], ts[fi].as_ref()?);
+    let mut locals = d.locals.iter().filter(|l| l.1 == recv && caller.line_start <= l.0 && l.0 <= caller.line_end);
+    let func = &locals.next()?.2;
+    if locals.any(|l| &l.2 != func) {
+        return None;
+    }
+    if let Some(t) = d.returns.get(func) {
+        return Some((t.clone(), fi));
+    }
+    if d.untyped.iter().any(|u| &u.1 == func && (u.2 || (caller.line_start <= u.0 && u.0 <= caller.line_end))) {
+        return None;
+    }
+    f.imports.iter().filter(|i| i.specifiers.iter().any(|s| s == func)).flat_map(|i| import_files(&f.rel_path, i, file_set)).find_map(|t| {
+        let gi = files.iter().position(|h| h.rel_path == t)?;
+        Some((ts[gi].as_ref()?.returns.get(func)?.clone(), gi))
+    })
+}
+
 /// `this.reader.read()` / `x.read()` (JS/TS) where the type comes from a DECLARATION: a class field (`private reader: Reader;`,
 /// `reader = new Reader()`, a constructor parameter property) or the declared return type of the function `x = make()` called.
 /// Never inferred from a body; a type that does not resolve to a class of the repo types nothing.
 fn declared_member_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &HashMap<String, ()>, ts: &[Option<TsDecls>], fi: usize, c: &CallSite) -> Option<String> {
     let (f, recv) = (&files[fi], c.receiver.as_deref()?);
     let d = ts[fi].as_ref()?;
-    let caller = f.symbols.iter().find(|s| s.name == c.caller)?;
-    let line = (c.line as usize).checked_sub(1).and_then(|i| f.lines.get(i))?;
-    let (ty, def) = if line.contains(&format!("this.{recv}.{}", c.callee)) {
-        let class = d.classes.iter().filter(|k| k.start <= caller.line_start && caller.line_end <= k.end).min_by_key(|k| k.end - k.start)?;
-        (class.fields.get(recv)?.clone(), fi)
-    } else {
-        let mut locals = d.locals.iter().filter(|l| l.1 == recv && caller.line_start <= l.0 && l.0 <= caller.line_end);
-        let func = &locals.next()?.2;
-        if locals.any(|l| &l.2 != func) {
-            return None;
-        }
-        if let Some(t) = d.returns.get(func) {
-            (t.clone(), fi)
-        } else {
-            f.imports
-                .iter()
-                .filter(|i| i.specifiers.iter().any(|s| s == func))
-                .flat_map(|i| import_files(&f.rel_path, i, file_set))
-                .find_map(|t| {
-                    let gi = files.iter().position(|h| h.rel_path == t)?;
-                    Some((ts[gi].as_ref()?.returns.get(func)?.clone(), gi))
-                })?
-        }
+    let caller = caller_at(f, c)?;
+    let (ty, def) = match field_type(d, recv, c) {
+        Some(t) => (t, fi),
+        None if d.member_calls.iter().any(|m| m.0 == c.line && m.1 == recv && m.2 == c.callee) => return None,
+        None => local_return_type(files, file_set, ts, fi, recv, caller)?,
     };
     let gi = declared_class_home(files, file_set, def, &ty)?;
     let g = &files[gi];
@@ -439,17 +454,21 @@ impl PyCall<'_> {
         hits.next().is_none().then(|| (first, ty.to_string()))
     }
 
+    /// The file and real name of a function imported into file `fi` under the name `func` (`from m import f as func`).
+    fn imported_fn(&self, fi: usize, info: &PyInfo, func: &str) -> Option<(usize, String)> {
+        let imp = info.imports.iter().find(|i| i.alias == func && i.name.is_some())?;
+        let real = imp.name.as_deref()?;
+        let gi = self.module_files(&self.files[fi].rel_path, &imp.module, None).iter().find_map(|t| self.files.iter().position(|g| &g.rel_path == t))?;
+        Some((gi, real.to_string()))
+    }
+
     /// The class a function is annotated to return: defined in this file, or imported (alias or not).
     fn returned_class(&self, fi: usize, info: &PyInfo, func: &str) -> Option<String> {
         if let Some(t) = info.returns.get(func) {
             return Some(t.clone());
         }
-        let imp = info.imports.iter().find(|i| i.alias == func && i.name.is_some())?;
-        let real = imp.name.as_deref()?;
-        self.module_files(&self.files[fi].rel_path, &imp.module, None)
-            .iter()
-            .find_map(|t| self.files.iter().position(|g| &g.rel_path == t))
-            .and_then(|gi| self.py[gi].as_ref()?.returns.get(real).cloned())
+        let (gi, real) = self.imported_fn(fi, info, func)?;
+        self.py[gi].as_ref()?.returns.get(&real).cloned()
     }
 
     /// Element `ix` of `n` of what `func` is annotated to return as a tuple (this file, or imported).
@@ -458,12 +477,8 @@ impl PyCall<'_> {
         if let Some(els) = info.tuples.get(func) {
             return pick(els);
         }
-        let imp = info.imports.iter().find(|i| i.alias == func && i.name.is_some())?;
-        let real = imp.name.as_deref()?;
-        self.module_files(&self.files[fi].rel_path, &imp.module, None)
-            .iter()
-            .find_map(|t| self.files.iter().position(|g| &g.rel_path == t))
-            .and_then(|gi| self.py[gi].as_ref()?.tuples.get(real).and_then(pick))
+        let (gi, real) = self.imported_fn(fi, info, func)?;
+        self.py[gi].as_ref()?.tuples.get(&real).and_then(pick)
     }
 
     /// Is `recv` a local (or parameter) of the caller, hiding any import of the same name?
@@ -658,7 +673,7 @@ impl RustCall<'_> {
 
     fn resolve(&self, fi: usize, info: &RustInfo, c: &CallSite) -> Option<String> {
         let f = &self.files[fi];
-        let caller = f.symbols.iter().find(|s| s.name == c.caller)?;
+        let caller = caller_at(f, c)?;
         let in_caller = |a: u32, b: u32| a <= caller.line_start && caller.line_end <= b;
         let impl_ty = info
             .impls
@@ -678,7 +693,7 @@ impl RustCall<'_> {
             v if !v.contains("::")
                 && v.chars().next().is_some_and(char::is_lowercase)
                 && impl_ty.is_some()
-                && (c.line as usize).checked_sub(1).and_then(|i| f.lines.get(i)).is_some_and(|l| l.contains(&format!("self.{v}.{}", c.callee))) =>
+                && info.self_calls.iter().any(|m| m.0 == c.line && m.1 == v && m.2 == c.callee) =>
             {
                 self.field_home(fi, impl_ty?, v)
             }

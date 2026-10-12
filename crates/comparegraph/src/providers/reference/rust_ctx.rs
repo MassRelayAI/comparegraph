@@ -27,6 +27,8 @@ pub struct RustInfo {
     pub returns: HashMap<String, String>,
     /// struct → field → declared field type
     pub structs: HashMap<String, HashMap<String, String>>,
+    /// (line, field, method) for every call `self.<field>.<method>(...)`, read from the syntax tree
+    pub self_calls: Vec<(u32, String, String)>,
 }
 
 /// Attribute text (`#[test]`, `#[cfg(test)]`) directly above an item.
@@ -169,6 +171,7 @@ pub fn analyze(src: &str) -> RustInfo {
     };
     let mut stack = vec![tree.root_node()];
     let mut dup_fns: Vec<String> = Vec::new();
+    let mut dup_structs: Vec<String> = Vec::new();
     while let Some(n) = stack.pop() {
         let (s, e) = (n.start_position().row as u32 + 1, n.end_position().row as u32 + 1);
         match n.kind() {
@@ -188,6 +191,25 @@ pub fn analyze(src: &str) -> RustInfo {
                     }
                 }
             }
+            "let_declaration" => {
+                // `let make = || …` hides a free function of that name
+                if let (Some(p), Some(v)) = (n.child_by_field_name("pattern").filter(|p| p.kind() == "identifier"), n.child_by_field_name("value")) {
+                    if v.kind() == "closure_expression" {
+                        dup_fns.push(text(p, src).to_string());
+                    }
+                }
+            }
+            "call_expression" => {
+                let m = n.child_by_field_name("function").filter(|f| f.kind() == "field_expression");
+                let obj = m.and_then(|m| m.child_by_field_name("value")).filter(|o| o.kind() == "field_expression");
+                if let (Some(m), Some(obj)) = (m, obj) {
+                    if let (Some(base), Some(field), Some(method)) = (obj.child_by_field_name("value"), obj.child_by_field_name("field"), m.child_by_field_name("field")) {
+                        if base.kind() == "self" {
+                            info.self_calls.push((s, text(field, src).to_string(), text(method, src).to_string()));
+                        }
+                    }
+                }
+            }
             "struct_item" => {
                 if let (Some(name), Some(body)) = (n.child_by_field_name("name"), n.child_by_field_name("body")) {
                     let mut fields = HashMap::new();
@@ -197,7 +219,13 @@ pub fn analyze(src: &str) -> RustInfo {
                             fields.insert(text(fname, src).to_string(), t);
                         }
                     }
-                    info.structs.insert(text(name, src).to_string(), fields);
+                    let name = text(name, src).to_string();
+                    if info.structs.contains_key(&name) || dup_structs.contains(&name) {
+                        info.structs.remove(&name);
+                        dup_structs.push(name);
+                    } else {
+                        info.structs.insert(name, fields);
+                    }
                 }
             }
             "impl_item" => {
@@ -219,6 +247,11 @@ pub fn analyze(src: &str) -> RustInfo {
                             dup_fns.push(name);
                         }
                     }
+                } else if let (false, Some(name)) = (free, n.child_by_field_name("name")) {
+                    // a function nested in a body (or a method) shadows nothing by itself, but a bare `make()` may mean it
+                    if n.parent().is_some_and(|p| p.kind() == "block") {
+                        dup_fns.push(text(name, src).to_string());
+                    }
                 } else if let (true, Some(name)) = (free, n.child_by_field_name("name")) {
                     // a free function without a declared type that shares a name with a typed one types nothing
                     let name = text(name, src).to_string();
@@ -236,6 +269,9 @@ pub fn analyze(src: &str) -> RustInfo {
         }
         let mut c = n.walk();
         stack.extend(n.named_children(&mut c));
+    }
+    for d in &dup_fns {
+        info.returns.remove(d);
     }
     info.uses.sort();
     info.uses.dedup();

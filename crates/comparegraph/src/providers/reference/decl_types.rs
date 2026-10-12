@@ -20,6 +20,10 @@ pub struct TsDecls {
     pub classes: Vec<ClassFields>,
     /// (line, variable, function) for `const x = f()` / `const x = await f()` with no annotation on `x`
     pub locals: Vec<(u32, String, String)>,
+    /// (line, field, method) for every call `this.<field>.<method>(...)` (read from the syntax tree, not from text)
+    pub member_calls: Vec<(u32, String, String)>,
+    /// every function or variable name this file declares WITHOUT a typed return: it hides an imported function of the same name
+    pub untyped: Vec<(u32, String, bool)>,
 }
 
 fn text<'a>(n: Node, src: &'a str) -> &'a str {
@@ -43,6 +47,8 @@ struct Acc {
     returns: HashMap<String, Option<String>>,
     classes: Vec<(u32, u32, HashMap<String, Option<String>>)>,
     locals: Vec<(u32, String, String)>,
+    member_calls: Vec<(u32, String, String)>,
+    untyped: Vec<(u32, String, bool)>,
 }
 
 fn put(m: &mut HashMap<String, Option<String>>, k: &str, v: String) {
@@ -73,9 +79,17 @@ fn walk(n: Node, src: &str, a: &mut Acc, cls: Option<usize>) {
         "function_declaration" | "generator_function_declaration" => {
             if let (Some(name), Some(ty)) = (n.child_by_field_name("name"), n.child_by_field_name("return_type").and_then(|t| declared_class(text(t, src)))) {
                 put(&mut a.returns, text(name, src), ty);
+            } else if let Some(name) = n.child_by_field_name("name") {
+                a.untyped.push((line, text(name, src).to_string(), true));
             }
         }
         "variable_declarator" => {
+            if let Some(name) = n.child_by_field_name("name").filter(|x| x.kind() == "identifier") {
+                // any declarator named like a function hides it; a typed function value is settled just below
+                if !n.child_by_field_name("value").is_some_and(|v| matches!(v.kind(), "arrow_function" | "function_expression" | "function") && v.child_by_field_name("return_type").and_then(|t| declared_class(text(t, src))).is_some()) {
+                    a.untyped.push((line, text(name, src).to_string(), false));
+                }
+            }
             if let (Some(name), Some(v)) = (n.child_by_field_name("name").filter(|x| x.kind() == "identifier"), n.child_by_field_name("value")) {
                 let name = text(name, src);
                 if matches!(v.kind(), "arrow_function" | "function_expression" | "function") {
@@ -102,6 +116,17 @@ fn walk(n: Node, src: &str, a: &mut Acc, cls: Option<usize>) {
             let is_prop = n.children(&mut c).any(|x| x.kind() == "accessibility_modifier" || text(x, src) == "readonly");
             if let (true, Some(p), Some(t)) = (is_prop, n.child_by_field_name("pattern").filter(|p| p.kind() == "identifier"), n.child_by_field_name("type")) {
                 add_field(a, cls, text(p, src), declared_class(text(t, src)));
+            }
+        }
+        "call_expression" => {
+            let m = n.child_by_field_name("function").filter(|f| f.kind() == "member_expression");
+            let obj = m.and_then(|m| m.child_by_field_name("object")).filter(|o| o.kind() == "member_expression");
+            if let (Some(m), Some(obj)) = (m, obj) {
+                if let (Some(this), Some(field), Some(method)) = (obj.child_by_field_name("object"), obj.child_by_field_name("property"), m.child_by_field_name("property")) {
+                    if this.kind() == "this" {
+                        a.member_calls.push((line, text(field, src).to_string(), text(method, src).to_string()));
+                    }
+                }
             }
         }
         // `this.reader = new Reader()` in any method of the class
@@ -135,13 +160,15 @@ pub fn analyze(src: &str, language: &str) -> Option<TsDecls> {
     let mut a = Acc::default();
     walk(tree.root_node(), src, &mut a, None);
     Some(TsDecls {
-        returns: a.returns.into_iter().filter_map(|(k, v)| v.map(|t| (k, t))).collect(),
+        returns: a.returns.into_iter().filter(|(k, _)| !a.untyped.iter().any(|u| &u.1 == k)).filter_map(|(k, v)| v.map(|t| (k, t))).collect(),
         classes: a
             .classes
             .into_iter()
             .map(|(start, end, f)| ClassFields { start, end, fields: f.into_iter().filter_map(|(k, v)| v.map(|t| (k, t))).collect() })
             .collect(),
         locals: a.locals,
+        member_calls: a.member_calls,
+        untyped: a.untyped,
     })
 }
 

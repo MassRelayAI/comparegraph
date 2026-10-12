@@ -43,6 +43,9 @@ pub struct PyInfo {
     pub returns: HashMap<String, String>,
     /// function name → the class of each element of its `-> tuple[A, B]` / `Tuple[A, B]` annotation ("" = not a class)
     pub tuples: HashMap<String, Vec<String>>,
+    /// every function name seen so far, and those seen twice (a name defined twice types nothing)
+    seen_fns: Vec<String>,
+    dup_fns: Vec<String>,
 }
 
 fn text<'a>(n: Node, src: &'a str) -> &'a str {
@@ -204,11 +207,23 @@ fn walk(n: Node, src: &str, info: &mut PyInfo, cx: &Cx) {
         }
         "function_definition" => {
             info.scopes.push(PyScope { start: s, end: e, ..Default::default() });
-            if let (Some(name), Some(ty)) = (n.child_by_field_name("name"), n.child_by_field_name("return_type").and_then(|t| annotation_type(text(t, src)))) {
-                info.returns.entry(text(name, src).to_string()).or_insert(ty);
-            }
-            if let (Some(name), Some(els)) = (n.child_by_field_name("name"), n.child_by_field_name("return_type").and_then(|t| tuple_annotation(text(t, src)))) {
-                info.tuples.entry(text(name, src).to_string()).or_insert(els);
+            if let Some(name) = n.child_by_field_name("name") {
+                let nm = text(name, src).to_string();
+                if info.seen_fns.contains(&nm) {
+                    info.returns.remove(&nm);
+                    info.tuples.remove(&nm);
+                    info.dup_fns.push(nm.clone());
+                } else {
+                    info.seen_fns.push(nm.clone());
+                }
+                if !info.dup_fns.contains(&nm) {
+                    if let Some(ty) = n.child_by_field_name("return_type").and_then(|t| annotation_type(text(t, src))) {
+                        info.returns.insert(nm.clone(), ty);
+                    }
+                    if let Some(els) = n.child_by_field_name("return_type").and_then(|t| tuple_annotation(text(t, src))) {
+                        info.tuples.insert(nm, els);
+                    }
+                }
             }
             let inner = Cx { scope: Some(info.scopes.len() - 1), class: cx.class };
             if let Some(ps) = n.child_by_field_name("parameters") {

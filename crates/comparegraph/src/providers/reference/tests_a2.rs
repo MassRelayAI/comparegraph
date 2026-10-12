@@ -196,3 +196,108 @@ fn ts_field_type_does_not_leak_to_a_plain_local_of_the_same_name() {
     ]);
     assert_eq!(calls_from(&o, "a.ts::go"), 0, "{:?}", o.edges_by_qn);
 }
+
+const TS_TWO: &str = "export class Reader {\n  read() {}\n}\nexport class Other {\n  read() {}\n}\n";
+
+#[test]
+fn ts_two_classes_with_the_same_method_name_use_their_own_fields() {
+    let o = build(&[
+        ("r.ts", TS_TWO),
+        (
+            "a.ts",
+            "import { Reader, Other } from './r';\nexport class A {\n  private reader: Reader;\n  render() {\n    this.reader.read();\n  }\n}\nexport class B {\n  private reader: Other;\n  render() {\n    this.reader.read();\n  }\n}\n",
+        ),
+    ]);
+    let into_other: Vec<_> = o.edges_by_qn.iter().filter(|e| e.0 == EdgeKind::Calls && e.2 == "r.ts::read#2").collect();
+    let into_reader: Vec<_> = o.edges_by_qn.iter().filter(|e| e.0 == EdgeKind::Calls && e.2 == "r.ts::read").collect();
+    assert_eq!((into_reader.len(), into_other.len()), (1, 1), "{:?}", o.edges_by_qn);
+    // (both methods are attributed to the first `render` by the existing caller lookup; the targets are what A2 decides)
+}
+
+#[test]
+fn rust_two_impls_with_the_same_method_name_use_their_own_fields() {
+    let o = build(&[
+        ("Cargo.toml", "[package]\nname = \"demo\"\n"),
+        ("src/lib.rs", RS_LIB),
+        ("src/store.rs", RS_STORE),
+        (
+            "src/app.rs",
+            "use crate::store::{Reader, Other};\npub struct A {\n    reader: Reader,\n}\npub struct B {\n    reader: Other,\n}\nimpl A {\n    pub fn render(&self) {\n        self.reader.read();\n    }\n}\nimpl B {\n    pub fn render(&self) {\n        self.reader.read();\n    }\n}\n",
+        ),
+    ]);
+    let n = |t: &str| o.edges_by_qn.iter().filter(|e| e.0 == EdgeKind::Calls && e.2 == t).count();
+    assert_eq!((n("src/store.rs::read"), n("src/store.rs::read#2")), (1, 1), "{:?}", o.edges_by_qn);
+}
+
+#[test]
+fn ts_comment_string_and_prefix_do_not_type_a_receiver() {
+    let o = build(&[
+        ("r.ts", TS_READER),
+        (
+            "a.ts",
+            "import { Reader } from './r';\nexport class App {\n  private reader: Reader;\n  go(reader: any) {\n    reader.read(); // this.reader.read()\n  }\n  s(reader: any) {\n    const t = `this.reader.read()`; reader.read();\n  }\n  all() {\n    this.reader.readAll();\n  }\n}\n",
+        ),
+    ]);
+    assert_eq!(calls_from(&o, "a.ts::go"), 0, "{:?}", o.edges_by_qn);
+    assert_eq!(calls_from(&o, "a.ts::s"), 0, "{:?}", o.edges_by_qn);
+    assert_eq!(calls_from(&o, "a.ts::all"), 0, "readAll is not read: {:?}", o.edges_by_qn);
+}
+
+#[test]
+fn rust_comment_and_prefix_do_not_type_a_receiver() {
+    let o = build(&[
+        ("Cargo.toml", "[package]\nname = \"demo\"\n"),
+        ("src/lib.rs", RS_LIB),
+        ("src/store.rs", RS_STORE),
+        (
+            "src/app.rs",
+            "use crate::store::Reader;\npub struct App {\n    reader: Reader,\n}\nimpl App {\n    pub fn go(&self, reader: &Foo) {\n        reader.read(); // self.reader.read()\n    }\n    pub fn all(&self) {\n        self.reader.read_all();\n    }\n}\n",
+        ),
+    ]);
+    assert_eq!(calls_from(&o, "src/app.rs::go"), 0, "{:?}", o.edges_by_qn);
+    assert_eq!(calls_from(&o, "src/app.rs::all"), 0, "{:?}", o.edges_by_qn);
+}
+
+#[test]
+fn duplicate_function_names_type_nothing() {
+    let ts = build(&[
+        ("r.ts", TS_READER),
+        ("a.ts", "import { Reader } from './r';\nfunction make(): Reader {\n  return new Reader();\n}\nfunction other() {\n  const make = () => 1;\n}\nfunction go() {\n  const x = make();\n  x.read();\n}\n"),
+    ]);
+    assert_eq!(calls_from(&ts, "a.ts::go"), 0, "ts: {:?}", ts.edges_by_qn);
+    let py = build(&[
+        ("r.py", PY_READER),
+        ("a.py", "from r import Reader, Other\ndef make() -> Reader:\n    pass\ndef make():\n    pass\ndef pair() -> tuple[Reader, Other]:\n    pass\ndef pair():\n    pass\ndef go():\n    x = make()\n    x.read()\n    a, b = pair()\n    a.read()\n"),
+    ]);
+    assert_eq!(calls_from(&py, "a.py::go"), 0, "py: {:?}", py.edges_by_qn);
+    let rs = build(&[
+        ("Cargo.toml", "[package]\nname = \"demo\"\n"),
+        ("src/lib.rs", RS_LIB),
+        ("src/store.rs", RS_STORE),
+        ("src/app.rs", "use crate::store::Reader;\nfn make() -> Reader {\n    Reader\n}\nfn other() {\n    fn make() {}\n    let f = || 1;\n}\nfn third() {\n    let make = || 2;\n}\npub fn go() {\n    let x = make();\n    x.read();\n}\n"),
+    ]);
+    assert_eq!(calls_from(&rs, "src/app.rs::go"), 0, "rs: {:?}", rs.edges_by_qn);
+}
+
+#[test]
+fn ts_superclass_declared_field_types_nothing() {
+    let o = build(&[
+        ("r.ts", TS_READER),
+        (
+            "a.ts",
+            "import { Reader } from './r';\nclass Base {\n  protected reader: Reader;\n}\nexport class App extends Base {\n  go() {\n    this.reader.read();\n  }\n}\n",
+        ),
+    ]);
+    assert_eq!(calls_from(&o, "a.ts::go"), 0, "{:?}", o.edges_by_qn);
+}
+
+#[test]
+fn ts_local_lambda_shadows_the_imported_factory() {
+    let o = build(&[
+        ("r.ts", TS_READER),
+        ("f.ts", "import { Reader } from './r';\nexport function make(): Reader {\n  return new Reader();\n}\n"),
+        ("a.ts", "import { make } from './f';\nfunction go() {\n  const x = make();\n  x.read();\n}\nfunction local() {\n  const make = () => 1;\n  const y = make();\n  y.read();\n}\n"),
+    ]);
+    assert!(conf(&o, "a.ts::go", "r.ts::read").is_some(), "imported factory types x: {:?}", o.edges_by_qn);
+    assert_eq!(calls_from(&o, "a.ts::local"), 0, "{:?}", o.edges_by_qn);
+}
