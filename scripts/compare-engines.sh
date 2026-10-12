@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # compare-engines.sh — measured head-to-head of CompareGraph with code-review-graph (PyPI "code-review-graph").
 #
-# usage: compare-engines.sh <scratch-dir> <comparegraph-binary> <project-dir> [<project-dir> ...]
+# usage: compare-engines.sh [--sample-size N] [--gold N --gold-seed S] <scratch-dir> <comparegraph-binary> <project-dir> [...]
 #   env: CRG_VERSION (default 2.3.9)  REPS (cold builds per engine, default 3)  SEED (default 7)  SAMPLE (default 20)
+#   --sample-size N   draw N crg-only and N ours-only resolved call edges (seed SEED), overriding SAMPLE, and write them as JSONL
+#   --gold N          draw N call SITES from the project's own source files (not from either engine's output) by --gold-seed S
+#                     (default 11): random (file, line) pairs whose line holds a call expression per a per-language regex
+#   Without --sample-size and --gold nothing but the old <project>.json is written. With either, JSONL rows
+#   {id, path, line, callee, context: [3 lines before .. 3 after], engine_target?} go to <scratch-dir>/samples/<project>/
+#   crg-only.jsonl, ours-only.jsonl, gold.jsonl; gold-engines.jsonl (what each engine says at each gold site, for the scorer only)
+#   stays beside them. Labels never go in these files. Builds alternate per repetition (ours cold, crg cold, crg raw) and the
+#   scratch dir gets out/<project>.load.txt with uptime before and after; the unchanged ours rebuild is checked for "reused".
 #
 # Each <project-dir> is COPIED into <scratch-dir>/work/<basename> (code-review-graph writes its store inside the repo it
 # indexes, so it never runs on the original); both engines build the same copy. Needs python3 with venv + pip, bc, nice.
@@ -23,9 +31,21 @@
 # An edge is "resolved" when its target (code-review-graph: target_qualified equals a node's qualified_name) is an indexed
 # node; code-review-graph also stores unresolved bare-name call targets ("set"), compared by target name only.
 set -euo pipefail
+SAMPLE_SIZE=""; GOLD=0; GOLD_SEED=11
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --sample-size) SAMPLE_SIZE=$2; shift 2;;
+    --gold) GOLD=$2; shift 2;;
+    --gold-seed) GOLD_SEED=$2; shift 2;;
+    --*) echo "unknown option $1" >&2; exit 2;;
+    *) break;;
+  esac
+done
 [ $# -ge 3 ] || { sed -n 2,5p "$0"; exit 2; }
 SCR=$(readlink -f "$1"); CG=$(readlink -f "$2"); shift 2
 CRG_VERSION=${CRG_VERSION:-2.3.9}; REPS=${REPS:-3}; SEED=${SEED:-7}; SAMPLE=${SAMPLE:-20}
+[ -z "$SAMPLE_SIZE" ] || SAMPLE=$SAMPLE_SIZE
+EMIT=0; { [ -n "$SAMPLE_SIZE" ] || [ "$GOLD" -gt 0 ]; } && EMIT=1
 mkdir -p "$SCR/work" "$SCR/out" "$SCR/tools"
 if [ ! -x "$SCR/venv/bin/code-review-graph" ]; then
   python3 -m venv "$SCR/venv"; nice -n 10 "$SCR/venv/bin/pip" install -q "code-review-graph==$CRG_VERSION"
@@ -38,7 +58,7 @@ clean() { for d in "$@"; do [ -d "$d" ] && find "$d" -mindepth 1 -delete && rmdi
 
 cat > "$SCR/tools/analyze.py" <<'PY'
 import json, os, random, sqlite3, sys
-proj, root, crg_db, cg_db, name, seed, nsample, outp = sys.argv[1:9]
+proj, root, crg_db, cg_db, name, seed, nsample, outp, sdir, gold_n, gold_seed = sys.argv[1:12]
 root = os.path.realpath(root)
 def rel(p):
     return os.path.relpath(p, root) if os.path.isabs(p) else p
@@ -138,6 +158,103 @@ for key in rnd.sample(omiss, min(int(nsample), len(omiss))):
 res["cg_only_call_sample"] = {"population": len(omiss), "items": osamp}
 res["call_sample"] = {"population_crg_resolved_calls_we_lack": len(missing), "seed": int(seed), "items": samp}
 json.dump(res, open(outp, "w"), indent=1)
+
+def ctx_lines(path, line):
+    try:
+        with open(os.path.join(root, path), errors="replace") as fh:
+            ls = fh.read().splitlines()
+    except OSError:
+        return []
+    return ls[max(0, line - 4):line + 3]
+def write_jsonl(path, rows):
+    with open(path, "w") as fh:
+        for r in rows: fh.write(json.dumps(r) + "\n")
+if sdir != "-":
+    import re
+    os.makedirs(sdir, exist_ok=True)
+    rows = []
+    for n, it in enumerate(samp, 1):
+        f, line = it["at"].rsplit(":", 1); line = int(line)
+        rows.append({"id": f"{name}-crg-{n:03d}", "path": f, "line": line, "callee": it["target"][1], "context": ctx_lines(f, line),
+                     "engine_target": f"{it['target'][0]}::{it['target'][1]}", "engine_source": f"{it['source'][0]}::{it['source'][1]}"})
+    write_jsonl(os.path.join(sdir, "crg-only.jsonl"), rows)
+    rows = []
+    for n, it in enumerate(osamp, 1):
+        src, tgt = it["source"], it["target"]
+        try:
+            with open(os.path.join(root, src[0]), errors="replace") as fh: ls = fh.read().splitlines()
+        except OSError:
+            ls = []
+        a, b = it["caller_span"]
+        hits = [k for k in range(max(1, a), min(len(ls), b) + 1) if tgt[1] in ls[k - 1]]
+        # the site shown: a line that calls the name, never a definition or import line and never the caller's own first line;
+        # strict match first (the name itself followed by "("), then an aliased one (`_name(`), then any other non-definition mention
+        defre = re.compile(r"^\s*(?:(?:async|pub(?:\([^)]*\))?|export|static|public|private|protected|final|abstract)\s+)*(?:def|fn|func|function|class|struct|enum|trait|interface|type|import|from|use)\b")
+        okl = [k for k in hits if k != a and not defre.match(ls[k - 1])]
+        strict = re.compile(r"(?<![\w$])" + re.escape(tgt[1]) + r"\s*[(]"); loose = re.compile(re.escape(tgt[1]) + r"\s*[(]")
+        line = ([k for k in okl if strict.search(ls[k - 1])] or [k for k in okl if loose.search(ls[k - 1])] or okl or [k for k in hits if k != a] or hits or [a])[0]
+        rows.append({"id": f"{name}-ours-{n:03d}", "path": src[0], "line": line, "callee": tgt[1], "context": ctx_lines(src[0], line),
+                     "engine_target": f"{tgt[0]}::{tgt[1]}", "engine_source": f"{src[0]}::{src[1]}", "mention_lines": hits[:12],
+                     "caller_span": [a, b], "confidence": it["confidence"]})
+    write_jsonl(os.path.join(sdir, "ours-only.jsonl"), rows)
+    if int(gold_n) > 0:
+        EXT = {".py", ".rs", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go"}
+        SKIPD = {".git", ".code-review-graph", "node_modules", "vendor", "target", "dist", "build", "__pycache__", ".comparegraph"}
+        CALL = re.compile(r"([A-Za-z_$][\w$]*(?:\s*(?:\.|::|\?\.)\s*[A-Za-z_$][\w$]*)*)\s*[(]")
+        KW = {"if", "for", "while", "switch", "catch", "return", "def", "fn", "func", "function", "match", "with", "elif", "assert", "except",
+              "and", "or", "not", "in", "is", "await", "async", "yield", "lambda", "class", "struct", "enum", "impl", "typeof", "new", "else", "go", "defer", "select", "case", "do", "throw", "raise", "print"}
+        DEFL = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:export\s+)?(?:default\s+)?(?:def|fn|func|function|class|interface|type|import|from|use|package|mod|struct|enum|impl|trait)\b")
+        cands = []
+        for dp, dn, fn in os.walk(root):
+            dn[:] = sorted(d for d in dn if d not in SKIPD)
+            for f in sorted(fn):
+                if os.path.splitext(f)[1] not in EXT: continue
+                full = os.path.join(dp, f); rp = os.path.relpath(full, root)
+                try:
+                    with open(full, errors="replace") as fh: ls = fh.read().splitlines()
+                except OSError: continue
+                for n, text in enumerate(ls, 1):
+                    st = text.strip()
+                    if not st or st.startswith(("#", "//", "*", "/*", "\x27\x27\x27", "\x22\x22\x22")) or DEFL.match(text): continue
+                    for m in CALL.finditer(text):
+                        callee = re.sub(r"\s+", "", m.group(1))
+                        if re.split(r"\.|::|\?\.", callee)[-1] in KW or callee in KW: continue
+                        cands.append((rp, n, callee)); break
+        rg = random.Random(int(gold_seed))
+        pick = sorted(rg.sample(cands, min(int(gold_n), len(cands))))
+        grows = [{"id": f"{name}-gold-{n:03d}", "path": f, "line": l, "callee": c, "context": ctx_lines(f, l)} for n, (f, l, c) in enumerate(pick, 1)]
+        write_jsonl(os.path.join(sdir, "gold.jsonl"), grows)
+        # what each engine says at each gold site (for the scorer; not for readers): calls from the smallest function/method span
+        # containing the line whose target name equals the callee's last segment
+        ospans = {}
+        for i, ls_, le_ in cg.execute("select id,line_start,line_end from node where run_id=?", (rid,)):
+            if on[i][0] in ("function", "method"): ospans.setdefault(on[i][1][0], []).append((le_ - ls_, ls_, le_, i))
+        oedges = {}
+        for k, s_, t_ in cg.execute("select kind,source_node_id,target_node_id from edge where run_id=?", (rid,)):
+            if k == "calls" and s_ in on and t_ in on: oedges.setdefault(s_, []).append(t_)
+        cspans = {}
+        for q, k, fp, ls_, le_ in crg.execute("select qualified_name,kind,file_path,line_start,line_end from nodes where kind in ('Function','Test')"):
+            if ls_ is not None and le_ is not None: cspans.setdefault(rel(fp), []).append((le_ - ls_, ls_, le_, q))
+        cedges = {}
+        for s_, t_ in crg.execute("select source_qualified,target_qualified from edges where kind='CALLS'"):
+            cedges.setdefault(s_, []).append(t_)
+        def enclosing(spans, path, line):
+            c = [x for x in spans.get(path, []) if x[1] <= line <= x[2]]
+            return min(c)[3] if c else None
+        erows = []
+        for g in grows:
+            nm = re.split(r"\.|::|\?\.", g["callee"])[-1]
+            o = enclosing(ospans, g["path"], g["line"]); ot = []
+            if o is not None:
+                ot = sorted({f"{on[t][1][0]}::{on[t][1][1]}" for t in oedges.get(o, []) if on[t][1][1] == nm})
+            c = enclosing(cspans, g["path"], g["line"]); ct = []
+            if c is not None:
+                for t in cedges.get(c, []):
+                    if t in cn:
+                        if cn[t][1][1] == nm: ct.append(f"{cn[t][1][0]}::{cn[t][1][1]}")
+                    elif t.split("::")[-1].split(".")[-1] == nm: ct.append("unresolved::" + nm)
+            erows.append({"id": g["id"], "enclosed_ours": o is not None, "enclosed_crg": c is not None, "ours": ot, "crg": sorted(set(ct))})
+        write_jsonl(os.path.join(sdir, "gold-engines.jsonl"), erows)
 PY
 
 printf '%-22s %9s %10s %9s %10s %5s\n' project "crg(s)" "crg-raw(s)" "cg(s)" "cg-warm(s)" reps
@@ -145,20 +262,25 @@ for src in "$@"; do
   name=$(basename "$src"); W="$SCR/work/$name"
   clean "$W"; cp -a "$src" "$W"
   ct=(); rt=(); gt=()
+  { echo "before: $(uptime)"; } > "$SCR/out/$name.load.txt"
   for i in $(seq "$REPS"); do
-    clean "$W/.code-review-graph" "$SCR/ws-$name"
+    # alternate: ours cold, crg cold (full), crg cold (raw), so neither engine always runs first or last
+    clean "$SCR/ws-$name"
+    "$CG" --root "$SCR/ws-$name" add "$W" --name "$name" >/dev/null
+    s=$(now); nice -n 10 "$CG" --root "$SCR/ws-$name" build "$name" >"$SCR/out/$name.cg.log" 2>&1; e=$(now); gt+=("$(echo "$e-$s" | bc)")
+    clean "$W/.code-review-graph"
     s=$(now); nice -n 10 "$CRG" build --repo "$W" -q >"$SCR/out/$name.crg.log" 2>&1; e=$(now); ct+=("$(echo "$e-$s" | bc)")
     clean "$W/.code-review-graph"
     s=$(now); nice -n 10 "$CRG" build --repo "$W" -q --skip-postprocess >/dev/null 2>&1; e=$(now); rt+=("$(echo "$e-$s" | bc)")
     clean "$W/.code-review-graph"
-    nice -n 10 "$CRG" build --repo "$W" -q >/dev/null 2>&1                      # leave the full store for the analysis
-    "$CG" --root "$SCR/ws-$name" add "$W" --name "$name" >/dev/null
-    s=$(now); nice -n 10 "$CG" --root "$SCR/ws-$name" build "$name" >"$SCR/out/$name.cg.log" 2>&1; e=$(now); gt+=("$(echo "$e-$s" | bc)")
   done
-  s=$(now); nice -n 10 "$CG" --root "$SCR/ws-$name" build "$name" >/dev/null 2>&1; e=$(now); warm=$(echo "$e-$s" | bc)
+  nice -n 10 "$CRG" build --repo "$W" -q >/dev/null 2>&1                          # leave the full store for the analysis
+  s=$(now); nice -n 10 "$CG" --root "$SCR/ws-$name" build "$name" >"$SCR/out/$name.cg-warm.log" 2>&1; e=$(now); warm=$(echo "$e-$s" | bc)
+  grep -q '"reused":true' "$SCR/out/$name.cg-warm.log" && reused=reused || reused=NOT-REUSED
+  { echo "after:  $(uptime)"; echo "warm rebuild: $reused"; echo "ours cold s: ${gt[*]}"; echo "crg cold s: ${ct[*]}"; } >> "$SCR/out/$name.load.txt"
   c=$(printf '%s\n' "${ct[@]}" | median); r=$(printf '%s\n' "${rt[@]}" | median); g=$(printf '%s\n' "${gt[@]}" | median)
-  printf '%-22s %9.2f %10.2f %9.2f %10.2f %5s\n' "$name" "$c" "$r" "$g" "$warm" "$REPS"
-  python3 -I "$SCR/tools/analyze.py" "$name" "$W" "$W/.code-review-graph/graph.db" "$SCR/ws-$name/.comparegraph/comparegraph.db" "$name" "$SEED" "$SAMPLE" "$SCR/out/$name.json"
+  printf '%-22s %9.2f %10.2f %9.2f %10.2f %5s %s\n' "$name" "$c" "$r" "$g" "$warm" "$REPS" "$reused"
+  python3 -I "$SCR/tools/analyze.py" "$name" "$W" "$W/.code-review-graph/graph.db" "$SCR/ws-$name/.comparegraph/comparegraph.db" "$name" "$SEED" "$SAMPLE" "$SCR/out/$name.json" "$([ "$EMIT" = 1 ] && echo "$SCR/samples/$name" || echo -)" "$GOLD" "$GOLD_SEED"
   python3 -I - "$SCR/out/$name.json" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
