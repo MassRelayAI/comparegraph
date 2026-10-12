@@ -206,6 +206,52 @@ fn class_method(f: &ParsedFile, q: &[String], caller: &str, callee: &str) -> Opt
         .map(|(_, qn)| qn.clone())
 }
 
+/// `r.m()` where the caller's own lines declare `r` with a class type (`Square r`, `r: Square`, `r = new Square(`): the method `callee`
+/// inside that class, wherever the class lives. A declared type only; no inference.
+fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFile, caller: &str, recv: &str, callee: &str) -> Option<String> {
+    if !recv.chars().all(|c| c.is_alphanumeric() || c == '_') || recv.chars().next().is_none_or(char::is_uppercase) {
+        return None;
+    }
+    let c = f.symbols.iter().find(|s| s.name == caller)?;
+    let lo = (c.line_start as usize).saturating_sub(1);
+    let hi = (c.line_end as usize).min(f.lines.len());
+    let text = f.lines.get(lo..hi)?.join("\n");
+    let toks: Vec<&str> = text
+        .split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+        .filter(|t| !t.is_empty())
+        .collect();
+    let ty = toks.windows(2).find_map(|w| {
+        // `Type recv` (Java, Go-style `recv Type` handled below) and `recv Type` / `recv: Type`
+        if w[1] == recv && w[0].chars().next().is_some_and(char::is_uppercase) {
+            Some(w[0])
+        } else if w[0] == recv && w[1].chars().next().is_some_and(char::is_uppercase) {
+            Some(w[1])
+        } else {
+            None
+        }
+    })?;
+    for (g, q) in files.iter().zip(qns) {
+        if g.language != f.language {
+            continue;
+        }
+        let Some(class) = g.symbols.iter().find(|s| s.name == ty && matches!(s.kind, SymbolKind::Class)) else {
+            continue;
+        };
+        return g
+            .symbols
+            .iter()
+            .zip(q)
+            .find(|(s, _)| {
+                s.name == callee
+                    && !matches!(s.kind, SymbolKind::Class)
+                    && class.line_start <= s.line_start
+                    && s.line_end <= class.line_end
+            })
+            .map(|(_, qn)| qn.clone());
+    }
+    None
+}
+
 struct RustCall<'a> {
     files: &'a [ParsedFile],
     qns: &'a [Vec<String>],
@@ -407,6 +453,15 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 if let Some(t) = class_method(f, q, &c.caller, &c.callee) {
                     out.push((EdgeKind::Calls, (*caller_qn).clone(), t, 1.0));
                     continue;
+                }
+            }
+            // 1b. r.m() where r is declared with a class type in the caller
+            if let Some(r) = recv {
+                if f.language != "rust" {
+                    if let Some(t) = typed_receiver_method(files, &qns, f, &c.caller, r, &c.callee) {
+                        out.push((EdgeKind::Calls, (*caller_qn).clone(), t, 1.0));
+                        continue;
+                    }
                 }
             }
             // 2. mod.func(): `mod` is an imported module alias → that module's own symbol
@@ -697,6 +752,26 @@ mod tests {
         );
         let e = resolve_edges(&[a]);
         assert!(has_call(&e, "m.ts::run", "m.ts::helper#2", 1.0), "{e:?}");
+    }
+    #[test]
+    fn declared_receiver_type_picks_that_class_method_over_a_namesake() {
+        let mut a = pf(
+            "A.java",
+            vec![
+                Symbol { kind: SymbolKind::Class, line_end: 3, ..span("Shape", SymbolKind::Class, 1, 3) },
+                span("area", SymbolKind::Method, 2, 2),
+                Symbol { kind: SymbolKind::Class, ..span("Square", SymbolKind::Class, 4, 7) },
+                span("area", SymbolKind::Method, 5, 6),
+                span("check", SymbolKind::Method, 8, 10),
+            ],
+            vec![call("check", "area", Some("s"))],
+            vec![],
+        );
+        a.language = "java".into();
+        a.lines = ["", "", "", "", "", "", "", "double check(Square s) {", "  return s.area();", "}"].map(String::from).to_vec();
+        let e = resolve_edges(&[a]);
+        assert!(has_call(&e, "A.java::check", "A.java::area#2", 1.0), "{e:?}");
+        assert!(!has_call(&e, "A.java::check", "A.java::area", 0.5), "{e:?}");
     }
     #[test]
     fn python_import_module_call() {
