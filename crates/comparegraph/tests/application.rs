@@ -83,7 +83,8 @@ fn build_then_export_and_check_are_green_and_deterministic() {
         .any(|e| e["kind"] == "calls" && e["source_qn"] == "src/a.py::f"));
     let rep = check(ws.path()).unwrap();
     assert!(rep.ok(), "{:?}", rep.problems);
-    assert_eq!(rep.runs_done, 2);
+    assert_eq!(rep.runs_done, 1); // the second build was a no-op and reused the first run
+    assert!(r2.reused);
 }
 
 #[test]

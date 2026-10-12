@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BuildReport {
     pub run: RunId,
     pub nodes: usize,
@@ -20,6 +20,9 @@ pub struct BuildReport {
     pub limitation_items: Vec<Limitation>,
     pub store_hash: String,
     pub seconds: f64,
+    /// true when nothing changed since the latest done run and that run was returned (no new rows)
+    #[serde(default)]
+    pub reused: bool,
 }
 
 /// The workspace db as the provider's parse cache (its own connection; written only after the parse loop).
@@ -53,6 +56,11 @@ pub fn build_repo(
     }
     let repo_id = repo.id.unwrap();
     let t = Instant::now();
+    if !opts.full && provider.name() == "reference" {
+        if let Some(r) = try_reuse(&store, repo_id, &repo.path, &provider.version(), opts, t)? {
+            return Ok(r);
+        }
+    }
     let run = store.insert_run(&Run {
         id: None,
         repo: repo_id,
@@ -151,5 +159,75 @@ pub fn build_repo(
         limitation_items: out.limitations,
         store_hash: hash,
         seconds: secs,
+        reused: false,
     })
+}
+
+/// The no-op rule: the (path, content hash) set the walker would parse equals the latest done run's file nodes, and the provider
+/// version is the same. Nothing is parsed; a file the build would skip (unreadable, not UTF-8, minified) is skipped here too.
+fn try_reuse(
+    store: &Store,
+    repo_id: crate::domain::RepoId,
+    repo_path: &str,
+    version: &str,
+    opts: &BuildOptions,
+    t: Instant,
+) -> Result<Option<BuildReport>> {
+    use crate::domain::{content_hash, NodeKind};
+    use crate::providers::reference::walker;
+    let Some(last) = store.latest_done_run(repo_id)? else {
+        return Ok(None);
+    };
+    let Some(last_id) = last.id else {
+        return Ok(None);
+    };
+    if last.provider != "reference" || last.provider_version != version {
+        return Ok(None);
+    }
+    let nodes = store.nodes_of_run(last_id)?;
+    let mut recorded: HashMap<&str, &str> = HashMap::new();
+    for n in nodes
+        .iter()
+        .filter(|n| matches!(n.kind, NodeKind::File | NodeKind::Test))
+    {
+        recorded.insert(n.path.as_str(), n.content_hash.as_str());
+    }
+    let root = Path::new(repo_path);
+    let walked = walker::walk(root, opts);
+    let mut seen = 0usize;
+    for f in &walked.files {
+        let Ok(bytes) = std::fs::read(root.join(&f.rel_path)) else {
+            continue;
+        };
+        let Ok(source) = String::from_utf8(bytes) else {
+            continue;
+        };
+        if source.lines().any(|l| l.len() > walker::MINIFIED_LINE_CHARS) {
+            continue;
+        }
+        let lines: Vec<&str> = source.lines().collect();
+        match recorded.get(f.rel_path.as_str()) {
+            Some(h) if *h == content_hash(&lines) => seen += 1,
+            _ => return Ok(None),
+        }
+    }
+    if seen != recorded.len() {
+        return Ok(None);
+    }
+    let edges = store.edges_of_run(last_id)?.len();
+    let communities = store.communities_of_run(last_id)?.len();
+    Ok(Some(BuildReport {
+        run: last_id,
+        nodes: nodes.len(),
+        edges,
+        files_parsed: seen,
+        cache_hits: 0,
+        cache_misses: 0,
+        limitations: last.limitations.len(),
+        communities,
+        limitation_items: last.limitations.clone(),
+        store_hash: last.store_hash.clone().unwrap_or_default(),
+        seconds: t.elapsed().as_secs_f64(),
+        reused: true,
+    }))
 }
