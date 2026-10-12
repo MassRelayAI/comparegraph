@@ -148,6 +148,12 @@ fn resolve_py_import(from: &str, source: &str, files: &HashMap<String, ()>) -> O
     None
 }
 
+/// The file of submodule `name` of Python module `source` (`from source import name`).
+fn py_submodule(from: &str, source: &str, name: &str, files: &HashMap<String, ()>) -> Option<String> {
+    let sep = if source.ends_with('.') { "" } else { "." };
+    resolve_py_import(from, &format!("{source}{sep}{name}"), files)
+}
+
 /// TypeScript and JavaScript call each other; every other language is its own family.
 pub(super) fn lang_family(l: &str) -> &str {
     match l {
@@ -550,12 +556,43 @@ impl PyCall<'_> {
             return None;
         }
         for imp in info.imports.iter().filter(|i| i.alias == recv) {
-            let targets = self.module_files(&f.rel_path, &imp.module, imp.name.as_deref());
-            if let Some((t, unique)) = symbol_in(&targets, self.file_syms, &c.callee) {
-                return Some((t, if unique { 1.0 } else { 0.5 }));
+            let Some(real) = imp.name.as_deref() else {
+                let targets = self.module_files(&f.rel_path, &imp.module, None);
+                if let Some((t, unique)) = symbol_in(&targets, self.file_syms, &c.callee) {
+                    return Some((t, if unique { 1.0 } else { 0.5 }));
+                }
+                continue;
+            };
+            // `from m import real`: a submodule file `m.real`, else an object of `m` (a class, or an instance assignment), never a function
+            if let Some(sub) = py_submodule(&f.rel_path, &imp.module, real, self.file_set) {
+                if let Some((t, unique)) = symbol_in(&[sub], self.file_syms, &c.callee) {
+                    return Some((t, if unique { 1.0 } else { 0.5 }));
+                }
+                continue;
+            }
+            if let Some(t) = self.object_member(&f.rel_path, &imp.module, real, &c.callee) {
+                return Some((t, 1.0));
             }
         }
         None
+    }
+
+    /// `from module import real; real.callee()`: `real` is a class of the module (its method), or a module-level instance
+    /// (`real = Ring(...)`, `real: Ring`, `real = make()` with `-> Ring`) whose class holds the method.
+    fn object_member(&self, from: &str, module: &str, real: &str, callee: &str) -> Option<String> {
+        let gi = self.module_files(from, module, None).iter().find_map(|t| self.files.iter().position(|g| &g.rel_path == t))?;
+        if let Some(t) = self.method_of(gi, real, callee) {
+            return Some(t);
+        }
+        let ginfo = self.py[gi].as_ref()?;
+        let ty = ginfo.module_vars.get(real).filter(|t| !t.is_empty())?;
+        let ty = match ty.strip_prefix("()") {
+            Some(func) if !func.contains('#') => self.returned_class(gi, ginfo, func)?,
+            Some(_) => return None,
+            None => ty.clone(),
+        };
+        let (hi, class) = self.class_home(gi, ginfo, &ty)?;
+        self.method_of(hi, &class, callee)
     }
 }
 
@@ -744,6 +781,10 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
     let mut by_name: HashMap<&str, Vec<(String, bool, &str, bool)>> = HashMap::new();
     let mut out = Vec::new();
     let qns: Vec<Vec<String>> = files.iter().map(qualified_names).collect();
+    let py: Vec<Option<PyInfo>> = files
+        .iter()
+        .map(|f| (f.language == "python").then(|| py_ctx::analyze(&f.lines.join("\n"))))
+        .collect();
     // file → name → (first qn, name unique in that file)
     let mut file_syms: HashMap<&str, HashMap<&str, (String, bool)>> = HashMap::new();
     for (f, q) in files.iter().zip(&qns) {
@@ -752,6 +793,30 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             m.entry(s.name.as_str())
                 .and_modify(|e| e.1 = false)
                 .or_insert((qn.clone(), true));
+        }
+    }
+    // Python re-exports: `from .impl import run` inside `pkg/__init__.py` makes `run` a name of the package. At most three rounds
+    // (a chain of up to three levels); a name the package defines itself is never replaced, so a cycle adds nothing and ends.
+    for _ in 0..3 {
+        let mut adds: Vec<(&str, &str, (String, bool))> = vec![];
+        for (f, info) in files.iter().zip(&py) {
+            let Some(info) = info.as_ref().filter(|_| f.rel_path.rsplit('/').next() == Some("__init__.py")) else { continue };
+            for imp in info.imports.iter().filter(|i| i.name.is_some()) {
+                let Some(real) = imp.name.as_deref() else { continue };
+                let Some(t) = resolve_py_import(&f.rel_path, &imp.module, &file_set).filter(|t| *t != f.rel_path) else { continue };
+                if file_syms.get(f.rel_path.as_str()).is_some_and(|m| m.contains_key(imp.alias.as_str())) {
+                    continue;
+                }
+                if let Some(hit) = symbol_in(&[t], &file_syms, real) {
+                    adds.push((f.rel_path.as_str(), imp.alias.as_str(), hit));
+                }
+            }
+        }
+        if adds.is_empty() {
+            break;
+        }
+        for (file, alias, hit) in adds {
+            file_syms.entry(file).or_default().entry(alias).or_insert(hit);
         }
     }
     for (f, q) in files.iter().zip(&qns) {
@@ -784,10 +849,6 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 })
                 .map(|(_, qn)| qn.as_str())
         })
-        .collect();
-    let py: Vec<Option<PyInfo>> = files
-        .iter()
-        .map(|f| (f.language == "python").then(|| py_ctx::analyze(&f.lines.join("\n"))))
         .collect();
     let ts: Vec<Option<TsDecls>> = files.iter().map(|f| decl_types::analyze(&f.lines.join("\n"), &f.language)).collect();
     let mut cm = rust_ctx::CrateMap::default();
@@ -935,6 +996,14 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                     if targets.is_empty() || !is_module_alias(&f.rel_path, imp, r) {
                         continue;
                     }
+                    // Python `from m import r`: `r` is a module only when `m.r` is a file; otherwise it is an object of `m` (decided above)
+                    let sub: Vec<String>;
+                    let targets = if f.rel_path.ends_with(".py") && !imp.is_default {
+                        sub = py_submodule(&f.rel_path, &imp.source, r, &file_set).into_iter().collect();
+                        &sub
+                    } else {
+                        targets
+                    };
                     if let Some(t) = symbol_in(targets, &file_syms, &c.callee) {
                         hit = Some(t);
                         break;
