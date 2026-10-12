@@ -286,8 +286,7 @@ impl GraphProvider for ReferenceProvider {
                 line_end: n_lines.max(1),
                 content_hash: content_hash(&refs),
                 language: pf.language.clone(),
-                // the marker `graph::is_entry_file` reads: a script that runs its own code
-                provider_ref: (pf.language == "python" && module_ctx::has_main_guard(&pf.lines)).then(|| "entry-file".to_string()),
+                provider_ref: (pf.language == "python" && module_ctx::has_main_guard(&pf.lines)).then(|| crate::providers::ENTRY_FILE_REF.to_string()),
             });
             // vendored Symbol lines are already 1-based (tree-sitter row + 1)
             for (s, qn) in pf.symbols.iter().zip(resolve::qualified_names(pf)) {
@@ -322,6 +321,15 @@ impl GraphProvider for ReferenceProvider {
         let links = tests_link::tests_edges(&parsed, &out.edges_by_qn);
         out.edges_by_qn.extend(links);
         resolve::dedup_max_confidence(&mut out.edges_by_qn);
+        {
+            let paths: std::collections::HashSet<&str> = parsed.iter().map(|p| p.rel_path.as_str()).collect();
+            if out.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && paths.contains(e.1.as_str())) {
+                out.limitations.push(Limitation::new(
+                    "entry_file_heuristic",
+                    "a call made at module level counts as a use only from an entry file (main, __main__, cli, index, or a Python script with an `if __name__ == \"__main__\":` guard); elsewhere it does not rescue its callee in dead-code",
+                ));
+            }
+        }
         if parsed.iter().any(|p| p.language == "go") {
             out.limitations.push(Limitation::new(
                 "no_inheritance_go",

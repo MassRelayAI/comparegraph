@@ -634,10 +634,21 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             }
         }
     }
+    // the only targets a table reference may bind: top-level functions (never a method, never a class member, never a `#n` duplicate)
     let fn_qns: std::collections::HashSet<&str> = files
         .iter()
         .zip(&qns)
-        .flat_map(|(f, q)| f.symbols.iter().zip(q).filter(|(s, _)| matches!(s.kind, SymbolKind::Function | SymbolKind::Method)).map(|(_, qn)| qn.as_str()))
+        .flat_map(|(f, q)| {
+            f.symbols
+                .iter()
+                .zip(q)
+                .filter(move |(s, qn)| {
+                    matches!(s.kind, SymbolKind::Function)
+                        && !qn.contains('#')
+                        && !f.symbols.iter().any(|c| matches!(c.kind, SymbolKind::Class) && c.line_start <= s.line_start && s.line_end <= c.line_end && !(c.line_start == s.line_start && c.line_end == s.line_end))
+                })
+                .map(|(_, qn)| qn.as_str())
+        })
         .collect();
     let py: Vec<Option<PyInfo>> = files
         .iter()
@@ -698,8 +709,21 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             let recv = c.receiver.as_deref();
             // a table reference names a function: bound only through an import or in this file, never by a name guess
             if c.kind == "refs" {
-                let imported = imports.iter().filter(|(imp, targets)| !targets.is_empty() && imp.specifiers.contains(&c.callee)).find_map(|(_, targets)| symbol_in(targets, &file_syms, &c.callee));
-                let hit = imported.or_else(|| local.get(c.callee.as_str()).map(|t| ((*t).clone(), local_counts[c.callee.as_str()] == 1)));
+                let hit: Option<(String, bool)> = if let Some(r) = recv {
+                    // `m.f` in a table: through a module alias only
+                    let mut hit = None;
+                    if let Some(pi) = &py[fi] {
+                        let pc = PyCall { py: &py, files, qns: &qns, file_set: &file_set, file_syms: &file_syms };
+                        let probe = CallSite { kind: "calls".into(), ..c.clone() };
+                        hit = pc.resolve(fi, pi, &probe).map(|(t, conf)| (t, conf == 1.0));
+                    }
+                    hit.or_else(|| {
+                        imports.iter().filter(|(imp, t)| !t.is_empty() && is_module_alias(&f.rel_path, imp, r)).find_map(|(_, t)| symbol_in(t, &file_syms, &c.callee))
+                    })
+                } else {
+                    let imported = imports.iter().filter(|(imp, targets)| !targets.is_empty() && imp.specifiers.contains(&c.callee)).find_map(|(_, targets)| symbol_in(targets, &file_syms, &c.callee));
+                    imported.or_else(|| local.get(c.callee.as_str()).map(|t| ((*t).clone(), local_counts[c.callee.as_str()] == 1)))
+                };
                 if let Some((t, true)) = hit.filter(|(t, _)| fn_qns.contains(t.as_str())) {
                     out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
                 }

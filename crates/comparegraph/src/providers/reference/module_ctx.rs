@@ -101,8 +101,15 @@ fn python(n: Node, src: &str, out: &mut Vec<CallSite>) {
         }
         "dictionary" => {
             for p in children(n) {
-                if let Some(v) = p.child_by_field_name("value").filter(|v| v.kind() == "identifier") {
-                    push(out, v, text(v, src), None, "refs", 0);
+                match p.child_by_field_name("value") {
+                    Some(v) if v.kind() == "identifier" => push(out, v, text(v, src), None, "refs", 0),
+                    // `m.f`: a function reached through a module alias
+                    Some(v) if v.kind() == "attribute" => {
+                        if let (Some(a), Some(o)) = (v.child_by_field_name("attribute"), v.child_by_field_name("object").filter(|o| o.kind() == "identifier")) {
+                            push(out, v, text(a, src), Some(text(o, src).to_string()), "refs", 0);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -235,7 +242,6 @@ fn java(n: Node, src: &str, out: &mut Vec<CallSite>) {
 /// `if __name__ == "__main__":` at the top level of a Python file.
 pub fn has_main_guard(lines: &[String]) -> bool {
     lines.iter().any(|l| {
-        let t = l.trim_end();
-        t.starts_with("if __name__") && t.contains("__main__") && t.ends_with(':')
+        l.starts_with("if __name__") && l.contains("__main__")
     })
 }

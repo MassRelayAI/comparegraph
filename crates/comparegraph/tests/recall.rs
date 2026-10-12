@@ -166,3 +166,37 @@ fn go_rust_and_java_module_level_calls() {
         assert!(j.contains(&(want.to_string(), 1.0)), "{want} in {j:?}");
     }
 }
+
+#[test]
+fn a_table_reference_never_binds_a_method() {
+    let (ws, _c) = ws_with(&[
+        ("m.py", "class K:\n    def items(self):\n        pass\n\nx = items\ny = [items]\n"),
+        ("m.ts", "class K { items() {} }\nconst a = [items];\nconst b = { items };\n"),
+    ]);
+    assert_eq!(callees(ws.path(), "m.py"), vec![], "python");
+    assert_eq!(callees(ws.path(), "m.ts"), vec![], "typescript");
+}
+
+#[test]
+fn a_table_reference_through_a_module_alias_binds_at_1_0() {
+    let (ws, _c) = ws_with(&[
+        ("m.py", "def f():\n    pass\n"),
+        ("t.py", "import m\nTABLE = {\"x\": m.f, \"y\": other.f}\n"),
+    ]);
+    assert_eq!(callees(ws.path(), "t.py"), vec![("m.py::f".to_string(), 1.0)]);
+}
+
+#[test]
+fn single_line_main_guard_and_double_extension_stems() {
+    let (ws, _c) = ws_with(&[
+        ("tool.py", "def _run():\n    pass\n\nif __name__ == \"__main__\": _run()\n"),
+        ("cli.config.py", "def _h():\n    pass\n\n_h()\n"),
+    ]);
+    let d = dead(ws.path());
+    assert!(!d.contains(&"tool.py::_run".to_string()), "{d:?}");
+    assert!(d.contains(&"cli.config.py::_h".to_string()), "cli.config is not the entry stem cli: {d:?}");
+    let b = json(cc(ws.path()).args(["build", "r"]).assert().success());
+    let s = b.to_string();
+    assert!(s.contains("entry_file_heuristic"), "{s}");
+    assert_eq!(s.matches("entry_file_heuristic").count(), 1, "once per run");
+}

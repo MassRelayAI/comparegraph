@@ -487,11 +487,11 @@ pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: 
 /// A file whose module-level code runs on its own: a conventional entry name, or a script with `if __name__ == "__main__":`
 /// (the provider marks those file nodes `entry-file`).
 fn is_entry_file(n: &Node) -> bool {
-    if n.provider_ref.as_deref() == Some("entry-file") {
+    if n.provider_ref.as_deref() == Some(crate::providers::ENTRY_FILE_REF) {
         return true;
     }
     let base = n.path.rsplit('/').next().unwrap_or(&n.path);
-    let stem = base.split('.').next().unwrap_or(base);
+    let stem = base.rsplit_once('.').map_or(base, |(s, _)| s);
     matches!(stem, "main" | "__main__" | "cli" | "index")
 }
 
