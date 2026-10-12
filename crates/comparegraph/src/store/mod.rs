@@ -213,6 +213,11 @@ impl Store {
             params![run.repo.0, run.provider, run.provider_version, run.started_at, run.seconds, run.status.as_str(), serde_json::to_string(&run.limitations).unwrap(), run.store_hash])?;
         Ok(RunId(self.conn.last_insert_rowid()))
     }
+    /// Remove a run that produced nothing (a provider that was unavailable); only valid before any node or edge refers to it.
+    pub fn delete_run(&self, id: RunId) -> Result<()> {
+        self.conn.execute("DELETE FROM run WHERE id=?1", params![id.0])?;
+        Ok(())
+    }
     pub fn finish_run(
         &self,
         id: RunId,

@@ -308,6 +308,7 @@ fn call(root: &Path, params: &Value) -> Value {
             let env = envelope_for(&Cli {
                 root: PathBuf::from(root),
                 pretty: false,
+                allow_unverified: false,
                 cmd,
             });
             (env.to_json(), !env.ok)

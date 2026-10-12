@@ -26,6 +26,9 @@ pub struct Cli {
     pub root: PathBuf,
     #[arg(long)]
     pub pretty: bool,
+    /// use an external provider that has no comparegraph-plugin.toml beside it
+    #[arg(long, global = true)]
+    pub allow_unverified: bool,
     #[command(subcommand)]
     pub cmd: Cmd,
 }
@@ -340,6 +343,9 @@ fn verb_of(c: &Cmd) -> &'static str {
 
 pub fn run() -> i32 {
     let cli = Cli::parse();
+    if cli.allow_unverified {
+        std::env::set_var("COMPAREGRAPH_ALLOW_UNVERIFIED", "1");
+    }
     if matches!(cli.cmd, Cmd::Mcp) {
         crate::adapters::mcp::serve(&cli.root, std::io::stdin().lock(), std::io::stdout().lock());
         return 0;
@@ -721,6 +727,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         }
         Cmd::Doctor { bin } => {
             let providers: Vec<_> = ["reference"].iter().map(|n| { let p = by_name(n).unwrap(); serde_json::json!({ "name": n, "status": p.detect(), "capabilities": p.capabilities() }) }).collect();
+            let external = crate::providers::external::ExternalProvider::list(&cli.root);
             let ctx = setup::Ctx::from_env(&cli.root, bin.as_deref());
             let mut limitations = Vec::new();
             if !ctx.explicit_bin && ctx.dev_build {
@@ -729,11 +736,11 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             let clients: Vec<_> = setup::registrations(&ctx).iter().map(|r| r.to_json(false)).collect();
             if !cli.root.join(".comparegraph").join("comparegraph.db").is_file() {
                 return Ok(Ok(
-                    serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "providers": providers, "clients": clients, "limitation_items": limitations }),
+                    serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations }),
                 ));
             }
             let store = Store::open_existing(&cli.root)?;
-            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": store.repos()?.len(), "providers": providers, "clients": clients, "limitation_items": limitations })
+            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": store.repos()?.len(), "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations })
         }
         Cmd::Setup { client, scope, apply, force, bin } => {
             let scope = match scope.as_str() {
@@ -854,8 +861,15 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             serde_json::json!({ "items": items, "page": { "next": next, "total": total } })
         }
         Cmd::Conform { provider, fixtures } => {
-            let rep = crate::application::conform::conform(provider, fixtures)?;
+            let rep = crate::application::conform::conform_in(&cli.root, provider, fixtures)?;
             let v = serde_json::to_value(&rep).unwrap();
+            if crate::providers::external::ExternalProvider::discover(&cli.root, provider).is_some() && provider != "reference" {
+                let f = crate::providers::external::conform_path(&cli.root, provider);
+                if let Some(d) = f.parent() {
+                    let _ = std::fs::create_dir_all(d);
+                }
+                let _ = std::fs::write(&f, serde_json::to_string_pretty(&v).unwrap());
+            }
             if !rep.passed {
                 let msg = rep
                     .fixtures

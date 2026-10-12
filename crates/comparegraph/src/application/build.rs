@@ -1,6 +1,6 @@
 use super::{AppError, Result};
 use crate::domain::{Edge, Limitation, NodeId, Run, RunId, RunStatus};
-use crate::providers::{by_name, BuildOptions};
+use crate::providers::{by_name_in, BuildOptions};
 use crate::store::{now_iso, Store};
 use std::collections::HashMap;
 use std::path::Path;
@@ -46,7 +46,7 @@ pub fn build_repo(
     let repo = store.repo_by_name(repo_name)?.ok_or_else(|| {
         AppError::NotFound(format!("no repo '{repo_name}'; run `comparegraph add` first"))
     })?;
-    let provider = by_name(provider_name)
+    let provider = by_name_in(root, provider_name)
         .ok_or_else(|| AppError::NotFound(format!("no provider '{provider_name}'")))?;
     let status = provider.detect();
     if !status.installed {
@@ -80,6 +80,11 @@ pub fn build_repo(
     }
     let out = match provider.build(Path::new(&repo.path), &opts) {
         Ok(o) => o,
+        Err(e @ crate::providers::ProviderError::Unavailable(..)) => {
+            // an engine that hangs, babbles or dies leaves no trace: no run row, the store is as it was
+            store.delete_run(run)?;
+            return Err(e.into());
+        }
         Err(e) => {
             store.finish_run(
                 run,

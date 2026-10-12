@@ -1,3 +1,4 @@
+pub mod external;
 pub mod reference;
 
 /// The `provider_ref` of a FILE node whose module-level code runs on its own (a Python script with an `if __name__ == "__main__":`
@@ -84,9 +85,15 @@ pub trait GraphProvider {
     fn build(&self, repo_root: &Path, opts: &BuildOptions) -> Result<BuildOutput, ProviderError>;
 }
 
+/// In-process providers first; then external discovery relative to the current directory's `comparegraph.toml`.
 pub fn by_name(name: &str) -> Option<Box<dyn GraphProvider>> {
+    by_name_in(Path::new("."), name)
+}
+
+/// `workspace` is where `comparegraph.toml` lives (the CLI's `--root`).
+pub fn by_name_in(workspace: &Path, name: &str) -> Option<Box<dyn GraphProvider>> {
     match name {
         "reference" => Some(Box::new(reference::ReferenceProvider)),
-        _ => None,
+        _ => external::ExternalProvider::discover(workspace, name).map(|p| Box::new(p) as Box<dyn GraphProvider>),
     }
 }

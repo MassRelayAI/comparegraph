@@ -1,6 +1,6 @@
 use super::{AppError, Result};
 use crate::domain::NodeKind;
-use crate::providers::{by_name, BuildOptions};
+use crate::providers::{by_name_in, BuildOptions};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -48,7 +48,12 @@ fn pr(expected: &HashSet<String>, found: &HashSet<String>) -> PR {
 }
 
 pub fn conform(provider_name: &str, fixtures_dir: &Path) -> Result<ConformReport> {
-    let provider = by_name(provider_name)
+    conform_in(Path::new("."), provider_name, fixtures_dir)
+}
+
+/// `workspace` locates `comparegraph.toml` for external providers.
+pub fn conform_in(workspace: &Path, provider_name: &str, fixtures_dir: &Path) -> Result<ConformReport> {
+    let provider = by_name_in(workspace, provider_name)
         .ok_or_else(|| AppError::NotFound(format!("no provider '{provider_name}'")))?;
     let mut dirs: Vec<_> = std::fs::read_dir(fixtures_dir)
         .map_err(|e| AppError::Io(fixtures_dir.to_path_buf(), e))?
