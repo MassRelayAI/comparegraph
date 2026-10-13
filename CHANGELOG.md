@@ -9,6 +9,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - Claude Code plugin manifest and marketplace listing (`.claude-plugin/`), the `using-comparegraph` entry skill, and the
   contributor files (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`).
+- Plan 5: module-level calls with a file-node caller, declared return and field types, per-case `it:` test nodes, Python
+  re-exports through `__init__`, no-op builds reuse the latest run, `setup`/`doctor` for six MCP clients, the npm shell,
+  `export csv`, `catalog`, CI and release workflows, a gold standard of 150 labelled call sites per project under
+  `fixtures/gold/`, and a proof on a real product.
+- Plan 6, recall: a reusable gold scorer (`scripts/gold-score.sh`, `tests/gold.rs` with floors); TypeScript `describe` nodes,
+  JSX element calls, class fields bound to functions as methods, class-method resolution through imports and `extends`, barrel
+  re-exports followed, shadow-aware receivers; Go receiver methods through declared types, package-qualified calls through
+  `go.mod`, same-package calls. Gold recall: TypeScript 0.31 → 0.67, Go 0.25 → 1.00, pooled 0.63 → 0.83 at precision 0.99.
+- Plan 6, scale: indexed resolver lookups and a bounded thread pool for per-file analyses (store hash identical); incremental
+  edges and communities proven hash-identical to a full build (fallbacks named in a limitation); bounded adjacency loading
+  for `impact`, `traverse`, `tests-for`, `entry-points`, `dead-code` (flat memory on 434k nodes); per-pass profiling with
+  `COMPAREGRAPH_PROFILE=1`.
+- Plan 6, a second engine: the external plugin host over JSON lines (`docs/plugin-protocol.md`), bounded reads and waits,
+  validated plugin paths, process-group kill, a per-language conformance gate; `comparegraph-provider-crg` for
+  code-review-graph and `build --providers a,b` with an agreement row per kind.
+
+### Fixed
+- A `kill -KILL -<pid>` shell-out in a test became `kill(-1)` on hosts with 7-digit pids (every process of the user);
+  signals now go through `libc::kill` and `tests/no_kill_shellout.rs` forbids any kill shell-out
+  (`docs/reports/2026-10-13-user-wide-kill-from-kill-tree.md`).
+- A name-only call target no longer binds at 1.0 through a shadowed import, a class without the method, a type alias or
+  interface, a benchmark or example copy, or another file's data binding.
 
 ## [0.1.0]
 
