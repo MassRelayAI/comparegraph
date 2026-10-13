@@ -259,71 +259,127 @@ fn the_check_pins_the_reference_run() {
     assert!(v["data"]["stems"].is_array(), "{v}");
 }
 
-// ---- Plan 8 lane C: common terms and kinds scoping ----
-const PACK_COMMON: &str = "---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n\
-| quantum.task-teleport | quantum | Task teleport | x | a teleporter | basics | 1 |\n\
-| queue.task | queue | Task queue | x | a queue | basics | 1 |\n\
-| web.routes | web | Routes | x | a route table | basics | 1 |\n";
-
-fn common_ws() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
-    let ws = tempfile::tempdir().unwrap();
-    let pack = tempfile::tempdir().unwrap();
-    std::fs::write(pack.path().join("rows.md"), PACK_COMMON).unwrap();
-    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
-    let clone = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(clone.path().join("pkg")).unwrap();
-    // 250 functions carry `task` and `queue` in their names: more than the threshold (200) of a ~260-node run
-    let mut jobs = String::new();
-    for i in 0..250 {
-        jobs.push_str(&format!("def task_queue_{i}():\n    return {i}\n\n"));
+// ---- Plan 8 lane C fix round: family words, and no kinds scoping on the symbol channel ----
+fn row(id: &str, title: &str) -> String {
+    let grp = id.split('.').next().unwrap();
+    format!("| {id} | {grp} | {title} | x | y | basics | 1 |\n")
+}
+fn pack_of(rows: &[(&str, &str)]) -> String {
+    let mut p = String::from("---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n");
+    for (id, t) in rows {
+        p.push_str(&row(id, t));
     }
-    std::fs::write(clone.path().join("pkg/jobs.py"), jobs).unwrap();
-    std::fs::write(clone.path().join("pkg/app.py"), "def register_routes():\n    return 1\n").unwrap();
+    p
+}
+/// A workspace with repo `r` built from `files` (path, text) and the family `fam` from `pack`.
+fn ws_of(pack: &str, files: &[(&str, String)]) -> tempfile::TempDir {
+    let ws = tempfile::tempdir().unwrap();
+    let pk = tempfile::tempdir().unwrap();
+    std::fs::write(pk.path().join("rows.md"), pack).unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pk.path()).assert().success();
+    let clone = tempfile::tempdir().unwrap();
+    for (p, t) in files {
+        let f = clone.path().join(p);
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(f, t).unwrap();
+    }
     std::fs::write(clone.path().join("LICENSE"), "MIT License\n\nCopyright (c) 2026 S\n").unwrap();
     git_commit(clone.path());
-    add_repo(ws.path(), clone.path(), Some("big"), false).unwrap();
-    build_repo(ws.path(), "big", "reference", &BuildOptions::default()).unwrap();
-    (ws, clone, pack)
+    add_repo(ws.path(), clone.path(), Some("r"), false).unwrap();
+    build_repo(ws.path(), "r", "reference", &BuildOptions::default()).unwrap();
+    ws
+}
+fn py_fns(prefix: &str, n: usize) -> String {
+    (0..n).map(|i| format!("def {prefix}_{i}():\n    return {i}\n\n")).collect()
+}
+fn claims(ws: &Path) -> i64 {
+    let db = rusqlite::Connection::open(ws.join(".comparegraph/comparegraph.db")).unwrap();
+    db.query_row("SELECT count(*) FROM claim", [], |r| r.get(0)).unwrap()
+}
+fn check_r(ws: &Path, feature: &str, ok: bool) -> serde_json::Value {
+    let a = cc(ws).args(["absent-check", "r", "fam", feature]).assert();
+    json(if ok { a.success() } else { a.failure() })
 }
 
+// Defect 1 (review clone c1): a feature that names a kind must not lose the symbol hits of a function named for it.
 #[test]
-fn a_common_term_is_dropped_and_the_rest_decides() {
-    let (ws, _c, _p) = common_ws();
-    let v = json(cc(ws.path()).args(["absent-check", "big", "fam", "quantum.task-teleport"]).assert().success());
-    assert_eq!(v["data"]["absent"], true, "{v}");
-    assert_eq!(v["data"]["common"], serde_json::json!(["task"]), "{v}");
-    assert!(!v["data"]["terms"].as_array().unwrap().iter().any(|t| t == "task"), "{v}");
-    let c = json(
-        cc(ws.path())
-            .args(["claim", "big", "quantum.task-teleport", "none", "--author", "me"])
-            .assert()
-            .success(),
+fn a_function_named_for_a_feature_that_names_a_kind_is_a_symbol_hit_and_none_is_refused() {
+    let pack = pack_of(&[("serving.http-endpoints", "HTTP endpoints"), ("symbols.test-detection", "Test detection")]);
+    let ws = ws_of(
+        &pack,
+        &[
+            ("pkg/m1.py", format!("def handle_http_api_request():\n    return 1\n\n{}", py_fns("alpha_bravo_charlie_delta_echo", 25))),
+            ("pkg/m2.py", format!("def detect_test_functions():\n    return 2\n\n{}", py_fns("foxtrot_golf_hotel_india_juliet", 25))),
+        ],
     );
-    let note = c["data"]["note"].as_str().unwrap();
-    assert!(note.contains("; common=task;"), "{note}");
+    for f in ["serving.http-endpoints", "symbols.test-detection"] {
+        let v = check_r(ws.path(), f, true);
+        assert_eq!(v["data"]["absent"], false, "{f}: {v}");
+        assert!(v["data"]["channels"]["symbols"]["count"].as_i64().unwrap() >= 1, "{f}: {v}");
+        let c = json(cc(ws.path()).args(["claim", "r", f, "none", "--author", "me"]).assert().failure());
+        assert_eq!(c["error"]["code"], "invalid_arguments", "{c}");
+    }
+    assert_eq!(claims(ws.path()), 0);
+}
+
+// Defect 2 (review clones c2f, c2c): a word carried by 300 names is evidence of presence, not a common term.
+#[test]
+fn a_word_carried_by_hundreds_of_names_is_not_dropped_and_none_is_refused() {
+    let pack = pack_of(&[("scheduling.cron-tasks", "Cron tasks"), ("queue.retry", "Retry")]);
+    for prefix in ["cron_job", "cron_task"] {
+        let ws = ws_of(&pack, &[("pkg/jobs.py", py_fns(prefix, 300))]);
+        let v = check_r(ws.path(), "scheduling.cron-tasks", true);
+        assert_eq!(v["data"]["absent"], false, "{prefix}: {v}");
+        assert_eq!(v["data"]["common"], serde_json::json!([]), "{prefix}: {v}");
+        assert!(v["data"]["channels"]["symbols"]["count"].as_i64().unwrap() >= 300, "{prefix}: {v}");
+        let c = json(cc(ws.path()).args(["claim", "r", "scheduling.cron-tasks", "none", "--author", "me"]).assert().failure());
+        assert!(c["error"]["message"].as_str().unwrap().contains("the graph has"), "{c}");
+        assert_eq!(claims(ws.path()), 0);
+    }
+}
+
+const AGENTS: [(&str, &str); 7] = [
+    ("agents.alpha", "Alpha"),
+    ("agents.bravo", "Bravo"),
+    ("agents.charlie", "Charlie"),
+    ("agents.delta", "Delta"),
+    ("agents.echo", "Echo"),
+    ("agents.foxtrot", "Foxtrot"),
+    ("agents.x", "Zebra"),
+];
+
+// A family word is dropped and the rest decides; a mutation that never drops it goes red here.
+#[test]
+fn a_family_word_is_dropped_and_the_specific_term_decides() {
+    let ws = ws_of(&pack_of(&AGENTS), &[("pkg/a.py", py_fns("agent_run", 30)), ("pkg/b.py", py_fns("agents_pool", 30))]);
+    let v = check_r(ws.path(), "agents.x", true);
+    assert_eq!(v["data"]["absent"], true, "{v}");
+    assert_eq!(v["data"]["common"], serde_json::json!(["agents"]), "{v}");
+    let c = json(cc(ws.path()).args(["claim", "r", "agents.x", "none", "--author", "me"]).assert().success());
+    assert!(c["data"]["note"].as_str().unwrap().contains("; common=agents;"), "{c}");
     assert_eq!(c["evidence"]["confidence"], "inferred", "{c}");
 }
 
 #[test]
-fn a_feature_whose_every_term_is_common_is_refused_and_records_nothing() {
-    let (ws, _c, _p) = common_ws();
-    let msg = "every term of queue.task is common in big (queue, task); pass --searched with specific terms";
-    let v = json(cc(ws.path()).args(["absent-check", "big", "fam", "queue.task"]).assert().failure());
+fn a_feature_whose_every_term_is_a_family_word_is_refused_and_records_nothing() {
+    let mut rows = AGENTS.to_vec();
+    rows.push(("agents.agents", "Agents"));
+    let ws = ws_of(&pack_of(&rows), &[("pkg/a.py", py_fns("other", 5))]);
+    let msg = "every term of agents.agents is a family word in fam (agents); pass --searched with specific terms";
+    let v = check_r(ws.path(), "agents.agents", false);
     assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
     assert_eq!(v["error"]["message"], msg, "{v}");
-    let c = json(cc(ws.path()).args(["claim", "big", "queue.task", "none", "--author", "me"]).assert().failure());
+    let c = json(cc(ws.path()).args(["claim", "r", "agents.agents", "none", "--author", "me"]).assert().failure());
     assert_eq!(c["error"]["message"], msg, "{c}");
-    let db = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db")).unwrap();
-    let n: i64 = db.query_row("SELECT count(*) FROM claim", [], |r| r.get(0)).unwrap();
-    assert_eq!(n, 0, "an all-common feature must not record an absence");
+    assert_eq!(claims(ws.path()), 0, "an all-family-word feature must not record an absence");
 }
 
+// A word shared by fewer than 4 features is not a family word.
 #[test]
-fn a_feature_naming_a_kind_counts_only_nodes_of_that_kind_on_the_symbol_channel() {
-    let (ws, _c, _p) = common_ws();
-    // `register_routes` is a function named for routes; the feature names the kind `route`, and the graph has no route node
-    let v = json(cc(ws.path()).args(["absent-check", "big", "fam", "web.routes"]).assert().success());
-    assert_eq!(v["data"]["channels"]["symbols"]["count"], 0, "{v}");
-    assert_eq!(v["data"]["channels"]["kinds"]["count"], 0, "{v}");
-    // (the community channel still names the file's community, so this check is not an absence; scoping touches the symbol channel only)
+fn a_word_in_three_features_is_not_a_family_word() {
+    let rows = [("agents.alpha", "Alpha"), ("agents.bravo", "Bravo"), ("agents.x", "Zebra")];
+    let ws = ws_of(&pack_of(&rows), &[("pkg/a.py", py_fns("agent_run", 5))]);
+    let v = check_r(ws.path(), "agents.x", true);
+    assert_eq!(v["data"]["common"], serde_json::json!([]), "{v}");
+    assert_eq!(v["data"]["absent"], false, "{v}");
 }

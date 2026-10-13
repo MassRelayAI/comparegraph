@@ -14,13 +14,16 @@
 //!   (never the definition): `route|routes|endpoint|endpoints` -> kind `route`; `test|tests|testing` -> kind `test`;
 //!   the words `mcp` + `tool|tools` (an MCP tool) -> kind `route` (a handler registered by name) OR any function,
 //!   method or class whose name or path carries `mcp` (the graph has no MCP-tool kind; this is the implementer set).
-//!   A feature naming no kind has an empty kinds channel (count 0). When a feature names kinds, the symbol channel counts
-//!   only nodes of those kinds too.
+//!   A feature naming no kind has an empty kinds channel (count 0). The kinds channel is the ONLY place a named kind is
+//!   used: the symbol channel always counts every node whose name carries a term (the reference provider emits no `route`
+//!   nodes, so scoping by kind would hide `handle_http_request`; withdrawn after review).
 //!
-//! Common terms: a feature term that matches more than `max(200, 2% of the run's nodes)` nodes on the symbol channel
-//! (`task`, `channel`, `presence` in a big repo) proves nothing either way. It is dropped from all four channels and
-//! listed in the note as `common=<terms>`; the verdict is decided by the rest. When every term is common the check
-//! refuses (a "pass --searched" error) and never records an absence.
+//! Family words: a term that appears in the term set of at least half of the family's features, and of at least 4 of
+//! them (`agents` in a pack whose every row is `agents.*`, `graph` in `code-graph-tools`), names the family, not the
+//! feature. It is dropped from all four channels and listed in the note as `common=<terms>`; the verdict is decided by
+//! the rest. When every term is a family word the check refuses (a "pass --searched" error) and never records an
+//! absence. (A clone-frequency rule, "a term matching > max(200, 2%) nodes is common", was withdrawn: it dropped
+//! `cron` from `scheduling.cron-tasks` on a clone with 300 `cron_job_<n>` functions.)
 //!
 //! Coverage limit: names, paths, community terms and kinds only. Not strings, flags, config keys, abbreviations (`cfg`)
 //! or synonyms (`memoize`), so a graph-absent verdict is `inferred`, never `derived`. The check reads the latest done
@@ -63,7 +66,7 @@ pub struct AbsentCheck {
     pub run_id: i64,
     pub provider: String,
     pub terms: Vec<String>,
-    /// feature terms dropped from every channel because they match too many nodes of the run (see `common_threshold`)
+    /// feature terms dropped from every channel because they are family words (see the module header)
     pub common: Vec<String>,
     pub stems: Vec<String>,
     pub path_forms: Vec<String>,
@@ -250,36 +253,34 @@ fn hit_tokens(h: &AbsentHit) -> Vec<String> {
 pub(crate) const SYMBOLS_FTS_SQL: &str =
     "SELECT n.id FROM node_fts CROSS JOIN node n ON n.id = node_fts.rowid WHERE node_fts MATCH ?1 AND n.run_id = ?2";
 
-/// One node of the run as the symbol channel reads it: id, kind, lowercase name, name tokens.
+/// One node of the run as the symbol channel reads it: id, lowercase name, name tokens.
 struct NameRow {
     id: i64,
-    kind: String,
     lower: String,
     toks: Vec<String>,
 }
 
 fn name_rows(c: &Connection, run: i64) -> Result<Vec<NameRow>> {
-    let mut st = c.prepare("SELECT id, name, kind FROM node WHERE run_id = ?1")?;
+    let mut st = c.prepare("SELECT id, name FROM node WHERE run_id = ?1")?;
     let rows = st
         .query_map(params![run], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows
         .into_iter()
-        .map(|(id, name, kind)| NameRow { id, kind, lower: name.to_lowercase(), toks: tokens(&name) })
+        .map(|(id, name)| NameRow { id, lower: name.to_lowercase(), toks: tokens(&name) })
         .collect())
 }
 
 /// The node ids the symbol channel matches for `terms` and `stems`: FTS prefix, exact lowercase name, stem match against the
-/// name tokens. With `kinds` non-empty only nodes of those kinds count (the feature names a kind: Plan 8 lane C).
+/// name tokens. Every node counts whatever its kind.
 fn symbol_ids(
     c: &Connection,
     run: i64,
     rows: &[NameRow],
     terms: &[String],
     stems: &[(String, String)],
-    kinds: &[&str],
 ) -> Result<BTreeSet<i64>> {
     let mut ids: BTreeSet<i64> = BTreeSet::new();
     if let Some(m) = super::search::fts_query_or(&terms.join(" ")) {
@@ -294,35 +295,31 @@ fn symbol_ids(
             ids.insert(n.id);
         }
     }
-    if !kinds.is_empty() {
-        let keep: BTreeSet<i64> = rows.iter().filter(|n| kinds.contains(&n.kind.as_str())).map(|n| n.id).collect();
-        ids.retain(|i| keep.contains(i));
-    }
     Ok(ids)
 }
 
-/// A term matching more than this many nodes of the run (symbol channel) is common: `max(200, 2% of the run's nodes)`.
-pub(crate) fn common_threshold(nodes: usize) -> usize {
-    200.max(nodes / 50)
+/// The terms of `f` that are family words: present in the term set of at least half of the family's live features and of
+/// at least 4 of them. Needs no scan of the run.
+pub(crate) fn family_words(store: &Store, f: &FeatureRow, terms: &[String]) -> Result<Vec<String>> {
+    let sets: Vec<BTreeSet<String>> = store
+        .features_of(&f.family)?
+        .iter()
+        .filter(|g| g.tier != "retired")
+        .map(|g| feature_terms(g).into_iter().collect())
+        .collect();
+    let n = sets.len();
+    Ok(terms
+        .iter()
+        .filter(|t| {
+            let k = sets.iter().filter(|s| s.contains(*t)).count();
+            k >= 4 && k * 2 >= n
+        })
+        .cloned()
+        .collect())
 }
 
-/// The terms that are common in the run: they match more than `common_threshold` nodes on the symbol channel, so a hit on
-/// one proves nothing and a miss on one is no evidence either. Returned in the order given.
-fn common_terms(c: &Connection, run: i64, rows: &[NameRow], terms: &[String], kinds: &[&str]) -> Result<Vec<String>> {
-    let limit = common_threshold(rows.len());
-    let mut out = vec![];
-    for t in terms {
-        let one = std::slice::from_ref(t);
-        let stems = stems_of(one);
-        if symbol_ids(c, run, rows, one, &stems, kinds)?.len() > limit {
-            out.push(t.clone());
-        }
-    }
-    Ok(out)
-}
-
-fn symbols(c: &Connection, run: i64, rows: &[NameRow], terms: &[String], stems: &[(String, String)], kinds: &[&str]) -> Result<Channel> {
-    let ids = symbol_ids(c, run, rows, terms, stems, kinds)?;
+fn symbols(c: &Connection, run: i64, rows: &[NameRow], terms: &[String], stems: &[(String, String)]) -> Result<Channel> {
+    let ids = symbol_ids(c, run, rows, terms, stems)?;
     let (terms, stems) = (terms.to_vec(), stems.to_vec());
     top(c, ids, |h| {
         let mut toks = hit_tokens(h);
@@ -467,20 +464,20 @@ pub(crate) fn check_feature(
     let (names, ks, mcp) = kinds_named(f);
     let c = store.conn();
     let rows = name_rows(c, run)?;
-    let common = common_terms(c, run, &rows, &all_terms, &ks)?;
+    let common = family_words(store, f, &all_terms)?;
     let terms: Vec<String> = all_terms.iter().filter(|t| !common.contains(t)).cloned().collect();
     if terms.is_empty() {
         return Err(AppError::InvalidArguments(format!(
-            "every term of {} is common in {} ({}); pass --searched with specific terms",
+            "every term of {} is a family word in {} ({}); pass --searched with specific terms",
             f.slug,
-            repo,
+            f.family,
             common.join(", ")
         )));
     }
     let stem_pairs = stems_of(&terms);
     let forms = path_forms(f, &terms);
     let channels = Channels {
-        symbols: symbols(c, run, &rows, &terms, &stem_pairs, &ks)?,
+        symbols: symbols(c, run, &rows, &terms, &stem_pairs)?,
         paths: paths(c, run, &forms, &terms, &stem_pairs)?,
         communities: communities(store, run, &terms)?,
         kinds: kinds(c, run, &ks, mcp)?,
