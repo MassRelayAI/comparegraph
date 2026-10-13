@@ -932,10 +932,17 @@ impl RustCall<'_> {
 }
 
 /// Edges by qualified name: (kind, source_qn, target_qn, confidence).
-/// `f(0..n)` on up to 8 threads, results in index order. A panic in `f(i)` is re-raised on the calling thread after
+/// `f(0..n)` on up to 8 threads (`COMPAREGRAPH_THREADS` overrides the 8), results in index order. A panic in `f(i)` is re-raised on the calling thread after
 /// `mark_file(name(i))`, so the build still names the file (the lowest index when several fail).
 pub(super) fn par_map<T: Send>(n: usize, name: &(dyn Fn(usize) -> String + Sync), f: &(dyn Fn(usize) -> T + Sync)) -> Vec<T> {
-    let threads = std::thread::available_parallelism().map_or(1, |p| p.get()).min(8).min(n.max(1));
+    par_map_capped(thread_cap(std::env::var("COMPAREGRAPH_THREADS").ok().as_deref()), n, name, f)
+}
+/// The per-file thread cap: 8, or `COMPAREGRAPH_THREADS` when it is a whole number in 1..=64 (anything else is ignored).
+fn thread_cap(env: Option<&str>) -> usize {
+    env.and_then(|v| v.trim().parse::<usize>().ok()).filter(|n| (1..=64).contains(n)).unwrap_or(8)
+}
+fn par_map_capped<T: Send>(cap: usize, n: usize, name: &(dyn Fn(usize) -> String + Sync), f: &(dyn Fn(usize) -> T + Sync)) -> Vec<T> {
+    let threads = std::thread::available_parallelism().map_or(1, |p| p.get()).min(cap).min(n.max(1));
     if threads <= 1 {
         return (0..n).map(f).collect();
     }
@@ -1784,6 +1791,20 @@ mod tests {
         }
         assert_eq!(fs.pos("pkg/log/log.go"), Some(8));
         assert_eq!(map.len(), fs.len());
+    }
+    #[test]
+    fn thread_cap_env_overrides_eight_and_ignores_garbage() {
+        assert_eq!(thread_cap(None), 8);
+        assert_eq!(thread_cap(Some("1")), 1);
+        assert_eq!(thread_cap(Some("64")), 64);
+        assert_eq!(thread_cap(Some("65")), 8);
+        for bad in ["0", "", "abc", "-3", "1.5"] {
+            assert_eq!(thread_cap(Some(bad)), 8, "{bad}");
+        }
+        let one = par_map_capped(1, 100, &|i| i.to_string(), &|i| i * 2);
+        let many = par_map_capped(8, 100, &|i| i.to_string(), &|i| i * 2);
+        assert_eq!(one, many);
+        assert_eq!(one, (0..100).map(|i| i * 2).collect::<Vec<_>>());
     }
     #[test]
     fn par_map_keeps_index_order_and_names_a_panicking_file() {

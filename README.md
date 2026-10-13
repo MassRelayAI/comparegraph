@@ -731,6 +731,9 @@ println!("{} nodes, {} comparators", report.nodes, m.comparators);
 | `--pretty` | every command | indent the JSON |
 | `COMPAREGRAPH_BIN` | environment | the command `setup` registers, when `--bin` is not given |
 | `COMPAREGRAPH_NOW` | environment | a fixed clock for tests (a test hook; do not set it in real use) |
+| `COMPAREGRAPH_THREADS` | environment | `build`: the cap on the per-file analysis threads, a whole number 1 to 64 (default 8, also bounded by the CPU count); `0` or an unparsable value is ignored |
+| `COMPAREGRAPH_PROFILE` | environment | `build`: `1` prints one stderr line per pass with its wall time and a count |
+| `COMPAREGRAPH_PLUGIN_TIMEOUT` | environment | an external provider's run limit in whole seconds (default 1800; `0` or an unparsable value is refused before the run) |
 | `--min-confidence` | `traverse`, `impact`, `tests-for`, `entry-points`, `dead-code` | `0.5` (default, includes guessed hops) or `1.0` |
 | `--max-file-bytes` | `build` | skip files over this size (default 1048576) |
 | `--max-files` | `build` | keep the first N files by sorted path (default 50000) |
