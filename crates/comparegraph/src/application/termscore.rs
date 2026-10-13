@@ -17,7 +17,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-// Parameters, chosen on the TUNE clones only (see docs/design-notes-for-review.md, "Plan 7 IMP").
+// Parameters, chosen on the TUNE clones only (see docs/decisions.md, "Plan 7 IMP").
 /// a term carried by more than this share of the run's node names (or of its path tokens) weighs 0
 const K_CUTOFF: f64 = 0.1;
 /// fewest nodes that must carry a term before the cutoff applies to it

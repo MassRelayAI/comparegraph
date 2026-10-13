@@ -203,11 +203,27 @@ feature.
 
 ### Feature mapping gold
 
-A second gold standard scores `map` and the graph-backed absent check: 30 features of
+A second gold standard scores `map` (feature to code) and the graph-backed absent check: 30 features of
 [`families/code-graph-tools/rows.md`](families/code-graph-tools/rows.md) against six study copies of code-graph tools, 180
-pairs, two independent readers, disagreements left out of the scores (method:
-[`fixtures/gold-map/README.md`](fixtures/gold-map/README.md)). First measurement in progress; see
-[`docs/reports/`](docs/reports/). No number is quoted here until a report exists. Reproduce: `scripts/map-score.sh`.
+pairs read by two independent readers, 121 agreed, 13 unresolved, disagreements left out of the scores (method and kappa:
+[`fixtures/gold-map/README.md`](fixtures/gold-map/README.md)). The ranking was tuned on three of the clones and measured once
+on the other three; the held-out column is the honest number for a repository the tool has never seen.
+
+| | precision@5 | recall@5 | note |
+|---|---|---|---|
+| `map`, held-out clones (CodeGraph, codanna, ripwire) | 0.038 | 0.149 | the number to read |
+| `map`, tuning clones (graphmind, srclight, code-review-graph) | 0.154 | 0.500 | fitted |
+| `map`, all six pooled | 0.109 | 0.378 | from 0.046 / 0.141 before the ranking |
+| plain full-text OR search over the same terms, pooled | 0.046 | 0.141 | our own engine, no ranking |
+| codegraph `symbol_search` on the same terms, pooled | 0.036 | 0.118 | scored by the same rules |
+| absent check, pooled | 1.00 (1 call) | 0.05 (1 of 19) | never wrong, rarely speaks |
+
+The target (held-out recall@5 at or above 0.50 at precision@5 0.30) is open: a gold location is among the first 200
+candidates for only a third of the held-out features, because the store holds symbol names, paths and community keywords
+and no doc text; the next lever is in the roadmap. `relate` bands are a known weak signal: repositories outside the family
+still score above 0.5 ([`docs/decisions.md`](docs/decisions.md), "Plan 7 IMP"). Sources:
+[`docs/reports/2026-10-14-mapping-gold-first-measurement.md`](docs/reports/2026-10-14-mapping-gold-first-measurement.md) and
+the parity report's "Feature-mapping baselines". Reproduce: `scripts/map-score.sh`, `scripts/map-baselines.sh`.
 
 ## Languages
 
@@ -222,7 +238,7 @@ pairs, two independent readers, disagreements left out of the scores (method:
 The registry holds 32 identifiers (`tsx`, `jsx`, `mjs` count with their language). Unresolved languages bind a call only by
 name, at confidence 0.5, and only inside the same language family. Known gaps: a Java `new T()` has no call site, a Rust trait
 method and its impl share one qualified name, and Go calls on a method result, range variables and generics bind nothing yet
-([Plan 7 candidates](docs/superpowers/plans/2026-10-13-plan-7-candidates.md)). Skipped on every build: the directories
+([Plan 7 candidates](docs/roadmap.md)). Skipped on every build: the directories
 `node_modules`, `target`, `dist`, `build`, `.git`, `vendor`, `__pycache__`, `.venv`, `venv`; files that `.gitignore` or
 `.ignore` exclude; minified files. Skips are counted in the run's `limitations`.
 <!-- crates/comparegraph/src/providers/reference/walker.rs language_for (29 languages, 32 ids); resolve.rs (ts/js, python, rust, go contexts), module_ctx.rs and decl_types (java); inherit.rs -->
@@ -264,7 +280,7 @@ flowchart LR
    The latest wins, and the trail stays.
 
 A candidate from `search` or `map` is labelled `candidate`, never `has`. Design:
-[`docs/superpowers/specs/2026-10-12-codecross-design.md`](docs/superpowers/specs/2026-10-12-codecross-design.md).
+[`docs/design.md`](docs/design.md).
 
 ## What you get
 
@@ -401,7 +417,7 @@ Guards: a 1800 s timeout (`COMPAREGRAPH_PLUGIN_TIMEOUT`) that kills the whole pr
 are absolute or contain `..` dropped, and a failure becomes `provider_unavailable` with no nodes written. Conformance is per
 language: `comparegraph conform <name>` runs the five fixtures, and `build` refuses only when a language present in the clone
 failed its fixture. Full protocol, a 25-line Python provider and the failure matrix:
-[`docs/plugin-protocol.md`](docs/plugin-protocol.md).
+[`docs/dev/plugin-protocol.md`](docs/dev/plugin-protocol.md).
 
 **The second engine.** [`providers/crg/`](providers/crg) is `comparegraph-provider-crg`, an adapter that runs
 code-review-graph 2.3.9 through the protocol (registered in the root `comparegraph.toml`; code-review-graph itself must be
@@ -422,7 +438,7 @@ A family is a directory with a `rows.md`: front matter with `family:` and `descr
 [`families/code-graph-tools`](families/code-graph-tools/rows.md) (30 features, the mapping gold). `family propose <name>
 --repos a,b,c` drafts a pack from the terms the clones share, with no model. The tier names and band thresholds (`related` at
 0.5 or more, `adjacent` at 0.2 or more) are provisional, and a relatedness score is vocabulary overlap, not evidence
-([design notes](docs/design-notes-for-review.md)).
+([design notes](docs/decisions.md)).
 
 The method is seven plain-markdown skills in [`skills/`](skills) that any agent can read. Each gives when to use the verb, the
 exact commands, what the engine refuses, and how to check.
@@ -565,7 +581,7 @@ nothing, not that the feature is absent. Entry points and dead code are candidat
 
 ## Roadmap
 
-From [`docs/superpowers/plans/2026-10-13-plan-7-candidates.md`](docs/superpowers/plans/2026-10-13-plan-7-candidates.md); none
+From [`docs/roadmap.md`](docs/roadmap.md); none
 of these exist yet, and the maintainer decides the order.
 
 - Feature stats export: per feature, how many comparators carry it and the counts behind it. Counts only; no priority formula.
@@ -575,22 +591,26 @@ of these exist yet, and the maintainer decides the order.
 - A per-file analysis cache and an edge index, for the large-tree build and `traverse` times above.
 - Go and TypeScript recall leftovers; crg adapter gaps.
 - Port-kit export: for an adopted feature, the files, line ranges, licence text and attribution header.
+- A text channel in the store (doc-comment and signature tokens) and a per-family synonym table, the two levers the
+  mapping gold points at; a second signal for `relate` so that a repository outside a family scores below 0.5.
 - The `npm i -g comparegraph` package and release checksums.
 
 ## Documentation
 
 | Document | What it is |
 |---|---|
-| [`docs/plugin-protocol.md`](docs/plugin-protocol.md) | The JSON-lines protocol for external engines, limits, conformance, a 25-line example |
+| [`docs/reports/README.md`](docs/reports/README.md) | The index of every measurement, with its verdict and status |
+| [`docs/dev/scripts.md`](docs/dev/scripts.md) | Which script reproduces which number |
+| [`docs/dev/plugin-protocol.md`](docs/dev/plugin-protocol.md) | The JSON-lines protocol for external engines, limits, conformance, a 25-line example |
 | [`docs/dev/pid-namespaces.md`](docs/dev/pid-namespaces.md) | Why tests run in a PID namespace and how to enable it |
 | [`docs/catalog.json`](docs/catalog.json) | The 18 MCP tools and 9 error codes, generated and CI-checked |
 | [`docs/reports/2026-10-12-engine-parity.md`](docs/reports/2026-10-12-engine-parity.md) | The engine comparison: Jaccards, gold standard, codegraph head-to-head, scale |
 | [`docs/reports/2026-10-13-plan-6-recall-and-scale.md`](docs/reports/2026-10-13-plan-6-recall-and-scale.md) | Plan 6 targets against measured, per lane, with limits |
 | [`docs/reports/2026-10-13-proof-on-a-real-product.md`](docs/reports/2026-10-13-proof-on-a-real-product.md) | The pipeline on a private product monorepo (an earlier state) |
 | [`docs/reports/2026-10-12-plan-1-proof.md`](docs/reports/2026-10-12-plan-1-proof.md) | Three real clones through the pipeline |
-| [`docs/design-notes-for-review.md`](docs/design-notes-for-review.md) | Every provisional choice, the alternative, and what would change it |
-| [`docs/superpowers/specs/2026-10-12-codecross-design.md`](docs/superpowers/specs/2026-10-12-codecross-design.md) | The design |
-| [`docs/superpowers/plans/`](docs/superpowers/plans) | Plans 1 to 7: scope, lanes, candidates |
+| [`docs/decisions.md`](docs/decisions.md) | Every provisional choice, the alternative, and what would change it |
+| [`docs/design.md`](docs/design.md) | The design |
+| [`docs/roadmap.md`](docs/roadmap.md) | What comes next and what each plan left behind, with the measurement behind every item |
 | [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md) | Origin and licence of adapted code |
 | [`skills/`](skills) | The seven method skills |
 | [`fixtures/gold/README.md`](fixtures/gold/README.md) | How the call-edge gold is drawn and labelled |

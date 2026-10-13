@@ -1,7 +1,10 @@
-# Plan 7 candidates — 2026-10-13
+# Roadmap
 
-Not a plan yet: the scope that waits on Plan 6's re-measure. A plan file follows a brainstorm; this note records what the
-maintainer asked and what the lanes left behind, so nothing is re-derived from a transcript.
+What comes next, in the maintainer's words and in what each plan left behind, each item with the measurement that
+motivates it. Nothing here is promised; an item becomes a lane when it has a stop condition and a way to measure it. The
+measurements are in [`reports/`](reports/README.md); the choices already made are in [`decisions.md`](decisions.md).
+
+## Plan 7 candidates (2026-10-13)
 
 ## From the maintainer (2026-10-13)
 

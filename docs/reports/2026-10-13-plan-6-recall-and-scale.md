@@ -22,7 +22,7 @@ Gold measured at main `feef80c`, builds and queries re-measured at `9190b9b` (re
 | product repo < 90 s | not re-measured (the private tree was not part of this run) | open |
 | crg through the adapter >= native crg | equal on 3 projects, +0.055 / +0.083 recall on hono / caddy; pooled 0.956 / 0.736 vs 0.954 / 0.711 | yes |
 
-## Per lane (from the commits and `docs/design-notes-for-review.md`)
+## Per lane (from the commits and `docs/decisions.md`)
 
 - A0 `984057b`: `scripts/gold-score.sh` and `tests/gold.rs`, the floor test on the committed labels.
 - A1 `3b0bda9`: `describe` blocks are function nodes, module-level test code belongs to the file, JSX `<Foo/>` is a 1.0 rendering call through an import or same-file definition, class-field arrows are method nodes, `foo.bar()` resolves through the declared class and its `extends` chain: hono 0.846 / 0.306 to 0.920 / 0.639.
@@ -58,6 +58,6 @@ hold. Hash gate: `store_hash` of an incremental build must equal `build --full` 
 
 ## What is next
 
-Plan 7 candidates: `docs/superpowers/plans/2026-10-13-plan-7-candidates.md`. From this run: the resolve regression is fixed by lane E
+Plan 7 candidates: `docs/roadmap.md`. From this run: the resolve regression is fixed by lane E
 (the 8 minute target is met), the per-file analysis cache (B4) remains the lever for incremental builds (openclaw incremental still
 300 s of 390 s, read+parse 166 s), and the `dead-code` timing after the edge indexes should be looked at.

@@ -41,5 +41,5 @@ Toolchain is pinned in `rust-toolchain.toml`. Tests that use `--apply` run again
 - Execute code in a clone. Clones are read only.
 
 ## Where things are written down
-Specs `docs/superpowers/specs/`, plans `docs/superpowers/plans/`, measurements `docs/reports/`, every provisional choice
-`docs/design-notes-for-review.md`. Commit as conventional commits; stage named paths, never `git add -A`.
+Specs `docs/design.md`, plans `docs/roadmap.md`, measurements `docs/reports/`, every provisional choice
+`docs/decisions.md`. Commit as conventional commits; stage named paths, never `git add -A`.

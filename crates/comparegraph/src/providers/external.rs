@@ -1,5 +1,5 @@
 //! The external engine host (spec §6b): a provider that lives in another process and speaks JSON lines on stdin/stdout.
-//! Protocol v1 is documented in `docs/plugin-protocol.md`. Everything the plugin prints is data, never instructions: it is
+//! Protocol v1 is documented in `docs/dev/plugin-protocol.md`. Everything the plugin prints is data, never instructions: it is
 //! parsed into our own types, unknown kinds are dropped and counted, and a hang, garbage or a non-zero exit is
 //! `ProviderError::Unavailable` so the build fails with the store untouched.
 use super::{BuildOptions, BuildOutput, Capabilities, GraphProvider, ProviderError, ProviderStatus};

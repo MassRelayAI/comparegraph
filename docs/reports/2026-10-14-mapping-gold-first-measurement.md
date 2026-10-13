@@ -4,7 +4,7 @@ date: 2026-10-14
 valid_until: 2027-04-14
 lane: plan 7 lane 1
 verdict: "On 94 gold-labelled features across 6 code-graph tools, map scores pooled precision@5 0.046 and recall@5 0.141, and the absent check scores precision 1.00 (1 call) and recall 0.05 (1 of 19 true-absent pairs)."
-status: measured — baseline before the improvement task
+status: measured; the improvement task is done (section "After IMP"), the target stays open
 ---
 
 # Mapping gold, first measurement

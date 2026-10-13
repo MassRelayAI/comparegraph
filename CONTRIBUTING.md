@@ -9,7 +9,7 @@ Read `AGENTS.md` first: the rings, the precision invariants and the never-list a
    `fixtures/` with its expected graph, and run `comparegraph conform reference --fixtures fixtures`. Add the negative case:
    the shape that must not produce an edge.
 4. A provisional choice (a threshold, a default, a heuristic you could not validate) gets one row in
-   `docs/design-notes-for-review.md`: the choice, the alternative, why it is provisional, what would change it.
+   `docs/decisions.md`: the choice, the alternative, why it is provisional, what would change it.
 5. Run `cargo test -p comparegraph` and `cargo clippy -p comparegraph --tests -- -D warnings`. Both must be clean.
 6. Conventional commit messages; stage named paths.
 

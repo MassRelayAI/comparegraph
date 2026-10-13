@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Plan 7 lane 1: a feature-mapping gold standard (30 features, six clones, two readers, `fixtures/gold-map/` with floors and
+  `scripts/map-score.sh`), feature-mapping baselines (`scripts/map-baselines.sh`), the graph-backed absent check
+  (`absent-check`, and `claim ... none` without `--searched` runs it and records the channels), `map` ranking by idf-weighted
+  terms with kind and graph priors (held-out precision@5 0.038 / recall@5 0.149, pooled 0.109 / 0.378 from 0.046 / 0.141),
+  a `matched` field on map candidates, unit tests for the ranking, and `relate` counting a feature only when its top candidate
+  is named for it.
+- Documentation for the public repository: `docs/design.md`, `docs/decisions.md`, `docs/roadmap.md`, `docs/reports/README.md`,
+  `docs/dev/` (plugin protocol, PID namespaces, scripts); plan files are no longer tracked.
 - Claude Code plugin manifest and marketplace listing (`.claude-plugin/`), the `using-comparegraph` entry skill, and the
   contributor files (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`).
 - Plan 5: module-level calls with a file-node caller, declared return and field types, per-case `it:` test nodes, Python
@@ -23,7 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   open (traverse 1.7 s → 0.28 s on 1.3M edges); repeated limitations collapsed with a count; per-pass profiling with
   `COMPAREGRAPH_PROFILE=1`; `COMPAREGRAPH_THREADS`; every test binary runs in its own PID namespace where the host allows
   it (`tools/pidns-run.sh`).
-- Plan 6, a second engine: the external plugin host over JSON lines (`docs/plugin-protocol.md`), bounded reads and waits,
+- Plan 6, a second engine: the external plugin host over JSON lines (`docs/dev/plugin-protocol.md`), bounded reads and waits,
   validated plugin paths, process-group kill, a per-language conformance gate; `comparegraph-provider-crg` for
   code-review-graph and `build --providers a,b` with an agreement row per kind.
 
