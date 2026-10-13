@@ -1,0 +1,7 @@
+# Every test binary and `cargo run` on Linux goes through tools/pidns-run.sh: its own PID namespace when the host allows
+# unprivileged user namespaces, otherwise unconfined with one line on stderr. See docs/dev/pid-namespaces.md.
+[target.x86_64-unknown-linux-gnu]
+runner = "tools/pidns-run.sh"
+
+[target.aarch64-unknown-linux-gnu]
+runner = "tools/pidns-run.sh"
