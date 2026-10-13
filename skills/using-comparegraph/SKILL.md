@@ -16,7 +16,7 @@ register the server too:
 comparegraph setup --client claude --apply
 ```
 Without `--apply` it only prints its plan. It writes additively and leaves a timestamped backup. `--apply` also writes a
-short rules block into the agent's instruction file in the current directory and, for Claude Code, a session-start hook.
+short rules block into the agent's instruction file in the workspace (once it has a store) and, for Claude Code, a session-start hook.
 `comparegraph doctor` reports whether the registration is `aligned` or `stale`.
 
 ## Which skill, when

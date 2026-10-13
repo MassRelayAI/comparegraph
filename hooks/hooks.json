@@ -1,13 +1,15 @@
 {
-  "SessionStart": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "command -v comparegraph >/dev/null 2>&1 || exit 0; comparegraph doctor --brief",
-          "timeout": 10
-        }
-      ]
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v comparegraph >/dev/null 2>&1 || exit 0; comparegraph doctor --brief",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }

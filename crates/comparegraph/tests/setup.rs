@@ -428,30 +428,32 @@ fn block_of(text: &str) -> &str {
 #[test]
 fn rules_are_created_in_a_new_file_and_are_aligned_on_a_second_run() {
     let e = Env::new();
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
     let v = e.setup(&["--client", "claude", "--apply", "--no-hook"]);
     let r = rowk(&v, "claude", "rules");
     assert_eq!((r["action"].as_str(), r["state"].as_str(), r["written"].as_bool(), r["scope"].as_str()), (Some("create"), Some("missing"), Some(true), Some("project")));
-    let t = std::fs::read_to_string(e.proj.path().join("CLAUDE.md")).unwrap();
+    let t = std::fs::read_to_string(e.ws.path().join("CLAUDE.md")).unwrap();
     assert!(t.starts_with("<!-- comparegraph -->\n## CompareGraph\n") && t.ends_with("<!-- /comparegraph -->\n"), "{t}");
     assert!(t.contains("`comparegraph_map`"));
     assert!(t.contains("Never run code inside a clone."));
     let v2 = e.setup(&["--client", "claude", "--apply", "--no-hook"]);
     let r = rowk(&v2, "claude", "rules");
     assert_eq!((r["state"].as_str(), r["action"].as_str(), r["written"].as_bool()), (Some("aligned"), Some("none"), Some(false)));
-    assert!(baks(e.proj.path()).is_empty(), "an aligned file is neither written nor backed up");
-    assert_eq!(std::fs::read_to_string(e.proj.path().join("CLAUDE.md")).unwrap(), t);
+    assert!(baks(e.ws.path()).is_empty(), "an aligned file is neither written nor backed up");
+    assert_eq!(std::fs::read_to_string(e.ws.path().join("CLAUDE.md")).unwrap(), t);
 }
 
 #[test]
 fn rules_are_appended_after_exactly_one_blank_line_and_crlf_is_kept() {
     let e = Env::new();
-    let p = e.proj.path().join("CLAUDE.md");
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
+    let p = e.ws.path().join("CLAUDE.md");
     std::fs::write(&p, "# Mine\nkeep this").unwrap();
     let v = e.setup(&["--client", "claude", "--apply", "--no-hook"]);
     assert_eq!(rowk(&v, "claude", "rules")["action"], "add");
     let t = std::fs::read_to_string(&p).unwrap();
     assert!(t.starts_with("# Mine\nkeep this\n\n<!-- comparegraph -->\n"), "{t}");
-    assert_eq!(baks(e.proj.path()).len(), 1);
+    assert_eq!(baks(e.ws.path()).len(), 1);
     // already ends with a blank line: still one
     std::fs::write(&p, "# Mine\n\n\n").unwrap();
     e.setup(&["--client", "claude", "--apply", "--no-hook"]);
@@ -473,7 +475,8 @@ fn rules_are_appended_after_exactly_one_blank_line_and_crlf_is_kept() {
 #[test]
 fn an_older_shipped_block_is_refreshed_without_force() {
     let e = Env::new();
-    let p = e.proj.path().join("CLAUDE.md");
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
+    let p = e.ws.path().join("CLAUDE.md");
     std::fs::write(&p, "before\n\n<!-- comparegraph -->\n<!-- /comparegraph -->\nafter\n").unwrap();
     let v = e.setup(&["--client", "claude", "--apply", "--no-hook"]);
     let r = rowk(&v, "claude", "rules");
@@ -481,20 +484,21 @@ fn an_older_shipped_block_is_refreshed_without_force() {
     assert_eq!(r["note"], "an older CompareGraph block; refreshed");
     let t = std::fs::read_to_string(&p).unwrap();
     assert!(t.starts_with("before\n\n<!-- comparegraph -->\n## CompareGraph\n") && t.ends_with("<!-- /comparegraph -->\nafter\n"), "{t}");
-    assert_eq!(baks(e.proj.path()).len(), 1);
+    assert_eq!(baks(e.ws.path()).len(), 1);
 }
 
 #[test]
 fn a_hand_edited_block_is_a_conflict_replaced_only_with_force_and_only_its_span() {
     let e = Env::new();
-    let p = e.proj.path().join("CLAUDE.md");
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
+    let p = e.ws.path().join("CLAUDE.md");
     let edited = "top\n<!-- comparegraph -->\nmy own words\n<!-- /comparegraph -->\nbottom\n";
     std::fs::write(&p, edited).unwrap();
     let v = e.setup(&["--client", "claude", "--apply", "--no-hook"]);
     let r = rowk(&v, "claude", "rules");
     assert_eq!((r["state"].as_str(), r["action"].as_str(), r["written"].as_bool()), (Some("conflict"), Some("skip"), Some(false)));
     assert_eq!(std::fs::read_to_string(&p).unwrap(), edited);
-    assert!(baks(e.proj.path()).is_empty());
+    assert!(baks(e.ws.path()).is_empty());
     let v = e.setup(&["--client", "claude", "--apply", "--force", "--no-hook"]);
     assert_eq!(rowk(&v, "claude", "rules")["action"], "replace");
     let t = std::fs::read_to_string(&p).unwrap();
@@ -506,7 +510,8 @@ fn a_hand_edited_block_is_a_conflict_replaced_only_with_force_and_only_its_span(
 #[test]
 fn an_open_marker_without_a_close_is_a_conflict_even_with_force() {
     let e = Env::new();
-    let p = e.proj.path().join("CLAUDE.md");
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
+    let p = e.ws.path().join("CLAUDE.md");
     let broken = "x\n<!-- comparegraph -->\nno end\n";
     std::fs::write(&p, broken).unwrap();
     let v = e.setup(&["--client", "claude", "--apply", "--force", "--no-hook"]);
@@ -518,6 +523,7 @@ fn an_open_marker_without_a_close_is_a_conflict_even_with_force() {
 #[test]
 fn rules_rows_are_one_per_file_with_the_clients_joined_and_follow_detection() {
     let e = Env::new();
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
     let v = e.setup(&["--client", "all"]);
     assert!(kinds(&v, "rules").is_empty() && kinds(&v, "hook").is_empty(), "nothing detected, nothing planned: {v}");
     for d in [".codex", ".gemini", ".qwen", ".copilot", ".hermes"] {
@@ -525,11 +531,11 @@ fn rules_rows_are_one_per_file_with_the_clients_joined_and_follow_detection() {
     }
     let v = e.setup(&[]);
     assert_eq!(kinds(&v, "rules"), vec!["codex,hermes,copilot-cli", "gemini,qwen"]);
-    assert_eq!(rowk(&v, "codex,hermes,copilot-cli", "rules")["path"], e.proj.path().join("AGENTS.md").to_string_lossy().as_ref());
-    assert_eq!(rowk(&v, "gemini,qwen", "rules")["path"], e.proj.path().join("GEMINI.md").to_string_lossy().as_ref());
+    assert_eq!(rowk(&v, "codex,hermes,copilot-cli", "rules")["path"], std::path::PathBuf::from(e.ws_str()).join("AGENTS.md").to_string_lossy().as_ref());
+    assert_eq!(rowk(&v, "gemini,qwen", "rules")["path"], std::path::PathBuf::from(e.ws_str()).join("GEMINI.md").to_string_lossy().as_ref());
     assert!(kinds(&v, "hook").is_empty(), "claude is not detected");
     let v = e.setup(&["--client", "copilot", "--scope", "project"]);
-    assert_eq!(rowk(&v, "copilot", "rules")["path"], e.proj.path().join(".github/instructions/comparegraph.instructions.md").to_string_lossy().as_ref());
+    assert_eq!(rowk(&v, "copilot", "rules")["path"], std::path::PathBuf::from(e.ws_str()).join(".github/instructions/comparegraph.instructions.md").to_string_lossy().as_ref());
 }
 
 #[test]
@@ -537,8 +543,54 @@ fn no_rules_plans_no_rules_rows() {
     let e = Env::new();
     let v = e.setup(&["--client", "codex", "--apply", "--no-rules"]);
     assert!(kinds(&v, "rules").is_empty());
-    assert!(!e.proj.path().join("AGENTS.md").exists());
+    assert!(!std::path::PathBuf::from(e.ws_str()).join("AGENTS.md").exists());
     assert!(e.user(".codex/config.toml").is_file());
+}
+
+
+#[test]
+fn rules_wait_for_a_store_and_never_land_outside_the_workspace() {
+    let e = Env::new();
+    for scope in ["user", "project"] {
+        let v = e.setup(&["--client", "claude", "--scope", scope, "--apply", "--no-hook"]);
+        let r = rowk(&v, "claude", "rules");
+        assert_eq!((r["state"].as_str(), r["action"].as_str(), r["written"].as_bool()), (Some("missing"), Some("skip"), Some(false)), "{scope}");
+        assert!(r["note"].as_str().unwrap().contains("no CompareGraph store under"));
+        assert!(r["note"].as_str().unwrap().contains("comparegraph add"));
+        assert!(r["path"].as_str().unwrap().ends_with("/CLAUDE.md") && r["path"].as_str().unwrap().starts_with(&e.ws_str()));
+    }
+    assert!(!e.ws.path().join("CLAUDE.md").exists() && !e.proj.path().join("CLAUDE.md").exists());
+    // with a store the block goes to the workspace root, not the cwd
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
+    let v = e.setup(&["--client", "claude", "--apply", "--no-hook"]);
+    assert_eq!(rowk(&v, "claude", "rules")["written"], true);
+    assert!(e.ws.path().join("CLAUDE.md").is_file() && !e.proj.path().join("CLAUDE.md").exists());
+}
+
+#[test]
+fn a_directory_named_like_the_rules_file_is_a_conflict_not_an_error() {
+    let e = Env::new();
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
+    std::fs::create_dir_all(e.ws.path().join("CLAUDE.md")).unwrap();
+    let v = e.setup(&["--client", "claude", "--apply", "--force", "--no-hook"]);
+    assert_eq!(v["ok"], true, "{v}");
+    let r = rowk(&v, "claude", "rules");
+    assert_eq!((r["state"].as_str(), r["written"].as_bool()), (Some("conflict"), Some(false)));
+    assert_eq!(r["note"], "is not a file; untouched");
+}
+
+#[test]
+fn doctor_lists_the_rules_and_hook_rows_of_detected_clients() {
+    let e = Env::new();
+    std::fs::create_dir_all(e.user(".claude")).unwrap();
+    let d = e.run(BIN, &["doctor"]);
+    let r = rowk(&d, "claude", "rules");
+    assert_eq!((r["state"].as_str(), r["scope"].as_str()), (Some("missing"), Some("project")));
+    assert!(r["path"].as_str().unwrap().ends_with("/CLAUDE.md") && r.get("written").is_none());
+    let h = rowk(&d, "claude", "hook");
+    assert_eq!((h["state"].as_str(), h["scope"].as_str()), (Some("missing"), Some("user")));
+    assert!(!e.user(".claude/settings.json").exists() && !e.ws.path().join("CLAUDE.md").exists());
+    assert!(d["data"]["clients"].as_array().unwrap().iter().filter(|r| r["kind"] == "config").count() >= 10);
 }
 
 // ---------- the SessionStart hook ----------
@@ -612,12 +664,12 @@ fn an_unreadable_settings_file_is_never_written_and_no_hook_skips_the_row() {
 fn the_plugin_hook_file_carries_the_same_command_setup_writes() {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../hooks/hooks.json");
     let h = read_json(&p);
-    assert_eq!(h["SessionStart"][0]["hooks"][0]["command"], comparegraph::application::setup::HOOK_COMMAND);
-    assert_eq!(h["SessionStart"][0]["hooks"][0]["type"], "command");
-    assert_eq!(h["SessionStart"][0]["hooks"][0]["timeout"], 10);
+    assert_eq!(h["hooks"]["SessionStart"][0]["hooks"][0]["command"], comparegraph::application::setup::HOOK_COMMAND);
+    assert_eq!(h["hooks"]["SessionStart"][0]["hooks"][0]["type"], "command");
+    assert_eq!(h["hooks"]["SessionStart"][0]["hooks"][0]["timeout"], 10);
     assert_eq!(comparegraph::application::setup::HOOK_COMMAND, HOOK);
     let plugin = read_json(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.claude-plugin/plugin.json"));
-    assert_eq!(plugin["hooks"], "./hooks/hooks.json");
+    assert!(plugin.get("hooks").is_none(), "hooks/hooks.json is loaded by default; declaring it too would load it twice");
 }
 
 // ---------- doctor --brief ----------
@@ -641,7 +693,7 @@ fn doctor_brief_is_silent_without_a_store_and_one_or_two_lines_with_one() {
     let store = std::fs::canonicalize(e.ws.path()).unwrap().join(".comparegraph/comparegraph.db");
     let lines: Vec<_> = out.lines().collect();
     assert_eq!(lines.len(), 2, "{out}");
-    assert!(lines[0].starts_with("CompareGraph: 0 repos, store ") && lines[0].ends_with("; server missing for gemini"), "{out}");
+    assert!(lines[0].starts_with("CompareGraph: 0 repos, store ") && lines[0].ends_with("; server: gemini missing"), "{out}");
     assert!(lines[0].contains(store.file_name().unwrap().to_str().unwrap()));
     assert_eq!(lines[1], "Run `comparegraph setup --apply` (state: gemini missing).");
     e.setup(&["--client", "gemini", "--apply", "--no-rules"]);
@@ -688,4 +740,30 @@ fn apply_writes_the_shape_of_each_newer_client() {
     for (c, scope) in [("windsurf", "project"), ("kiro", "user"), ("copilot", "user")] {
         assert_eq!(e.setup(&["--client", c, "--scope", scope])["error"]["code"], "invalid_arguments", "{c}");
     }
+}
+
+#[test]
+fn doctor_brief_treats_an_empty_store_file_as_no_store_and_hints_force_for_stale_or_conflict() {
+    let e = Env::new();
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
+    let db = e.ws.path().join(".comparegraph/comparegraph.db");
+    std::fs::write(&db, "").unwrap();
+    assert_eq!(brief(&e), (String::new(), 0));
+    assert_eq!(std::fs::metadata(&db).unwrap().len(), 0, "the empty file is not migrated");
+    std::fs::remove_file(&db).unwrap();
+    Command::cargo_bin("comparegraph").unwrap().current_dir(e.proj.path()).arg("--root").arg(e.ws.path()).args(["build", "x"]).assert().code(1);
+    std::fs::create_dir_all(e.user(".codex")).unwrap();
+    std::fs::create_dir_all(e.user(".claude")).unwrap();
+    let (out, _) = brief(&e);
+    let lines: Vec<_> = out.lines().collect();
+    assert!(lines[0].ends_with("; server: claude missing, codex missing"), "{out}");
+    assert_eq!(lines[1], "Run `comparegraph setup --apply` (state: claude missing, codex missing).");
+    // claude registered, codex entry points elsewhere
+    e.setup(&["--client", "claude", "--apply", "--no-rules", "--no-hook"]);
+    std::fs::write(e.user(".codex/config.toml"), "[mcp_servers.comparegraph]\ncommand = \"/x\"\nargs = [\"mcp\"]\n").unwrap();
+    let (out, _) = brief(&e);
+    let lines: Vec<_> = out.lines().collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    assert!(lines[0].ends_with("; server: claude aligned, codex conflict"), "{out}");
+    assert_eq!(lines[1], "Run `comparegraph setup --apply --force` (state: codex conflict).");
 }

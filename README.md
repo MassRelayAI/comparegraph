@@ -96,7 +96,7 @@ binary from your `PATH`:
 
 Any other agent (Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf, and more): `comparegraph setup --client <name> --apply`
 writes the entry (omit `--apply` for a dry run) and `comparegraph doctor` checks it ([table](#agents-platforms-uninstall)).
-`setup --apply` also writes a short rules block into the agent's instruction file in the current directory and, for Claude
+`setup --apply` also writes a short rules block into the agent's instruction file in the workspace and, for Claude
 Code, a session-start hook; the plugin ships the same hook. The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`.
 
 ## Quick start
@@ -516,10 +516,13 @@ large to open as one vault in a note tool.
 backup named `<file>.bak-<unix-seconds>`; a differing entry is left alone unless you pass `--force`.
 
 Besides the entry, `setup` writes a CompareGraph block, between `<!-- comparegraph -->` and `<!-- /comparegraph -->`, into
-the agent's instruction file in the current directory (the `Rules file` column; skip it with `--no-rules`), and for Claude
+the agent's instruction file in the workspace root (`--root`, default the current directory; the `Rules file` column; only
+once `.comparegraph/` exists there, so run `comparegraph add` first; skip it with `--no-rules`), and for Claude
 Code a `SessionStart` hook in `.claude/settings.json` (project scope) or `~/.claude/settings.json` (user scope; skip it with
 `--no-hook`). The hook runs `comparegraph doctor --brief`, which prints nothing outside a workspace with a store. A block from
-an older release is refreshed in place; a block you edited by hand is left alone unless you pass `--force`.
+an older release is refreshed in place; a block you edited by hand is left alone unless you pass `--force`. Markers quoted
+inside a fenced code block, or a second block, count as the block (the first marker pair wins); a close marker alone is
+ignored and a block is appended.
 
 | Agent | `--client` | Config (user / project) | Rules file | Remove on uninstall |
 |---|---|---|---|---|

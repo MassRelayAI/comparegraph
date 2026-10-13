@@ -433,31 +433,30 @@ pub fn run() -> i32 {
 
 /// `doctor --brief`: empty without a store; otherwise the repo count and the server registration of each detected client.
 fn doctor_brief(root: &std::path::Path, bin: Option<&str>) -> String {
-    if !root.join(".comparegraph").join("comparegraph.db").is_file() {
+    // a zero-byte file is no store: opening it would migrate it into one
+    if std::fs::metadata(root.join(".comparegraph").join("comparegraph.db")).map_or(true, |m| !m.is_file() || m.len() == 0) {
         return String::new();
     }
     let Ok(store) = Store::open_existing(root) else { return String::new() };
     let Ok(repos) = store.repos() else { return String::new() };
     let ctx = setup::Ctx::from_env(root, bin);
     let found = setup::detected_states(&ctx);
-    let stale: Vec<_> = found.iter().filter(|(_, s)| *s != setup::State::Aligned).collect();
+    let off: Vec<_> = found.iter().filter(|(_, s)| *s != setup::State::Aligned).collect();
     let server = if found.is_empty() {
         "no agent client detected".to_string()
-    } else if stale.is_empty() {
+    } else if off.is_empty() {
         let names: Vec<_> = found.iter().map(|(c, _)| c.name()).collect();
         format!("server aligned for {}", names.join(", "))
     } else {
-        // "server <state> for <client>, <client> <state>, ..." as the brief specifies
-        let mut t = format!("server {} for {}", found[0].1.name(), found[0].0.name());
-        for (c, s) in &found[1..] {
-            t.push_str(&format!(", {} {}", c.name(), s.name()));
-        }
-        t
+        let all: Vec<_> = found.iter().map(|(c, s)| format!("{} {}", c.name(), s.name())).collect();
+        format!("server: {}", all.join(", "))
     };
     let mut out = format!("CompareGraph: {} repos, store {}; {server}\n", repos.len(), store.path().display());
-    if !stale.is_empty() {
-        let list: Vec<_> = stale.iter().map(|(c, s)| format!("{} {}", c.name(), s.name())).collect();
-        out.push_str(&format!("Run `comparegraph setup --apply` (state: {}).\n", list.join(", ")));
+    if !off.is_empty() {
+        let list: Vec<_> = off.iter().map(|(c, s)| format!("{} {}", c.name(), s.name())).collect();
+        // `--apply` alone only adds what is missing; a stale or conflicting entry needs `--force`
+        let force = if off.iter().all(|(_, s)| *s == setup::State::Missing) { "" } else { " --force" };
+        out.push_str(&format!("Run `comparegraph setup --apply{force}` (state: {}).\n", list.join(", ")));
     }
     out
 }
@@ -983,7 +982,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             if !ctx.explicit_bin && ctx.dev_build {
                 limitations.push(serde_json::json!({ "code": "dev_build", "detail": "compared against a binary in a build directory; pass --bin <installed path>" }));
             }
-            let clients: Vec<_> = setup::registrations(&ctx).iter().map(|r| r.to_json(false)).collect();
+            let clients: Vec<_> = setup::registrations(&ctx).iter().chain(setup::extra_registrations(&ctx).iter()).map(|r| r.to_json(false)).collect();
             if !cli.root.join(".comparegraph").join("comparegraph.db").is_file() {
                 return Ok(Ok(
                     serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations }),

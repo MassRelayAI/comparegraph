@@ -219,7 +219,7 @@ protocol and the package.
 `comparegraph setup` detects client config files (twelve clients: Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf,
 Antigravity, Kiro, Copilot, Copilot CLI, Qwen Code), shows the planned change, writes additively and idempotently with a backup;
 `doctor` reports each as aligned / stale / missing. Each row carries a `kind`: `config` (the server entry), `rules` (a marked block
-in the project's instruction file) and `hook` (Claude Code's SessionStart hook, which runs `doctor --brief`).
+in the workspace's instruction file, once a store exists) and `hook` (Claude Code's SessionStart hook, which runs `doctor --brief`).
 The MCP server exposes the read verbs (`search`, `map`, `relate`, `export json`, `check`) and `claim` (a write, with the same
 refusals). `skills/` (with `method/` as its alias) ships in the repository, where the Claude Code plugin reads it.
 

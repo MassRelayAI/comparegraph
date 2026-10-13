@@ -1,8 +1,7 @@
 //! `setup` and the `doctor` registrations: write the `comparegraph` MCP server entry into agent clients' configs (spec §10).
 //!
 //! Plan first: a dry run is the default and writes nothing. `--apply` writes additively, with a backup `<file>.bak-<unix-seconds>`
-//! beside any file it changes. JSON configs are parsed and re-serialised (2-space indent, every other key kept; key order is
-//! sorted because the crate carries no order-preserving map). TOML and YAML are never parsed-and-rewritten: the entry is appended
+//! beside any file it changes. JSON configs are parsed and re-serialised (2-space indent, every other key kept, key order kept). TOML and YAML are never parsed-and-rewritten: the entry is appended
 //! (or, for a stale command, one line is replaced) as text, and only when the `comparegraph` entry is absent or ours.
 //! A `comparegraph` entry that points elsewhere is a `conflict` and stays untouched unless `--force`.
 //!
@@ -610,6 +609,9 @@ pub fn rules_file(c: Client) -> &'static str {
 }
 
 fn plan_rules(path: &Path) -> Plan {
+    if path.exists() && !path.is_file() {
+        return Plan::conflict("is not a file", None, true);
+    }
     let exists = path.is_file();
     let text = if exists {
         match std::fs::read_to_string(path) {
@@ -637,7 +639,7 @@ fn plan_rules(path: &Path) -> Plan {
         return Plan { state: State::Missing, note: None, new: Some(out), forced: None, file_exists: exists };
     };
     let Some(close_rel) = text[open..].find(CLOSE) else {
-        return Plan::conflict("a `<!-- comparegraph -->` marker without its closing marker; left untouched", None, exists);
+        return Plan::conflict("a `<!-- comparegraph -->` marker without its closing marker", None, exists);
     };
     let end = open + close_rel + CLOSE.len();
     let span = text[open..end].replace("\r\n", "\n");
@@ -666,6 +668,9 @@ pub fn hook_file(ctx: &Ctx, s: Scope) -> Option<PathBuf> {
     }
 }
 fn plan_hook(path: &Path) -> Plan {
+    if path.exists() && !path.is_file() {
+        return Plan::conflict("is not a file", None, true);
+    }
     let exists = path.is_file();
     let mut root = if exists {
         let text = match std::fs::read_to_string(path) {
@@ -677,20 +682,20 @@ fn plan_hook(path: &Path) -> Plan {
         } else {
             match serde_json::from_str::<Value>(&text) {
                 Ok(v) => v,
-                Err(e) => return Plan::conflict(format!("not valid JSON ({e}); left untouched"), None, true),
+                Err(e) => return Plan::conflict(format!("not valid JSON ({e})"), None, true),
             }
         }
     } else {
         json!({})
     };
     if !root.is_object() {
-        return Plan::conflict("top level is not an object; left untouched", None, exists);
+        return Plan::conflict("top level is not an object", None, exists);
     }
     if root.get("hooks").is_some_and(|h| !h.is_object()) {
-        return Plan::conflict("`hooks` is not an object; left untouched", None, exists);
+        return Plan::conflict("`hooks` is not an object", None, exists);
     }
     if root.get("hooks").and_then(|h| h.get("SessionStart")).is_some_and(|h| !h.is_array()) {
-        return Plan::conflict("`hooks.SessionStart` is not an array; left untouched", None, exists);
+        return Plan::conflict("`hooks.SessionStart` is not an array", None, exists);
     }
     let mut stale: Option<(usize, usize)> = None;
     if let Some(arr) = root.get("hooks").and_then(|h| h.get("SessionStart")).and_then(|a| a.as_array()) {
@@ -785,6 +790,39 @@ pub fn registrations(ctx: &Ctx) -> Vec<Row> {
             }
             rows.push(row);
         }
+    }
+    rows
+}
+
+/// What `doctor` reports besides the server entries: the rules block of each detected client's instruction file (once per
+/// file, in the workspace) and Claude Code's user-scope hook. State only; nothing is written.
+pub fn extra_registrations(ctx: &Ctx) -> Vec<Row> {
+    let ws = PathBuf::from(&ctx.workspace);
+    let detected = |c: Client| {
+        [Scope::User, Scope::Project].into_iter().any(|s| ctx.locate(c, s).is_some_and(|(p, d)| p.exists() || d.exists()))
+    };
+    let mut rows: Vec<Row> = Vec::new();
+    for c in ALL.into_iter().filter(|c| detected(*c)) {
+        let path = ws.join(rules_file(c));
+        match rows.iter_mut().find(|r| r.path == path) {
+            Some(r) => r.client = format!("{},{}", r.client, c.name()),
+            None => {
+                let mut row = Row::new(c.name().to_string(), "rules", Scope::Project, path.clone());
+                let p = plan_rules(&path);
+                row.state = p.state;
+                row.note = p.note;
+                row.action = "none";
+                rows.push(row);
+            }
+        }
+    }
+    if let Some(path) = hook_file(ctx, Scope::User).filter(|_| detected(Client::Claude)) {
+        let p = plan_hook(&path);
+        let mut row = Row::new(Client::Claude.name().to_string(), "hook", Scope::User, path);
+        row.state = p.state;
+        row.note = p.note;
+        row.action = "none";
+        rows.push(row);
     }
     rows
 }
@@ -939,9 +977,16 @@ pub fn run(ctx: &Ctx, o: &Options) -> Result<Vec<Row>> {
                 None => files.push((f, vec![c.name()])),
             }
         }
+        let ws = PathBuf::from(&ctx.workspace);
         for (f, names) in files {
-            let path = ctx.project.join(f);
+            let path = ws.join(f);
             let row = Row::new(names.join(","), "rules", Scope::Project, path.clone());
+            if !ws.join(".comparegraph").is_dir() {
+                let mut row = row;
+                row.note = Some(format!("no CompareGraph store under {}; run `comparegraph add` first, then `setup` again", ctx.workspace));
+                rows.push(row);
+                continue;
+            }
             rows.push(settle(row, plan_rules(&path), o, &path, true)?);
         }
     }
