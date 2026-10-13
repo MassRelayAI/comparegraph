@@ -389,3 +389,64 @@ fn bounded_adjacency_answers_equal_the_recorded_whole_run_answers() {
         assert_eq!(&got[k], w, "answer changed for: {k}");
     }
 }
+
+#[test]
+fn dead_code_ignores_callers_that_run_at_load_time_in_a_test_file() {
+    // a test file's own scope (kind `test`) and a `describe` body run at load time: calling a method from them does not make
+    // it live; an `it:` case does. The provider emits none of these nodes for Python, so the run gets them by direct insert.
+    let lib = "class K:\n    def only_scope(self):\n        pass\n    def only_describe(self):\n        pass\n    def by_case(self):\n        pass\n";
+    let (ws, _c) = ws_with(&[("src/lib.py", lib), ("tests/test_x.py", "def test_x():\n    pass\n")]);
+    {
+        let db = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db")).unwrap();
+        let (repo, run): (i64, i64) = db.query_row("SELECT repo_id, id FROM run ORDER BY id DESC LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        let add = |kind: &str, name: &str| -> i64 {
+            db.execute(
+                "INSERT INTO node(repo_id,run_id,kind,name,qualified_name,path,line_start,line_end,content_hash,language) VALUES (?1,?2,?3,?4,?5,'tests/x.test.ts',1,2,'h','typescript')",
+                rusqlite::params![repo, run, kind, name, format!("tests/x.test.ts::{name}")],
+            )
+            .unwrap();
+            db.last_insert_rowid()
+        };
+        let scope = add("test", "x.test.ts");
+        let describe = add("function", "describe: x");
+        let case = add("function", "it: works");
+        for (src, qn) in [(scope, "only_scope"), (describe, "only_describe"), (case, "by_case")] {
+            let dst: i64 = db
+                .query_row("SELECT id FROM node WHERE run_id=?1 AND qualified_name=?2", rusqlite::params![run, format!("src/lib.py::{qn}")], |r| r.get(0))
+                .unwrap();
+            db.execute(
+                "INSERT INTO edge(repo_id,run_id,kind,source_node_id,target_node_id,confidence) VALUES (?1,?2,'calls',?3,?4,1.0)",
+                rusqlite::params![repo, run, src, dst],
+            )
+            .unwrap();
+        }
+    }
+    let d = json(cc(ws.path()).args(["dead-code", "r"]).assert().success());
+    let q = qns(&d);
+    assert!(q.contains(&"src/lib.py::only_scope".to_string()), "{q:?}");
+    assert!(q.contains(&"src/lib.py::only_describe".to_string()), "{q:?}");
+    assert!(!q.contains(&"src/lib.py::by_case".to_string()), "{q:?}");
+}
+
+#[test]
+fn a_hub_with_thousands_of_callees_is_cut_at_max_nodes_without_loading_them_all() {
+    let mut app = String::from("def hub():\n");
+    for i in 0..3000 {
+        app.push_str(&format!("    leaf{i:04}()\n"));
+    }
+    for i in 0..3000 {
+        app.push_str(&format!("\ndef leaf{i:04}():\n    pass\n"));
+    }
+    let (ws, _c) = ws_with(&[("src/hub.py", &app)]);
+    let t = std::time::Instant::now();
+    let v = json(
+        cc(ws.path())
+            .args(["traverse", "r", "src/hub.py::hub", "--direction", "callees", "--max-nodes", "10"])
+            .assert()
+            .success(),
+    );
+    assert!(t.elapsed().as_secs_f64() < 10.0, "took {:?}", t.elapsed());
+    let want: Vec<String> = (0..10).map(|i| format!("src/hub.py::leaf{i:04}")).collect();
+    assert_eq!(qns(&v), want, "the first ten in qualified-name order");
+    assert_eq!(v["data"]["truncated"], true);
+}

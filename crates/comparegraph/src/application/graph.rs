@@ -173,6 +173,30 @@ impl Ctx {
         Ok(())
     }
 
+    /// Qualified names of `ids` (cached rows first, one light query for the rest): enough to order neighbours without loading rows.
+    fn names_of(&self, ids: &[i64]) -> Result<HashMap<i64, String>> {
+        let mut out: HashMap<i64, String> = HashMap::new();
+        let mut missing: Vec<i64> = vec![];
+        for i in ids {
+            match self.nodes.get(i) {
+                Some(n) => {
+                    out.insert(*i, n.qualified_name.clone());
+                }
+                None => missing.push(*i),
+            }
+        }
+        if !missing.is_empty() {
+            let c = self.store.conn();
+            let mut st = c.prepare("SELECT id, qualified_name FROM node WHERE id IN (SELECT value FROM json_each(?1))")?;
+            let rows = st.query_map(params![ids_json(&missing)], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+            for row in rows {
+                let (i, n) = row?;
+                out.insert(i, n);
+            }
+        }
+        Ok(out)
+    }
+
     fn ensure_communities(&mut self, ids: &[i64]) -> Result<()> {
         let missing: Vec<i64> = ids.iter().copied().filter(|i| !self.community.contains_key(i)).collect();
         if missing.is_empty() {
@@ -277,7 +301,12 @@ impl Ctx {
             out.entry(t).or_default().push((s, conf));
         }
         for v in out.values_mut() {
-            v.sort_by(|a, b| self.nodes[&a.0].qualified_name.cmp(&self.nodes[&b.0].qualified_name));
+            v.sort_by(|a, b| {
+                self.nodes[&a.0]
+                    .qualified_name
+                    .cmp(&self.nodes[&b.0].qualified_name)
+                    .then(a.0.cmp(&b.0))
+            });
         }
         Ok(out)
     }
@@ -375,34 +404,47 @@ fn expand(
         if hop >= w.depth {
             continue;
         }
-        // one batch per frontier: this node and everything still queued that has no adjacency yet
+        // one batch per frontier: this node and everything still queued that will be expanded and has no adjacency yet
         for (want, outgoing) in [(want_out, true), (want_in, false)] {
             if want && !c.adj.contains_key(&(id, outgoing)) {
                 let mut batch: Vec<i64> = vec![id];
-                batch.extend(q.iter().map(|j| v[*j].id).filter(|x| !c.adj.contains_key(&(*x, outgoing))));
+                batch.extend(
+                    q.iter()
+                        .filter(|j| v[**j].hop < w.depth)
+                        .map(|j| v[*j].id)
+                        .filter(|x| !c.adj.contains_key(&(*x, outgoing))),
+                );
                 c.prefetch(&batch, outgoing, w.kinds, w.floor)?;
             }
         }
-        // neighbours passing the filters, each direction sorted by (qualified name, kind) as the whole-run walk did
+        // neighbours passing the filters, each direction sorted by (qualified name, kind, id) as the whole-run walk did;
+        // only the first `budget + 1` distinct neighbours can be taken before the cut, so only those node rows are loaded
+        let budget = w.max_nodes.saturating_sub(v.len() - n_starts) + 1;
         let mut next: Vec<(i64, EdgeKind, f64)> = vec![];
+        let mut taken: HashSet<i64> = HashSet::new();
         for (want, outgoing) in [(want_out, true), (want_in, false)] {
             if !want {
                 continue;
             }
-            let part: Vec<(i64, EdgeKind, f64)> = c.adj[&(id, outgoing)]
+            let mut part: Vec<(i64, EdgeKind, f64)> = c.adj[&(id, outgoing)]
                 .iter()
-                .filter(|(t, k, ec)| w.kinds.contains(k) && *ec >= min_conf && !seen.contains(t))
+                .filter(|(t, k, ec)| w.kinds.contains(k) && *ec >= min_conf && !seen.contains(t) && !taken.contains(t))
                 .copied()
                 .collect();
             let ids: Vec<i64> = part.iter().map(|p| p.0).collect();
-            c.ensure_nodes(&ids)?;
-            let mut part = part;
+            let names = c.names_of(&ids)?;
             part.sort_by(|a, b| {
-                c.nodes[&a.0]
-                    .qualified_name
-                    .cmp(&c.nodes[&b.0].qualified_name)
+                names[&a.0]
+                    .cmp(&names[&b.0])
                     .then(a.1.as_str().cmp(b.1.as_str()))
+                    .then(a.0.cmp(&b.0))
             });
+            let mut once: HashSet<i64> = HashSet::new();
+            part.retain(|p| once.insert(p.0));
+            part.truncate(budget);
+            let keep: Vec<i64> = part.iter().map(|p| p.0).collect();
+            c.ensure_nodes(&keep)?;
+            taken.extend(keep);
             next.extend(part);
         }
         for (t, _k, ec) in next {
@@ -517,7 +559,7 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
             return Err(AppError::NotFound(format!("no file {f} in {}", c.repo)));
         }
         c.ensure_nodes(&ids)?;
-        ids.sort_by(|a, b| c.nodes[a].qualified_name.cmp(&c.nodes[b].qualified_name));
+        ids.sort_by(|a, b| c.nodes[a].qualified_name.cmp(&c.nodes[b].qualified_name).then(a.cmp(b)));
         starts.extend(ids);
     }
     let kinds = [
@@ -675,23 +717,30 @@ struct Referenced {
 fn referenced(c: &Ctx, min_conf: f64) -> Result<Referenced> {
     let conn = c.store.conn();
     let mut st = conn.prepare(
-        "SELECT e.target_node_id, e.kind, CASE WHEN s.kind = ?3 THEN s.path END, CASE WHEN s.kind = ?3 THEN s.provider_ref END \
+        "SELECT e.target_node_id, e.kind, CASE WHEN s.kind = ?3 THEN s.path END, CASE WHEN s.kind = ?3 THEN s.provider_ref END, \
+                s.kind = ?4, CASE WHEN s.name LIKE 'describe: %' THEN s.path END \
          FROM edge e JOIN node s ON s.id = e.source_node_id \
          WHERE e.run_id = ?1 AND e.confidence >= ?2 AND e.kind IN ('calls','extends','implements') AND e.source_node_id <> e.target_node_id \
-         GROUP BY 1, 2, 3, 4",
+         GROUP BY 1, 2, 3, 4, 5, 6",
     )?;
     let mut called = HashSet::new();
     let mut referenced = HashSet::new();
-    let rows = st.query_map(params![c.run_id, min_conf, NodeKind::File.as_str()], |r| {
+    let rows = st.query_map(params![c.run_id, min_conf, NodeKind::File.as_str(), NodeKind::Test.as_str()], |r| {
         Ok((
             r.get::<_, i64>(0)?,
             r.get::<_, String>(1)?,
             r.get::<_, Option<String>>(2)?,
             r.get::<_, Option<String>>(3)?,
+            r.get::<_, bool>(4)?,
+            r.get::<_, Option<String>>(5)?,
         ))
     })?;
     for row in rows {
-        let (t, k, file_path, pref) = row?;
+        let (t, k, file_path, pref, is_test_node, describe_path) = row?;
+        // a test file's own scope and a `describe` body run at load time, not as a test: neither makes its callee live
+        if is_test_node || describe_path.as_deref().is_some_and(is_test_path) {
+            continue;
+        }
         if let Some(p) = &file_path {
             if !is_entry_file(p, pref.as_deref()) {
                 continue;
@@ -744,7 +793,7 @@ fn paged_nodes(
     let kind_list = kinds.iter().map(|k| format!("'{}'", k.as_str())).collect::<Vec<_>>().join(",");
     let conn = c.store.conn();
     let mut st = conn.prepare(&format!(
-        "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ({kind_list}) ORDER BY qualified_name"
+        "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ({kind_list}) ORDER BY qualified_name, path, line_start, id"
     ))?;
     let rows = st.query_map(params![c.run_id], node_from_row)?;
     let (mut total, mut items) = (0usize, vec![]);

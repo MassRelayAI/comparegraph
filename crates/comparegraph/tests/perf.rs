@@ -11,6 +11,11 @@ fn cc(root: &std::path::Path) -> assert_cmd::Command {
 
 #[test]
 fn queries_at_default_bounds_on_a_wide_project_are_fast_and_capped() {
+    // wall-clock bounds are meaningless on a loaded host: COMPAREGRAPH_SKIP_PERF=1 skips (the capped-answer checks go with it)
+    if std::env::var("COMPAREGRAPH_SKIP_PERF").is_ok_and(|v| v == "1") {
+        eprintln!("skipped: COMPAREGRAPH_SKIP_PERF=1");
+        return;
+    }
     let d = tempfile::tempdir().unwrap();
     std::fs::write(d.path().join("LICENSE"), "MIT License\n\nCopyright (c) 2026 S\n").unwrap();
     std::fs::create_dir_all(d.path().join("src")).unwrap();
