@@ -22,7 +22,7 @@ use std::path::PathBuf;
     about = "Many clones, one taxonomy, evidence on every cell"
 )]
 pub struct Cli {
-    #[arg(long, default_value = ".")]
+    #[arg(long, global = true, default_value = ".")]
     pub root: PathBuf,
     #[arg(long)]
     pub pretty: bool,
@@ -58,6 +58,9 @@ pub enum Cmd {
         /// bypass the per-file parse cache
         #[arg(long)]
         full: bool,
+        /// print progress lines to stderr while building (also COMPAREGRAPH_PROGRESS=1); stdout stays one envelope
+        #[arg(long)]
+        progress: bool,
     },
     /// Verify: schema, determinism, locations
     Check,
@@ -102,6 +105,11 @@ pub enum Cmd {
         kinds: String,
         #[arg(long, default_value_t = 0.5)]
         min_confidence: f64,
+        /// page size of the items (1..=500)
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// Everything that transitively depends on a symbol or file(s), by hop, plus the tests that reach it
     Impact {
@@ -115,6 +123,11 @@ pub enum Cmd {
         max_nodes: usize,
         #[arg(long, default_value_t = 0.5)]
         min_confidence: f64,
+        /// page size of the items (1..=500)
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// Tests linked to a symbol directly or through at most 3 call hops
     TestsFor {
@@ -124,6 +137,11 @@ pub enum Cmd {
         max_nodes: usize,
         #[arg(long, default_value_t = 0.5)]
         min_confidence: f64,
+        /// page size of the items (1..=500)
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// Symbols nothing calls that are exported, handlers or main
     EntryPoints {
@@ -178,7 +196,13 @@ pub enum Cmd {
         file: Option<PathBuf>,
     },
     /// Registered repos with their latest run summary
-    Repos,
+    Repos {
+        /// page size (1..=500)
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
     /// Module clusters of a repo's latest run
     Communities {
         repo: String,
@@ -348,7 +372,7 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::Doctor { .. } => "doctor",
         Cmd::Setup { .. } => "setup",
         Cmd::Catalog { .. } => "catalog",
-        Cmd::Repos => "repos",
+        Cmd::Repos { .. } => "repos",
         Cmd::Mcp => "mcp",
         Cmd::Communities { .. } => "communities",
         Cmd::Conform { .. } => "conform",
@@ -567,6 +591,10 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
     }
 }
 
+fn progress_on(flag: bool) -> bool {
+    flag || std::env::var_os("COMPAREGRAPH_PROGRESS").is_some_and(|v| v != "0" && !v.is_empty())
+}
+
 type Failure = (AppError, Option<serde_json::Value>);
 
 fn dispatch(cli: &Cli) -> Result<serde_json::Value, Failure> {
@@ -587,12 +615,13 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             max_file_bytes,
             max_files,
             full,
+            progress,
         } if !providers.is_empty() => {
             let rep = crate::application::build::build_many(
                 &cli.root,
                 repo,
                 providers,
-                &BuildOptions { max_file_bytes: *max_file_bytes, max_files: *max_files, full: *full, ..BuildOptions::default() },
+                &BuildOptions { max_file_bytes: *max_file_bytes, max_files: *max_files, full: *full, progress: progress_on(*progress), ..BuildOptions::default() },
             )?;
             eprint!("{}", crate::application::agreement::table(&rep.agreement));
             serde_json::to_value(rep).unwrap()
@@ -603,6 +632,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             max_file_bytes,
             max_files,
             full,
+            progress,
             ..
         } => serde_json::to_value(build_repo(
             &cli.root,
@@ -612,6 +642,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 max_file_bytes: *max_file_bytes,
                 max_files: *max_files,
                 full: *full,
+                progress: progress_on(*progress),
                 ..BuildOptions::default()
             },
         )?)
@@ -705,6 +736,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             max_nodes,
             kinds,
             min_confidence,
+            limit,
+            cursor,
         } => g::traverse(
             &cli.root,
             repo,
@@ -715,6 +748,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 max_nodes: *max_nodes,
                 kinds: g::parse_kinds(kinds)?,
                 min_conf: *min_confidence,
+                limit: *limit,
+                cursor: cursor.as_deref(),
             },
         )?,
         Cmd::Impact {
@@ -724,6 +759,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             depth,
             max_nodes,
             min_confidence,
+            limit,
+            cursor,
         } => g::impact(
             &cli.root,
             repo,
@@ -733,6 +770,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 depth: *depth,
                 max_nodes: *max_nodes,
                 min_conf: *min_confidence,
+                limit: *limit,
+                cursor: cursor.as_deref(),
             },
         )?,
         Cmd::TestsFor {
@@ -740,7 +779,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             qualified_name,
             max_nodes,
             min_confidence,
-        } => g::tests_for(&cli.root, repo, qualified_name, *max_nodes, *min_confidence)?,
+            limit,
+            cursor,
+        } => g::tests_for(&cli.root, repo, qualified_name, *max_nodes, *min_confidence, *limit, cursor.as_deref())?,
         Cmd::EntryPoints {
             repo,
             limit,
@@ -956,10 +997,19 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             serde_json::json!({ "file": p, "stale": false })
         }
         Cmd::Mcp => unreachable!("mcp is served by run()"),
-        Cmd::Repos => {
+        Cmd::Repos { limit, cursor } => {
+            let offset = match cursor {
+                Some(c) => c
+                    .parse::<usize>()
+                    .map_err(|_| AppError::InvalidArguments(format!("bad cursor {c}")))?,
+                None => 0,
+            };
+            let limit = (*limit).clamp(1, 500);
             let store = Store::open_existing(&cli.root)?;
             let mut out = Vec::new();
-            for r in store.repos()? {
+            let all = store.repos()?;
+            let total = all.len();
+            for r in all.into_iter().skip(offset).take(limit) {
                 let run = match r.id {
                     Some(id) => store.latest_run(id)?,
                     None => None,
@@ -981,8 +1031,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     "head": r.head, "latest_run": latest,
                 }));
             }
-            let total = out.len();
-            serde_json::json!({ "items": out, "page": { "next": null, "total": total } })
+            let next = (offset + out.len() < total).then(|| (offset + out.len()).to_string());
+            serde_json::json!({ "items": out, "page": { "next": next, "total": total } })
         }
         Cmd::Communities {
             repo,

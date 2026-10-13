@@ -34,7 +34,7 @@ pub fn tools() -> Vec<Value> {
         .unwrap()
         .extend(page_props().as_object().unwrap().clone());
     vec![
-        tool("comparegraph_repos", "List registered repos (name, licence, lane, role, head) with the latest run summary (status, nodes, communities, store_hash). Returns a compact envelope.", schema(json!({}), &[])),
+        tool("comparegraph_repos", "List registered repos (name, licence, lane, role, head) with the latest run summary (status, nodes, communities, store_hash). Returns a compact, paged envelope.", schema(page_props(), &[])),
         tool("comparegraph_search", "Full-text search over symbols of each repo's latest run. Returns a compact, paged envelope of hits with licence-lane labels.", schema(search_props, &["query"])),
         tool("comparegraph_show", "One symbol with callers, callees, community and licence lane. Compact by default; detail=full adds its current source lines.", schema(json!({
             "repo": {"type":"string"}, "qualified_name": {"type":"string"},
@@ -61,19 +61,22 @@ pub fn tools() -> Vec<Value> {
             "at": {"type":"array","items":{"type":"string"},"description":"citations, path:start-end or path:line, relative to the clone"},
             "searched": {"type":"string","description":"terms the absence was checked with (none)"},
             "note": {"type":"string"} }), &["repo", "feature", "verdict", "author"])),
-        tool("comparegraph_traverse", "Nodes reachable from a symbol over calls/extends/implements (kinds), with hop distance, path_confidence and the path to each. Bounded: depth<=10, max_nodes<=2000; truncation is recorded in evidence.limitations.", schema(json!({
+        tool("comparegraph_traverse", "Nodes reachable from a symbol over calls/extends/implements (kinds), with hop distance, path_confidence and the path to each. Summary first (total, by_hop, by_kind), then items paged by limit/cursor, best path_confidence first. Bounded: depth<=10, max_nodes<=2000; truncation is recorded in evidence.limitations.", schema(json!({
             "repo": {"type":"string"}, "qualified_name": {"type":"string"},
             "direction": {"type":"string","enum":["callers","callees","both"]},
             "depth": {"type":"integer","minimum":1,"maximum":10}, "max_nodes": {"type":"integer","minimum":1,"maximum":2000},
             "kinds": {"type":"string","description":"comma list of calls,extends,implements,imports,tests"},
-            "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo", "qualified_name"])),
-        tool("comparegraph_impact", "Blast radius: everything that transitively depends on a symbol or on file(s), grouped by hop with its community, plus the tests that reach it.", schema(json!({
+            "min_confidence": {"type":"number","enum":[0.5,1.0]},
+            "limit": {"type":"integer","minimum":1,"maximum":500,"description":"page size of items, default 50"}, "cursor": {"type":"string"} }), &["repo", "qualified_name"])),
+        tool("comparegraph_impact", "Blast radius: everything that transitively depends on a symbol or on file(s), summary first (total, by_hop, by_kind) then items paged by limit/cursor (best path_confidence first, each with hop and community), plus the tests that reach it.", schema(json!({
             "repo": {"type":"string"}, "qualified_name": {"type":"string"}, "files": {"type":"array","items":{"type":"string"}},
             "depth": {"type":"integer","minimum":1,"maximum":10}, "max_nodes": {"type":"integer","minimum":1,"maximum":2000},
-            "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
+            "min_confidence": {"type":"number","enum":[0.5,1.0]},
+            "limit": {"type":"integer","minimum":1,"maximum":500,"description":"page size of items, default 50"}, "cursor": {"type":"string"} }), &["repo"])),
         tool("comparegraph_tests_for", "Tests linked to a symbol directly or through at most 3 call hops.", schema(json!({
             "repo": {"type":"string"}, "qualified_name": {"type":"string"}, "max_nodes": {"type":"integer","minimum":1,"maximum":2000},
-            "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo", "qualified_name"])),
+            "min_confidence": {"type":"number","enum":[0.5,1.0]},
+            "limit": {"type":"integer","minimum":1,"maximum":500,"description":"page size of items, default 50"}, "cursor": {"type":"string"} }), &["repo", "qualified_name"])),
         tool("comparegraph_entry_points", "Symbols nothing calls that are exported, handler-named or main. Paged.", schema(json!({
             "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500}, "cursor": {"type":"string"},
             "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
@@ -127,17 +130,18 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         return Err("arguments must be an object".into());
     }
     let known: &[&str] = match name {
-        "comparegraph_repos" | "comparegraph_check" | "comparegraph_doctor" => &[],
+        "comparegraph_check" | "comparegraph_doctor" => &[],
+        "comparegraph_repos" => &["limit", "cursor"],
         "comparegraph_search" => &["query", "repo", "kind", "limit", "cursor"],
         "comparegraph_show" => &["repo", "qualified_name", "detail", "max_callers"],
         "comparegraph_communities" => &["repo", "limit", "cursor"],
         "comparegraph_traverse" => &[
-            "repo", "qualified_name", "direction", "depth", "max_nodes", "kinds", "min_confidence",
+            "repo", "qualified_name", "direction", "depth", "max_nodes", "kinds", "min_confidence", "limit", "cursor",
         ],
         "comparegraph_impact" => &[
-            "repo", "qualified_name", "files", "depth", "max_nodes", "min_confidence",
+            "repo", "qualified_name", "files", "depth", "max_nodes", "min_confidence", "limit", "cursor",
         ],
-        "comparegraph_tests_for" => &["repo", "qualified_name", "max_nodes", "min_confidence"],
+        "comparegraph_tests_for" => &["repo", "qualified_name", "max_nodes", "min_confidence", "limit", "cursor"],
         "comparegraph_entry_points" | "comparegraph_dead_code" => {
             &["repo", "limit", "cursor", "min_confidence"]
         }
@@ -161,7 +165,10 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         return Err(format!("unknown argument {k}"));
     }
     Ok(match name {
-        "comparegraph_repos" => Cmd::Repos,
+        "comparegraph_repos" => Cmd::Repos {
+            limit: limit_arg(a)?,
+            cursor: str_arg(a, "cursor")?,
+        },
         "comparegraph_check" => Cmd::Check,
         "comparegraph_doctor" => Cmd::Doctor { bin: None },
         "comparegraph_search" => Cmd::Search {
@@ -185,6 +192,8 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             max_nodes: uint_arg(a, "max_nodes", 200)?,
             kinds: str_arg(a, "kinds")?.unwrap_or_else(|| "calls,extends,implements".into()),
             min_confidence: conf_arg(a)?,
+            limit: limit_arg(a)?,
+            cursor: str_arg(a, "cursor")?,
         },
         "comparegraph_impact" => Cmd::Impact {
             repo: req(a, "repo")?,
@@ -204,12 +213,16 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             depth: uint_arg(a, "depth", 5)?,
             max_nodes: uint_arg(a, "max_nodes", 500)?,
             min_confidence: conf_arg(a)?,
+            limit: limit_arg(a)?,
+            cursor: str_arg(a, "cursor")?,
         },
         "comparegraph_tests_for" => Cmd::TestsFor {
             repo: req(a, "repo")?,
             qualified_name: req(a, "qualified_name")?,
             max_nodes: uint_arg(a, "max_nodes", 200)?,
             min_confidence: conf_arg(a)?,
+            limit: limit_arg(a)?,
+            cursor: str_arg(a, "cursor")?,
         },
         "comparegraph_entry_points" => Cmd::EntryPoints {
             repo: req(a, "repo")?,

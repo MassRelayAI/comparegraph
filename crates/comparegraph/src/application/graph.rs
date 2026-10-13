@@ -502,6 +502,47 @@ fn answer(mut data: Value, guessed: usize, mut lims: Vec<Limitation>, base: &str
     data
 }
 
+
+/// Summary-first shape shared by traverse, impact and tests-for: counts by hop and by kind over every reached item,
+/// then the items ordered by path_confidence desc, hop asc, qualified_name, one page of them.
+fn summarize_and_page(
+    mut items: Vec<Value>,
+    max_nodes: usize,
+    truncated: bool,
+    limit: usize,
+    cursor: Option<&str>,
+) -> Result<(Value, Vec<Value>, Value)> {
+    let offset = match cursor {
+        Some(cur) => cur
+            .parse::<usize>()
+            .map_err(|_| AppError::InvalidArguments(format!("bad cursor {cur}")))?,
+        None => 0,
+    };
+    let limit = limit.clamp(1, 500);
+    items.sort_by(|a, b| {
+        let conf = |v: &Value| v["path_confidence"].as_f64().unwrap_or(0.0);
+        conf(b)
+            .partial_cmp(&conf(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a["hop"].as_u64().cmp(&b["hop"].as_u64()))
+            .then(a["qualified_name"].as_str().cmp(&b["qualified_name"].as_str()))
+    });
+    let total = items.len();
+    let mut hops: std::collections::BTreeMap<u64, usize> = Default::default();
+    let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
+    for i in &items {
+        if let Some(h) = i["hop"].as_u64() {
+            *hops.entry(h).or_default() += 1;
+        }
+        *kinds.entry(i["kind"].as_str().unwrap_or("unknown").to_string()).or_default() += 1;
+    }
+    let by_hop: Vec<Value> = hops.into_iter().map(|(h, n)| json!({ "hop": h, "count": n })).collect();
+    let summary = json!({ "total": total, "truncated": truncated, "max_nodes": max_nodes, "by_hop": by_hop, "by_kind": kinds });
+    let page_items: Vec<Value> = items.into_iter().skip(offset).take(limit).collect();
+    let next = (offset + page_items.len() < total).then(|| (offset + page_items.len()).to_string());
+    Ok((summary, page_items, json!({ "next": next, "total": total })))
+}
+
 pub struct TraverseOpts<'a> {
     pub qualified_name: &'a str,
     pub direction: Direction,
@@ -509,6 +550,8 @@ pub struct TraverseOpts<'a> {
     pub max_nodes: usize,
     pub kinds: Vec<EdgeKind>,
     pub min_conf: f64,
+    pub limit: usize,
+    pub cursor: Option<&'a str>,
 }
 
 pub fn traverse(root: &Path, repo: &str, o: &TraverseOpts) -> Result<Value> {
@@ -520,8 +563,9 @@ pub fn traverse(root: &Path, repo: &str, o: &TraverseOpts) -> Result<Value> {
     let nodes: Vec<Value> = (1..v.len()).map(|i| c.hit(&v, i)).collect();
     let guessed = v.iter().skip(1).filter(|r| r.conf < 1.0).count();
     let total = nodes.len();
+    let (summary, items, page) = summarize_and_page(nodes, o.max_nodes, truncated, o.limit, o.cursor)?;
     Ok(answer(
-        json!({ "repo": c.repo, "start": o.qualified_name, "items": nodes, "total": total, "truncated": truncated }),
+        json!({ "repo": c.repo, "start": o.qualified_name, "summary": summary, "items": items, "page": page, "total": total, "truncated": truncated }),
         guessed,
         limitations(truncated, o.max_nodes, guessed),
         "",
@@ -534,6 +578,8 @@ pub struct ImpactOpts<'a> {
     pub depth: usize,
     pub max_nodes: usize,
     pub min_conf: f64,
+    pub limit: usize,
+    pub cursor: Option<&'a str>,
 }
 
 pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
@@ -571,19 +617,7 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
     let (v, truncated) = bfs(&mut c, &starts, Direction::Callers, &kinds, o.min_conf, o.depth, o.max_nodes)?;
     c.load_reached(&v)?;
     let n_starts = v.iter().take_while(|r| r.hop == 0).count();
-    let mut by_hop: Vec<Value> = vec![];
-    let mut hop_no = 1;
-    loop {
-        let items: Vec<Value> = (n_starts..v.len())
-            .filter(|i| v[*i].hop == hop_no)
-            .map(|i| c.hit(&v, i))
-            .collect();
-        if items.is_empty() {
-            break;
-        }
-        by_hop.push(json!({ "hop": hop_no, "nodes": items }));
-        hop_no += 1;
-    }
+    let hits: Vec<Value> = (n_starts..v.len()).map(|i| c.hit(&v, i)).collect();
     // related tests: test-path nodes among the impacted, and sources of `tests` edges into the target or an impacted node
     let reached: Vec<i64> = v.iter().map(|r| r.id).collect();
     let into = c.tests_into(&reached, o.min_conf)?;
@@ -612,16 +646,27 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
     tests.sort_by(|a, b| a["qualified_name"].as_str().cmp(&b["qualified_name"].as_str()));
     let guessed = v.iter().skip(n_starts).filter(|r| r.conf < 1.0).count();
     let total = v.len() - n_starts;
+    let (mut summary, items, page) = summarize_and_page(hits, o.max_nodes, truncated, o.limit, o.cursor)?;
+    let tests_total = tests.len();
+    let mut lims = limitations(truncated, o.max_nodes, guessed);
+    if tests_total > o.limit.clamp(1, 500) {
+        tests.truncate(o.limit.clamp(1, 500));
+        lims.push(Limitation::new(
+            "tests_capped",
+            format!("{tests_total} related tests found, the first {} listed (same --limit as items; use tests-for for the full list)", tests.len()),
+        ));
+    }
+    summary["tests_total"] = json!(tests_total);
     Ok(answer(
         json!({ "repo": c.repo, "targets": starts.iter().take(n_starts).map(|i| c.nodes[i].qualified_name.clone()).collect::<Vec<_>>(),
-                "total": total, "by_hop": by_hop, "tests": tests, "truncated": truncated }),
+                "summary": summary, "items": items, "page": page, "total": total, "tests": tests, "truncated": truncated }),
         guessed,
-        limitations(truncated, o.max_nodes, guessed),
+        lims,
         "",
     ))
 }
 
-pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: f64) -> Result<Value> {
+pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: f64, limit: usize, cursor: Option<&str>) -> Result<Value> {
     check_bounds(1, max_nodes, min_conf)?;
     let mut c = Ctx::open(root, repo)?;
     let start = c.node(qn)?;
@@ -688,8 +733,9 @@ pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: 
         .filter(|i| i["path_confidence"].as_f64().unwrap_or(1.0) < 1.0)
         .count();
     let total = items.len();
+    let (summary, items, page) = summarize_and_page(items, max_nodes, truncated, limit, cursor)?;
     Ok(answer(
-        json!({ "repo": c.repo, "symbol": qn, "items": items, "total": total, "truncated": truncated }),
+        json!({ "repo": c.repo, "symbol": qn, "summary": summary, "items": items, "page": page, "total": total, "truncated": truncated }),
         guessed,
         limitations(truncated, max_nodes, guessed),
         "",

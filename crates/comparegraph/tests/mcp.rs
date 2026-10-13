@@ -313,3 +313,49 @@ fn map_limit_out_of_range_is_invalid_arguments() {
         assert_eq!(tool_env(o)["error"]["code"], "invalid_arguments");
     }
 }
+
+#[test]
+fn show_over_mcp_declares_the_caller_cap_in_evidence_limitations() {
+    let ws = tempfile::tempdir().unwrap();
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("src")).unwrap();
+    std::fs::write(
+        d.path().join("src/a.ts"),
+        "export function g() { return 1; }\nexport function f1() { return g(); }\nexport function f2() { return g(); }\nexport function f3() { return g(); }\n",
+    )
+    .unwrap();
+    std::fs::write(d.path().join("LICENSE"), "Apache License\nVersion 2.0\n").unwrap();
+    for args in [vec!["init", "-q"], vec!["add", "."], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "x"]] {
+        Command::new("git").arg("-C").arg(d.path()).args(&args).status().unwrap();
+    }
+    for args in [vec!["add".to_string(), d.path().to_string_lossy().into_owned(), "--name".into(), "a".into()], vec!["build".into(), "a".into()]] {
+        assert!(Command::new(bin()).arg("--root").arg(ws.path()).args(args).output().unwrap().status.success());
+    }
+    let (_, out) = session(
+        ws.path(),
+        &[req(1, "tools/call", json!({"name":"comparegraph_show","arguments":{"repo":"a","qualified_name":"src/a.ts::g","max_callers":1}}))],
+    );
+    let env = tool_env(&out[0]);
+    assert_eq!(env["data"]["callers_total"], 3, "{env}");
+    assert_eq!(env["data"]["callers"].as_array().unwrap().len(), 1);
+    let lims = env["evidence"]["limitations"].as_array().unwrap();
+    assert!(lims.iter().any(|l| l["code"] == "truncated"), "{env}");
+}
+
+#[test]
+fn impact_and_repos_take_limit_and_cursor_over_mcp() {
+    let (ws, _c) = built_ws();
+    let (_, out) = session(
+        ws.path(),
+        &[
+            req(1, "tools/call", json!({"name":"comparegraph_repos","arguments":{"limit":1}})),
+            req(2, "tools/call", json!({"name":"comparegraph_impact","arguments":{"repo":"a","qualified_name":"src/a.ts::g","limit":1,"cursor":"0"}})),
+            req(3, "tools/call", json!({"name":"comparegraph_tests_for","arguments":{"repo":"a","qualified_name":"src/a.ts::g","limit":1}})),
+            req(4, "tools/call", json!({"name":"comparegraph_traverse","arguments":{"repo":"a","qualified_name":"src/a.ts::g","limit":1}})),
+        ],
+    );
+    for o in &out {
+        assert_eq!(o["result"]["isError"], false, "{o}");
+    }
+    assert!(tool_env(&out[1])["data"]["summary"]["total"].is_number());
+}

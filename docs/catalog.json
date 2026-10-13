@@ -232,7 +232,7 @@
     },
     {
       "name": "comparegraph_impact",
-      "description": "Blast radius: everything that transitively depends on a symbol or on file(s), grouped by hop with its community, plus the tests that reach it.",
+      "description": "Blast radius: everything that transitively depends on a symbol or on file(s), summary first (total, by_hop, by_kind) then items paged by limit/cursor (best path_confidence first, each with hop and community), plus the tests that reach it.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -265,6 +265,15 @@
               0.5,
               1.0
             ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "page size of items, default 50"
+          },
+          "cursor": {
+            "type": "string"
           }
         },
         "required": [
@@ -341,11 +350,22 @@
     },
     {
       "name": "comparegraph_repos",
-      "description": "List registered repos (name, licence, lane, role, head) with the latest run summary (status, nodes, communities, store_hash). Returns a compact envelope.",
+      "description": "List registered repos (name, licence, lane, role, head) with the latest run summary (status, nodes, communities, store_hash). Returns a compact, paged envelope.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "properties": {},
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "page size, default 50"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "opaque cursor from a previous page"
+          }
+        },
         "required": [],
         "additionalProperties": false
       }
@@ -443,6 +463,15 @@
               0.5,
               1.0
             ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "page size of items, default 50"
+          },
+          "cursor": {
+            "type": "string"
           }
         },
         "required": [
@@ -454,7 +483,7 @@
     },
     {
       "name": "comparegraph_traverse",
-      "description": "Nodes reachable from a symbol over calls/extends/implements (kinds), with hop distance, path_confidence and the path to each. Bounded: depth<=10, max_nodes<=2000; truncation is recorded in evidence.limitations.",
+      "description": "Nodes reachable from a symbol over calls/extends/implements (kinds), with hop distance, path_confidence and the path to each. Summary first (total, by_hop, by_kind), then items paged by limit/cursor, best path_confidence first. Bounded: depth<=10, max_nodes<=2000; truncation is recorded in evidence.limitations.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -493,6 +522,15 @@
               0.5,
               1.0
             ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "page size of items, default 50"
+          },
+          "cursor": {
+            "type": "string"
           }
         },
         "required": [

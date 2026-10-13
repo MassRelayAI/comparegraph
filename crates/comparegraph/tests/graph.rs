@@ -155,13 +155,7 @@ fn impact_by_file_follows_imports_and_lists_the_tests() {
             .assert()
             .success(),
     );
-    let all: Vec<String> = v["data"]["by_hop"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .flat_map(|h| h["nodes"].as_array().unwrap().clone())
-        .map(|n| n["qualified_name"].as_str().unwrap().to_string())
-        .collect();
+    let all = qns(&v);
     assert!(all.contains(&"tests/test_app.py".to_string()), "{all:?}");
     let tests: Vec<&str> = v["data"]["tests"]
         .as_array()
@@ -449,4 +443,87 @@ fn a_hub_with_thousands_of_callees_is_cut_at_max_nodes_without_loading_them_all(
     let want: Vec<String> = (0..10).map(|i| format!("src/hub.py::leaf{i:04}")).collect();
     assert_eq!(qns(&v), want, "the first ten in qualified-name order");
     assert_eq!(v["data"]["truncated"], true);
+}
+
+/// Walks every page with `--limit 1` and the returned cursor; each item appears exactly once.
+fn walk(ws: &std::path::Path, verb_args: &[&str]) -> (Value, Vec<String>) {
+    let mut seen = vec![];
+    let mut cursor: Option<String> = None;
+    let first = loop {
+        let mut a: Vec<String> = verb_args.iter().map(|s| s.to_string()).collect();
+        a.extend(["--limit".into(), "1".into()]);
+        if let Some(c) = &cursor {
+            a.extend(["--cursor".into(), c.clone()]);
+        }
+        let v = json(cc(ws).args(&a).assert().success());
+        let items = v["data"]["items"].as_array().unwrap();
+        assert!(items.len() <= 1, "{v}");
+        seen.extend(qns(&v));
+        match v["page"]["next"].as_str() {
+            Some(n) => cursor = Some(n.to_string()),
+            None => break v,
+        }
+    };
+    (first, seen)
+}
+
+#[test]
+fn traverse_impact_and_tests_for_answer_summary_first_and_page_every_item_once() {
+    let mut app = String::from("def target():\n    pass\n");
+    for i in 0..7 {
+        app.push_str(&format!("\ndef caller{i}():\n    target()\n"));
+    }
+    let mut t = String::from("from src.wide import target\n");
+    for i in 0..4 {
+        t.push_str(&format!("\ndef test_c{i}():\n    target()\n"));
+    }
+    let (ws, _c) = ws_with(&[("src/wide.py", &app), ("tests/test_wide.py", &t)]);
+    for args in [
+        vec!["traverse", "r", "src/wide.py::target", "--direction", "callers"],
+        vec!["impact", "r", "src/wide.py::target"],
+        vec!["tests-for", "r", "src/wide.py::target"],
+    ] {
+        let all = json(cc(ws.path()).args(&args).assert().success());
+        let total = all["data"]["summary"]["total"].as_u64().unwrap();
+        assert!(total >= 4, "{args:?}: {all}");
+        assert_eq!(all["data"]["total"], total);
+        assert_eq!(all["data"]["summary"]["truncated"], false);
+        assert!(all["data"]["summary"]["by_hop"].is_array());
+        assert!(all["data"]["summary"]["by_kind"].is_object());
+        assert!(all["data"]["summary"]["max_nodes"].as_u64().is_some());
+        assert_eq!(all["page"]["total"], total);
+        let full = qns(&all);
+        assert_eq!(full.len() as u64, total, "default page holds them all");
+        let (last, walked) = walk(ws.path(), &args);
+        assert_eq!(walked.len() as u64, total, "{args:?}");
+        let mut a = walked.clone();
+        a.sort();
+        a.dedup();
+        assert_eq!(a.len(), walked.len(), "each item once: {walked:?}");
+        let mut b = full.clone();
+        b.sort();
+        assert_eq!(a, b);
+        assert!(last["page"]["next"].is_null());
+        // ordered by path_confidence desc, hop asc, name
+        assert_eq!(walked, full);
+    }
+    // the first page of a limit-1 call says there is more
+    let first = json(cc(ws.path()).args(["impact", "r", "src/wide.py::target", "--limit", "1"]).assert().success());
+    assert_eq!(first["page"]["next"], "1");
+    cc(ws.path()).args(["impact", "r", "src/wide.py::target", "--cursor", "x"]).assert().failure();
+}
+
+#[test]
+fn impact_pages_and_still_declares_truncation() {
+    let mut app = String::from("def target():\n    pass\n");
+    for i in 0..30 {
+        app.push_str(&format!("\ndef caller{i}():\n    target()\n"));
+    }
+    let (ws, _c) = ws_with(&[("src/wide.py", &app)]);
+    let v = json(cc(ws.path()).args(["impact", "r", "src/wide.py::target", "--max-nodes", "5", "--limit", "2"]).assert().success());
+    assert_eq!(v["data"]["summary"]["truncated"], true);
+    assert_eq!(v["data"]["summary"]["max_nodes"], 5);
+    assert_eq!(v["data"]["items"].as_array().unwrap().len(), 2);
+    assert_eq!(v["page"]["total"], 5);
+    assert!(codes(&v).contains(&"truncated".to_string()));
 }
