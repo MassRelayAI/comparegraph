@@ -107,7 +107,7 @@ fn initialize_and_list_tools() {
     assert_eq!(out[0]["result"]["serverInfo"]["name"], "comparegraph");
     assert!(out[0]["result"]["capabilities"]["tools"].is_object());
     let tools = out[1]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 17);
+    assert_eq!(tools.len(), 18);
     for t in tools {
         assert_eq!(t["inputSchema"]["type"], "object");
         assert_eq!(t["inputSchema"]["additionalProperties"], false);

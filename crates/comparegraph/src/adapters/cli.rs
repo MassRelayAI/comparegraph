@@ -198,6 +198,12 @@ pub enum Cmd {
         #[arg(long, default_value_t = 5)]
         limit: usize,
     },
+    /// Is a feature absent from a clone's graph? Four channels (symbols, paths, communities, kinds); reads, writes nothing
+    AbsentCheck {
+        repo: String,
+        family: String,
+        feature: String,
+    },
     /// Score each clone against each family (related|adjacent|unrelated) and record the band
     Relate {
         #[arg(long)]
@@ -335,6 +341,7 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::Conform { .. } => "conform",
         Cmd::Family { .. } => "family",
         Cmd::Map { .. } => "map",
+        Cmd::AbsentCheck { .. } => "absent-check",
         Cmd::Relate { .. } => "relate",
         Cmd::Claim { .. } => "claim",
         Cmd::Claims { .. } => "claims",
@@ -650,6 +657,14 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             let total = items.len();
             serde_json::json!({ "items": items, "page": { "next": null, "total": total } })
         }
+        Cmd::AbsentCheck {
+            repo,
+            family,
+            feature,
+        } => serde_json::to_value(crate::application::absent::absent_check(
+            &cli.root, repo, family, feature,
+        )?)
+        .unwrap(),
         Cmd::Claim {
             repo,
             feature,

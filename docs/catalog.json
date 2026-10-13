@@ -3,6 +3,32 @@
   "version": "0.1.0",
   "tools": [
     {
+      "name": "comparegraph_absent_check",
+      "description": "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits. Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "feature": {
+            "type": "string",
+            "description": "one feature id"
+          }
+        },
+        "required": [
+          "repo",
+          "family",
+          "feature"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "comparegraph_check",
       "description": "Verify the store: schema, determinism, locations. Returns a compact envelope listing problems, if any.",
       "inputSchema": {

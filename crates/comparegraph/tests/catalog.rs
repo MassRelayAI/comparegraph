@@ -9,14 +9,14 @@ fn live() -> String {
 }
 
 #[test]
-fn catalog_has_17_tools_sorted_with_error_codes() {
+fn catalog_has_18_tools_sorted_with_error_codes() {
     let text = live();
     assert!(text.ends_with("}\n") && text.contains("\n  \"tools\""));
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["schema"], 1);
     assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
     let tools = v["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 17);
+    assert_eq!(tools.len(), 18);
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     let mut sorted = names.clone();
     sorted.sort();

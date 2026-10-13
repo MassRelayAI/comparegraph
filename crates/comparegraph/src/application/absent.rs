@@ -1,0 +1,328 @@
+//! `absent-check`: is a feature absent from a clone's graph? Four channels over the latest done run, each with a hit
+//! count and up to five hits. `absent` is true only when EVERY channel has zero hits. Nothing here is a model: the
+//! terms, the channels and the counts are the whole verdict and all of them are written into the claim note.
+//!
+//! Channels:
+//! - `symbols`: FTS prefix match (the same as `map`) OR an exact lowercase name, over node names/qualified names/paths.
+//! - `paths`: a lowercase SUBSTRING of a node's path for any term or path-segment form (`retry-backoff`,
+//!   `retry_backoff`, `retrybackoff` of the slug tail); it sees what token-prefix FTS cannot (a term inside a token).
+//! - `communities`: a community whose label tokens or keywords equal a term (the rule `map` uses).
+//! - `kinds`: node kinds the feature names. A feature is said to name a kind by a word of its group, slug tail or title
+//!   (never the definition): `route|routes|endpoint|endpoints` -> kind `route`; `test|tests|testing` -> kind `test`;
+//!   the words `mcp` + `tool|tools` (an MCP tool) -> kind `route` (a handler registered by name) OR any function,
+//!   method or class whose name or path carries `mcp` (the graph has no MCP-tool kind; this is the implementer set).
+//!   A feature naming no kind has an empty kinds channel (count 0).
+use super::communities::tokens;
+use super::map::feature_terms;
+use super::{AppError, Result};
+use crate::store::{FeatureRow, Store};
+use rusqlite::{params, Connection};
+use serde::Serialize;
+use std::collections::BTreeSet;
+use std::path::Path;
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AbsentHit {
+    pub name: String,
+    pub kind: String,
+    pub path: String,
+    pub line_start: i64,
+    /// terms (or kinds) that made it a hit; for a community hit, the matched tokens
+    pub matched: Vec<String>,
+}
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct Channel {
+    pub count: usize,
+    pub hits: Vec<AbsentHit>,
+}
+#[derive(Debug, Serialize, Clone)]
+pub struct Channels {
+    pub symbols: Channel,
+    pub paths: Channel,
+    pub communities: Channel,
+    pub kinds: Channel,
+}
+#[derive(Debug, Serialize, Clone)]
+pub struct AbsentCheck {
+    pub repo: String,
+    pub family: String,
+    pub feature: String,
+    pub run_id: i64,
+    pub terms: Vec<String>,
+    pub path_forms: Vec<String>,
+    pub kinds_named: Vec<String>,
+    pub channels: Channels,
+    pub absent: bool,
+    /// `derived` when absent, `observed` when there are hits (the envelope lifts this into `evidence.confidence`)
+    pub evidence_confidence: &'static str,
+}
+
+impl AbsentCheck {
+    pub fn note(&self) -> String {
+        let c = &self.channels;
+        format!(
+            "graph-absent: terms={}; channels=symbols:{},paths:{},communities:{},kinds:{}",
+            self.terms.join(","),
+            c.symbols.count,
+            c.paths.count,
+            c.communities.count,
+            c.kinds.count
+        )
+    }
+    pub fn total(&self) -> usize {
+        let c = &self.channels;
+        c.symbols.count + c.paths.count + c.communities.count + c.kinds.count
+    }
+    /// Why `claim none` is refused: counts per channel and the first hits.
+    pub fn refusal(&self) -> String {
+        let c = &self.channels;
+        let mut sample: Vec<String> = vec![];
+        for ch in [&c.symbols, &c.paths, &c.communities, &c.kinds] {
+            for h in ch.hits.iter().take(2) {
+                let s = format!("{} ({}:{})", h.name, h.path, h.line_start);
+                if !sample.contains(&s) {
+                    sample.push(s);
+                }
+            }
+        }
+        format!(
+            "the graph has {} candidate(s) for {} in {} (symbols:{}, paths:{}, communities:{}, kinds:{}; e.g. {}); \
+             read them, then claim has/partial with a citation, or pass --searched \"<terms>\" to record a manual absence",
+            self.total(),
+            self.feature,
+            self.repo,
+            c.symbols.count,
+            c.paths.count,
+            c.communities.count,
+            c.kinds.count,
+            sample.join(", ")
+        )
+    }
+}
+
+fn words(f: &FeatureRow) -> Vec<String> {
+    let slug = f.slug.rsplit('.').next().unwrap_or(&f.slug);
+    format!("{} {} {}", f.grp, slug, f.title)
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// The kinds a feature names, as `(label, node kinds, also_mcp)`; see the module header for the mapping.
+fn kinds_named(f: &FeatureRow) -> (Vec<String>, Vec<&'static str>, bool) {
+    let w = words(f);
+    let has = |xs: &[&str]| w.iter().any(|x| xs.contains(&x.as_str()));
+    let mut names = vec![];
+    let mut kinds: Vec<&'static str> = vec![];
+    let mut mcp = false;
+    if has(&["route", "routes", "endpoint", "endpoints"]) {
+        names.push("route".to_string());
+        kinds.push("route");
+    }
+    if has(&["test", "tests", "testing"]) {
+        names.push("test".to_string());
+        kinds.push("test");
+    }
+    if has(&["mcp"]) && has(&["tool", "tools"]) {
+        names.push("mcp-tool".to_string());
+        if !kinds.contains(&"route") {
+            kinds.push("route");
+        }
+        mcp = true;
+    }
+    (names, kinds, mcp)
+}
+
+fn path_forms(f: &FeatureRow, terms: &[String]) -> Vec<String> {
+    let slug = f.slug.rsplit('.').next().unwrap_or(&f.slug).to_lowercase();
+    let mut set: BTreeSet<String> = terms.iter().cloned().collect();
+    let sep = |c: char| !c.is_alphanumeric();
+    let parts: Vec<&str> = slug.split(sep).filter(|p| !p.is_empty()).collect();
+    if parts.len() > 1 {
+        set.insert(parts.join("-"));
+        set.insert(parts.join("_"));
+        set.insert(parts.concat());
+    }
+    set.into_iter().collect()
+}
+
+fn like_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+fn hit_row(r: &rusqlite::Row, matched: Vec<String>) -> rusqlite::Result<AbsentHit> {
+    Ok(AbsentHit {
+        name: r.get(0)?,
+        kind: r.get(1)?,
+        path: r.get(2)?,
+        line_start: r.get(3)?,
+        matched,
+    })
+}
+
+fn symbols(c: &Connection, run: i64, terms: &[String]) -> Result<Channel> {
+    let mut ids: BTreeSet<i64> = BTreeSet::new();
+    if let Some(m) = super::search::fts_query_or(&terms.join(" ")) {
+        let mut st = c.prepare(
+            "SELECT n.id FROM node_fts JOIN node n ON n.id = node_fts.rowid WHERE node_fts MATCH ?1 AND n.run_id = ?2",
+        )?;
+        for r in st.query_map(params![m, run], |r| r.get::<_, i64>(0))? {
+            ids.insert(r?);
+        }
+    }
+    let mut ex = c.prepare("SELECT id FROM node WHERE run_id = ?1 AND lower(name) = ?2")?;
+    for t in terms {
+        for r in ex.query_map(params![run, t], |r| r.get::<_, i64>(0))? {
+            ids.insert(r?);
+        }
+    }
+    top(c, ids, |_| terms.to_vec())
+}
+
+fn top(
+    c: &Connection,
+    ids: BTreeSet<i64>,
+    matched: impl Fn(&AbsentHit) -> Vec<String>,
+) -> Result<Channel> {
+    let count = ids.len();
+    let mut rows = vec![];
+    let mut st = c.prepare("SELECT qualified_name, kind, path, line_start FROM node WHERE id = ?1")?;
+    for id in &ids {
+        rows.push(st.query_row(params![id], |r| hit_row(r, vec![]))?);
+    }
+    rows.sort_by(|a, b| (&a.name, &a.path, a.line_start).cmp(&(&b.name, &b.path, b.line_start)));
+    rows.truncate(5);
+    for h in &mut rows {
+        h.matched = matched(h);
+    }
+    Ok(Channel { count, hits: rows })
+}
+
+fn paths(c: &Connection, run: i64, forms: &[String]) -> Result<Channel> {
+    let mut ids: BTreeSet<i64> = BTreeSet::new();
+    let mut st = c.prepare("SELECT id FROM node WHERE run_id = ?1 AND lower(path) LIKE ?2 ESCAPE '\\'")?;
+    for t in forms {
+        let pat = format!("%{}%", like_escape(t));
+        for r in st.query_map(params![run, pat], |r| r.get::<_, i64>(0))? {
+            ids.insert(r?);
+        }
+    }
+    let forms = forms.to_vec();
+    top(c, ids, |h| {
+        forms.iter().filter(|t| h.path.to_lowercase().contains(t.as_str())).cloned().collect()
+    })
+}
+
+fn kinds(c: &Connection, run: i64, kinds: &[&str], mcp: bool) -> Result<Channel> {
+    let mut ids: BTreeSet<i64> = BTreeSet::new();
+    let mut st = c.prepare("SELECT id FROM node WHERE run_id = ?1 AND kind = ?2")?;
+    for k in kinds {
+        for r in st.query_map(params![run, k], |r| r.get::<_, i64>(0))? {
+            ids.insert(r?);
+        }
+    }
+    if mcp {
+        let mut st = c.prepare(
+            "SELECT id FROM node WHERE run_id = ?1 AND kind IN ('function','method','class') \
+             AND (lower(name) LIKE '%mcp%' OR lower(path) LIKE '%mcp%')",
+        )?;
+        for r in st.query_map(params![run], |r| r.get::<_, i64>(0))? {
+            ids.insert(r?);
+        }
+    }
+    let labels: Vec<String> = kinds.iter().map(|k| k.to_string()).collect();
+    top(c, ids, |h| {
+        if labels.contains(&h.kind) {
+            vec![h.kind.clone()]
+        } else {
+            vec!["mcp-tool".to_string()]
+        }
+    })
+}
+
+fn communities(store: &Store, run: i64, terms: &[String]) -> Result<Channel> {
+    let mut hits = vec![];
+    for cm in store.communities_of_run(crate::domain::RunId(run))? {
+        let have: BTreeSet<String> = tokens(&cm.label)
+            .into_iter()
+            .chain(cm.keywords.iter().map(|k| k.to_lowercase()))
+            .collect();
+        let matched: Vec<String> = terms.iter().filter(|t| have.contains(*t)).cloned().collect();
+        if !matched.is_empty() {
+            hits.push(AbsentHit {
+                name: cm.label,
+                kind: "community".into(),
+                path: String::new(),
+                line_start: 0,
+                matched,
+            });
+        }
+    }
+    hits.sort_by(|a, b| b.matched.len().cmp(&a.matched.len()).then(a.name.cmp(&b.name)));
+    let count = hits.len();
+    hits.truncate(5);
+    Ok(Channel { count, hits })
+}
+
+/// The check on an open store for a feature row and a run; shared by `claim` and the verb.
+pub(crate) fn check_feature(store: &Store, repo: &str, run: i64, f: &FeatureRow) -> Result<AbsentCheck> {
+    let terms = feature_terms(f);
+    if terms.is_empty() {
+        return Err(AppError::InvalidArguments(format!(
+            "feature {} has no searchable term; an absence of nothing proves nothing",
+            f.slug
+        )));
+    }
+    let forms = path_forms(f, &terms);
+    let (names, ks, mcp) = kinds_named(f);
+    let c = store.conn();
+    let channels = Channels {
+        symbols: symbols(c, run, &terms)?,
+        paths: paths(c, run, &forms)?,
+        communities: communities(store, run, &terms)?,
+        kinds: kinds(c, run, &ks, mcp)?,
+    };
+    let absent = channels.symbols.count == 0
+        && channels.paths.count == 0
+        && channels.communities.count == 0
+        && channels.kinds.count == 0;
+    Ok(AbsentCheck {
+        repo: repo.into(),
+        family: f.family.clone(),
+        feature: f.slug.clone(),
+        run_id: run,
+        terms,
+        path_forms: forms,
+        kinds_named: names,
+        channels,
+        absent,
+        evidence_confidence: if absent { "derived" } else { "observed" },
+    })
+}
+
+pub fn absent_check(root: &Path, repo: &str, family: &str, feature: &str) -> Result<AbsentCheck> {
+    let store = Store::open_existing(root)?;
+    store
+        .family_by_name(family)?
+        .ok_or_else(|| AppError::NotFound(format!("no family named {family}")))?;
+    let r = store
+        .repo_by_name(repo)?
+        .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
+    let run = store
+        .latest_done_run(r.id.unwrap())?
+        .ok_or_else(|| AppError::NotFound(format!("{repo} has no finished run; build it first")))?
+        .id
+        .unwrap()
+        .0;
+    let f = store
+        .features_of(family)?
+        .into_iter()
+        .find(|f| f.slug == feature)
+        .ok_or_else(|| AppError::NotFound(format!("no feature {feature} in {family}")))?;
+    if f.tier == "retired" {
+        return Err(AppError::InvalidArguments(format!("feature {feature} is retired")));
+    }
+    check_feature(&store, repo, run, &f)
+}

@@ -4,12 +4,12 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
-![MCP tools: 17](https://img.shields.io/badge/MCP%20tools-17-green.svg)
+![MCP tools: 18](https://img.shields.io/badge/MCP%20tools-18-green.svg)
 ![Languages: 29](https://img.shields.io/badge/languages-29-blue.svg)
 ![Agents: 6](https://img.shields.io/badge/agents-6-purple.svg)
 ![100% local](https://img.shields.io/badge/100%25-local-brightgreen.svg)
 
-<!-- sources: Cargo.toml (licence, rust-version); adapters/mcp.rs (17 tools); reference/mod.rs (29 languages); application/setup.rs (6 clients) -->
+<!-- sources: Cargo.toml (licence, rust-version); adapters/mcp.rs (18 tools); reference/mod.rs (29 languages); application/setup.rs (6 clients) -->
 
 CompareGraph parses many cloned repositories into one SQLite graph. It scores each clone against
 a taxonomy (a "family" of features) and records, per clone and feature, a verdict with a
@@ -527,7 +527,8 @@ Usage: comparegraph impact [OPTIONS] <REPO> [QUALIFIED_NAME]
 | `family propose` | Write a draft `rows.draft.md` from terms the given repos share. No model. | `--repos a,b,c`, `--min-repos`, `--max`, `--out` |
 | `relate` | Score each clone against each family and record the band. | `--repo`, `--family`, `--stored` (read, compute nothing) |
 | `map <REPO> <FAMILY>` | Candidate symbols and communities per feature. Writes nothing. | `--feature`, `--limit` (5) |
-| `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family` |
+| `absent-check <REPO> <FAMILY> <FEATURE>` | Is the feature absent from the graph? Counts and up to 5 hits over four channels: symbols, paths, community labels/keywords, node kinds the feature names. `data.absent` is true only when all four are zero. Reads only. | |
+| `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. `none` without `--searched` runs the absent check: all channels empty records it as `derived` (`graph-absent: terms=...; channels=...`), any hit refuses it and lists the candidates. `--searched` is the manual path. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family` |
 | `claims` | Latest claim per clone and feature. | `--repo`, `--family`, `--feature`, `--history` |
 | `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family` |
 | `decisions` | Latest decision per scope. | `--repo`, `--history` |
@@ -648,7 +649,7 @@ Usage: comparegraph setup [OPTIONS]
 
 `comparegraph mcp` speaks JSON-RPC 2.0 over stdio, one object per line, protocol `2025-06-18`. Every tool returns the
 same envelope as the CLI. Seventeen tools: sixteen read-only, one write.
-<!-- crates/comparegraph/src/adapters/mcp.rs: tools() lists 17 -->
+<!-- crates/comparegraph/src/adapters/mcp.rs: tools() lists 18 -->
 
 | Tool | Answers | Key arguments |
 |---|---|---|
@@ -659,6 +660,7 @@ same envelope as the CLI. Seventeen tools: sixteen read-only, one write.
 | `comparegraph_check` | Is the store sound | none |
 | `comparegraph_families` | Which families, with feature counts | none |
 | `comparegraph_map` | Candidate symbols and communities per feature | `repo`, `family`, `feature`, `limit` |
+| `comparegraph_absent_check` | Four-channel absent check for one feature (reads; it cannot record a claim) | `repo`, `family`, `feature` |
 | `comparegraph_relate` | Stored relatedness band per clone and family (reads, does not compute) | `repo`, `family` |
 | `comparegraph_claims` | Latest claim per clone and feature, with citations | `repo`, `family`, `feature`, `history` |
 | `comparegraph_matrix` | Features against clones, prevalence, gaps, differentiators | `family` |

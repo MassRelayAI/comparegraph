@@ -175,32 +175,46 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
 
     let mut note = String::new();
     if i.verdict == "none" {
-        let Some(terms_text) = i.searched.filter(|s| !s.trim().is_empty()) else {
-            return invalid("a none claim needs --searched \"<terms>\" (the terms the absence was checked with)");
-        };
-        if super::search::fts_query_or(terms_text).is_none() {
+        if i.searched.is_some_and(|s| s.trim().is_empty()) {
             return invalid("--searched has no searchable term");
         }
-        let terms: Vec<String> = terms_text
-            .split(|c: char| c.is_whitespace() || c == ',')
-            .filter(|t| !t.is_empty())
-            .map(String::from)
-            .collect();
-        let hits = search_any_in_repo(&store, i.repo, &terms, 1000)?;
-        if !hits.is_empty() {
-            let sample: Vec<&str> = hits
-                .iter()
-                .take(5)
-                .map(|h| h.qualified_name.as_str())
+        if let Some(terms_text) = i.searched {
+            if super::search::fts_query_or(terms_text).is_none() {
+                return invalid("--searched has no searchable term");
+            }
+            let terms: Vec<String> = terms_text
+                .split(|c: char| c.is_whitespace() || c == ',')
+                .filter(|t| !t.is_empty())
+                .map(String::from)
                 .collect();
-            return invalid(format!(
-                "not none: the search for \"{terms_text}\" finds {} hit(s) in {} (e.g. {})",
-                hits.len(),
-                i.repo,
-                sample.join(", ")
-            ));
+            let hits = search_any_in_repo(&store, i.repo, &terms, 1000)?;
+            if !hits.is_empty() {
+                let sample: Vec<&str> = hits
+                    .iter()
+                    .take(5)
+                    .map(|h| h.qualified_name.as_str())
+                    .collect();
+                return invalid(format!(
+                    "not none: the search for \"{terms_text}\" finds {} hit(s) in {} (e.g. {})",
+                    hits.len(),
+                    i.repo,
+                    sample.join(", ")
+                ));
+            }
+            note = format!("searched: {terms_text} → 0 hits");
+        } else {
+            // no manual terms: the graph decides (four channels); a hit anywhere refuses, zero everywhere is `derived`
+            let f = store
+                .features_of(&fam)?
+                .into_iter()
+                .find(|f| f.id == fid)
+                .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
+            let chk = super::absent::check_feature(&store, i.repo, run.0, &f)?;
+            if !chk.absent {
+                return invalid(chk.refusal());
+            }
+            note = chk.note();
         }
-        note = format!("searched: {terms_text} → 0 hits");
     }
     if let Some(n) = i.note.filter(|n| !n.is_empty()) {
         note = if note.is_empty() {

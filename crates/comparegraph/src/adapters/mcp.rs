@@ -46,6 +46,8 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_map", "Candidate symbols and communities per feature of a family in one clone. Candidates are never verdicts; writes nothing.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"},
             "limit": {"type":"integer","minimum":1,"maximum":50,"description":"symbols per feature, default 5"} }), &["repo", "family"])),
+        tool("comparegraph_absent_check", "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits. Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).", schema(json!({
+            "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"} }), &["repo", "family", "feature"])),
         tool("comparegraph_relate", "Latest stored relatedness band per (clone, family). Reads only: it does not compute; run `comparegraph relate` to refresh.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"} }), &[])),
         tool("comparegraph_claims", "Latest claim per (clone, feature) with its citations; history=true lists every row with its supersede chain.", schema(json!({
@@ -141,6 +143,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         }
         "comparegraph_families" => &[],
         "comparegraph_map" => &["repo", "family", "feature", "limit"],
+        "comparegraph_absent_check" => &["repo", "family", "feature"],
         "comparegraph_relate" => &["repo", "family"],
         "comparegraph_claims" => &["repo", "family", "feature", "history"],
         "comparegraph_matrix" => &["family"],
@@ -235,6 +238,11 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 },
             },
         },
+        "comparegraph_absent_check" => Cmd::AbsentCheck {
+            repo: req(a, "repo")?,
+            family: req(a, "family")?,
+            feature: req(a, "feature")?,
+        },
         "comparegraph_relate" => Cmd::Relate {
             repo: str_arg(a, "repo")?,
             family: str_arg(a, "family")?,
@@ -270,6 +278,10 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                     .collect::<Result<Vec<_>, _>>()?,
                 Some(_) => return Err("at must be an array of strings".into()),
             };
+            let searched = str_arg(a, "searched")?;
+            if req(a, "verdict")? == "none" && searched.as_deref().is_none_or(|s| s.trim().is_empty()) {
+                return Err("a none claim over MCP needs `searched` terms; the graph-backed absence is recorded only from the CLI (`claim ... none` without --searched). Read comparegraph_absent_check first".into());
+            }
             Cmd::Claim {
                 repo: req(a, "repo")?,
                 feature: req(a, "feature")?,
@@ -277,7 +289,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 author,
                 family: str_arg(a, "family")?,
                 at,
-                searched: str_arg(a, "searched")?,
+                searched,
                 note: str_arg(a, "note")?,
             }
         }
