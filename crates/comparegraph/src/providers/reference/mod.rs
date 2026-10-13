@@ -1,5 +1,6 @@
 pub mod builtins;
 pub mod decl_types;
+pub mod go_ctx;
 pub mod inherit;
 pub mod js_ctx;
 pub mod module_ctx;
@@ -196,6 +197,16 @@ impl GraphProvider for ReferenceProvider {
     fn build(&self, repo_root: &Path, opts: &BuildOptions) -> Result<BuildOutput, ProviderError> {
         let walked = walker::walk(repo_root, opts);
         let files = walked.files;
+        let go_mods = go_ctx::GoModules::new(
+            walked
+                .go_mods
+                .iter()
+                .filter_map(|p| {
+                    let text = std::fs::read_to_string(repo_root.join(p)).ok()?;
+                    Some((p.rsplit_once('/').map_or("", |d| d.0).to_string(), go_ctx::parse_go_mod(&text)?))
+                })
+                .collect(),
+        );
         let mut out = BuildOutput {
             files_seen: files.len(),
             ..Default::default()
@@ -382,7 +393,7 @@ impl GraphProvider for ReferenceProvider {
             }
             profile_line("nodes", t, out.nodes.len());
             let t = std::time::Instant::now();
-            out.edges_by_qn = resolve::resolve_edges(&parsed);
+            out.edges_by_qn = resolve::resolve_edges_with(&parsed, go_mods.clone());
             profile_line("resolve_edges", t, out.edges_by_qn.len());
             let t = std::time::Instant::now();
             let inh = inherit::inherit_edges(&parsed);

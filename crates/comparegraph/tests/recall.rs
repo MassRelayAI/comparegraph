@@ -266,3 +266,99 @@ fn calls_from_describe_bodies_and_test_file_scope_do_not_rescue_dead_code_candid
     assert!(d.contains(&"src/lib.ts::atFileScope".to_string()), "{d:?}");
     assert!(!d.contains(&"src/lib.ts::inACase".to_string()), "{d:?}");
 }
+
+fn go_pkgs() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("go.mod", "module demo\n\ngo 1.21\n"),
+        (
+            "a.go",
+            "package demo\n\nimport (\n\t\"demo/store\"\n\talias \"demo/other\"\n\t\"demo/tools/v3\"\n)\n\ntype Shape interface{ Area() int }\n\ntype Box struct{ w int }\n\nfunc (b *Box) Area() int { return b.w }\n\nfunc (b *Box) Grow() { b.Area() }\n\nfunc NewBox() *Box { return &Box{} }\n\nfunc Measure(s Shape) int { return s.Area() }\n\nfunc Convert(c Box) int {\n\tn := Box(c)\n\treturn n.w\n}\n\nfunc Build() {\n\tb := NewBox()\n\tb.Grow()\n\tvar c Box\n\tc.Area()\n\td := &Box{}\n\td.Area()\n\thelper()\n\tdefer helper()\n\tgo helper()\n\tstore.Save(1)\n\tr := store.NewRepo()\n\tr.Put()\n\tvar p *store.Repo\n\tp.Put()\n\tunknown().Put()\n\tx.Put()\n}\n\nfunc Viaalias() { alias.Save(2) }\n\nfunc Viaclause() { tools.Run() }\n",
+        ),
+        ("b.go", "package demo\n\nfunc helper() {}\n"),
+        ("c_test.go", "package demo_test\n\nfunc helper() {}\n"),
+        (
+            "store/store.go",
+            "package store\n\ntype Repo struct{}\n\nfunc NewRepo() *Repo { return &Repo{} }\n\nfunc (r *Repo) Put() { r.save() }\n\nfunc (r *Repo) save() {}\n\nfunc Save(n int) int { return n }\n",
+        ),
+        ("other/o.go", "package other\n\nfunc Save(n int) int { return n }\n"),
+        ("tools/v3/t.go", "package tools\n\nfunc Run() {}\n"),
+    ]
+}
+
+#[test]
+fn go_receiver_methods_package_calls_and_the_things_that_bind_nothing() {
+    let (ws, _c) = ws_with(&go_pkgs());
+    let grow = callees(ws.path(), "a.go::Grow");
+    assert_eq!(grow, vec![("a.go::Area".to_string(), 1.0)], "typed receiver: {grow:?}");
+    let build = callees(ws.path(), "a.go::Build");
+    for want in [
+        ("a.go::NewBox", 1.0),
+        ("a.go::Grow", 1.0),
+        ("a.go::Area", 1.0),
+        ("b.go::helper", 1.0),
+        ("store/store.go::Save", 1.0),
+        ("store/store.go::NewRepo", 1.0),
+        ("store/store.go::Put", 1.0),
+    ] {
+        assert!(build.contains(&(want.0.to_string(), want.1)), "{want:?} missing in {build:?}");
+    }
+    assert_eq!(build.len(), 7, "nothing else: unknown receivers bind nothing: {build:?}");
+    // an interface-typed parameter binds nothing (interface vs implementation ambiguity)
+    let m = callees(ws.path(), "a.go::Measure");
+    assert!(m.is_empty(), "interface receiver: {m:?}");
+    // a type conversion is not a call
+    let c = callees(ws.path(), "a.go::Convert");
+    assert!(c.is_empty(), "conversion: {c:?}");
+    // an explicit import alias, and a package named differently from its last path segment (bound by the package clause)
+    let v = callees(ws.path(), "a.go::Viaalias");
+    assert_eq!(v, vec![("other/o.go::Save".to_string(), 1.0)], "{v:?}");
+    let t = callees(ws.path(), "a.go::Viaclause");
+    assert_eq!(t, vec![("tools/v3/t.go::Run".to_string(), 1.0)], "{t:?}");
+    // a method of the imported package calls its sibling method
+    let put = callees(ws.path(), "store/store.go::Put");
+    assert_eq!(put, vec![("store/store.go::save".to_string(), 1.0)], "{put:?}");
+}
+
+#[test]
+fn go_type_parameters_shadow_package_types() {
+    let (ws, _c) = ws_with(&[
+        ("go.mod", "module demo\n\ngo 1.21\n"),
+        (
+            "a.go",
+            "package demo\n\ntype T struct{}\n\nfunc (T) M() {}\n\nfunc Ok(x T) { x.M() }\n\nfunc Gen[T any](x T) { x.M() }\n\ntype Stack[T any] struct{ top T }\n\nfunc (s *Stack[T]) Push(x T) { x.M() }\n\nfunc (s *Stack[T]) Peek() { s.top.M() }\n",
+        ),
+    ]);
+    let ok = callees(ws.path(), "a.go::Ok");
+    assert_eq!(ok, vec![("a.go::M".to_string(), 1.0)], "control: a declared type binds: {ok:?}");
+    for f in ["Gen", "Push", "Peek"] {
+        let c = callees(ws.path(), &format!("a.go::{f}"));
+        assert!(c.is_empty(), "{f}: a type parameter named like a package type binds nothing: {c:?}");
+    }
+}
+
+#[test]
+fn go_unresolvable_embed_makes_a_promoted_method_ambiguous() {
+    let (ws, _c) = ws_with(&[
+        ("go.mod", "module demo\n\ngo 1.21\n"),
+        (
+            "a.go",
+            "package demo\n\nimport \"sync\"\n\ntype Inner struct{}\n\nfunc (Inner) Lock() {}\n\ntype Outer struct {\n\tsync.Mutex\n\tInner\n}\n\nfunc Use(o Outer) { o.Lock() }\n\nfunc (Inner) Own() {}\n\nfunc UseOwn(o Outer) { o.Own() }\n",
+        ),
+    ]);
+    // sync.Mutex (not ours) may supply Lock too: bind nothing; Own can only come from Inner ... but the unreadable embed could also have it
+    let u = callees(ws.path(), "a.go::Use");
+    assert!(u.is_empty(), "{u:?}");
+    let o = callees(ws.path(), "a.go::UseOwn");
+    assert!(o.is_empty(), "{o:?}");
+}
+
+#[test]
+fn go_explicit_alias_equal_to_the_last_segment_is_honoured() {
+    let (ws, _c) = ws_with(&[
+        ("go.mod", "module demo\n\ngo 1.21\n"),
+        ("a.go", "package demo\n\nimport util \"demo/util\"\n\nfunc Use() { util.Do() }\n"),
+        ("util/u.go", "package utils\n\nfunc Do() {}\n"),
+    ]);
+    let c = callees(ws.path(), "a.go::Use");
+    assert_eq!(c, vec![("util/u.go::Do".to_string(), 1.0)], "{c:?}");
+}

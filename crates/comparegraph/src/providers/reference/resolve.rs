@@ -1,5 +1,6 @@
 use super::builtins;
 use super::decl_types::{self, TsDecls};
+use super::go_ctx::{self, GoIndex};
 use super::js_ctx;
 use super::py_ctx::{self, PyInfo};
 use super::rust_ctx::{self, RustInfo};
@@ -42,6 +43,8 @@ pub struct FileSet {
     py_tails: HashMap<String, (usize, String)>,
     /// Class name → indexes (ascending, once each) of the files defining a symbol of kind Class with that name.
     classes: HashMap<String, Vec<usize>>,
+    /// Go: the `go.mod` module paths, set by the provider (`with_go_mods`); empty = path heuristics only.
+    go_mods: super::go_ctx::GoModules,
 }
 
 impl std::ops::Deref for FileSet {
@@ -56,6 +59,10 @@ fn boundary_suffixes(path: &str) -> impl Iterator<Item = &str> {
 }
 
 impl FileSet {
+    pub fn with_go_mods(mut self, m: super::go_ctx::GoModules) -> FileSet {
+        self.go_mods = m;
+        self
+    }
     pub fn new(files: &[ParsedFile]) -> FileSet {
         let mut fs = FileSet::from_paths(files.iter().map(|f| f.rel_path.as_str()));
         for (i, f) in files.iter().enumerate() {
@@ -80,6 +87,7 @@ impl FileSet {
             go_last: HashMap::new(),
             py_tails: HashMap::new(),
             classes: HashMap::new(),
+            go_mods: super::go_ctx::GoModules::default(),
         };
         for (i, p) in paths.enumerate() {
             fs.map.insert(p.to_string(), ());
@@ -180,6 +188,14 @@ fn resolve_java_import(source: &str, files: &FileSet) -> Option<String> {
 
 /// Go: the `.go` files (sorted) of the one repo directory an import path names: the directory whose path ends with the whole import path, else the one whose last segment equals the path's last segment. Several candidate directories → none.
 pub(super) fn resolve_go_dir(source: &str, files: &FileSet) -> Vec<String> {
+    // the repo's own `go.mod` module path decides first: a path under it names a directory, a path outside every module is external
+    match files.go_mods.dir_of(source) {
+        super::go_ctx::ModuleHit::Dir(d) => {
+            return files.go_dirs.get(&d).cloned().unwrap_or_default();
+        }
+        super::go_ctx::ModuleHit::External => return vec![],
+        super::go_ctx::ModuleHit::NoModules => {}
+    }
     let last = source.rsplit('/').next().unwrap_or(source);
     if last.is_empty() || source.starts_with('.') {
         return vec![];
@@ -957,7 +973,12 @@ pub(super) fn par_map<T: Send>(n: usize, name: &(dyn Fn(usize) -> String + Sync)
 }
 
 pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
-    let file_set = FileSet::new(files);
+    resolve_edges_with(files, super::go_ctx::GoModules::default())
+}
+
+/// `resolve_edges` with the repo's `go.mod` module paths (plain data: the per-file workers read it by reference).
+pub fn resolve_edges_with(files: &[ParsedFile], go_mods: super::go_ctx::GoModules) -> Vec<(EdgeKind, String, String, f64)> {
+    let file_set = FileSet::new(files).with_go_mods(go_mods);
     // name → (qn, duplicates_in_that_file)
     let mut by_name: HashMap<&str, Vec<(String, bool, &str, bool)>> = HashMap::new();
     let mut out = Vec::new();
@@ -1053,6 +1074,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         (case_calls, super::module_ctx::module_calls(&f.lines.join("\n"), &f.language))
     });
     let mut bases: Option<HashMap<String, String>> = None; // class → base class, computed on first use
+    let go = GoIndex::build(files, &qns, &|src| resolve_go_dir(src, &file_set).first().map(|f| f.rsplit_once('/').map_or("", |d| d.0).to_string()));
     for (fi, (f, q)) in files.iter().zip(&qns).enumerate() {
         super::mark_file(&f.rel_path);
         if let Some(info) = &rust[fi] {
@@ -1110,6 +1132,19 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         }
         let sited = f.call_sites.iter().chain(case_calls).chain(module_calls).map(|c| (c, None)).chain(jsx.iter().map(|(c, o)| (c, *o)));
         for (c, owner) in sited {
+            // Go repeats a method name across receiver types in one file: the caller is the symbol whose lines hold the call
+            let owner = owner.or_else(|| {
+                (f.language == "go" && c.caller != js_ctx::CALLER_FILE)
+                    .then(|| {
+                        f.symbols
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, s)| s.name == c.caller && s.line_start <= c.line && c.line <= s.line_end)
+                            .min_by_key(|(i, s)| (s.line_end - s.line_start, *i))
+                            .map(|(i, _)| i)
+                    })
+                    .flatten()
+            });
             let caller_qn: &String = if let Some(i) = owner {
                 &q[i]
             } else if c.caller == js_ctx::CALLER_FILE {
@@ -1181,6 +1216,18 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                 // `def f(normalise=None): normalise(x)`: a parameter or local is not the repo function of that name in ANOTHER file
                 // (a same-file function stays bound: a pytest fixture parameter calls the fixture it is named after)
                 shadowed_callee = c.receiver.is_none() && pc.shadowed(pi, f, &c.caller, &c.callee);
+            }
+            // Go: the package is the unit. An unqualified call, `pkg.F()` and `x.M()` on a declared receiver bind through the package
+            // table and declared types (1.0); an interface receiver, a conversion, a builtin and an unknown receiver bind nothing
+            if let Some(g) = go.as_ref().filter(|_| f.language == "go") {
+                match g.resolve(fi, c) {
+                    go_ctx::Outcome::Bound(t) => {
+                        out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
+                        continue;
+                    }
+                    go_ctx::Outcome::Nothing => continue,
+                    go_ctx::Outcome::Fallthrough => {}
+                }
             }
             // 1. self.m() / this.m(): a method of the caller's enclosing class
             if matches!(recv, Some("self" | "this")) || (f.language == "python" && recv == Some("cls")) {

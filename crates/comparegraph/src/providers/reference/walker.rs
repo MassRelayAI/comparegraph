@@ -70,6 +70,8 @@ pub struct WalkResult {
     pub skipped_dirs: usize,
     /// files skipped by name (`*.min.js`, `*.min.css`, `*.bundle.js`)
     pub minified: usize,
+    /// repo-relative paths of `go.mod` files (they are no source file, but name the module path Go imports resolve against)
+    pub go_mods: Vec<String>,
 }
 
 /// A minified or bundled artifact by file name.
@@ -110,6 +112,9 @@ pub fn walk(root: &Path, opts: &BuildOptions) -> WalkResult {
         if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
             continue;
         }
+        if entry.path().file_name().and_then(|n| n.to_str()) == Some("go.mod") {
+            res.go_mods.push(entry.path().strip_prefix(root).unwrap_or(entry.path()).to_string_lossy().replace('\\', "/"));
+        }
         let Some(language) = language_for(entry.path()) else {
             continue;
         };
@@ -135,6 +140,7 @@ pub fn walk(root: &Path, opts: &BuildOptions) -> WalkResult {
         });
     }
     res.files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+    res.go_mods.sort();
     if res.files.len() > opts.max_files {
         res.truncated = res.files.len() - opts.max_files;
         res.files.truncate(opts.max_files);
