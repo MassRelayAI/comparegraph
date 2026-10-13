@@ -231,8 +231,8 @@ on the other three; the held-out column is the honest number for a repository th
 | | precision@5 | recall@5 | note |
 |---|---|---|---|
 | `map`, held-out clones (CodeGraph, codanna, ripwire) | 0.038 | 0.149 | the number to read |
-| `map`, tuning clones (graphmind, srclight, code-review-graph) | 0.154 | 0.500 | fitted |
-| `map`, all six pooled | 0.109 | 0.378 | from 0.046 / 0.141 before the ranking |
+| `map`, tuning clones (graphmind, srclight, code-review-graph) | 0.161 | 0.523 | fitted |
+| `map`, all six pooled | 0.113 | 0.393 | from 0.046 / 0.141 before the ranking |
 | plain full-text OR search over the same terms, pooled | 0.046 | 0.141 | our own engine, no ranking |
 | codegraph `symbol_search` on the same terms, pooled | 0.036 | 0.118 | scored by the same rules |
 | absent check, pooled | 1.00 (1 call) | 0.05 (1 of 19) | never wrong, rarely speaks |
@@ -367,7 +367,7 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 | `family propose <NAME>` | Draft `rows.draft.md` from terms the given repos share. No model. | `--repos a,b,c`, `--min-repos`, `--max`, `--out` |
 | `relate` | Score each clone against each family and record the band. | `--repo`, `--family`, `--stored` |
 | `map <REPO> <FAMILY>` | Candidate symbols and communities per feature. Writes nothing. | `--feature`, `--limit` (5) |
-| `absent-check <REPO> <FAMILY> <FEATURE>` | Is the feature absent? Counts and up to 5 hits over four channels: symbols, paths, community labels and keywords, node kinds the feature names. `data.absent` is true only when all four are zero. Reads only. | |
+| `absent-check <REPO> <FAMILY> <FEATURE>` | Is the feature absent? Counts and up to 5 hits over four channels: symbols, paths, community labels and keywords, node kinds the feature names. `data.absent` is true only when all four are zero. A feature term that matches more than `max(200, 2% of the run's nodes)` nodes by name (`task`, `channel`, `presence` in a big repo) is common: it proves nothing, so it is dropped from all four channels, listed in `data.common` and in the note as `common=<terms>`, and the verdict is decided by the remaining terms; when every term is common the check refuses and records nothing (pass `--searched` with specific terms). When the feature names a node kind (route, test, mcp tool) the symbol channel counts only nodes of those kinds. Reads only. | |
 | `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. `none` without `--searched` runs the absent check: all channels empty records it as `inferred`; any hit refuses it and lists the candidates. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family`, `--batch <jsonl\|->` (one JSON object per line, e.g. `{"repo":"a","feature":"x.y","verdict":"has","author":"me","at":["src/a.rs:1-9"]}`; one store open and one transaction; one envelope line per row with its `line`, printed as each row is decided, then a `{rows, ok, failed, committed}` summary; rows are durable only when that last line says `committed`; exit 1 if any row failed) |
 | `claims` | Latest claim per clone and feature. | `--repo`, `--family`, `--feature`, `--history` |
 | `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family`, `--batch <jsonl\|->` (rows like `{"repo":"a","disposition":"park","why":"...","by":"me"}`; output as for `claim`) |
@@ -452,7 +452,7 @@ To add your own engine, write a provider and pass `comparegraph conform <name>`;
 ## Families and the seven skills
 
 A family is a directory with a `rows.md`: front matter with `family:` and `description:`, then a table with `id`, `group`,
-`feature`, `definition`, `counts_as_has`, `tier` (`basics`, `common`, `extra` or `candidate`) and `weight`. A feature id is `<group>.<slug>`: lowercase `[a-z0-9-]`, exactly one dot, and the `group` column must equal the id's group (`symbols.extraction` has group `symbols`); a row that breaks it is refused when the pack loads. Two packs ship:
+`feature`, `definition`, `counts_as_has`, `tier` (`basics`, `common`, `extra` or `candidate`) and `weight`, plus an optional eighth column `synonyms` (comma-separated words that also name the feature, e.g. `reattempt, backoff`). Synonyms are terms of `map` and of the absent check, and a `claim none --searched` that uses one counts as naming the feature; an undeclared unrelated word is still refused. A header with any other ninth column is refused. A feature id is `<group>.<slug>`: lowercase `[a-z0-9-]`, exactly one dot, and the `group` column must equal the id's group (`symbols.extraction` has group `symbols`); a row that breaks it is refused when the pack loads. Two packs ship:
 [`families/example-code-graph-tools`](families/example-code-graph-tools/rows.md) (10 features, the quick start) and
 [`families/code-graph-tools`](families/code-graph-tools/rows.md) (30 features, the mapping gold). `family propose <name>
 --repos a,b,c` drafts a pack from the terms the clones share, with no model. The tier names and band thresholds (`related` at

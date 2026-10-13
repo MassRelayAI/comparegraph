@@ -13,8 +13,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `impact`, `tests-for` and `traverse` take `--limit` and `--cursor` (and the MCP tools `limit` and `cursor`).
 - `build --progress` (or `COMPAREGRAPH_PROGRESS=1`) prints `[progress]` lines to stderr: one per 500 files parsed and one per pass.
 - README: the `<group>.<slug>` feature-id rule in the families section.
+- Family packs take an optional eighth column `synonyms` (comma-separated). They are terms of `map` and of the absent check, and `claim none --searched` accepts a synonym as naming the feature. Stored in a new `feature.synonyms` column, added to an existing store when it opens (schema version unchanged).
+- `absent-check`: `data.common` and a `common=<terms>` note segment list the feature terms dropped because they match more than `max(200, 2% of the run's nodes)` nodes of the run.
 
 ### Changed
+- The absent check drops common terms before deciding (see above) and refuses a feature whose every term is common ("every term of X is common in R (...); pass --searched with specific terms"); it never records an absence for one. A feature that names node kinds counts only nodes of those kinds on the symbol channel.
+- `map` matches a short token (under 6 characters) only whole, or with one `s`, `es`, `ed` or `ing` suffix: `multi` no longer matches `multiplier`, `task` still matches `tasks`. Longer tokens keep the prefix rule. Terms that were stop words only because of the old over-matching can now carry weight.
 - `--pretty` is global like `--root`: both may come before or after the verb.
 - `impact`, `tests-for` and `traverse` answer summary-first: `data.summary` (`total`, `truncated`, `max_nodes`, `by_hop`,
   `by_kind`), then `items` paged and ordered by `path_confidence` (high first), hop, name. `impact` no longer returns
