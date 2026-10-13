@@ -14,7 +14,13 @@
 //!   (never the definition): `route|routes|endpoint|endpoints` -> kind `route`; `test|tests|testing` -> kind `test`;
 //!   the words `mcp` + `tool|tools` (an MCP tool) -> kind `route` (a handler registered by name) OR any function,
 //!   method or class whose name or path carries `mcp` (the graph has no MCP-tool kind; this is the implementer set).
-//!   A feature naming no kind has an empty kinds channel (count 0).
+//!   A feature naming no kind has an empty kinds channel (count 0). When a feature names kinds, the symbol channel counts
+//!   only nodes of those kinds too.
+//!
+//! Common terms: a feature term that matches more than `max(200, 2% of the run's nodes)` nodes on the symbol channel
+//! (`task`, `channel`, `presence` in a big repo) proves nothing either way. It is dropped from all four channels and
+//! listed in the note as `common=<terms>`; the verdict is decided by the rest. When every term is common the check
+//! refuses (a "pass --searched" error) and never records an absence.
 //!
 //! Coverage limit: names, paths, community terms and kinds only. Not strings, flags, config keys, abbreviations (`cfg`)
 //! or synonyms (`memoize`), so a graph-absent verdict is `inferred`, never `derived`. The check reads the latest done
@@ -57,6 +63,8 @@ pub struct AbsentCheck {
     pub run_id: i64,
     pub provider: String,
     pub terms: Vec<String>,
+    /// feature terms dropped from every channel because they match too many nodes of the run (see `common_threshold`)
+    pub common: Vec<String>,
     pub stems: Vec<String>,
     pub path_forms: Vec<String>,
     pub kinds_named: Vec<String>,
@@ -69,9 +77,11 @@ pub struct AbsentCheck {
 impl AbsentCheck {
     pub fn note(&self) -> String {
         let c = &self.channels;
+        let common = if self.common.is_empty() { String::new() } else { format!("; common={}", self.common.join(",")) };
         format!(
-            "graph-absent (names, paths, community terms, kinds; not strings, flags or config keys): terms={}; stems={}; channels=symbols:{},paths:{},communities:{},kinds:{}; run={} provider={}",
+            "graph-absent (names, paths, community terms, kinds; not strings, flags or config keys): terms={}{}; stems={}; channels=symbols:{},paths:{},communities:{},kinds:{}; run={} provider={}",
             self.terms.join(","),
+            common,
             self.stems.join(","),
             c.symbols.count,
             c.paths.count,
@@ -240,7 +250,37 @@ fn hit_tokens(h: &AbsentHit) -> Vec<String> {
 pub(crate) const SYMBOLS_FTS_SQL: &str =
     "SELECT n.id FROM node_fts CROSS JOIN node n ON n.id = node_fts.rowid WHERE node_fts MATCH ?1 AND n.run_id = ?2";
 
-fn symbols(c: &Connection, run: i64, terms: &[String], stems: &[(String, String)]) -> Result<Channel> {
+/// One node of the run as the symbol channel reads it: id, kind, lowercase name, name tokens.
+struct NameRow {
+    id: i64,
+    kind: String,
+    lower: String,
+    toks: Vec<String>,
+}
+
+fn name_rows(c: &Connection, run: i64) -> Result<Vec<NameRow>> {
+    let mut st = c.prepare("SELECT id, name, kind FROM node WHERE run_id = ?1")?;
+    let rows = st
+        .query_map(params![run], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, name, kind)| NameRow { id, kind, lower: name.to_lowercase(), toks: tokens(&name) })
+        .collect())
+}
+
+/// The node ids the symbol channel matches for `terms` and `stems`: FTS prefix, exact lowercase name, stem match against the
+/// name tokens. With `kinds` non-empty only nodes of those kinds count (the feature names a kind: Plan 8 lane C).
+fn symbol_ids(
+    c: &Connection,
+    run: i64,
+    rows: &[NameRow],
+    terms: &[String],
+    stems: &[(String, String)],
+    kinds: &[&str],
+) -> Result<BTreeSet<i64>> {
     let mut ids: BTreeSet<i64> = BTreeSet::new();
     if let Some(m) = super::search::fts_query_or(&terms.join(" ")) {
         let mut st = c.prepare(SYMBOLS_FTS_SQL)?;
@@ -248,19 +288,41 @@ fn symbols(c: &Connection, run: i64, terms: &[String], stems: &[(String, String)
             ids.insert(r?);
         }
     }
-    // exact lowercase name, and the stem match against the tokens of each node name
-    let mut st = c.prepare("SELECT id, name FROM node WHERE run_id = ?1")?;
-    let rows = st
-        .query_map(params![run], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
     let all: Vec<String> = terms.iter().cloned().chain(stems.iter().map(|s| s.0.clone())).collect();
-    for (id, name) in rows {
-        let lower = name.to_lowercase();
-        let toks = tokens(&name);
-        if all.iter().any(|t| *t == lower || toks.iter().any(|k| stem_match(t, k))) {
-            ids.insert(id);
+    for n in rows {
+        if all.iter().any(|t| *t == n.lower || n.toks.iter().any(|k| stem_match(t, k))) {
+            ids.insert(n.id);
         }
     }
+    if !kinds.is_empty() {
+        let keep: BTreeSet<i64> = rows.iter().filter(|n| kinds.contains(&n.kind.as_str())).map(|n| n.id).collect();
+        ids.retain(|i| keep.contains(i));
+    }
+    Ok(ids)
+}
+
+/// A term matching more than this many nodes of the run (symbol channel) is common: `max(200, 2% of the run's nodes)`.
+pub(crate) fn common_threshold(nodes: usize) -> usize {
+    200.max(nodes / 50)
+}
+
+/// The terms that are common in the run: they match more than `common_threshold` nodes on the symbol channel, so a hit on
+/// one proves nothing and a miss on one is no evidence either. Returned in the order given.
+fn common_terms(c: &Connection, run: i64, rows: &[NameRow], terms: &[String], kinds: &[&str]) -> Result<Vec<String>> {
+    let limit = common_threshold(rows.len());
+    let mut out = vec![];
+    for t in terms {
+        let one = std::slice::from_ref(t);
+        let stems = stems_of(one);
+        if symbol_ids(c, run, rows, one, &stems, kinds)?.len() > limit {
+            out.push(t.clone());
+        }
+    }
+    Ok(out)
+}
+
+fn symbols(c: &Connection, run: i64, rows: &[NameRow], terms: &[String], stems: &[(String, String)], kinds: &[&str]) -> Result<Channel> {
+    let ids = symbol_ids(c, run, rows, terms, stems, kinds)?;
     let (terms, stems) = (terms.to_vec(), stems.to_vec());
     top(c, ids, |h| {
         let mut toks = hit_tokens(h);
@@ -395,19 +457,30 @@ pub(crate) fn check_feature(
     provider: &str,
     f: &FeatureRow,
 ) -> Result<AbsentCheck> {
-    let terms = feature_terms(f);
-    if terms.is_empty() {
+    let all_terms = feature_terms(f);
+    if all_terms.is_empty() {
         return Err(AppError::InvalidArguments(format!(
             "feature {} has no searchable term; an absence of nothing proves nothing",
             f.slug
         )));
     }
-    let stem_pairs = stems_of(&terms);
-    let forms = path_forms(f, &terms);
     let (names, ks, mcp) = kinds_named(f);
     let c = store.conn();
+    let rows = name_rows(c, run)?;
+    let common = common_terms(c, run, &rows, &all_terms, &ks)?;
+    let terms: Vec<String> = all_terms.iter().filter(|t| !common.contains(t)).cloned().collect();
+    if terms.is_empty() {
+        return Err(AppError::InvalidArguments(format!(
+            "every term of {} is common in {} ({}); pass --searched with specific terms",
+            f.slug,
+            repo,
+            common.join(", ")
+        )));
+    }
+    let stem_pairs = stems_of(&terms);
+    let forms = path_forms(f, &terms);
     let channels = Channels {
-        symbols: symbols(c, run, &terms, &stem_pairs)?,
+        symbols: symbols(c, run, &rows, &terms, &stem_pairs, &ks)?,
         paths: paths(c, run, &forms, &terms, &stem_pairs)?,
         communities: communities(store, run, &terms)?,
         kinds: kinds(c, run, &ks, mcp)?,
@@ -423,6 +496,7 @@ pub(crate) fn check_feature(
         run_id: run,
         provider: provider.into(),
         terms,
+        common,
         stems: stem_pairs.into_iter().map(|s| s.0).collect(),
         path_forms: forms,
         kinds_named: names,

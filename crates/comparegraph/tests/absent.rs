@@ -258,3 +258,72 @@ fn the_check_pins_the_reference_run() {
     assert!(v["data"]["run_id"].as_i64().unwrap() > 0, "{v}");
     assert!(v["data"]["stems"].is_array(), "{v}");
 }
+
+// ---- Plan 8 lane C: common terms and kinds scoping ----
+const PACK_COMMON: &str = "---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n\
+| quantum.task-teleport | quantum | Task teleport | x | a teleporter | basics | 1 |\n\
+| queue.task | queue | Task queue | x | a queue | basics | 1 |\n\
+| web.routes | web | Routes | x | a route table | basics | 1 |\n";
+
+fn common_ws() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
+    let ws = tempfile::tempdir().unwrap();
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(pack.path().join("rows.md"), PACK_COMMON).unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
+    let clone = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(clone.path().join("pkg")).unwrap();
+    // 250 functions carry `task` and `queue` in their names: more than the threshold (200) of a ~260-node run
+    let mut jobs = String::new();
+    for i in 0..250 {
+        jobs.push_str(&format!("def task_queue_{i}():\n    return {i}\n\n"));
+    }
+    std::fs::write(clone.path().join("pkg/jobs.py"), jobs).unwrap();
+    std::fs::write(clone.path().join("pkg/app.py"), "def register_routes():\n    return 1\n").unwrap();
+    std::fs::write(clone.path().join("LICENSE"), "MIT License\n\nCopyright (c) 2026 S\n").unwrap();
+    git_commit(clone.path());
+    add_repo(ws.path(), clone.path(), Some("big"), false).unwrap();
+    build_repo(ws.path(), "big", "reference", &BuildOptions::default()).unwrap();
+    (ws, clone, pack)
+}
+
+#[test]
+fn a_common_term_is_dropped_and_the_rest_decides() {
+    let (ws, _c, _p) = common_ws();
+    let v = json(cc(ws.path()).args(["absent-check", "big", "fam", "quantum.task-teleport"]).assert().success());
+    assert_eq!(v["data"]["absent"], true, "{v}");
+    assert_eq!(v["data"]["common"], serde_json::json!(["task"]), "{v}");
+    assert!(!v["data"]["terms"].as_array().unwrap().iter().any(|t| t == "task"), "{v}");
+    let c = json(
+        cc(ws.path())
+            .args(["claim", "big", "quantum.task-teleport", "none", "--author", "me"])
+            .assert()
+            .success(),
+    );
+    let note = c["data"]["note"].as_str().unwrap();
+    assert!(note.contains("; common=task;"), "{note}");
+    assert_eq!(c["evidence"]["confidence"], "inferred", "{c}");
+}
+
+#[test]
+fn a_feature_whose_every_term_is_common_is_refused_and_records_nothing() {
+    let (ws, _c, _p) = common_ws();
+    let msg = "every term of queue.task is common in big (queue, task); pass --searched with specific terms";
+    let v = json(cc(ws.path()).args(["absent-check", "big", "fam", "queue.task"]).assert().failure());
+    assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
+    assert_eq!(v["error"]["message"], msg, "{v}");
+    let c = json(cc(ws.path()).args(["claim", "big", "queue.task", "none", "--author", "me"]).assert().failure());
+    assert_eq!(c["error"]["message"], msg, "{c}");
+    let db = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db")).unwrap();
+    let n: i64 = db.query_row("SELECT count(*) FROM claim", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0, "an all-common feature must not record an absence");
+}
+
+#[test]
+fn a_feature_naming_a_kind_counts_only_nodes_of_that_kind_on_the_symbol_channel() {
+    let (ws, _c, _p) = common_ws();
+    // `register_routes` is a function named for routes; the feature names the kind `route`, and the graph has no route node
+    let v = json(cc(ws.path()).args(["absent-check", "big", "fam", "web.routes"]).assert().success());
+    assert_eq!(v["data"]["channels"]["symbols"]["count"], 0, "{v}");
+    assert_eq!(v["data"]["channels"]["kinds"]["count"], 0, "{v}");
+    // (the community channel still names the file's community, so this check is not an absence; scoping touches the symbol channel only)
+}
