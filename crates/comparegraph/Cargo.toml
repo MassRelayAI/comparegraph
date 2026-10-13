@@ -57,6 +57,7 @@ tree-sitter-r = "1.2"
 tree-sitter-graphql = "0.1"
 tree-sitter-scala = "0.26"
 tree-sitter-powershell = "0.26"
+libc = "0.2.186"
 
 [dev-dependencies]
 assert_cmd = "2"

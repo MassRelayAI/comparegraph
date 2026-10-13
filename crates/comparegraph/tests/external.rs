@@ -82,7 +82,7 @@ fn runs(w: &Path) -> i64 {
     let c = rusqlite::Connection::open(w.join(".comparegraph/comparegraph.db")).unwrap();
     c.query_row("SELECT count(*) FROM run", [], |r| r.get(0)).unwrap()
 }
-/// build with the fake and assert it fails `provider_unavailable` leaving no run row
+/// build with the fake and assert it fails `provider_unavailable`: one failed run, no graph rows
 fn assert_unavailable(body: &str, timeout: Option<&str>, needle: &str) {
     let tools = tempfile::tempdir().unwrap();
     let cmd = script(tools.path(), "p", body);
@@ -98,7 +98,15 @@ fn assert_unavailable(body: &str, timeout: Option<&str>, needle: &str) {
     let text = String::from_utf8_lossy(&out).to_string();
     assert!(text.contains("provider_unavailable"), "{text}");
     assert!(text.contains(needle), "{text}");
-    assert_eq!(runs(w.path()), 0, "an unavailable provider leaves no run row");
+    let c = rusqlite::Connection::open(w.path().join(".comparegraph/comparegraph.db")).unwrap();
+    let (n, status, lim): (i64, String, String) =
+        c.query_row("SELECT count(*), max(status), max(limitations_json) FROM run", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+    assert_eq!((n, status.as_str()), (1, "failed"));
+    assert!(lim.contains("\"provider_unavailable\""), "{lim}");
+    for t in ["node", "edge", "community"] {
+        let k: i64 = c.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0)).unwrap();
+        assert_eq!(k, 0, "{t} rows after an unavailable provider");
+    }
 }
 
 #[test]
@@ -121,6 +129,20 @@ fn a_correct_provider_builds_and_bad_kinds_are_dropped_and_counted() {
 #[test]
 fn a_hanging_provider_times_out() {
     assert_unavailable("#!/bin/sh\nexec sleep 30\n", Some("2"), "timed out");
+}
+#[test]
+fn timeout_kills_grandchildren_too() {
+    let tools = tempfile::tempdir().unwrap();
+    let marker = "cgtest-grandchild-7391";
+    let body = format!("#!/bin/sh\nsleep 31.7391 &\nsleep 31.7391\n# {marker}\n");
+    let cmd = script(tools.path(), "p", &body);
+    manifest(tools.path());
+    let w = ws(&cmd);
+    let _c = added(w.path());
+    cc(w.path()).env("COMPAREGRAPH_PLUGIN_TIMEOUT", "1").args(["build", "a", "--provider", "fake"]).assert().failure();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let alive = Sys::new("pgrep").args(["-f", "sleep 31.7391"]).output().unwrap();
+    assert!(alive.stdout.is_empty(), "grandchild survived: {}", String::from_utf8_lossy(&alive.stdout));
 }
 #[test]
 fn garbage_output_is_unavailable() {

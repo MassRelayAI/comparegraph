@@ -81,8 +81,7 @@ pub fn build_repo(
     let out = match provider.build(Path::new(&repo.path), &opts) {
         Ok(o) => o,
         Err(e @ crate::providers::ProviderError::Unavailable(..)) => {
-            // an engine that hangs, babbles or dies leaves no trace: no run row, the store is as it was
-            store.delete_run(run)?;
+            store.finish_run(run, RunStatus::Failed, t.elapsed().as_secs_f64(), &[Limitation::new("provider_unavailable", e.to_string())], None)?;
             return Err(e.into());
         }
         Err(e) => {

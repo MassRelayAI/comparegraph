@@ -195,6 +195,8 @@ impl ExternalProvider {
         let secs = std::env::var("COMPAREGRAPH_PLUGIN_TIMEOUT").ok().and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_TIMEOUT_SECS);
         let deadline = Instant::now() + Duration::from_secs(secs);
         let mut cmd = Command::new(&self.command);
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         if let Some(r) = repo_root {
             cmd.env("COMPAREGRAPH_REPO_ROOT", r);
@@ -292,7 +294,7 @@ impl ExternalProvider {
             return Err(self.unavailable(format!("exited ({}) without an answer {err}", status.map(|s| s.to_string()).unwrap_or_default())));
         };
         if answer.is_err() {
-            let _ = child.kill();
+            kill_tree(&mut child);
             let _ = child.wait();
             return answer.map(|d| (d, progress));
         }
@@ -308,7 +310,7 @@ impl ExternalProvider {
                 }
                 Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
                 _ => {
-                    let _ = child.kill();
+                    kill_tree(&mut child);
                     let _ = child.wait();
                     return Err(self.unavailable("did not exit after answering"));
                 }
@@ -316,6 +318,24 @@ impl ExternalProvider {
         }
         answer.map(|d| (d, progress))
     }
+}
+
+/// Kill the child and, on Unix, its whole process group (the child leads one, see `process_group(0)`), so grandchildren die with it.
+///
+/// A direct `kill(2)` on the negated pid, never a shell-out: `/usr/bin/kill -KILL -1597919` (procps-ng) keeps only the first
+/// digit of a negative argument after a signal option and calls `kill(-1, SIGKILL)` — every process of the user. That spelling
+/// logged the whole desktop out five times on 2026-10-13 on a host whose pids exceed 1,000,000
+/// (docs/reports/2026-10-13-user-wide-kill-from-kill-tree.md). The pid guard keeps `-1` (everyone) and `0` (our own group) out.
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id();
+        if pid > 1 && pid <= i32::MAX as u32 {
+            // SAFETY: kill(2) takes a pid and a signal; no memory is touched. A negative pid addresses that process group.
+            unsafe { libc::kill(-(pid as i32), libc::SIGKILL) };
+        }
+    }
+    let _ = child.kill();
 }
 
 fn str_of(v: &serde_json::Value, k: &str) -> String {
@@ -420,8 +440,12 @@ impl GraphProvider for ExternalProvider {
         }
         let file_nodes = out.nodes.iter().filter(|n| n.kind == NodeKind::File).count();
         let paths = out.nodes.iter().map(|n| n.path.as_str()).collect::<std::collections::HashSet<_>>().len();
+        let inferred = data["files_parsed"].as_u64().is_none();
         out.files_seen = data["files_seen"].as_u64().map(|x| x as usize).unwrap_or(progress.max(file_nodes).max(paths));
         out.files_parsed = data["files_parsed"].as_u64().map(|x| x as usize).unwrap_or(file_nodes.max(if out.nodes.is_empty() { 0 } else { paths }));
+        if inferred {
+            out.limitations.push(Limitation::new("files_parsed_inferred", format!("the plugin gave no files_parsed; {} inferred from its file nodes and paths", out.files_parsed)));
+        }
         Ok(out)
     }
 }

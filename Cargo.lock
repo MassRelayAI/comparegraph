@@ -196,6 +196,7 @@ dependencies = [
  "clap",
  "hex",
  "ignore",
+ "libc",
  "predicates",
  "rusqlite",
  "serde",
