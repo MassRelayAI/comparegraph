@@ -21,6 +21,20 @@ to our structure?" — answered: metrics yes, prioritization no, interoperabilit
 3. The parity script per family (a bake-off per family, not per project).
 4. `family import/export` for a shared taxonomy format (`_rows-<family>.md`).
 
+## Navigation parity with codegraph (the maintainer, 2026-10-13: "why not do what codegraph and other OSS do")
+
+Graph-derived answers that codegraph serves and we do not, all plain queries over the store, no model:
+- **Circular dependencies**: cycles in the file-level `imports` graph (and in `extends`), with the cycle listed.
+- **Dead imports**: an `imports` edge whose imported names are never referenced in the importing file.
+- **Complexity and hot paths**: per function the call fan-in / fan-out and the longest path from an entry point; a ranked list.
+- **Architecture summary**: communities with their labels, sizes, cohesion and the edges between communities, as markdown.
+- **Edit context**: for a symbol, the callers, callees, tests-for and the containing community in one answer (the agent's
+  "what do I need to read before I change this").
+Parked, with the reason: markdown indexing and search, a memory store, PR context — not graph features, and the consumer
+projects keep those in their own vault and ledgers. Reopen only on a user's pull.
+The bar for replacing codegraph in a consumer's navigation: the head-to-head on the gold set at or above codegraph's
+recall on that consumer's languages with precision ≥ 0.96 (the same bar as Plan 6), recorded in the parity report.
+
 ## Left behind by Plan 6 lanes
 
 - **B4, per-file analysis cache.** B2's incremental build equals a full build but saves little at 2,600 files because the per-file
