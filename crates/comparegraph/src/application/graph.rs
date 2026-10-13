@@ -718,10 +718,9 @@ fn referenced(c: &Ctx, min_conf: f64) -> Result<Referenced> {
     let conn = c.store.conn();
     let mut st = conn.prepare(
         "SELECT e.target_node_id, e.kind, CASE WHEN s.kind = ?3 THEN s.path END, CASE WHEN s.kind = ?3 THEN s.provider_ref END, \
-                s.kind = ?4, CASE WHEN s.name LIKE 'describe: %' THEN s.path END \
+                s.kind = ?4, CASE WHEN substr(s.name, 1, 10) = 'describe: ' THEN s.path END \
          FROM edge e JOIN node s ON s.id = e.source_node_id \
-         WHERE e.run_id = ?1 AND e.confidence >= ?2 AND e.kind IN ('calls','extends','implements') AND e.source_node_id <> e.target_node_id \
-         GROUP BY 1, 2, 3, 4, 5, 6",
+         WHERE e.run_id = ?1 AND e.confidence >= ?2 AND e.kind IN ('calls','extends','implements') AND e.source_node_id <> e.target_node_id",
     )?;
     let mut called = HashSet::new();
     let mut referenced = HashSet::new();
@@ -793,20 +792,32 @@ fn paged_nodes(
     let kind_list = kinds.iter().map(|k| format!("'{}'", k.as_str())).collect::<Vec<_>>().join(",");
     let conn = c.store.conn();
     let mut st = conn.prepare(&format!(
-        "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ({kind_list}) ORDER BY qualified_name, path, line_start, id"
+        "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ({kind_list}) ORDER BY qualified_name"
     ))?;
     let rows = st.query_map(params![c.run_id], node_from_row)?;
     let (mut total, mut items) = (0usize, vec![]);
+    // rows arrive in index (qualified-name) order; a run of equal names is buffered and ordered by (path, line, id)
+    let mut run: Vec<Node> = vec![];
+    let mut flush = |run: &mut Vec<Node>| {
+        run.sort_by(|a, b| (&a.path, a.line_start, a.id.map(|i| i.0)).cmp(&(&b.path, b.line_start, b.id.map(|i| i.0))));
+        for n in run.drain(..) {
+            if !keep(&n) {
+                continue;
+            }
+            if total >= offset && items.len() < limit {
+                items.push(render(&n));
+            }
+            total += 1;
+        }
+    };
     for row in rows {
         let n = row?;
-        if !keep(&n) {
-            continue;
+        if run.first().is_some_and(|f| f.qualified_name != n.qualified_name) {
+            flush(&mut run);
         }
-        if total >= offset && items.len() < limit {
-            items.push(render(&n));
-        }
-        total += 1;
+        run.push(n);
     }
+    flush(&mut run);
     let next = (offset + limit < total).then(|| (offset + limit).to_string());
     Ok((items, json!({ "next": next, "total": total })))
 }
