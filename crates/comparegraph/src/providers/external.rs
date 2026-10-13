@@ -32,6 +32,11 @@ fn timeout_secs() -> Result<u64, String> {
     }
 }
 
+/// The deadline of a `capabilities` probe (doctor, detect): 10 s, `COMPAREGRAPH_PLUGIN_CAPS_TIMEOUT` (whole seconds) overrides it.
+fn caps_timeout_secs() -> u64 {
+    std::env::var("COMPAREGRAPH_PLUGIN_CAPS_TIMEOUT").ok().and_then(|v| v.trim().parse().ok()).filter(|n| *n > 0).unwrap_or(10)
+}
+
 /// A plugin path must be relative and stay inside the clone: no absolute path, no `..` segment, no NUL, no drive letter.
 fn path_ok(p: &str) -> bool {
     !(p.contains('\0')
@@ -188,7 +193,14 @@ impl ExternalProvider {
                 let conformance = std::fs::read_to_string(conform_path(workspace, &p.name))
                     .ok()
                     .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-                    .map(|v| serde_json::json!({ "passed": v["passed"], "fixtures": v["fixtures"].as_array().map(|a| a.len()) }))
+                    .map(|v| {
+                        let names = |ok: bool| -> Vec<String> {
+                            v["fixtures"].as_array().map(Vec::as_slice).unwrap_or(&[]).iter().filter(|f| (f["passed"] == true) == ok).filter_map(|f| f["name"].as_str().map(String::from)).collect()
+                        };
+                        let (conformed, failed) = (names(true), names(false));
+                        let summary = format!("conformed: {}; failed: {}", conformed.join(", "), failed.join(", "));
+                        serde_json::json!({ "passed": v["passed"], "fixtures": v["fixtures"].as_array().map(|a| a.len()), "conformed": conformed, "failed": failed, "summary": summary })
+                    })
                     .unwrap_or(serde_json::Value::Null);
                 let unavailable = p.unavailable_reason();
                 ExternalInfo { name: p.name.clone(), command: p.command.display().to_string(), manifest: p.manifest_state(), conformance, unavailable }
@@ -216,26 +228,42 @@ impl ExternalProvider {
         }
     }
 
-    /// An external provider is listed but not used until `conform <name>` passed; `--allow-unverified` waives it.
-    fn conformed(&self) -> Result<(), String> {
+    /// The conform gate, per language. `languages` are the fixture names of the languages present in the repo (see
+    /// `fixture_name`). With no result file the provider is unconformed and refused. With one, only a present language that has a
+    /// failed fixture refuses the build; a language without a fixture is not judged. A result without a fixture list falls back to
+    /// its overall `passed`. `--allow-unverified` waives all of it.
+    pub fn conformance_gate(&self, languages: &std::collections::BTreeSet<String>) -> Result<(), String> {
         if std::env::var("COMPAREGRAPH_ALLOW_UNVERIFIED").map(|v| v == "1").unwrap_or(false) {
             return Ok(());
         }
-        let passed = std::fs::read_to_string(conform_path(&self.workspace, &self.name))
+        let hint = format!("run `comparegraph conform {0}` first, or pass --allow-unverified", self.name);
+        let Some(v) = std::fs::read_to_string(conform_path(&self.workspace, &self.name))
             .ok()
             .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-            .is_some_and(|v| v["passed"] == true);
-        if passed {
+        else {
+            return Err(format!("{} has no conformance result: {hint}", self.name));
+        };
+        let fixtures = v["fixtures"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+        if fixtures.is_empty() {
+            return if v["passed"] == true { Ok(()) } else { Err(format!("{} has no passing conformance result: {hint}", self.name)) };
+        }
+        let failed: Vec<&str> = fixtures
+            .iter()
+            .filter(|f| f["passed"] != true)
+            .filter_map(|f| f["name"].as_str())
+            .filter(|n| languages.contains(*n))
+            .collect();
+        if failed.is_empty() {
             Ok(())
         } else {
-            Err(format!("{0} has no passing conformance result: run `comparegraph conform {0}` first, or pass --allow-unverified", self.name))
+            Err(format!("{} failed conformance for {} (present in this repo): {hint}", self.name, failed.join(", ")))
         }
     }
 
     /// A plugin whose engine is missing answers `capabilities` with `"unavailable": "<reason + install hint>"`; `doctor` shows it
     /// and `build` refuses before it starts a run. `None` when the plugin is usable, or cannot be asked (unverified, not runnable).
     pub fn unavailable_reason(&self) -> Option<String> {
-        let (d, _) = self.exchange(serde_json::json!({ "comparegraph": PROTOCOL, "op": "capabilities" }), None).ok()?;
+        let (d, _) = self.exchange_within(serde_json::json!({ "comparegraph": PROTOCOL, "op": "capabilities" }), None, Some(caps_timeout_secs())).ok()?;
         d["unavailable"].as_str().filter(|s| !s.is_empty()).map(String::from)
     }
 
@@ -245,8 +273,14 @@ impl ExternalProvider {
 
     /// One request line in, answer lines out. Returns (the `data` of the `ok` answer, progress file count).
     fn exchange(&self, request: serde_json::Value, repo_root: Option<&Path>) -> Result<(serde_json::Value, usize), ProviderError> {
+        self.exchange_within(request, repo_root, None)
+    }
+
+    /// `limit` shortens the deadline below the build timeout (a capabilities probe must not hold `doctor` for 30 minutes).
+    fn exchange_within(&self, request: serde_json::Value, repo_root: Option<&Path>, limit: Option<u64>) -> Result<(serde_json::Value, usize), ProviderError> {
         self.allowed().map_err(|e| self.unavailable(e))?;
         let secs = timeout_secs().map_err(|e| self.unavailable(e))?;
+        let secs = limit.map_or(secs, |l| l.min(secs));
         let cap = output_cap();
         let deadline = Instant::now() + Duration::from_secs(secs);
         let mut cmd = Command::new(&self.command);
@@ -432,7 +466,7 @@ impl GraphProvider for ExternalProvider {
                 Ok(()) => self.unavailable_reason().map_or(Ok(()), Err),
                 Err(e) => Err(e),
             };
-            match engine.and_then(|_| timeout_secs().map(|_| ())).and_then(|_| self.conformed()) {
+            match engine.and_then(|_| timeout_secs().map(|_| ())) {
                 Ok(()) => (true, format!("external, protocol {PROTOCOL}: {}", self.command.display())),
                 Err(e) => (false, e),
             }
@@ -441,7 +475,7 @@ impl GraphProvider for ExternalProvider {
     }
     fn capabilities(&self) -> Capabilities {
         let empty = Capabilities { languages: vec![], edge_kinds: vec![], communities: false, embeddings: false };
-        let Ok((d, _)) = self.exchange(serde_json::json!({ "comparegraph": PROTOCOL, "op": "capabilities" }), None) else {
+        let Ok((d, _)) = self.exchange_within(serde_json::json!({ "comparegraph": PROTOCOL, "op": "capabilities" }), None, Some(caps_timeout_secs())) else {
             return empty;
         };
         let strs = |k: &str| d[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_else(Vec::<String>::new);
@@ -547,4 +581,12 @@ impl GraphProvider for ExternalProvider {
 
 pub fn conform_path(workspace: &Path, name: &str) -> PathBuf {
     workspace.join(".comparegraph").join(format!("conform-{name}.json"))
+}
+
+/// The conformance fixture a walker language id belongs to (`typescript` covers tsx, javascript, jsx and mjs).
+pub fn fixture_name(language: &str) -> &str {
+    match language {
+        "tsx" | "javascript" | "jsx" | "mjs" => "typescript",
+        l => l,
+    }
 }

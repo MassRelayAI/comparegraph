@@ -68,10 +68,17 @@ taken as given; when `files_parsed` is absent it is inferred from the file nodes
 Paths: a node whose `path` is absolute, has a `..` segment (`/` or `\\`), a NUL or a drive letter is dropped, as are edges to
 it; one `bad_path` limitation counts them.
 
-## Conformance gate
-An external provider is listed by `doctor` but `build` refuses it until `comparegraph conform <name>` has written a passing
-`.comparegraph/conform-<name>.json`; `--allow-unverified` (or `COMPAREGRAPH_ALLOW_UNVERIFIED=1`) waives both this and the
-manifest requirement. `conform` itself always runs.
+A `capabilities` probe (doctor, build's pre-check) has its own deadline: 10 s, `COMPAREGRAPH_PLUGIN_CAPS_TIMEOUT` (whole seconds) overrides it, never longer than the build timeout.
+
+## Conformance gate (per language)
+`comparegraph conform <name>` writes `.comparegraph/conform-<name>.json` with one result per fixture; a fixture is named for its
+language (`go`, `java`, `python`, `rust`, `typescript`; `typescript` also covers tsx, javascript, jsx and mjs). `doctor` shows the
+overall `passed` (all fixtures) and the split by language (`conformed`, `failed`, `summary`: "conformed: go, python, typescript; failed: java, rust"). `build` is stricter about the repo in front of it and looser about the rest: it computes the
+languages present in the clone once (the reference walker's extension map), and refuses only when a present language has a failed
+fixture, or when there is no result file at all. A language without a fixture is not judged. A repo with none of the failed
+languages builds with no waiver. A result with no fixture list falls back to its overall `passed`. The refusal names the failed
+languages and `comparegraph conform <name>`, and leaves no run row. `--allow-unverified` (or `COMPAREGRAPH_ALLOW_UNVERIFIED=1`)
+waives this and the manifest requirement. `conform` itself always runs. `detect()` no longer reads the conformance result.
 
 ## Example exchange
 ```

@@ -31,25 +31,25 @@ mkdir -p "$WS"
 DB="$WS/.comparegraph/comparegraph.db"
 if ! [ -f "$DB" ] || ! python3 -I -c "
 import sqlite3,sys
-c=sqlite3.connect(sys.argv[1]); sys.exit(0 if c.execute(\"select 1 from run r join repo p on p.id=r.repo_id where p.name=? and r.status='done'\",(sys.argv[2],)).fetchone() else 1)" "$DB" "$NAME" 2>/dev/null; then
+c=sqlite3.connect(sys.argv[1]); sys.exit(0 if c.execute(\"select 1 from run r join repo p on p.id=r.repo_id where p.name=? and r.provider=? and r.status='done'\",(sys.argv[2],sys.argv[3])).fetchone() else 1)" "$DB" "$NAME" "$PROVIDER" 2>/dev/null; then
   if [ "$ENGINE" = crg ]; then
     printf '[providers.crg]\ncommand = "%s"\n' "$(cd "$(dirname "$0")/.." && pwd)/providers/crg/comparegraph-provider-crg" > "$WS/comparegraph.toml"
   fi
-  nice -n 10 "$BIN" --root "$WS" add "$SRC" --name "$NAME" >/dev/null
+  nice -n 10 "$BIN" --root "$WS" add "$SRC" --name "$NAME" >/dev/null 2>&1 || true   # the repo may already be registered (another engine built it)
   nice -n 10 "$BIN" --root "$WS" --allow-unverified build "$NAME" --provider "$PROVIDER" >/dev/null
 fi
-python3 -I - "$LIB" "$DB" "$NAME" "$GOLD" "$ENGINE" <<'PY'
+python3 -I - "$LIB" "$DB" "$NAME" "$GOLD" "$ENGINE" "$PROVIDER" <<'PY'
 import json, sqlite3, sys
-lib, db, name, gold, engine = sys.argv[1:6]
+lib, db, name, gold, engine, provider = sys.argv[1:7]
 sys.path.insert(0, lib)
 import gold as G
 cg = sqlite3.connect(db)
-rid = cg.execute("select r.id from run r join repo p on p.id=r.repo_id where p.name=? and r.status='done' order by r.id desc limit 1", (name,)).fetchone()[0]
+rid = cg.execute("select r.id from run r join repo p on p.id=r.repo_id where p.name=? and r.provider=? and r.status='done' order by r.id desc limit 1", (name, provider)).fetchone()[0]
 nodes, spans, calls = G.load_ours(cg, rid)
 rows = G.read_jsonl(gold)
 answers = {r["id"]: G.ours_answer(nodes, spans, calls, r["path"], r["line"], r["callee"])[1] for r in rows}
 s = G.score(rows, answers)
-out = {"project": name, "engine": engine, **s}
+out = {"project": name, "engine": engine, "provider": provider, **s}
 print(json.dumps(out))
 p, r = s["precision"], s["recall"]
 print("%-20s %-5s sites %4d repo %4d answered %4d correct %4d  P %s  R %s" % (name, engine, s["sites"], s["repo_target_sites"], s["answered"], s["correct"], p, r), file=sys.stderr)

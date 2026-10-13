@@ -215,3 +215,92 @@ fn an_unknown_provider_in_the_list_fails_cleanly_before_any_build() {
     // and --provider still works on its own
     cc(ws.path(), &fake).args(["build", "a", "--provider", "reference"]).assert().success();
 }
+
+/// a fake crg for the binding cases: it writes its own a.py (so the call-site text the adapter reads is known) and a crg-shaped db
+const FAKE_BIND: &str = r#"#!/usr/bin/env python3
+import os, sqlite3, sys
+if "--version" in sys.argv:
+    print("code-review-graph 2.3.9"); sys.exit(0)
+repo = sys.argv[sys.argv.index("--repo") + 1]
+P = lambda f: os.path.join(repo, f)
+open(P("a.py"), "w").write("from b import uniq, uniq2, Base\n"                    # 1
+                           "def fa():\n    uniq()\n"                               # 2,3  bare call, unique name, imported file
+                           "def fm():\n    obj.uniq2()\n"                          # 4,5  method call on a receiver
+                           "def fd():\n    dup()\n"                                 # 6,7  two `dup` exist
+                           "class K(Base):\n    pass\n")                            # 8,9
+os.makedirs(os.path.join(repo, ".code-review-graph"), exist_ok=True)
+db = sqlite3.connect(os.path.join(repo, ".code-review-graph", "graph.db"))
+db.executescript("""
+create table nodes (id integer primary key autoincrement, kind text, name text, qualified_name text unique, file_path text,
+  line_start integer, line_end integer, language text, parent_name text, is_test integer default 0, file_hash text);
+create table edges (id integer primary key autoincrement, kind text, source_qualified text, target_qualified text, file_path text, line integer default 0);
+""")
+def node(kind, name, qn, f, a, b, parent=None):
+    db.execute("insert into nodes(kind,name,qualified_name,file_path,line_start,line_end,language,parent_name,is_test,file_hash) values (?,?,?,?,?,?,?,?,0,'h')",
+               (kind, name, qn, P(f), a, b, "python", parent))
+def edge(kind, s, t, f, line):
+    db.execute("insert into edges(kind,source_qualified,target_qualified,file_path,line) values (?,?,?,?,?)", (kind, s, t, P(f), line))
+for f in ("a.py", "b.py", "c.py", "shape.rs"):
+    node("File", P(f), P(f), f, 1, 9)
+q = lambda f, n: P(f) + "::" + n
+for n, f in (("fa", "a.py"), ("fm", "a.py"), ("fd", "a.py")):
+    node("Function", n, q(f, n), f, 1, 9)
+node("Class", "K", q("a.py", "K"), "a.py", 8, 9)
+for n in ("uniq", "uniq2", "dup"):
+    node("Function", n, q("b.py", n), "b.py", 1, 2)
+node("Function", "dup", q("c.py", "dup"), "c.py", 1, 2)
+node("Class", "Base", q("b.py", "Base"), "b.py", 3, 4)
+node("Class", "Area", q("shape.rs", "Area"), "shape.rs", 1, 3)
+node("Class", "Square", q("shape.rs", "Square"), "shape.rs", 5, 9)
+node("Function", "area", q("shape.rs", "Area.area"), "shape.rs", 2, 2, "Area")
+node("Function", "area", q("shape.rs", "Square.area"), "shape.rs", 6, 8, "Square")
+edge("IMPORTS_FROM", P("a.py"), P("b.py"), "a.py", 1)
+edge("CALLS", q("a.py", "fa"), "uniq", "a.py", 3)
+edge("CALLS", q("a.py", "fm"), "uniq2", "a.py", 5)
+edge("CALLS", q("a.py", "fd"), "dup", "a.py", 7)
+edge("INHERITS", q("a.py", "K"), "Base", "a.py", 8)
+db.commit()
+print("Full build: 4 files, 11 nodes, 5 edges")
+"#;
+
+#[test]
+fn bare_names_bind_only_with_evidence_and_at_half_confidence() {
+    let (tools, ws, _fake) = setup();
+    let fake = script(tools.path(), "code-review-graph-bind", FAKE_BIND);
+    let _c = added(ws.path(), &fake);
+    cc(ws.path(), &fake).args(["build", "a", "--provider", "crg"]).assert().success();
+    let c = db(ws.path());
+    let edge = |kind: &str, s: &str, t: &str| -> Option<f64> {
+        c.query_row(
+            "SELECT e.confidence FROM edge e JOIN node a ON a.id=e.source_node_id JOIN node b ON b.id=e.target_node_id WHERE e.kind=?1 AND a.qualified_name=?2 AND b.qualified_name=?3",
+            [kind, s, t],
+            |r| r.get(0),
+        )
+        .ok()
+    };
+    assert_eq!(edge("calls", "a.py::fa", "b.py::uniq"), Some(0.5), "unique name, bare call, imported file: bound at 0.5, never 1.0");
+    let any_to = |name: &str| -> i64 {
+        c.query_row("SELECT count(*) FROM edge e JOIN node b ON b.id=e.target_node_id WHERE e.kind='calls' AND b.name=?1", [name], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(any_to("uniq2"), 0, "`obj.uniq2()` has an unknown receiver: nothing");
+    assert_eq!(any_to("dup"), 0, "two functions named dup: nothing");
+    assert_eq!(edge("extends", "a.py::K", "b.py::Base"), Some(0.5), "a base class bound by name is 0.5 even from an imported file");
+    // the Rust shape: two `area` methods in one file stay two nodes, as area and area#2
+    let n: i64 = c.query_row("SELECT count(*) FROM node WHERE qualified_name IN ('shape.rs::area','shape.rs::area#2')", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 2);
+}
+
+#[test]
+fn doctor_shows_which_languages_conformed_and_which_failed() {
+    let (_t, ws, fake) = setup();
+    std::fs::create_dir_all(ws.path().join(".comparegraph")).unwrap();
+    std::fs::write(
+        ws.path().join(".comparegraph/conform-crg.json"),
+        r#"{"passed":false,"fixtures":[{"name":"go","passed":true},{"name":"java","passed":false},{"name":"python","passed":true},{"name":"rust","passed":false}]}"#,
+    )
+    .unwrap();
+    let out = cc(ws.path(), &fake).arg("doctor").assert().success().get_output().stdout.clone();
+    let v = json(&out);
+    let crg = v["data"]["external_providers"].as_array().unwrap().iter().find(|p| p["name"] == "crg").unwrap().clone();
+    assert_eq!(crg["conformance"]["summary"], "conformed: go, python; failed: java, rust", "{crg}");
+}

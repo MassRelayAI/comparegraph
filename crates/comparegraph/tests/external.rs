@@ -327,3 +327,28 @@ fn build_needs_a_passing_conformance_unless_allowed() {
     std::fs::write(w.path().join(".comparegraph/conform-fake.json"), r#"{"passed":true}"#).unwrap();
     cc(w.path()).args(["build", "a", "--provider", "fake"]).assert().success();
 }
+
+#[test]
+fn conform_gate_refuses_only_a_failed_language_present_in_the_repo() {
+    let tools = tempfile::tempdir().unwrap();
+    let cmd = script(tools.path(), "p", GOOD);
+    manifest(tools.path());
+    let w = ws_raw(&cmd);
+    let c = added(w.path()); // a TypeScript-only clone
+    std::fs::create_dir_all(w.path().join(".comparegraph")).unwrap();
+    std::fs::write(
+        w.path().join(".comparegraph/conform-fake.json"),
+        r#"{"passed":false,"fixtures":[{"name":"typescript","passed":true},{"name":"rust","passed":false}]}"#,
+    )
+    .unwrap();
+    // rust failed, the repo has none: it builds with no waiver
+    cc(w.path()).args(["build", "a", "--provider", "fake"]).assert().success();
+    // one .rs file and it is refused, naming the language and the conform command
+    std::fs::write(c.path().join("src/m.rs"), "pub fn m() {}\n").unwrap();
+    let out = cc(w.path()).args(["build", "a", "--provider", "fake"]).assert().failure().get_output().stdout.clone();
+    let text = String::from_utf8_lossy(&out).to_string();
+    assert!(text.contains("rust") && text.contains("conform fake"), "{text}");
+    assert_eq!(runs(w.path()), 1, "the refusal left no run row");
+    // --allow-unverified waives it
+    cc(w.path()).args(["--allow-unverified", "build", "a", "--provider", "fake"]).assert().success();
+}

@@ -74,6 +74,7 @@ When only K of N files changed, recompute edges whose source or target file chan
 
 ### C2: `comparegraph-provider-crg`
 A small Python script (shipped under `providers/crg/`, no product dependency — it needs `code-review-graph` installed in the user's environment; `doctor` says so when missing) that runs `code-review-graph build` on the clone (on a COPY if crg writes into the repo, as the parity script does), reads its SQLite and emits our node/edge kinds with the confidence rule of Review Focus 5. Conformance: must pass the five fixtures at the floors; gold: report crg-through-adapter P/R per project next to the native crg numbers. `build --providers reference,crg` then yields an `agreement` row per kind (Plan 4's deferred item): Jaccard over qualified names and edges, written into the run's limitations when < 0.8.
+- java/rust: shape differences, gated per language (the conform gate refuses a repo only for a failed language it contains; `doctor` shows conformed and failed languages).
 - [ ] Commit `feat(crg): the code-review-graph adapter and the agreement score`.
 
 ## After the lanes: the re-measure and the codegraph head-to-head

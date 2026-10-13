@@ -54,6 +54,18 @@ pub fn build_repo(
             crate::providers::ProviderError::Unavailable(provider_name.into(), status.detail),
         ));
     }
+    if provider_name != "reference" {
+        if let Some(ext) = crate::providers::external::ExternalProvider::discover(root, provider_name) {
+            // the languages the walker finds in the clone, computed once; the conform gate judges only those
+            let langs: std::collections::BTreeSet<String> = crate::providers::reference::walker::walk(Path::new(&repo.path), opts)
+                .files
+                .iter()
+                .map(|f| crate::providers::external::fixture_name(&f.language).to_string())
+                .collect();
+            ext.conformance_gate(&langs)
+                .map_err(|e| AppError::Provider(crate::providers::ProviderError::Unavailable(provider_name.into(), e)))?;
+        }
+    }
     let repo_id = repo.id.unwrap();
     let t = Instant::now();
     if !opts.full && provider.name() == "reference" {

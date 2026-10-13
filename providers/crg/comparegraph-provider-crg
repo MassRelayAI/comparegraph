@@ -4,7 +4,8 @@
 Stdlib only. It needs `code-review-graph` (PyPI, tested with 2.3.9) in the user's environment; without it `capabilities`
 answers with an `unavailable` reason and `build` fails with the install hint. code-review-graph refuses a directory without a
 .git (and writes its store inside the repo), so `build` indexes a COPY of the repo in a temp dir, reads the SQLite store and
-emits our node and edge kinds. Kind mapping: scripts/compare-engines.sh header.
+emits our node and edge kinds. The copy lives in a `cg-crg-*` temp dir and is removed in a `finally`; when the host kills a timed-out
+plugin (SIGKILL on the process group) that `finally` cannot run and the copy is left behind. Kind mapping: scripts/compare-engines.sh header.
 
 Environment: COMPAREGRAPH_REPO_ROOT / the request's repo_root; COMPAREGRAPH_CRG_BIN (the executable, default
 `code-review-graph` on PATH); COMPAREGRAPH_PLUGIN_TIMEOUT (seconds; bounds the crg run).
@@ -201,7 +202,7 @@ def convert(db_path, root):
         elif ours in ("calls", "tests"):
             c = 1.0 if (direct and evidence) else 0.5
         else:
-            c = 1.0 if ((direct or evidence) and tq != sq) else 0.5
+            c = 1.0 if (direct and evidence and tq != sq) else 0.5
         if ours in ("extends", "implements"):
             m = re.search(r"\bimplements\b(.*)", header(sq))
             if m and re.search(r"\b%s\b" % re.escape(tq.split("::", 1)[1].split("#")[0]), m.group(1)):
@@ -235,9 +236,8 @@ def build(req):
     tmp = tempfile.mkdtemp(prefix="cg-crg-")
     try:
         work = os.path.join(tmp, "work")
-        shutil.copytree(root, work, symlinks=True, ignore=shutil.ignore_patterns(".code-review-graph"), ignore_dangling_symlinks=True)
-        if not os.path.exists(os.path.join(work, ".git")):
-            os.mkdir(os.path.join(work, ".git"))      # crg refuses a directory that is not a project root
+        shutil.copytree(root, work, symlinks=True, ignore=shutil.ignore_patterns(".code-review-graph", ".git"), ignore_dangling_symlinks=True)
+        os.mkdir(os.path.join(work, ".git"))      # crg refuses a directory that is not a project root; the real .git is not copied
         say({"progress": {"files": 0}})
         try:
             r = subprocess.run([b, "build", "--repo", work], capture_output=True, text=True, timeout=timeout_secs(), cwd=tmp)
