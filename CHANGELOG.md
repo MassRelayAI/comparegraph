@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- `claim --batch` skips a row equal to the live claim (same run, verdict, author, note and locations): it writes nothing, reports `skipped: true` with the existing claim, and the summary gains `skipped`. An interrupted batch can be re-run without doubling its rows. `decide --batch` summaries report `skipped: 0`.
+
 ## [0.1.1] - 2026-10-14
 
 ### Added

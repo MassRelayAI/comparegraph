@@ -346,7 +346,7 @@ fn batch_of_four_writes_three_and_reports_the_failing_row_like_the_single_path()
     );
     assert!(out[..4].iter().all(|v| v["verb"] == "claim"));
     assert_eq!(out[0]["data"]["verdict"], "has");
-    assert_eq!(out[4]["data"], serde_json::json!({"rows":4,"ok":3,"failed":1,"committed":true}));
+    assert_eq!(out[4]["data"], serde_json::json!({"rows":4,"ok":3,"skipped":0,"failed":1,"committed":true}));
     let single = json(
         claim(ws.path(), &["has", "--author", "me", "--at", "src/net/a.py:1-99"]).failure(),
     );
@@ -424,7 +424,7 @@ fn batch_rolls_back_a_row_that_fails_mid_write_and_keeps_the_rest() {
     assert_eq!(out.len(), 4, "{out:?}");
     assert_eq!(out.iter().map(|v| v["ok"].as_bool().unwrap()).collect::<Vec<_>>(), [true, false, true, false]);
     assert!(out[1]["error"]["message"].as_str().unwrap().contains("forced mid-write failure"), "{out:?}");
-    assert_eq!(out[3]["data"], serde_json::json!({"rows":3,"ok":2,"failed":1,"committed":true}));
+    assert_eq!(out[3]["data"], serde_json::json!({"rows":3,"ok":2,"skipped":0,"failed":1,"committed":true}));
     let conn = rusqlite::Connection::open(&db).unwrap();
     let claims: i64 = conn.query_row("SELECT COUNT(*) FROM claim", [], |r| r.get(0)).unwrap();
     let has_without_location: i64 = conn
@@ -528,4 +528,101 @@ fn a_store_created_before_the_synonyms_column_opens_and_gains_it() {
     cc(ws.path()).args(["family", "add"]).arg(p.path()).assert().success();
     let s: String = db.query_row("SELECT synonyms FROM feature WHERE slug = 'routing.retry'", [], |r| r.get(0)).unwrap();
     assert_eq!(s, "reattempt");
+}
+
+const RESUME4: &[&str] = &[
+    "{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/net/a.py:1-2\"]}",
+    "{\"repo\":\"a\",\"feature\":\"memory.recall\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/net/a.py:4\"]}",
+    "{\"repo\":\"p\",\"feature\":\"routing.retry\",\"verdict\":\"unknown\",\"author\":\"me\"}",
+    "{\"repo\":\"p\",\"feature\":\"memory.recall\",\"verdict\":\"unknown\",\"author\":\"me\",\"note\":\"n\"}",
+];
+
+fn with_second_repo(ws: &std::path::Path) -> tempfile::TempDir {
+    let p = clone_with(&[("src/p.py", "def x():\n    return 1\n")]);
+    add_repo(ws, p.path(), Some("p"), false).unwrap();
+    build_repo(ws, "p", "reference", &BuildOptions::default()).unwrap();
+    p
+}
+
+fn batch_rows(ws: &std::path::Path, rows: &[&str]) -> Vec<serde_json::Value> {
+    let path = ws.join("resume.jsonl");
+    std::fs::write(&path, rows.join("\n") + "\n").unwrap();
+    let a = cc(ws).args(["claim", "--batch"]).arg(&path).assert().success();
+    lines(&a.get_output().stdout)
+}
+fn history_len(ws: &std::path::Path) -> usize {
+    let all = json(cc(ws).args(["claims", "--history"]).assert().success());
+    all["data"]["items"].as_array().unwrap().len()
+}
+
+#[test]
+fn rerunning_a_batch_skips_every_row_and_writes_nothing() {
+    let (ws, _a, _p) = setup();
+    let _p2 = with_second_repo(ws.path());
+    let first = batch_rows(ws.path(), RESUME4);
+    assert_eq!(first[4]["data"]["skipped"], 0, "{first:?}");
+    assert!(first[..4].iter().all(|v| v["data"].get("skipped").is_none()));
+    assert_eq!(history_len(ws.path()), 4);
+    let second = batch_rows(ws.path(), RESUME4);
+    assert_eq!(second[4]["data"], serde_json::json!({"rows":4,"ok":4,"skipped":4,"failed":0,"committed":true}));
+    for k in 0..4 {
+        assert_eq!(second[k]["ok"], true);
+        assert_eq!(second[k]["data"]["skipped"], true, "{second:?}");
+        assert_eq!(second[k]["data"]["id"], first[k]["data"]["id"]);
+        assert_eq!(second[k]["data"]["created_at"], first[k]["data"]["created_at"]);
+        assert_eq!(second[k]["data"]["locations"], first[k]["data"]["locations"]);
+    }
+    assert_eq!(history_len(ws.path()), 4);
+}
+
+#[test]
+fn a_changed_row_is_written_as_a_superseding_claim() {
+    for (idx, changed) in [
+        (0, RESUME4[0].replace("a.py:1-2", "a.py:1-3")),
+        (1, RESUME4[1].replace("\"author\":\"me\"", "\"author\":\"me\",\"note\":\"why\"")),
+        (1, RESUME4[1].replace("\"has\"", "\"partial\"")),
+    ] {
+        let (ws, _a, _p) = setup();
+        let _p2 = with_second_repo(ws.path());
+        let first = batch_rows(ws.path(), RESUME4);
+        let mut rows = RESUME4.to_vec();
+        rows[idx] = &changed;
+        let before = history_len(ws.path());
+        let out = batch_rows(ws.path(), &rows);
+        assert_eq!(out[idx]["ok"], true, "{out:?}");
+        assert!(out[idx]["data"].get("skipped").is_none(), "{out:?}");
+        assert_ne!(out[idx]["data"]["id"], first[idx]["data"]["id"]);
+        assert!(out[idx]["data"]["supersedes_id"].is_i64());
+        assert_eq!(out.last().unwrap()["data"]["skipped"], 3, "{out:?}");
+        assert_eq!(history_len(ws.path()), before + 1);
+    }
+}
+
+#[test]
+fn a_batch_after_a_rebuild_writes_new_rows() {
+    let (ws, a, _p) = setup();
+    let _p2 = with_second_repo(ws.path());
+    batch_rows(ws.path(), RESUME4);
+    std::fs::write(a.path().join("src/net/b.py"), "def other():\n    return 3\n").unwrap();
+    for r in ["a", "p"] {
+        build_repo(ws.path(), r, "reference", &BuildOptions::default()).unwrap();
+    }
+    let out = batch_rows(ws.path(), RESUME4);
+    // repo a has a new run, so its rows are written again; repo p kept its run, so its rows are skipped
+    assert!(out[0]["data"].get("skipped").is_none() && out[1]["data"].get("skipped").is_none(), "{out:?}");
+    assert!(out[2]["data"]["skipped"] == true && out[3]["data"]["skipped"] == true, "{out:?}");
+    assert_eq!(out[4]["data"]["skipped"], 2, "{out:?}");
+    assert_eq!(history_len(ws.path()), 6);
+}
+
+#[test]
+fn a_single_claim_of_an_identical_row_still_writes() {
+    let (ws, _a, _p) = setup();
+    let _p2 = with_second_repo(ws.path());
+    let args = ["claim", "a", "routing.retry", "has", "--author", "me", "--at", "src/net/a.py:1-2"];
+    let one = json(cc(ws.path()).args(args).assert().success());
+    let two = json(cc(ws.path()).args(args).assert().success());
+    assert!(two["data"].get("skipped").is_none(), "{two}");
+    assert_eq!(two["data"]["supersedes_id"], one["data"]["id"]);
+    assert_eq!(history_len(ws.path()), 2);
 }

@@ -427,7 +427,7 @@ fn print_line(v: &serde_json::Value, pretty: bool) {
 }
 
 /// `claim --batch` / `decide --batch`: one envelope per input row in input order (with its `line`), printed as each
-/// row is decided, then a summary envelope `{rows, ok, failed, committed}`; an error envelope as the last line means the
+/// row is decided, then a summary envelope `{rows, ok, skipped, failed, committed}`; an error envelope as the last line means the
 /// transaction did not commit and no row landed. Exit 0 only when every row is ok.
 fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     use std::io::BufRead;
@@ -502,7 +502,7 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     };
     let mut summary = Envelope::ok(
         verb,
-        serde_json::json!({ "rows": sum.rows, "ok": sum.ok, "failed": sum.failed, "committed": true }),
+        serde_json::json!({ "rows": sum.rows, "ok": sum.ok, "skipped": sum.skipped, "failed": sum.failed, "committed": true }),
         "observed",
         vec![],
         None,
@@ -853,6 +853,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 at,
                 searched: searched.as_deref(),
                 note: note.as_deref(),
+                skip_equal: false,
             },
         )?)
         .unwrap(),

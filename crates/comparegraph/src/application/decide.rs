@@ -146,6 +146,7 @@ pub fn decide_batch(
                 l.family.as_deref(),
             )
         },
+        |_| false,
         on_row,
     )
 }

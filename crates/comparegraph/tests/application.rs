@@ -571,6 +571,7 @@ mod vault_tests {
                     at: &at,
                     searched: None,
                     note: None,
+                    skip_equal: false,
                 },
             )
             .unwrap();

@@ -31,6 +31,9 @@ pub struct ClaimOut {
     pub supersedes_id: Option<i64>,
     pub note: String,
     pub locations: Vec<LocationOut>,
+    /// True when a batch row equalled the live claim and nothing was written; `id` is the existing claim.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub skipped: bool,
 }
 
 pub struct ClaimInput<'a> {
@@ -42,6 +45,8 @@ pub struct ClaimInput<'a> {
     pub at: &'a [String],
     pub searched: Option<&'a str>,
     pub note: Option<&'a str>,
+    /// Write nothing when the live claim for the feature already equals this one (a batch resumed after an interruption).
+    pub skip_equal: bool,
 }
 
 fn invalid<T>(m: impl Into<String>) -> Result<T> {
@@ -261,6 +266,9 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
         hash: String,
         node: Option<i64>,
     }
+    fn res_keys(r: &[Resolved]) -> Vec<(String, i64, i64)> {
+        r.iter().map(|x| (x.path.clone(), x.s as i64, x.e as i64)).collect()
+    }
     let mut res: Vec<Resolved> = vec![];
     for a in i.at {
         let (p, s, e) = parse_at(a)?;
@@ -300,6 +308,11 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
     } else {
         "derived"
     };
+    if i.skip_equal {
+        if let Some(same) = equal_live_claim(store, i, rid.0, fid, run.0, confidence, &note, &fam, &res_keys(&res))? {
+            return Ok(same);
+        }
+    }
     let now = now_iso();
     let tx = store.conn();
     tx.execute_batch("SAVEPOINT cg_claim")?;
@@ -356,7 +369,94 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
         supersedes_id: supersedes,
         note,
         locations,
+        skipped: false,
     })
+}
+
+/// The live claim for (repo, feature) when it equals the one about to be written: same run, verdict, confidence,
+/// author, note and locations (path and span, in order). Returned as it is stored, marked `skipped`.
+#[allow(clippy::too_many_arguments)]
+fn equal_live_claim(
+    store: &Store,
+    i: &ClaimInput,
+    repo_id: i64,
+    feature_id: i64,
+    run_id: i64,
+    confidence: &str,
+    note: &str,
+    family: &str,
+    keys: &[(String, i64, i64)],
+) -> Result<Option<ClaimOut>> {
+    let c = store.conn();
+    let live = c
+        .query_row(
+            "SELECT id, run_id, verdict, confidence, author, note, created_at, supersedes_id FROM claim \
+             WHERE id = (SELECT MAX(id) FROM claim WHERE repo_id = ?1 AND feature_id = ?2)",
+            params![repo_id, feature_id],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, Option<i64>>(7)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((id, lrun, verdict, lconf, author, lnote, created_at, supersedes_id)) = live else {
+        return Ok(None);
+    };
+    if lrun != run_id
+        || verdict != i.verdict
+        || lconf != confidence
+        || author != i.author
+        || lnote != note
+    {
+        return Ok(None);
+    }
+    let mut st = c.prepare(
+        "SELECT id, node_id, path, line_start, line_end, content_hash, stale FROM location WHERE claim_id = ?1 ORDER BY id",
+    )?;
+    let locations: Vec<LocationOut> = st
+        .query_map(params![id], |r| {
+            Ok(LocationOut {
+                id: r.get(0)?,
+                node_id: r.get(1)?,
+                path: r.get(2)?,
+                line_start: r.get(3)?,
+                line_end: r.get(4)?,
+                content_hash: r.get(5)?,
+                stale: r.get::<_, i64>(6)? != 0,
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    let same = locations.len() == keys.len()
+        && locations
+            .iter()
+            .zip(keys)
+            .all(|(l, k)| l.path == k.0 && l.line_start == k.1 && l.line_end == k.2);
+    if !same {
+        return Ok(None);
+    }
+    Ok(Some(ClaimOut {
+        id,
+        repo: i.repo.into(),
+        family: family.into(),
+        feature: i.feature.into(),
+        run_id: lrun,
+        verdict,
+        confidence: lconf,
+        author,
+        created_at,
+        supersedes_id,
+        note: lnote,
+        locations,
+        skipped: true,
+    }))
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -386,12 +486,13 @@ impl<T> BatchRow<T> {
     }
 }
 
-/// What a batch did: rows seen (blank lines excluded), ok, failed. Rows are durable only once the transaction commits,
+/// What a batch did: rows seen (blank lines excluded), ok, skipped (ok rows that wrote nothing), failed. Rows are durable only once the transaction commits,
 /// which is when this value is returned.
 #[derive(Debug, Serialize, Clone, Copy, Default)]
 pub struct BatchSummary {
     pub rows: usize,
     pub ok: usize,
+    pub skipped: usize,
     pub failed: usize,
 }
 
@@ -404,6 +505,7 @@ pub fn run_batch<L: serde::de::DeserializeOwned, T>(
     root: &Path,
     lines: impl std::io::BufRead,
     mut each: impl FnMut(&Store, L) -> Result<T>,
+    skipped_of: impl Fn(&T) -> bool,
     mut on_row: impl FnMut(BatchRow<T>),
 ) -> Result<BatchSummary> {
     let store = Store::open(root)?;
@@ -435,6 +537,9 @@ pub fn run_batch<L: serde::de::DeserializeOwned, T>(
         sum.rows += 1;
         if row.ok {
             sum.ok += 1;
+            if row.data.as_ref().is_some_and(&skipped_of) {
+                sum.skipped += 1;
+            }
         } else {
             sum.failed += 1;
         }
@@ -480,9 +585,10 @@ pub fn claim_batch(
                 at: &l.at,
                 searched: l.searched.as_deref(),
                 note: l.note.as_deref(),
+                skip_equal: true,
             },
         )
-    }, on_row)
+    }, |o: &ClaimOut| o.skipped, on_row)
 }
 
 /// Latest claim per (repo, feature) by default; every row with its supersede chain when `history`.
@@ -517,6 +623,7 @@ pub fn claims(
                 supersedes_id: r.get(9)?,
                 note: r.get(10)?,
                 locations: vec![],
+                skipped: false,
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;

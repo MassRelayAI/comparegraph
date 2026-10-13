@@ -99,7 +99,7 @@ One SQLite file per workspace, `.comparegraph/comparegraph.db` (rusqlite, bundle
 | `family` | id, name, definition_path | the taxonomy root (`families/<name>/rows.md`) |
 | `feature` | id, family_id, group, slug, definition, counts_as_has, tier (basics/common/ours-only), weight | one row of the taxonomy |
 | `relatedness` | repo_id, family_id, run_id, score, band (related/adjacent/unrelated), basis_json | the clone ↔ family score |
-| `claim` | id, repo_id, feature_id, run_id, verdict (has/partial/none/unknown), confidence (observed/derived/inferred/unknown), author, note, limitations_json, created_at, supersedes_id | the JUDGEMENT; append-only — a re-confirmation or a change is a new row naming the one it supersedes, so every cell has a trail (who, when, on what evidence, what changed) |
+| `claim` | id, repo_id, feature_id, run_id, verdict (has/partial/none/unknown), confidence (observed/derived/inferred/unknown), author, note, limitations_json, created_at, supersedes_id | the JUDGEMENT; append-only — a re-confirmation or a change is a new row naming the one it supersedes (a batch skips a row equal to the live claim), so every cell has a trail (who, when, on what evidence, what changed) |
 | `location` | id, claim_id, node_id, path, line_start, line_end, content_hash, resolved_at, stale | the PROOF; `stale` flips when the content hash no longer matches |
 | `embedding` | owner_id, owner_kind, model, vector (blob) | optional; ranking only |
 Rules: a `claim` with verdict `has` or `partial` needs ≥ 1 `location` that resolves, or `check` refuses it. A `none` needs a search
