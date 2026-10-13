@@ -447,7 +447,7 @@ The sections above are left as written. This section re-measures at main `feef80
 the Plan 6 C2 adapter (`providers/crg`, conformance gate per language), the same committed gold labels (`fixtures/gold/*/calls.jsonl`,
 150 sites per project, two readers, labels unchanged), scored with `scripts/gold-score.sh` in fresh workspaces. Host load during the
 gold scoring was 5 to 9 on 40 cores (scoring is not timed); build timings below ran at load 6 to 15 and are read as ratios between
-binaries measured back to back. The codegraph-mcp head-to-head is NOT re-run here: it is the maintainer's timing and still pending.
+binaries measured back to back. The codegraph-mcp head-to-head is reported in the last section of this file, not here.
 
 ### Gold standard, after Plan 6 (precision / recall; repo-target sites in brackets)
 
@@ -494,34 +494,41 @@ Conformance of the adapter: go, python, typescript pass; java (edges recall 0.77
 ### Build time and scale (release build, `COMPAREGRAPH_PROFILE=1`)
 
 Hermes-agent (10,288 files) and openclaw (38,258 files) on scratch copies; the incremental edit is one function appended to one source
-file of a copy (`hermes_cli/gateway_migrate_guards.py`, `src/entry.ts`). Host load average 6 to 15.
+file of a copy (`hermes_cli/gateway_migrate_guards.py`, `src/entry.ts`). Rows "before D/E" are main `feef80c` (load 6 to 15); rows
+"final" are main `9190b9b` after lane D (limitations collapsed, edge indexes, `COMPAREGRAPH_THREADS`) and lane E (the resolver's per-call
+class lookup), load 7 to 11. Every `store_hash` is identical between the two binaries (the edge sets did not change).
 
-| tree | step | wall | cache hits / misses | edges copied | store_hash |
-|---|---|---|---|---|---|
-| hermes-agent | full | 93.2 s | 0 / 10,288 | 0 | 2f3fb527... |
-| hermes-agent | no-op rebuild | 2.0 s (reused) | | 0 | same as full |
-| hermes-agent | one-file edit, incremental | 47.5 s | 10,287 / 1 | 215,935 | d51b68f0... |
-| hermes-agent | same tree `--full` | 85.2 s | | 0 | equal to the incremental |
-| openclaw | full | 499.6 s | 0 / 38,258 | 0 | 2acfc1f0... |
-| openclaw | no-op rebuild | 7.5 s (reused) | | 0 | same as full |
-| openclaw | one-file edit, incremental | 289.7 s | 38,257 / 1 | 670,907 | 43dbae2f... |
-| openclaw | same tree `--full` | 499.2 s | | 0 | equal to the incremental |
+| tree | step | before D/E (`feef80c`) | final (`9190b9b`) | cache hits / misses | edges copied | store_hash |
+|---|---|---|---|---|---|---|
+| hermes-agent | full | 93.2 s | 71.3 s | 0 / 10,288 | 0 | 2f3fb527... |
+| hermes-agent | no-op rebuild | 2.0 s | 2.0 s | | 0 | same as full |
+| hermes-agent | one-file edit, incremental | 47.5 s | 46.2 s | 10,287 / 1 | 215,935 | d51b68f0... |
+| hermes-agent | same tree `--full` | 85.2 s | 69.7 s | | 0 | equal to the incremental |
+| openclaw | full | 499.6 s | 390.6 s | 0 / 38,258 | 0 | 2acfc1f0... |
+| openclaw | no-op rebuild | 7.5 s | 6.9 s | | 0 | same as full |
+| openclaw | one-file edit, incremental | 289.7 s | 300.3 s | 38,257 / 1 | 670,907 | 43dbae2f... |
+| openclaw | same tree `--full` | 499.2 s | 393.5 s | | 0 | equal to the incremental |
 
-Per pass, openclaw full: read+parse 299.6 s, resolve_edges 145.0 s, nodes 8.7 s, inherit 13.7 s, store inserts 17.8 s, store_hash 7.9 s;
-max RSS 3.54 GB. Incremental: read+parse 171.0 s (all cache hits, the per-file analyses still run), resolve_edges 41.4 s, load_prev 3.3 s.
+Per pass at `9190b9b`, openclaw full: read+parse 276.2 s, resolve_edges 59.7 s (was 145.0 s; of it resolve:js 13.2 s, per-file 22.3 s,
+call-loop 7.8 s), max RSS 4.0 GB. Hermes-agent full: read+parse 44.0 s, resolve_edges 11.5 s (was 30.3 s). Incremental openclaw:
+read+parse 166.2 s, resolve_edges 54.3 s: the per-file analyses still run over every file, so the incremental saves 90 s of 390 s;
+a per-file analysis cache is the remaining lever. Hermes-agent back to back earlier (load 6 to 9): pre-Plan 6 binary 194.4 s, B1 final
+64.5 s, `feef80c` 90.5 s; `9190b9b` 71.3 s in a later window, so it is 2.7x faster than before Plan 6 and the resolve regression is
+fixed (resolve_edges 11.5 s against B1's 10.0 s), the remaining gap to B1 being parse time and load.
 
-Back to back on hermes-agent, full build, three binaries, same load window (6 to 9): pre-Plan 6 binary 194.4 s, Plan 6 B1 final 64.5 s,
-`feef80c` 90.5 s. So `feef80c` is 2.15x faster than before Plan 6 and 1.40x slower than B1 alone: resolve_edges went 10.0 s to 30.3 s
-and read+parse 38.8 s to 44.6 s after the A lanes (go_ctx, barrel re-exports, class-receiver shadowing, describe nodes) merged. This
-was measured, not diagnosed.
+Limitations: the hermes-agent envelope now carries one `clamped_line_end` (233 occurrences, first paths listed) and the openclaw
+envelope one (611 occurrences); the full envelopes hold 4 and 5 limitations.
 
 ### Query bounds on the openclaw graph (454k nodes, 1.29M edges, defaults unless stated)
 
-| query | wall | max RSS | response | note |
+Hub `normalizeOptionalString` (3,156 callers). "before D" is `feef80c` without the edge indexes; "final" is `9190b9b`, repeat runs on the
+same workspace (the first open of the old workspace added the indexes: 7.5 s once, for the first `impact`).
+
+| query | before D (wall / RSS) | final (wall / RSS) | response | note |
 |---|---|---|---|---|
-| `impact` on `normalizeOptionalString` (3,156 callers) | 2.5 s | 14 MB | 328 KB | 500 nodes (cap), `truncated`, 458 tests |
-| `traverse` same symbol, `--direction both --depth 5` | 3.6 s | 12 MB | 110 KB | 200 nodes (cap), `truncated` |
-| `dead-code --limit 50` | 1.6 s | 15 MB | 12 KB | 50 items |
+| `impact` at defaults | 2.5 s / 14 MB | 0.75 s / 14 MB | 328 KB | 500 nodes (cap), `truncated`, 458 tests |
+| `traverse` `--direction both --depth 5` | 3.6 s / 12 MB | 0.35 s / 12 MB | 110 KB | 200 nodes (cap), `truncated` |
+| `dead-code --limit 50` | 1.6 s / 15 MB | 4.2 s on the upgraded workspace, 2.6 s on a fresh one / 15 MB | 12 KB | slower than before D: noise or the index; not diagnosed |
 
 ### What Plan 6 changed in the verdict table
 
@@ -530,7 +537,7 @@ was measured, not diagnosed.
 | calls, TypeScript (hono) | behind: recall 0.31 vs 0.56 | ahead: 0.667 / P 1.000 vs crg 0.556 / 0.870 (adapter 0.611 / 0.880) |
 | calls, Go (caddy) | behind: 0.25 vs 0.65 | ahead on the labelled sites: 1.000 / 1.000 vs 0.646 / 0.886 (48 sites) |
 | calls, pooled | behind on recall | ahead on both: 0.834 / 0.995 vs 0.711 / 0.954 |
-| speed (cold, hermes-agent, same binary family) | ahead | 2.15x faster than before Plan 6; openclaw 38k files 499.6 s cold (was 1,866 s with every parse a cache hit), target 8 min missed by 20 s |
+| speed (cold, hermes-agent, same binary family) | ahead | 2.15x faster than before Plan 6; openclaw 38k files 390.6 s cold at `9190b9b` (499.6 s before lanes D/E; was 1,866 s with every parse a cache hit), 8 min target met |
 | tests edges | behind (J 0.00 to 0.61) | unchanged; srclight tests J 0.594 |
 
 ## codegraph head-to-head (2026-10-13)
