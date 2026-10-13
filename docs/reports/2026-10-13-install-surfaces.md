@@ -4,7 +4,7 @@ date: 2026-10-13
 valid_until: 2027-01-13
 lane: distribution
 verdict: npm is one of three registries in use (three of twelve projects), not the norm; the surfaces that recur are a release binary with an install script, a Homebrew tap, an MCP Registry manifest, a one-command agent setup that also writes skills, hooks and a rules line, and a Claude Code plugin; we have the plugin, the agent setup for six clients, npm and release assets, and lack the install script, the registry manifest, the tap, hooks and the rules line
-status: decided; the order is in docs/roadmap.md "Distribution"
+status: decided; items 1 and 2 shipped 2026-10-14, crates.io dropped (the maintainer: nobody uses it); the rest is in docs/roadmap.md "Distribution"
 ---
 
 Method: the install sections of each project's README and the files that back them (package manifests, install scripts,
@@ -51,7 +51,7 @@ The gaps that cost little and reach far, in order:
    Claude Code, a SessionStart hook that runs `comparegraph doctor`; the plugin ships the same hook. More clients after
    the six, from code-review-graph's table (MIT).
 4. A Homebrew tap (`massrelay-ai/homebrew-tap`, a formula updated by the release workflow); needs a second repository.
-5. crates.io, after a `cargo publish --dry-run` proves the yanked Perl grammar pin survives.
+5. ~~crates.io~~ dropped 2026-10-14 (the maintainer: nobody uses it); `cargo install --locked --path` stays as the from-source line.
 
 Not taken: Docker (the engine reads local clones), a VS Code extension, a desktop app, a GitHub Action (a PR review is
 not our product), Windows package managers (after the tap, if asked).

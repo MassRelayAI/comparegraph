@@ -82,28 +82,29 @@ project.
 /plugin install comparegraph --marketplace massrelay-ai/comparegraph
 ```
 
-**npm**, a prebuilt binary for linux-x64, darwin-arm64, darwin-x64 and win32-x64 (Node 18 or newer):
+**Install script**, a prebuilt binary checked against the release's `SHA256SUMS`, into `~/.local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
+```
+
+On Windows (x64, PowerShell): `irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex`.
+
+**npm**, the same binaries as packages (linux-x64, darwin-arm64, darwin-x64, win32-x64; Node 18 or newer), and the
+[MCP Registry](https://registry.modelcontextprotocol.io) entry `io.github.massrelay-ai/comparegraph` points here:
 
 ```bash
 npm install -g comparegraph                    # or once, without installing: npx comparegraph --version
 comparegraph setup --client claude --apply     # register with an agent (omit --apply for a dry run)
 ```
 
-**Release binary**: download `comparegraph-<platform>` and `SHA256SUMS` from the
-[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest), check the sum, put the file on your `PATH`,
-then run `setup` as above.
+**By hand**: download `comparegraph-<platform>` and `SHA256SUMS` from the
+[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest), check the sum, put the file on your `PATH`.
+On any other platform, build from source with Rust 1.85 or newer: `cargo install --locked --path crates/comparegraph` in
+the clone (`--locked` matters: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
 
-**From source**, anywhere Rust 1.85 or newer runs:
-
-```bash
-git clone https://github.com/massrelay-ai/comparegraph
-cd comparegraph
-cargo install --locked --path crates/comparegraph
-```
-
-`--locked` is required: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` pins a version that
-resolves. `setup` serves six agents ([table](#agents-platforms-uninstall)) and `comparegraph doctor` checks the result; the
-plugin route needs neither.
+After any route but the plugin, run `setup`: it serves six agents ([table](#agents-platforms-uninstall)) and
+`comparegraph doctor` checks the result.
 
 ## Quick start
 
@@ -565,7 +566,8 @@ The stable contracts: the JSON envelope (`export json`, every CLI answer), and
 |---|---|
 | `no workspace` or `not_found` on a read verb | read verbs never create `.comparegraph`. Run `comparegraph add <clone>` in the workspace first, or pass `--root`. |
 | `setup` says "running from a build directory" | a `target/` binary refuses to register itself. Pass `--bin <installed path>` or set `COMPAREGRAPH_BIN`. |
-| `npx comparegraph` says "no prebuilt binary for <platform>" | npm carries four platforms. Elsewhere build from source: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph`. |
+| `npx comparegraph` or `install.sh` says "no prebuilt binary for <platform>" | four platforms are prebuilt. Elsewhere build from source: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph`. |
+| `install.sh` says "checksum mismatch" | the download does not match the release's `SHA256SUMS`; nothing was installed. Retry once; if it repeats, report it (`SECURITY.md`). |
 | A claim shows `unknown*` or `stale` after you edited the clone | a location goes stale only when `comparegraph check` runs. Run `check`, rebuild, and write the claim again. |
 | `conform` returns `below_floor` | the provider scored under 0.95 on nodes or 0.85 on edges. Fix the provider; the floors do not move. |
 | `build --provider crg` says `provider_unavailable` | code-review-graph is not installed, or its conformance failed for a language in the clone. `comparegraph doctor` names which. |
@@ -624,7 +626,7 @@ of these exist yet, and the maintainer decides the order.
 - Port-kit export: for an adopted feature, the files, line ranges, licence text and attribution header.
 - A text channel in the store (doc-comment and signature tokens) and a per-family synonym table, the two levers the
   mapping gold points at; a second signal for `relate` so that a repository outside a family scores below 0.5.
-- Distribution: publishing on crates.io (the Perl grammar pin has to survive `cargo publish`), a Homebrew tap, an install script.
+- Distribution: `setup` writing a rules line and a session-start hook, more clients, a Homebrew tap.
 
 ## Documentation
 

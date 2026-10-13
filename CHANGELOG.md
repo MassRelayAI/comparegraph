@@ -49,8 +49,9 @@ The first public release.
 - Claude Code plugin manifest and marketplace listing (`.claude-plugin/`), the `using-comparegraph` entry skill, and the
   contributor files (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`).
 - Install routes: the Claude Code plugin (`/plugin install comparegraph --marketplace massrelay-ai/comparegraph`)
-  carries the skills and starts the MCP server through `npx`; `npm install -g comparegraph` with a prebuilt binary for
-  four platforms; release assets with `SHA256SUMS`; `cargo install --locked` from source.
+  carries the skills and starts the MCP server through `npx`; `scripts/install.sh` and `install.ps1` fetch the release
+  binary and check it against `SHA256SUMS`; `npm install -g comparegraph` with a prebuilt binary for four platforms;
+  an MCP Registry manifest (`server.json`) published by the release workflow; `cargo install --locked` from source.
 
 ### Fixed
 - A `kill -KILL -<pid>` shell-out in a test became `kill(-1)` on hosts with 7-digit pids (every process of the user);

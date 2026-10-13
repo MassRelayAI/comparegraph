@@ -129,3 +129,39 @@ jobs:
             fi
             (cd "$d" && npm publish --provenance --access public)
           done
+
+  publish-registry:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # the registry authenticates this repository's owner through GitHub OIDC
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Skip unless the npm package for this tag exists (the registry verifies it)
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if npm view "comparegraph@$version" version >/dev/null 2>&1; then echo "SKIP=0" >> "$GITHUB_ENV"
+          else echo "::notice::comparegraph@$version is not on npm; registry publish skipped" && echo "SKIP=1" >> "$GITHUB_ENV"; fi
+      - name: mcp-publisher (pinned, checksum verified)
+        if: env.SKIP != '1'
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.1
+          MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+        run: |
+          archive=mcp-publisher_linux_amd64.tar.gz
+          curl -fsSLo "$archive" "https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION/$archive"
+          echo "$MCP_PUBLISHER_SHA256  $archive" | sha256sum --check --strict
+          tar xzf "$archive" mcp-publisher && chmod +x mcp-publisher
+      - name: server.json version must equal the tag (bump it in the tagged commit)
+        if: env.SKIP != '1'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          v=$(jq -r .version server.json); pv=$(jq -r '.packages[0].version' server.json)
+          [ "$v" = "$version" ] && [ "$pv" = "$version" ] || { echo "server.json $v / $pv != tag $version"; exit 4; }
+      - name: Validate, authenticate, publish
+        if: env.SKIP != '1'
+        run: |
+          ./mcp-publisher validate
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

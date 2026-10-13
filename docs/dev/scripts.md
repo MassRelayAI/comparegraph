@@ -14,6 +14,7 @@ arguments. They read the clone copies they are given and never execute code insi
 | `gold-map-pairs.sh` | regenerates `fixtures/gold-map/pairs.jsonl` from the family pack, in a fixed order | mapping gold |
 | `gold-map-merge.sh` | merges two readers' labels into the committed gold, with agreement and Cohen's kappa per clone | mapping gold |
 | `package-npm.sh` | builds and stamps the platform npm packages for a release tag | release workflow |
+| `install.sh`, `install.ps1` | the user-facing installers: fetch the release asset for the platform, check it against `SHA256SUMS`, install it (`packages/comparegraph/test/install-script.test.mjs` runs the shell one against local assets; the PowerShell one is untested until a Windows run) | README Install |
 
 The floors in `fixtures/gold/FLOORS.json` and `fixtures/gold-map/FLOORS.json` are measured minus 0.01 and are only ever
 raised; `cargo test -p comparegraph` checks them when `COMPAREGRAPH_STUDY` points at a directory holding the clone copies

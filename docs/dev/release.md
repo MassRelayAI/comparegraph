@@ -4,8 +4,9 @@ Maintainers only. A release is a tag; the workflow in `.github/workflows/release
 
 ## Before the tag
 
-1. The version lives in one place, `[workspace.package] version` in `Cargo.toml`. Bump it in the commit that will be tagged;
-   `scripts/package-npm.sh` stamps that version into the npm packages at build time and exits 4 when the tag disagrees.
+1. The version is `[workspace.package] version` in `Cargo.toml`, and `server.json` repeats it twice (`version`,
+   `packages[0].version`; CI checks they agree). Bump both in the commit that will be tagged; `scripts/package-npm.sh`
+   stamps the npm packages at build time and exits 4 when the tag disagrees, and the registry job exits 4 the same way.
 2. Date the section in `CHANGELOG.md` (`## [x.y.z] - YYYY-MM-DD`), leave an empty `## [Unreleased]` above it, and update
    the two link lines at the bottom.
 3. `cargo test -p comparegraph` and `cargo clippy -p comparegraph --tests -- -D warnings` green; the `ci` workflow green on
@@ -31,8 +32,14 @@ git push origin v0.1.0
   last the `comparegraph` shell, with provenance. A package already on npm at that version is skipped, so the job can be
   re-run.
 
+- `publish-registry`: after the npm job, if `comparegraph@<version>` is on npm, it downloads a pinned `mcp-publisher`
+  (checksum verified), checks that `server.json` carries the tag's version, validates it, authenticates through GitHub
+  OIDC (the registry grants this repository's owner the `io.github.massrelay-ai/*` namespace) and publishes. The registry
+  verifies npm ownership through the `mcpName` field of the published package.
+
 The npm scope `@comparegraph` must exist on npm (an organisation or a user of that name) and the token must be allowed to
-publish in it.
+publish in it. The install scripts (`scripts/install.sh`, `scripts/install.ps1`) read `releases/latest/download/`, so
+they serve the new version as soon as the release exists; nothing in them is versioned.
 
 ## After the release
 
@@ -40,7 +47,10 @@ On a clean machine, or in an empty directory with a cleared npm cache:
 
 ```bash
 npx -y comparegraph@latest --version       # the shell resolves the platform package and runs the binary
+curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
 ```
+
+Then look for `io.github.massrelay-ai/comparegraph` at https://registry.modelcontextprotocol.io/v0/servers?search=comparegraph.
 
 In Claude Code: `/plugin install comparegraph --marketplace massrelay-ai/comparegraph`, then `comparegraph doctor` in a
 workspace from the agent. Download one release asset and check it against `SHA256SUMS`. Then move the changelog on: a new
