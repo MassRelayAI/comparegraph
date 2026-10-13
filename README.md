@@ -353,7 +353,7 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 | `show <REPO> <QN>` | A symbol with callers, callees, community, licence lane. | `--detail full` |
 | `communities <REPO>` | Module clusters of the latest run. | `--limit`, `--cursor` |
 | `traverse <REPO> <QN>` | Nodes reachable over calls, extends, implements, with hop distance and path. | `--direction`, `--depth` (3), `--max-nodes` (200), `--kinds`, `--min-confidence` (0.5), `--limit` (50), `--cursor` |
-| `impact <REPO> [QN]` | Everything that transitively depends on a symbol or files, plus the tests that reach it. Summary first (`total`, `by_hop`, `by_kind`), then `items` paged, best `path_confidence` first. | `--file`, `--depth` (5), `--max-nodes` (500), `--limit` (50), `--cursor` |
+| `impact <REPO> [QN]` | Everything that transitively depends on a symbol or files, plus the tests that reach it. Summary first (`total`, `by_hop`, `by_kind`, `tests_total`), then `items` paged, best `path_confidence` first; the `tests` list is capped at `--limit` too, with a `tests_capped` limitation when cut (`tests-for` has the full list). | `--file`, `--depth` (5), `--max-nodes` (500), `--limit` (50), `--cursor` |
 | `tests-for <REPO> <QN>` | Tests linked directly or through at most 3 call hops. | `--max-nodes`, `--min-confidence`, `--limit` (50), `--cursor` |
 | `entry-points <REPO>` | Exported, handler or main symbols nothing calls. | `--limit`, `--cursor` |
 | `dead-code <REPO>` | Candidates nothing references. Dynamic dispatch is invisible. | `--limit`, `--cursor` |
@@ -392,7 +392,7 @@ envelope as the CLI. Eighteen tools: seventeen read-only, one write (`comparegra
 
 | Tool | Answers | Key arguments |
 |---|---|---|
-| `comparegraph_repos` | Which repos, with licence, lane, role, head and latest run | none |
+| `comparegraph_repos` | Which repos, with licence, lane, role, head and latest run | `limit`, `cursor` |
 | `comparegraph_search` | Which symbols match these words | `query`, `repo`, `kind`, `limit`, `cursor` |
 | `comparegraph_show` | One symbol: callers, callees, community, licence lane | `repo`, `qualified_name`, `detail`, `max_callers` |
 | `comparegraph_communities` | Module clusters of a repo | `repo`, `limit`, `cursor` |
@@ -404,9 +404,9 @@ envelope as the CLI. Eighteen tools: seventeen read-only, one write (`comparegra
 | `comparegraph_claims` | Latest claim per clone and feature, with citations | `repo`, `family`, `feature`, `history` |
 | `comparegraph_matrix` | Features against clones, prevalence, gaps, differentiators | `family` |
 | `comparegraph_claim` | **Write.** Record a claim | `repo`, `feature`, `family`, `verdict`, `author`, `at[]`, `searched`, `note` |
-| `comparegraph_traverse` | Reachable nodes with hop distance and path confidence | `repo`, `qualified_name`, `direction`, `depth` (max 10), `max_nodes` (max 2000), `kinds`, `min_confidence` |
-| `comparegraph_impact` | Blast radius by hop, plus the tests that reach it | `repo`, `qualified_name` or `files[]`, `depth`, `max_nodes`, `min_confidence` |
-| `comparegraph_tests_for` | Tests linked to a symbol | `repo`, `qualified_name`, `max_nodes`, `min_confidence` |
+| `comparegraph_traverse` | Reachable nodes, summary first, then one page by path confidence | `repo`, `qualified_name`, `direction`, `depth` (max 10), `max_nodes` (max 2000), `kinds`, `min_confidence`, `limit`, `cursor` |
+| `comparegraph_impact` | Blast radius: summary (`by_hop`, `by_kind`, `tests_total`), then one page, plus the tests that reach it (capped at `limit`) | `repo`, `qualified_name` or `files[]`, `depth`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
+| `comparegraph_tests_for` | Tests linked to a symbol, summary first, then one page | `repo`, `qualified_name`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_entry_points` | Exported, handler or main symbols nothing calls | `repo`, `limit`, `cursor`, `min_confidence` |
 | `comparegraph_dead_code` | Dead-code candidates (never proof) | `repo`, `limit`, `cursor`, `min_confidence` |
 | `comparegraph_doctor` | Store and provider status | none |

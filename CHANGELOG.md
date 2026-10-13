@@ -15,10 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - README: the `<group>.<slug>` feature-id rule in the families section.
 
 ### Changed
+- `--pretty` is global like `--root`: both may come before or after the verb.
 - `impact`, `tests-for` and `traverse` answer summary-first: `data.summary` (`total`, `truncated`, `max_nodes`, `by_hop`,
   `by_kind`), then `items` paged and ordered by `path_confidence` (high first), hop, name. `impact` no longer returns
   `by_hop[].nodes`; its `items` is the flat list with `hop` on each, and its `tests` list is capped at the page size with a
-  `tests_capped` limitation. `total` and `truncated` stay at the top of `data`; `truncated` stays in `limitations[]`.
+  `tests_capped` limitation when cut (`summary.tests_total` is always present). `total` and `truncated` stay at the top of `data`; `truncated` stays in `limitations[]`.
 
 ## [0.1.0] - 2026-10-13
 

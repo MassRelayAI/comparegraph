@@ -24,7 +24,7 @@ use std::path::PathBuf;
 pub struct Cli {
     #[arg(long, global = true, default_value = ".")]
     pub root: PathBuf,
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub pretty: bool,
     /// use an external provider that has no comparegraph-plugin.toml beside it
     #[arg(long, global = true)]
