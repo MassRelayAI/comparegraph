@@ -1,6 +1,6 @@
 //! Inheritance edges (`extends`, `implements`): our own tree-sitter pass over each file, resolved like calls
 //! (same file → imported name → unique name across the repo at 0.5 → else dropped; an external base gets no edge).
-use super::resolve::{qualified_names, resolve_import_target};
+use super::resolve::{qualified_names, resolve_import_target, FileSet};
 use super::ParsedFile;
 use crate::domain::EdgeKind;
 use crate::providers::reference::vendor::SymbolKind;
@@ -183,7 +183,7 @@ fn class_like(k: &SymbolKind) -> bool {
 
 /// Resolved inheritance edges for all files: (kind, subclass_qn, base_qn, confidence). Sorted by the caller.
 pub fn inherit_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
-    let file_set: HashMap<String, ()> = files.iter().map(|f| (f.rel_path.clone(), ())).collect();
+    let file_set = FileSet::new(files);
     // per file: name → (first qn, kind)
     let mut syms: HashMap<&str, HashMap<&str, (String, &SymbolKind)>> = HashMap::new();
     let mut by_name: HashMap<&str, Vec<(String, &SymbolKind)>> = HashMap::new();
@@ -202,9 +202,9 @@ pub fn inherit_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         }
     }
     let mut out = Vec::new();
-    for f in files {
+    let all_raws = super::resolve::par_map(files.len(), &|i| files[i].rel_path.clone(), &|i| find(&files[i].language, &files[i].lines.join("\n")));
+    for (f, raws) in files.iter().zip(all_raws) {
         super::mark_file(&f.rel_path);
-        let raws = find(&f.language, &f.lines.join("\n"));
         if raws.is_empty() {
             continue;
         }

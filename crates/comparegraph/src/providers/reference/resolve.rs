@@ -27,7 +27,106 @@ pub fn qualified_names(file: &ParsedFile) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn resolve_import_target(from: &str, source: &str, files: &HashMap<String, ()>) -> Option<String> {
+/// The repo's file paths plus indexes built once per run: path → position, boundary-suffix tables for the Java, Go and Python
+/// suffix searches, and class name → files holding such a class. It derefs to the plain path set the other passes take.
+pub struct FileSet {
+    map: HashMap<String, ()>,
+    pos: HashMap<String, usize>,
+    /// Java: every '/'-boundary suffix (and the whole path) of a `.java` file → the (shortest, then smallest) file with that suffix.
+    java: HashMap<String, String>,
+    /// Go: directory → its `.go` files (sorted); every '/'-boundary suffix of a directory → the directories; last segment → the directories.
+    go_dirs: HashMap<String, Vec<String>>,
+    go_suffix: HashMap<String, Vec<String>>,
+    go_last: HashMap<String, Vec<String>>,
+    /// Python: every proper '/'-boundary suffix of a `.py` file → (count, first file).
+    py_tails: HashMap<String, (usize, String)>,
+    /// Class name → indexes (ascending, once each) of the files defining a symbol of kind Class with that name.
+    classes: HashMap<String, Vec<usize>>,
+}
+
+impl std::ops::Deref for FileSet {
+    type Target = HashMap<String, ()>;
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+fn boundary_suffixes(path: &str) -> impl Iterator<Item = &str> {
+    path.match_indices('/').map(move |(i, _)| &path[i + 1..])
+}
+
+impl FileSet {
+    pub fn new(files: &[ParsedFile]) -> FileSet {
+        let mut fs = FileSet::from_paths(files.iter().map(|f| f.rel_path.as_str()));
+        for (i, f) in files.iter().enumerate() {
+            for s in &f.symbols {
+                if matches!(s.kind, SymbolKind::Class) {
+                    let v = fs.classes.entry(s.name.clone()).or_default();
+                    if v.last() != Some(&i) {
+                        v.push(i);
+                    }
+                }
+            }
+        }
+        fs
+    }
+    pub fn from_paths<'a>(paths: impl Iterator<Item = &'a str>) -> FileSet {
+        let mut fs = FileSet {
+            map: HashMap::new(),
+            pos: HashMap::new(),
+            java: HashMap::new(),
+            go_dirs: HashMap::new(),
+            go_suffix: HashMap::new(),
+            go_last: HashMap::new(),
+            py_tails: HashMap::new(),
+            classes: HashMap::new(),
+        };
+        for (i, p) in paths.enumerate() {
+            fs.map.insert(p.to_string(), ());
+            fs.pos.entry(p.to_string()).or_insert(i);
+        }
+        let keys: Vec<String> = fs.map.keys().cloned().collect();
+        for f in &keys {
+            if f.ends_with(".java") {
+                for suf in std::iter::once(f.as_str()).chain(boundary_suffixes(f)) {
+                    match fs.java.get(suf) {
+                        Some(cur) if (cur.len(), cur) <= (f.len(), f) => {}
+                        _ => {
+                            fs.java.insert(suf.to_string(), f.clone());
+                        }
+                    }
+                }
+            }
+            if f.ends_with(".go") {
+                let dir = f.rsplit_once('/').map_or("", |d| d.0);
+                fs.go_dirs.entry(dir.to_string()).or_default().push(f.clone());
+            }
+            if f.ends_with(".py") {
+                for suf in boundary_suffixes(f) {
+                    let e = fs.py_tails.entry(suf.to_string()).or_insert((0, f.clone()));
+                    e.0 += 1;
+                }
+            }
+        }
+        for v in fs.go_dirs.values_mut() {
+            v.sort();
+        }
+        let dirs: Vec<String> = fs.go_dirs.keys().cloned().collect();
+        for d in dirs {
+            for suf in std::iter::once(d.as_str()).chain(boundary_suffixes(&d)) {
+                fs.go_suffix.entry(suf.to_string()).or_default().push(d.clone());
+            }
+            fs.go_last.entry(d.rsplit('/').next().unwrap_or("").to_string()).or_default().push(d.clone());
+        }
+        fs
+    }
+    /// Index of the file with this path (the first, when a path repeats).
+    pub fn pos(&self, path: &str) -> Option<usize> {
+        self.pos.get(path).copied()
+    }
+}
+
+pub(super) fn resolve_import_target(from: &str, source: &str, files: &FileSet) -> Option<String> {
     if from.ends_with(".py") {
         return resolve_py_import(from, source, files);
     }
@@ -71,47 +170,32 @@ pub(super) fn resolve_import_target(from: &str, source: &str, files: &HashMap<St
 }
 
 /// Java: `a.b.C` is the file whose path ends in `a/b/C.java` under any source root; the shortest (then smallest) match wins. Wildcards find nothing.
-fn resolve_java_import(source: &str, files: &HashMap<String, ()>) -> Option<String> {
+fn resolve_java_import(source: &str, files: &FileSet) -> Option<String> {
     if source.ends_with('*') || source.is_empty() {
         return None;
     }
     let suffix = format!("{}.java", source.replace('.', "/"));
-    let tail = format!("/{suffix}");
-    files
-        .keys()
-        .filter(|f| **f == suffix || f.ends_with(&tail))
-        .min_by(|a, b| (a.len(), *a).cmp(&(b.len(), *b)))
-        .cloned()
+    files.java.get(&suffix).cloned()
 }
 
 /// Go: the `.go` files (sorted) of the one repo directory an import path names: the directory whose path ends with the whole import path, else the one whose last segment equals the path's last segment. Several candidate directories → none.
-pub(super) fn resolve_go_dir(source: &str, files: &HashMap<String, ()>) -> Vec<String> {
+pub(super) fn resolve_go_dir(source: &str, files: &FileSet) -> Vec<String> {
     let last = source.rsplit('/').next().unwrap_or(source);
     if last.is_empty() || source.starts_with('.') {
         return vec![];
     }
-    let mut dirs: HashMap<&str, Vec<&String>> = HashMap::new();
-    for f in files.keys().filter(|f| f.ends_with(".go")) {
-        let dir = f.rsplit_once('/').map_or("", |d| d.0);
-        dirs.entry(dir).or_default().push(f);
-    }
-    let pick = |pred: &dyn Fn(&str) -> bool| -> Option<Vec<String>> {
-        let hits: Vec<&&str> = dirs.keys().filter(|d| pred(d)).collect();
-        if hits.len() != 1 {
-            return None;
+    // a unique directory is the answer; two hits (distinct directories) is none
+    let pick = |hits: Option<&Vec<String>>| -> Option<Vec<String>> {
+        match hits.map(Vec::as_slice) {
+            Some([d]) => Some(files.go_dirs[d].clone()),
+            _ => None,
         }
-        let mut v: Vec<String> = dirs[*hits[0]].iter().map(|s| (*s).clone()).collect();
-        v.sort();
-        Some(v)
     };
-    let tail = format!("/{source}");
-    pick(&|d| d == source || d.ends_with(&tail))
-        .or_else(|| pick(&|d| d.rsplit('/').next() == Some(last)))
-        .unwrap_or_default()
+    pick(files.go_suffix.get(source)).or_else(|| pick(files.go_last.get(last))).unwrap_or_default()
 }
 
 /// Python: `.core` / `..a.b` are relative to the importing file's package; `a.b` is a repo-relative dotted path. External modules find no file, so no edge.
-fn resolve_py_import(from: &str, source: &str, files: &HashMap<String, ()>) -> Option<String> {
+fn resolve_py_import(from: &str, source: &str, files: &FileSet) -> Option<String> {
     let dots = source.chars().take_while(|c| *c == '.').count();
     let rest = &source[dots..];
     let mut parts: Vec<&str> = Vec::new();
@@ -140,16 +224,21 @@ fn resolve_py_import(from: &str, source: &str, files: &HashMap<String, ()>) -> O
     }
     // `import srclight.server` with the package under `src/`: a dotted path of two or more names is the one file that ends with it
     if dots == 0 && parts.len() >= 2 {
-        let tails: Vec<String> = cands.iter().map(|c| format!("/{c}")).collect();
-        let mut hits = files.keys().filter(|f| tails.iter().any(|t| f.ends_with(t.as_str())));
-        let first = hits.next()?;
-        return hits.next().is_none().then(|| first.clone());
+        let mut n = 0;
+        let mut first: Option<&String> = None;
+        for c in &cands {
+            if let Some((k, f)) = files.py_tails.get(c.as_str()) {
+                n += k;
+                first.get_or_insert(f);
+            }
+        }
+        return if n == 1 { first.cloned() } else { None };
     }
     None
 }
 
 /// The file of submodule `name` of Python module `source` (`from source import name`).
-fn py_submodule(from: &str, source: &str, name: &str, files: &HashMap<String, ()>) -> Option<String> {
+fn py_submodule(from: &str, source: &str, name: &str, files: &FileSet) -> Option<String> {
     let sep = if source.ends_with('.') { "" } else { "." };
     resolve_py_import(from, &format!("{source}{sep}{name}"), files)
 }
@@ -163,7 +252,7 @@ pub(super) fn lang_family(l: &str) -> &str {
 }
 
 /// The repo files an import resolves to: the module itself, plus (Python `from pkg import sub`) a submodule file named by a specifier.
-fn import_files(from: &str, imp: &ResolvedImport, files: &HashMap<String, ()>) -> Vec<String> {
+fn import_files(from: &str, imp: &ResolvedImport, files: &FileSet) -> Vec<String> {
     if from.ends_with(".go") {
         return resolve_go_dir(&imp.source, files);
     }
@@ -279,7 +368,7 @@ pub(super) fn declared_type<'a>(text: &'a str, recv: &str) -> Option<&'a str> {
 
 /// `r.m()` where the caller's own lines declare `r` with a class type (see `declared_type`): the method `callee`
 /// inside that class, wherever the class lives. A declared type only; no inference.
-fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFile, caller: &str, recv: &str, callee: &str) -> Option<String> {
+fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &FileSet, f: &ParsedFile, caller: &str, recv: &str, callee: &str) -> Option<String> {
     if !recv.chars().all(|c| c.is_alphanumeric() || c == '_') || recv.chars().next().is_none_or(char::is_uppercase) {
         return None;
     }
@@ -288,7 +377,8 @@ fn typed_receiver_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFi
     let hi = (c.line_end as usize).min(f.lines.len());
     let text = f.lines.get(lo..hi)?.join("\n");
     let ty = declared_type(&text, recv)?;
-    for (g, q) in files.iter().zip(qns) {
+    for &gi in file_set.classes.get(ty).into_iter().flatten() {
+        let (g, q) = (&files[gi], &qns[gi]);
         if g.language != f.language {
             continue;
         }
@@ -316,7 +406,7 @@ fn caller_at<'a>(f: &'a ParsedFile, c: &CallSite) -> Option<&'a vendor::Symbol> 
 }
 
 /// The file holding class `ty` as file `gi` means it: defined there, else brought in by one of its imports. An unresolved name is none.
-fn declared_class_home(files: &[ParsedFile], file_set: &HashMap<String, ()>, gi: usize, ty: &str) -> Option<usize> {
+fn declared_class_home(files: &[ParsedFile], file_set: &FileSet, gi: usize, ty: &str) -> Option<usize> {
     let has = |i: usize| files[i].symbols.iter().any(|s| s.name == ty && matches!(s.kind, SymbolKind::Class));
     if has(gi) {
         return Some(gi);
@@ -326,7 +416,7 @@ fn declared_class_home(files: &[ParsedFile], file_set: &HashMap<String, ()>, gi:
         .iter()
         .filter(|i| i.specifiers.iter().any(|s| s == ty))
         .flat_map(|i| import_files(&g.rel_path, i, file_set))
-        .find_map(|t| files.iter().position(|h| h.rel_path == t).filter(|h| has(*h)))
+        .find_map(|t| file_set.pos(&t).filter(|h| has(*h)))
 }
 
 /// `this.<recv>.<callee>()` as the syntax tree sees it: the declared type of the field in the smallest class holding the call line.
@@ -338,7 +428,7 @@ fn field_type(d: &TsDecls, recv: &str, c: &CallSite) -> Option<String> {
 
 /// `const x = make(); x.m()`: the declared return type of `make` (this file, else the file an import of `make` points to) and the
 /// file whose imports must resolve that type name. A local declaration named `make` hides an imported one.
-fn local_return_type(files: &[ParsedFile], file_set: &HashMap<String, ()>, ts: &[Option<TsDecls>], fi: usize, recv: &str, caller: &vendor::Symbol) -> Option<(String, usize)> {
+fn local_return_type(files: &[ParsedFile], file_set: &FileSet, ts: &[Option<TsDecls>], fi: usize, recv: &str, caller: &vendor::Symbol) -> Option<(String, usize)> {
     let (f, d) = (&files[fi], ts[fi].as_ref()?);
     let mut locals = d.locals.iter().filter(|l| l.1 == recv && caller.line_start <= l.0 && l.0 <= caller.line_end);
     let func = &locals.next()?.2;
@@ -352,7 +442,7 @@ fn local_return_type(files: &[ParsedFile], file_set: &HashMap<String, ()>, ts: &
         return None;
     }
     f.imports.iter().filter(|i| i.specifiers.iter().any(|s| s == func)).flat_map(|i| import_files(&f.rel_path, i, file_set)).find_map(|t| {
-        let gi = files.iter().position(|h| h.rel_path == t)?;
+        let gi = file_set.pos(&t)?;
         Some((ts[gi].as_ref()?.returns.get(func)?.clone(), gi))
     })
 }
@@ -360,7 +450,7 @@ fn local_return_type(files: &[ParsedFile], file_set: &HashMap<String, ()>, ts: &
 /// `this.reader.read()` / `x.read()` (JS/TS) where the type comes from a DECLARATION: a class field (`private reader: Reader;`,
 /// `reader = new Reader()`, a constructor parameter property) or the declared return type of the function `x = make()` called.
 /// Never inferred from a body; a type that does not resolve to a class of the repo types nothing.
-fn declared_member_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &HashMap<String, ()>, ts: &[Option<TsDecls>], fi: usize, c: &CallSite) -> Option<String> {
+fn declared_member_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &FileSet, ts: &[Option<TsDecls>], fi: usize, c: &CallSite) -> Option<String> {
     let (f, recv) = (&files[fi], c.receiver.as_deref()?);
     let d = ts[fi].as_ref()?;
     let caller = caller_at(f, c)?;
@@ -380,12 +470,13 @@ fn declared_member_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &
 }
 
 /// `Foo.bar()` where `Foo` is a class defined in the repo (same language): the method `callee` inside it, only when unique.
-fn static_class_method(files: &[ParsedFile], qns: &[Vec<String>], f: &ParsedFile, recv: &str, callee: &str) -> Option<String> {
+fn static_class_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &FileSet, f: &ParsedFile, recv: &str, callee: &str) -> Option<String> {
     if !recv.chars().next().is_some_and(char::is_uppercase) || !recv.chars().all(|c| c.is_alphanumeric() || c == '_') {
         return None;
     }
     let mut hits = vec![];
-    for (g, q) in files.iter().zip(qns) {
+    for &gi in file_set.classes.get(recv).into_iter().flatten() {
+        let (g, q) = (&files[gi], &qns[gi]);
         if lang_family(&g.language) != lang_family(&f.language) {
             continue;
         }
@@ -409,7 +500,7 @@ struct PyCall<'a> {
     py: &'a [Option<PyInfo>],
     files: &'a [ParsedFile],
     qns: &'a [Vec<String>],
-    file_set: &'a HashMap<String, ()>,
+    file_set: &'a FileSet,
     file_syms: &'a HashMap<&'a str, HashMap<&'a str, (String, bool)>>,
 }
 
@@ -445,7 +536,7 @@ impl PyCall<'_> {
         for imp in info.imports.iter().filter(|i| i.alias == ty) {
             let real = imp.name.as_deref().unwrap_or(ty);
             for t in self.module_files(from, &imp.module, None) {
-                if let Some(gi) = self.files.iter().position(|g| g.rel_path == t) {
+                if let Some(gi) = self.file_set.pos(&t) {
                     if has_class(gi, real) {
                         return Some((gi, real.to_string()));
                     }
@@ -455,7 +546,7 @@ impl PyCall<'_> {
         if has_class(fi, ty) {
             return Some((fi, ty.to_string()));
         }
-        let mut hits = (0..self.files.len()).filter(|gi| self.files[*gi].language == "python" && has_class(*gi, ty));
+        let mut hits = self.file_set.classes.get(ty).into_iter().flatten().copied().filter(|gi| self.files[*gi].language == "python");
         let first = hits.next()?;
         hits.next().is_none().then(|| (first, ty.to_string()))
     }
@@ -464,7 +555,7 @@ impl PyCall<'_> {
     fn imported_fn(&self, fi: usize, info: &PyInfo, func: &str) -> Option<(usize, String)> {
         let imp = info.imports.iter().find(|i| i.alias == func && i.name.is_some())?;
         let real = imp.name.as_deref()?;
-        let gi = self.module_files(&self.files[fi].rel_path, &imp.module, None).iter().find_map(|t| self.files.iter().position(|g| &g.rel_path == t))?;
+        let gi = self.module_files(&self.files[fi].rel_path, &imp.module, None).iter().find_map(|t| self.file_set.pos(t))?;
         Some((gi, real.to_string()))
     }
 
@@ -580,7 +671,7 @@ impl PyCall<'_> {
     /// `from module import real; real.callee()`: `real` is a class of the module (its method), or a module-level instance
     /// (`real = Ring(...)`, `real: Ring`, `real = make()` with `-> Ring`) whose class holds the method.
     fn object_member(&self, from: &str, module: &str, real: &str, callee: &str) -> Option<String> {
-        let gi = self.module_files(from, module, None).iter().find_map(|t| self.files.iter().position(|g| &g.rel_path == t))?;
+        let gi = self.module_files(from, module, None).iter().find_map(|t| self.file_set.pos(t))?;
         if let Some(t) = self.method_of(gi, real, callee) {
             return Some(t);
         }
@@ -600,7 +691,7 @@ struct RustCall<'a> {
     files: &'a [ParsedFile],
     qns: &'a [Vec<String>],
     rust: &'a [Option<RustInfo>],
-    file_set: &'a HashMap<String, ()>,
+    file_set: &'a FileSet,
     cm: &'a rust_ctx::CrateMap,
     file_syms: &'a HashMap<&'a str, HashMap<&'a str, (String, bool)>>,
 }
@@ -642,7 +733,7 @@ impl RustCall<'_> {
             full = p.iter().cloned().chain(path[1..].iter().cloned()).collect();
         }
         if let Some((file, Some(item))) = rust_ctx::resolve_path(from, &full, self.file_set, self.cm) {
-            let idx = self.files.iter().position(|f| f.rel_path == file)?;
+            let idx = self.file_set.pos(&file)?;
             return Some((idx, item));
         }
         let last = path.last()?;
@@ -685,7 +776,7 @@ impl RustCall<'_> {
                 full = p.iter().cloned().chain(path[1..].iter().cloned()).collect();
             }
             let (file, item) = rust_ctx::resolve_path(&self.files[fi].rel_path, &full, self.file_set, self.cm)?;
-            (self.files.iter().position(|g| g.rel_path == file)?, item?)
+            (self.file_set.pos(&file)?, item?)
         };
         let dinfo = self.rust[def].as_ref()?;
         let ty = dinfo.returns.get(&name)?;
@@ -775,16 +866,60 @@ impl RustCall<'_> {
 }
 
 /// Edges by qualified name: (kind, source_qn, target_qn, confidence).
+/// `f(0..n)` on up to 8 threads, results in index order. A panic in `f(i)` is re-raised on the calling thread after
+/// `mark_file(name(i))`, so the build still names the file (the lowest index when several fail).
+pub(super) fn par_map<T: Send>(n: usize, name: &(dyn Fn(usize) -> String + Sync), f: &(dyn Fn(usize) -> T + Sync)) -> Vec<T> {
+    let threads = std::thread::available_parallelism().map_or(1, |p| p.get()).min(8).min(n.max(1));
+    if threads <= 1 {
+        return (0..n).map(f).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let parts: Vec<Vec<(usize, std::thread::Result<T>)>> = std::thread::scope(|sc| {
+        let hs: Vec<_> = (0..threads)
+            .map(|_| {
+                sc.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if i >= n {
+                            break;
+                        }
+                        mine.push((i, std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(i)))));
+                    }
+                    mine
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().expect("worker panics are caught per item")).collect()
+    });
+    let mut slots: Vec<Option<std::thread::Result<T>>> = (0..n).map(|_| None).collect();
+    for (i, r) in parts.into_iter().flatten() {
+        slots[i] = Some(r);
+    }
+    slots
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| match r.expect("every index is taken once") {
+            Ok(v) => v,
+            Err(p) => {
+                super::mark_file(&name(i));
+                std::panic::resume_unwind(p)
+            }
+        })
+        .collect()
+}
+
 pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
-    let file_set: HashMap<String, ()> = files.iter().map(|f| (f.rel_path.clone(), ())).collect();
+    let file_set = FileSet::new(files);
     // name → (qn, duplicates_in_that_file)
     let mut by_name: HashMap<&str, Vec<(String, bool, &str, bool)>> = HashMap::new();
     let mut out = Vec::new();
     let qns: Vec<Vec<String>> = files.iter().map(qualified_names).collect();
-    let py: Vec<Option<PyInfo>> = files
-        .iter()
-        .map(|f| (f.language == "python").then(|| py_ctx::analyze(&f.lines.join("\n"))))
-        .collect();
+    let names = |i: usize| files[i].rel_path.clone();
+    let py: Vec<Option<PyInfo>> = par_map(files.len(), &names, &|i| {
+        let f = &files[i];
+        (f.language == "python").then(|| py_ctx::analyze(&f.lines.join("\n")))
+    });
     // file → name → (first qn, name unique in that file)
     let mut file_syms: HashMap<&str, HashMap<&str, (String, bool)>> = HashMap::new();
     for (f, q) in files.iter().zip(&qns) {
@@ -839,26 +974,33 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         .iter()
         .zip(&qns)
         .flat_map(|(f, q)| {
+            let classes: Vec<&vendor::Symbol> = f.symbols.iter().filter(|c| matches!(c.kind, SymbolKind::Class)).collect();
             f.symbols
                 .iter()
                 .zip(q)
                 .filter(move |(s, qn)| {
                     matches!(s.kind, SymbolKind::Function)
                         && !qn.contains('#')
-                        && !f.symbols.iter().any(|c| matches!(c.kind, SymbolKind::Class) && c.line_start <= s.line_start && s.line_end <= c.line_end && !(c.line_start == s.line_start && c.line_end == s.line_end))
+                        && !classes.iter().any(|c| c.line_start <= s.line_start && s.line_end <= c.line_end && !(c.line_start == s.line_start && c.line_end == s.line_end))
                 })
                 .map(|(_, qn)| qn.as_str())
         })
         .collect();
-    let ts: Vec<Option<TsDecls>> = files.iter().map(|f| decl_types::analyze(&f.lines.join("\n"), &f.language)).collect();
+    let ts: Vec<Option<TsDecls>> = par_map(files.len(), &names, &|i| decl_types::analyze(&files[i].lines.join("\n"), &files[i].language));
     let mut cm = rust_ctx::CrateMap::default();
     for f in files.iter().filter(|f| f.language == "toml" && f.rel_path.rsplit('/').next() == Some("Cargo.toml")) {
         cm.add_manifest(f.rel_path.rsplit_once('/').map_or("", |d| d.0), &f.lines);
     }
-    let rust: Vec<Option<RustInfo>> = files
-        .iter()
-        .map(|f| (f.language == "rust").then(|| rust_ctx::analyze(&f.lines.join("\n"))))
-        .collect();
+    let rust: Vec<Option<RustInfo>> = par_map(files.len(), &names, &|i| {
+        let f = &files[i];
+        (f.language == "rust").then(|| rust_ctx::analyze(&f.lines.join("\n")))
+    });
+    // per-file case calls and module-level calls: tree-sitter passes with no cross-file input
+    let per_file_calls: Vec<(Vec<CallSite>, Vec<CallSite>)> = par_map(files.len(), &names, &|i| {
+        let f = &files[i];
+        let case_calls = if super::is_test_path(&f.rel_path) { js_ctx::test_cases(&f.lines.join("\n"), &f.language).1 } else { vec![] };
+        (case_calls, super::module_ctx::module_calls(&f.lines.join("\n"), &f.language))
+    });
     for (fi, (f, q)) in files.iter().zip(&qns).enumerate() {
         super::mark_file(&f.rel_path);
         if let Some(info) = &rust[fi] {
@@ -892,11 +1034,9 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             .map(|i| (i, import_files(&f.rel_path, i, &file_set)))
             .collect();
         // the calls in `it(...)` / `test(...)` bodies belong to no symbol: they are the test file's own (item: tests, not calls)
-        let (_, case_calls) = if super::is_test_path(&f.rel_path) { js_ctx::test_cases(&f.lines.join("\n"), &f.language) } else { (vec![], vec![]) };
-        // calls and table references outside any function body: the file is the caller
-        let module_calls = super::module_ctx::module_calls(&f.lines.join("\n"), &f.language);
+        let (case_calls, module_calls) = &per_file_calls[fi];
         let edges_before = out.len();
-        for c in f.call_sites.iter().chain(&case_calls).chain(&module_calls) {
+        for c in f.call_sites.iter().chain(case_calls).chain(module_calls) {
             let caller_qn: &String = if c.caller == js_ctx::CALLER_FILE {
                 &f.rel_path
             } else if c.caller.starts_with(js_ctx::CASE_PREFIX) {
@@ -977,7 +1117,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             // 1b. r.m() where r is declared with a class type in the caller
             if let Some(r) = recv {
                 if f.language != "rust" {
-                    if let Some(t) = typed_receiver_method(files, &qns, f, &c.caller, r, &c.callee) {
+                    if let Some(t) = typed_receiver_method(files, &qns, &file_set, f, &c.caller, r, &c.callee) {
                         out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
                         continue;
                     }
@@ -1036,7 +1176,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             // no edge. `self`/`this` were decided above, typed receivers and module aliases before this point.
             if let Some(r) = recv {
                 // `Foo.bar()`: a class named in the repo (same language), the method inside it
-                if let Some(t) = static_class_method(files, &qns, f, r, &c.callee) {
+                if let Some(t) = static_class_method(files, &qns, &file_set, f, r, &c.callee) {
                     out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
                 }
                 continue;
@@ -1057,12 +1197,9 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             if shadowed_callee || builtins::is_builtin(fam, &c.callee) {
                 continue;
             }
-            let cands: Vec<&(String, bool, &str, bool)> = by_name
-                .get(c.callee.as_str())
-                .map(|v| v.iter().filter(|e| e.2 == fam && !e.3).collect())
-                .unwrap_or_default();
+            let first = by_name.get(c.callee.as_str()).and_then(|v| v.iter().find(|e| e.2 == fam && !e.3));
             // a name-only rule never yields 1.0
-            if let Some(first) = cands.first() {
+            if let Some(first) = first {
                 out.push((EdgeKind::Calls, caller_qn.clone(), first.0.clone(), 0.5));
             }
         }
@@ -1360,9 +1497,75 @@ mod tests {
         let e = resolve_edges(&[a, u, o]);
         assert!(has_call(&e, "src/a.ts::f", "src/u.ts::parse", 1.0), "{e:?}");
     }
+    // The indexes behind FileSet must answer exactly what the linear scans they replaced answered.
+    fn linear_java(source: &str, keys: &[&str]) -> Option<String> {
+        if source.ends_with('*') || source.is_empty() {
+            return None;
+        }
+        let suffix = format!("{}.java", source.replace('.', "/"));
+        let tail = format!("/{suffix}");
+        keys.iter().filter(|f| **f == suffix || f.ends_with(&tail)).min_by(|a, b| (a.len(), **a).cmp(&(b.len(), **b))).map(|s| s.to_string())
+    }
+    fn linear_go(source: &str, keys: &[&str]) -> Vec<String> {
+        let last = source.rsplit('/').next().unwrap_or(source);
+        if last.is_empty() || source.starts_with('.') {
+            return vec![];
+        }
+        let mut dirs: HashMap<&str, Vec<&str>> = HashMap::new();
+        for f in keys.iter().filter(|f| f.ends_with(".go")) {
+            dirs.entry(f.rsplit_once('/').map_or("", |d| d.0)).or_default().push(f);
+        }
+        let pick = |pred: &dyn Fn(&str) -> bool| -> Option<Vec<String>> {
+            let hits: Vec<&&str> = dirs.keys().filter(|d| pred(d)).collect();
+            if hits.len() != 1 {
+                return None;
+            }
+            let mut v: Vec<String> = dirs[*hits[0]].iter().map(|s| s.to_string()).collect();
+            v.sort();
+            Some(v)
+        };
+        let tail = format!("/{source}");
+        pick(&|d| d == source || d.ends_with(&tail)).or_else(|| pick(&|d| d.rsplit('/').next() == Some(last))).unwrap_or_default()
+    }
+    #[test]
+    fn file_set_suffix_indexes_match_the_linear_scans() {
+        let keys = [
+            "src/main/java/a/b/C.java", "other/a/b/C.java", "a/b/C.java", "x/Other.java", "src/z/Base.java", "lib/z/Base.java",
+            "cmd/app/main.go", "cmd/app/util.go", "pkg/log/log.go", "internal/log/log.go", "pkg/store/s.go", "vendor/pkg/store/s.go", "root.go",
+            "pkg/a/b.py", "pkg/a/b/__init__.py", "src/srclight/server.py", "lib/srclight/server.py", "tools/only/mod.py", "pkg/__init__.py",
+        ];
+        let fs = FileSet::from_paths(keys.iter().copied());
+        let map: HashMap<String, ()> = keys.iter().map(|k| (k.to_string(), ())).collect();
+        for src in ["a.b.C", "z.Base", "x.Other", "a.b.*", "", "q.R", "C"] {
+            assert_eq!(resolve_java_import(src, &fs), linear_java(src, &keys), "java {src}");
+        }
+        for src in ["app", "cmd/app", "log", "pkg/log", "store", "pkg/store", "nope", "../x", "", "a/"] {
+            assert_eq!(resolve_go_dir(src, &fs), linear_go(src, &keys), "go {src}");
+        }
+        // python: the dotted-suffix branch (two or more names, no relative dots): unique file ending in the path
+        assert_eq!(resolve_py_import("x.py", "srclight.server", &fs), None, "two matches");
+        assert_eq!(resolve_py_import("x.py", "only.mod", &fs).as_deref(), Some("tools/only/mod.py"));
+        for src in ["a.b", "srclight.server", "only.mod", "pkg.a.b", "b.c", "a.b.c"] {
+            let tails = [format!("/{}.py", src.replace('.', "/")), format!("/{}/__init__.py", src.replace('.', "/"))];
+            let hits: Vec<&&str> = keys.iter().filter(|k| tails.iter().any(|t| k.ends_with(t.as_str()))).collect();
+            let exact = [format!("{}.py", src.replace('.', "/")), format!("{}/__init__.py", src.replace('.', "/"))];
+            let want = exact.iter().find(|c| keys.contains(&c.as_str())).cloned().or_else(|| (hits.len() == 1).then(|| hits[0].to_string()));
+            assert_eq!(resolve_py_import("x.py", src, &fs), want, "py {src}");
+        }
+        assert_eq!(fs.pos("pkg/log/log.go"), Some(8));
+        assert_eq!(map.len(), fs.len());
+    }
+    #[test]
+    fn par_map_keeps_index_order_and_names_a_panicking_file() {
+        let v = par_map(100, &|i| i.to_string(), &|i| i * 2);
+        assert_eq!(v, (0..100).map(|i| i * 2).collect::<Vec<_>>());
+        let r = std::panic::catch_unwind(|| par_map(10, &|i| format!("f{i}"), &|i| if i == 7 { panic!("boom") } else { i }));
+        assert!(r.is_err());
+        assert_eq!(super::super::CURRENT_FILE.with(|c| c.borrow().clone()), "f7");
+    }
     #[test]
     fn java_import_resolves_under_any_source_root() {
-        let files = |l: &[&str]| l.iter().map(|s| (s.to_string(), ())).collect::<HashMap<_, _>>();
+        let files = |l: &[&str]| FileSet::from_paths(l.iter().copied());
         let set = files(&["src/main/java/a/b/C.java", "x/Other.java"]);
         assert_eq!(resolve_import_target("src/main/java/z/D.java", "a.b.C", &set).as_deref(), Some("src/main/java/a/b/C.java"));
         assert_eq!(resolve_import_target("z/D.java", "a.b.*", &set), None);
