@@ -118,10 +118,16 @@ struct TermHits {
 }
 
 /// Two tokens match when equal, or when they share a prefix of >= 4 chars that is the whole shorter token or leaves at most
-/// two of its chars (`extract`~`extraction`, `resolution`~`resolve`, `signature`~`signatures`).
+/// two of its chars (`extract`~`extraction`, `resolution`~`resolve`, `signature`~`signatures`). A shorter token of fewer
+/// than 6 chars must be equal instead, except that the longer may add one plural or verb suffix (`s`, `es`, `ed`, `ing`):
+/// `task`~`tasks` matches, `multi`~`multiplier` does not.
 pub fn tok_match(a: &str, b: &str) -> bool {
     if a == b {
         return true;
+    }
+    let (short, long) = if a.chars().count() <= b.chars().count() { (a, b) } else { (b, a) };
+    if short.chars().count() < 6 {
+        return ["s", "es", "ed", "ing"].iter().any(|suf| long.strip_prefix(short).is_some_and(|rest| rest == *suf));
     }
     let cp = a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count();
     let m = a.chars().count().min(b.chars().count());
@@ -256,7 +262,7 @@ impl RunIndex {
         let n_nodes = self.nodes.len() as f64;
         let slug_tail = f.slug.rsplit('.').next().unwrap_or(&f.slug);
         let mut raw: BTreeMap<String, (f64, bool)> = BTreeMap::new();
-        for t in tokens(&f.grp).into_iter().chain(tokens(slug_tail)).chain(tokens(&f.title)) {
+        for t in tokens(&f.grp).into_iter().chain(tokens(slug_tail)).chain(tokens(&f.title)).chain(tokens(&f.synonyms)) {
             raw.insert(t, (1.0, false));
         }
         let def = f.definition.split("[kinds:").next().unwrap_or("");
@@ -446,6 +452,7 @@ mod tests {
             counts_as_has: "".into(),
             tier: "core".into(),
             weight: 1,
+            synonyms: "".into(),
         }
     }
     fn near(a: f64, b: f64) -> bool {
@@ -461,14 +468,21 @@ mod tests {
             ("extract", "extraction", true),
             ("resolution", "resolve", true),
             ("signature", "signatures", true),
-            ("call", "callback", true), // the documented over-match
-            ("data", "database", true),
-            ("cat", "cats", false),
+            ("call", "callback", false), // short token: whole-token only (was the documented over-match)
+            ("data", "database", false),
+            ("cat", "cats", true), // plural suffix
+            ("task", "tasks", true),
+            ("task", "tasked", true),
+            ("cach", "caching", true),
+            ("class", "classes", true),
+            ("multi", "multiplier", false),
+            ("multi", "multilingual", false),
+            ("lang", "language", false),
             ("abc", "abd", false),
             ("token", "tokio", false),
             ("graph", "grain", false),
-            ("graph", "graphql", true),
-            ("größe", "größen", true), // chars, not bytes
+            ("graph", "graphql", false),
+            ("größen", "größens", true), // chars, not bytes
         ] {
             assert_eq!(tok_match(a, b), want, "{a} ~ {b}");
             assert_eq!(tok_match(b, a), want, "{b} ~ {a}");
