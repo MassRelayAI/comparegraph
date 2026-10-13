@@ -66,3 +66,30 @@ leans to easy pairs. CodeGraph has no `none` rows. Absent precision rests on one
 
 ## Next
 IMP (map ranking: kind and name weighting, demote tests and file nodes; absent check: stop word and kind-aware terms), H2H baselines on the same gold, PROD.
+
+## After IMP (2026-10-13, Plan 7 lane 1 task IMP)
+Split: TUNE = graphmind, srclight, code-review-graph (every change designed on these); HOLD-OUT = CodeGraph, codanna, ripwire (measured once per kept round, never inspected per feature, never tuned on).
+Same scorer, same gold, same release build path. Pooled micro p5 / r5.
+
+| round | change | TUNE p5 / r5 | HOLD-OUT p5 / r5 | absent P / R (TUNE) | kept |
+|---|---|---|---|---|---|
+| 0 | baseline (FTS OR over group+slug+title) | 0.064 / 0.170 | 0.023 / 0.085 | 1.00 (1) / 0.083 (1/12) | - |
+| 1 | IDF terms (share > 0.10 of node names or path tokens weighs 0), definition tokens at 0.5, slug compound form, stem-prefix match; candidate sum of idf over name/path/community matches | 0.053 / 0.170 | 0.022 / 0.085 | same | yes (base of 2) |
+| 2 | kind prior from `[kinds: ...]` (test node or test path x0.15, file/module x0.5, class/type x0.8 unless wanted) and graph prior `1 + 0.3 ln(1+callers)` | 0.151 / 0.489 | 0.032 / 0.128 | same | yes |
+| 3 | one-hop expansion: callees in the same file or community that name a term, boosted by the best 8 parents | 0.140 / 0.455 | 0.032 / 0.128 | same | no, reverted (TUNE worse, HOLD-OUT flat) |
+| 4 | name-coverage scaling `0.5 + 0.5 x (matched name tokens / name tokens)` | 0.154 / 0.500 | 0.038 / 0.149 | same | yes |
+| 5 | slug-tail weight 1.5, group weight 0.5 | 0.126 / 0.409 | not measured (TUNE regressed) | - | no, reverted |
+| 6 | same-file discount (0.8 per earlier pick) | 0.126 / 0.409 | not measured (TUNE regressed) | - | no, reverted |
+| 6b | class-container tokens of the qualified name as a channel (0.6) | 0.147 / 0.477 | not measured | - | no, reverted |
+| 7 | absent check searches with IDF-informative terms only (stricter cutoffs 0.1, 0.03, 0.02, 0.01, 0.007 tried) | 0.154 / 0.500 | 0.038 / 0.149 | 0.1 to 0.02: unchanged 1.00 / 0.083; 0.01 and 0.007: P 0.33 (3 calls), R unchanged | no, reverted (no recall gain; the extra calls were wrong) |
+
+Single-parameter sweeps on TUNE (cutoff 0.03 to 0.15, definition weight 0.25 to 0.8, path weight 0.2 to 0.6, community weight, idf power, callers weight) moved p5 by at most 0.02; the chosen values sit on the plateau.
+
+Final (all six, `scripts/map-score.sh`, release binary): TUNE p5 0.154 / r5 0.500; HOLD-OUT p5 0.038 / r5 0.149; pooled p5 0.109 / r5 0.378 (baseline 0.046 / 0.141). Absent unchanged: precision 1.00 (1 call), recall 1/19.
+relate 6/6 ok. Two `map` runs byte-identical. store_hash of `fixtures/typescript` unchanged (8a64f321...). Floors in `FLOORS.json` raised to measured minus 0.01 (pooled 0.0985 / 0.3678).
+
+### Verdict
+The stop condition (HOLD-OUT p5 >= 0.30 and r5 >= 0.50) was NOT met; the floors were not lowered, the target stays open. Gains transfer weakly: x3.3 recall on TUNE, x1.75 on HOLD-OUT, and HOLD-OUT is far below TUNE.
+Why, from aggregate diagnostics (no per-feature reading of HOLD-OUT): the gold is reachable lexically on TUNE (a gold location is within the top 200 for 65 to 77 percent of locations) but not on HOLD-OUT (top 200: CodeGraph 32, codanna 47, ripwire 30 percent). The HOLD-OUT clones are 2 to 6 times larger (up to 16k functions, 2k test nodes in ripwire) and their implementers are named by words the feature text does not carry (types and classes are 4 of 10 gold locations in ripwire and 4 of 15 in codanna). Names, paths and community keywords are the only text the store holds; docstrings, comments, signatures and call-site neighbours are not stored, so a feature word that is in no node name cannot be found. Next levers sit outside this lane: a text channel (doc/comment tokens) in the store, a synonym or embedding channel, and a larger TUNE set so the formula is not fitted on three small repos.
+Absent recall: lexical channels cannot separate `none` from `has` when the implementer uses another word (`visualisation`/`visualization`, `lookup` for `fuzzy-name`): every cutoff that added a call added a wrong one.
+Five worst features after (pooled recall@5, all clones): search.embeddings 0/7, graph.type-info 0/5, serving.cli 0/5, symbols.visibility 0/4, registry.multi-repo 0/3 (symbols.test-detection 0/3, graph.inheritance 1/7, search.fuzzy-name 1/6 follow).

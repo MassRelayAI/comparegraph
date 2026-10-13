@@ -1,7 +1,8 @@
 //! `map` and `relate`: per-feature candidates from the graph (FTS OR over the feature terms, plus communities whose
 //! label or keywords carry a term), and a relatedness band per (clone, family). Candidates are never verdicts.
 use super::communities::tokens;
-use super::search::{search_any_in_repo, Hit};
+use super::search::Hit;
+use super::termscore::RunIndex;
 use super::{AppError, Result};
 use crate::store::{FeatureRow, Store};
 use rusqlite::params;
@@ -74,12 +75,31 @@ fn latest_done(store: &Store, repo: &str) -> Result<(i64, i64)> {
 fn map_feature(
     store: &Store,
     repo: &str,
-    run: i64,
+    idx: &RunIndex,
     f: &FeatureRow,
     limit: usize,
 ) -> Result<FeatureMap> {
-    let terms = feature_terms(f);
-    let symbols = search_any_in_repo(store, repo, &terms, limit)?;
+    let wt = idx.terms(f);
+    let terms: Vec<String> = wt.iter().filter(|t| t.informative()).map(|t| t.text.clone()).collect();
+    let symbols: Vec<Hit> = idx
+        .rank(f, &wt, limit)
+        .into_iter()
+        .map(|(i, score)| {
+            let n = &idx.nodes[i];
+            Hit {
+                repo: repo.into(),
+                qualified_name: n.qn.clone(),
+                kind: n.kind.clone(),
+                path: n.path.clone(),
+                line_start: n.ls,
+                line_end: n.le,
+                community: idx.community_label(i),
+                score,
+                label: "candidate",
+            }
+        })
+        .collect();
+    let run = idx.run;
     let mut communities: Vec<CommunityCandidate> = store
         .communities_of_run(crate::domain::RunId(run))?
         .into_iter()
@@ -145,9 +165,10 @@ pub fn map(
             )));
         }
     }
+    let idx = RunIndex::load(&store, run)?;
     let features = feats
         .iter()
-        .map(|f| map_feature(&store, repo, run, f, limit))
+        .map(|f| map_feature(&store, repo, &idx, f, limit))
         .collect::<Result<Vec<_>>>()?;
     Ok(Mapped {
         repo: repo.into(),
@@ -175,8 +196,9 @@ fn relate_pair(store: &Store, repo: &str, family: &str) -> Result<Related> {
     let feats = active(store, family)?;
     let ph = pack_hash(store, family)?;
     let mut basis = vec![];
+    let idx = RunIndex::load(store, run)?;
     for f in &feats {
-        let m = map_feature(store, repo, run, f, 1)?;
+        let m = map_feature(store, repo, &idx, f, 1)?;
         if !m.symbols.is_empty() || !m.communities.is_empty() {
             basis.push(f.key());
         }
