@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "The comparegraph binary for win32-x64",
   "license": "Apache-2.0",
-  "repository": { "type": "git", "url": "git+https://github.com/nicholasandreasujitno/comparegraph.git" },
+  "repository": { "type": "git", "url": "git+https://github.com/massrelay-ai/comparegraph.git" },
   "os": ["win32"],
   "cpu": ["x64"],
   "files": ["bin/"]

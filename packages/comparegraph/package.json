@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicholasandreasujitno/comparegraph.git"
+    "url": "git+https://github.com/massrelay-ai/comparegraph.git"
   },
   "bin": {
     "comparegraph": "bin/comparegraph.js"
@@ -23,7 +23,7 @@
     "@comparegraph/win32-x64": "0.1.0"
   },
   "bugs": {
-    "url": "https://github.com/nicholasandreasujitno/comparegraph/issues",
+    "url": "https://github.com/massrelay-ai/comparegraph/issues",
     "email": "support@massrelay.ai"
   }
 }

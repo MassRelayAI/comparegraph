@@ -44,7 +44,7 @@ test('no platform package: the exact error and exit 1', () => {
     assert.equal(r.status, 1);
     assert.equal(
       r.stderr.trim(),
-      `comparegraph: no prebuilt binary for ${pkgName}; build from source: cargo install --git https://github.com/nicholasandreasujitno/comparegraph comparegraph`
+      `comparegraph: no prebuilt binary for ${pkgName}; build from source: cargo install --git https://github.com/massrelay-ai/comparegraph comparegraph`
     );
     assert.equal(r.stdout, '');
   } finally {

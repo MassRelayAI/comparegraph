@@ -55,5 +55,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   entry points and dead-code candidates, incremental builds, more conformance languages, and a measured parity report
   against code-review-graph (`docs/reports/2026-10-12-engine-parity.md`).
 
-[Unreleased]: https://github.com/nicholasandreasujitno/comparegraph/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/nicholasandreasujitno/comparegraph/releases/tag/v0.1.0
+[Unreleased]: https://github.com/massrelay-ai/comparegraph/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/massrelay-ai/comparegraph/releases/tag/v0.1.0

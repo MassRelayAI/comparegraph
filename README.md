@@ -2,7 +2,7 @@
 
 **Many cloned repositories, one taxonomy, evidence on every cell.**
 
-[![CI](https://github.com/nicholasandreasujitno/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nicholasandreasujitno/comparegraph/actions/workflows/ci.yml)
+[![CI](https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
 ![MCP tools: 18](https://img.shields.io/badge/MCP%20tools-18-green.svg)
@@ -73,7 +73,7 @@ For: teams comparing their product with the field, due diligence on a set of pro
 The example family pack (`families/`) and the sample repositories (`fixtures/`) ship in the clone, not in the binary.
 
 ```bash
-git clone https://github.com/nicholasandreasujitno/comparegraph
+git clone https://github.com/massrelay-ai/comparegraph
 cd comparegraph
 cargo install --locked --path crates/comparegraph
 comparegraph setup --client claude --apply     # wire up an agent (omit --apply for a dry run)
