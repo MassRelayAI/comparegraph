@@ -1,5 +1,5 @@
-//! `map` and `relate`: per-feature candidates from the graph (FTS OR over the feature terms, plus communities whose
-//! label or keywords carry a term), and a relatedness band per (clone, family). Candidates are never verdicts.
+//! `map` and `relate`: per-feature candidates from the graph (idf-weighted ranking of the nodes, `termscore.rs`, plus
+//! communities whose label or keywords carry a term), and a relatedness band per (clone, family). Candidates are never verdicts.
 use super::communities::tokens;
 use super::search::Hit;
 use super::termscore::{tok_match, RunIndex};
@@ -383,5 +383,18 @@ mod tests {
         let m = map_feature("r", &idx, &f, 1).unwrap();
         assert_eq!(m.symbols[0].matched, vec!["gadgets".to_string()]);
         assert!(!m.symbols[0].named, "a definition token has source weight 0.5");
+    }
+
+    #[test]
+    fn a_feature_whose_terms_are_all_common_maps_to_nothing() {
+        let names: Vec<String> = (0..100).map(|i| if i < 20 { format!("graph_zq{i}") } else { format!("item_zq{i}") }).collect();
+        let rows: Vec<(&str, &str, &str)> = names.iter().map(|s| ("function", s.as_str(), "a.ts")).collect();
+        let idx = RunIndex::from_rows(&rows);
+        let mut f = feature();
+        f.grp = "zz".into();
+        f.slug = "zz.zz".into();
+        f.title = "graph".into();
+        let m = map_feature("r", &idx, &f, 5).unwrap();
+        assert!(m.symbols.is_empty() && m.terms.is_empty());
     }
 }

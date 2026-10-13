@@ -32,10 +32,12 @@ fn map_gold_floors_hold() {
     };
     let repo = repo();
     let base = repo.join("fixtures/gold-map");
-    let floors: Value = std::fs::read_to_string(base.join("FLOORS.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(Value::Null);
+    // an unreadable or unparseable floors file must fail the test: a silent null would check nothing
+    let floors_path = base.join("FLOORS.json");
+    let floors: Value = serde_json::from_str(
+        &std::fs::read_to_string(&floors_path).unwrap_or_else(|e| panic!("cannot read {}: {e}", floors_path.display())),
+    )
+    .unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", floors_path.display()));
     let family = std::env::var("COMPAREGRAPH_MAP_FAMILY").unwrap_or_else(|_| "code-graph-tools".into());
     let pack = repo.join(format!("families/{family}/rows.md"));
     let mut clones: Vec<String> = std::fs::read_dir(&base)

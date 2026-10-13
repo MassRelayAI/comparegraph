@@ -1,8 +1,10 @@
-//! Term quality and candidate scoring for `map` (and the informative-term filter of `absent-check`). Read-only over a run.
+//! Term quality and candidate scoring for `map`. Read-only over a run.
 //!
 //! Terms: tokens of the feature's group, slug tail and title (weight 1), the distinctive tokens of its definition (weight
-//! `K_DEF_W`), and the slug's compound forms (`call-graph` -> `callgraph`). A term is INFORMATIVE when the share of the run's
-//! nodes whose name tokens (or whose path tokens) carry it is at most `K_CUTOFF`; its weight is `ln(1/share)`. A term above the
+//! `K_DEF_W`), and the slug's compound forms (`call-graph` -> `callgraph`). A term is INFORMATIVE when its share is at most
+//! `K_CUTOFF`, or the run has fewer than `K_MIN_COMMON` nodes carrying it. The share is the sum of the document frequencies of
+//! the vocabulary tokens that `tok_match` the term, over the run's node count and capped at 1 (the larger of the name and path
+//! channels); its weight is `ln(1/share)`, floored at 0.1. A term above the
 //! cutoff (`code`, `graph`, `tool`, `file` in a code-graph tool) weighs 0. Nothing is hard-coded per word or per tool: the
 //! weight comes from the run being searched.
 //!
@@ -36,7 +38,7 @@ const ENGLISH: &[&str] = &[
     "the", "and", "for", "with", "from", "are", "its", "that", "which", "each", "not", "only", "than", "into", "can", "one",
     "more", "both", "beyond", "without", "other", "any", "all", "these", "those", "when", "where", "how", "also", "then",
     "their", "them", "they", "given", "such", "like", "uses", "used", "use", "via", "has", "have", "does", "but", "same",
-    "own", "out", "see", "per", "not", "ones", "would", "will", "may", "was", "were", "been", "being", "kept", "kinds", "kind",
+    "own", "out", "see", "per", "ones", "would", "will", "may", "was", "were", "been", "being", "kept", "kinds", "kind",
 ];
 
 #[derive(Clone, Debug)]
@@ -251,9 +253,7 @@ impl RunIndex {
 
     /// The feature's terms with their weights in this run.
     pub fn terms(&self, f: &FeatureRow) -> Vec<Term> {
-        let cutoff = K_CUTOFF;
         let n_nodes = self.nodes.len() as f64;
-        let def_w = K_DEF_W;
         let slug_tail = f.slug.rsplit('.').next().unwrap_or(&f.slug);
         let mut raw: BTreeMap<String, (f64, bool)> = BTreeMap::new();
         for t in tokens(&f.grp).into_iter().chain(tokens(slug_tail)).chain(tokens(&f.title)) {
@@ -262,7 +262,7 @@ impl RunIndex {
         let def = f.definition.split("[kinds:").next().unwrap_or("");
         for t in tokens(def) {
             if !ENGLISH.contains(&t.as_str()) {
-                raw.entry(t).or_insert((def_w, false));
+                raw.entry(t).or_insert((K_DEF_W, false));
             }
         }
         let parts: Vec<String> = slug_tail.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|p| !p.is_empty()).map(String::from).collect();
@@ -273,7 +273,7 @@ impl RunIndex {
             .map(|(text, (sw, compound))| {
                 let share = self.hits(&text, compound).share;
                 // a term is a stop word only when it is both a large share and a large count: a three-node graph has no statistics
-                let common = share > cutoff && share * n_nodes >= K_MIN_COMMON;
+                let common = share > K_CUTOFF && share * n_nodes >= K_MIN_COMMON;
                 let idf = if common || share == 0.0 { 0.0 } else { (1.0 / share).ln().max(0.1) };
                 Term { text, compound, sw, idf, share }
             })
@@ -298,10 +298,8 @@ impl RunIndex {
 
     /// Ranked candidates, best first, at most `limit`.
     pub fn rank(&self, f: &FeatureRow, terms: &[Term], limit: usize) -> Vec<Ranked> {
-        let (path_w, comm_w) = (K_PATH_W, K_COMM_W);
-        let (graph_w, test_pen, file_pen) = (K_GRAPH_W, K_TEST_PEN, K_FILE_PEN);
-        let ln_w = K_LN_W;
         let fkinds = feature_kinds(f);
+        // `tokens` drops the word "test" itself, so the second clause fires only for "tests", "testing" and the like
         let about_tests = fkinds.contains(&"test") || terms.iter().any(|t| t.text.starts_with("test"));
         let active: Vec<&Term> = terms.iter().filter(|t| t.informative()).collect();
         // a node no active term can reach scores 0: only the union of the terms' hit lists is scored
@@ -316,7 +314,7 @@ impl RunIndex {
             let (mut by_name, mut named) = (vec![], false);
             for (t, h) in active.iter().zip(&hits) {
                 let (nm, pa, cm) = self.matched(n, t, h);
-                let ch = if nm { 1.0 } else if pa { path_w } else if cm { comm_w } else { 0.0 };
+                let ch = if nm { 1.0 } else if pa { K_PATH_W } else if cm { K_COMM_W } else { 0.0 };
                 s += t.idf * t.sw * ch;
                 if nm {
                     by_name.push(t.text.clone());
@@ -331,9 +329,9 @@ impl RunIndex {
             } else {
                 n.ntoks.iter().filter(|&&k| active.iter().any(|t| !t.compound && tok_match(&t.text, &self.vocab[k as usize]))).count() as f64 / n.ntoks.len() as f64
             };
-            s *= ln_w + (1.0 - ln_w) * cov;
-            let kp = kind_prior(&n.kind, &fkinds, n.is_test_path && !about_tests, test_pen, file_pen);
-            let score = s * kp * (1.0 + graph_w * (1.0 + n.callers as f64).ln());
+            s *= K_LN_W + (1.0 - K_LN_W) * cov;
+            let kp = kind_prior(&n.kind, &fkinds, n.is_test_path && !about_tests);
+            let score = s * kp * (1.0 + K_GRAPH_W * (1.0 + n.callers as f64).ln());
             if score > 0.0 {
                 pool.push(Ranked { i, score, matched: by_name, named });
             }
@@ -366,7 +364,8 @@ pub fn feature_kinds(f: &FeatureRow) -> Vec<&'static str> {
     v
 }
 
-fn kind_prior(kind: &str, fkinds: &[&str], test_path: bool, test_pen: f64, file_pen: f64) -> f64 {
+/// Prior of a node's kind given the kinds the feature asks for; `K_TEST_PEN` for tests, `K_FILE_PEN` for files, 0.5 for any other kind.
+fn kind_prior(kind: &str, fkinds: &[&str], test_path: bool) -> f64 {
     let wants = |k: &str| fkinds.contains(&k);
     let base = match kind {
         "function" | "method" => 1.0,
@@ -377,14 +376,14 @@ fn kind_prior(kind: &str, fkinds: &[&str], test_path: bool, test_pen: f64, file_
             if wants("mcp-tool") || wants("cli") { 1.0 } else { 0.7 }
         }
         "file" | "module" => {
-            if wants("file") || wants("config") { 0.9 } else { file_pen }
+            if wants("file") || wants("config") { 0.9 } else { K_FILE_PEN }
         }
         "test" => {
-            if wants("test") { 1.0 } else { test_pen }
+            if wants("test") { 1.0 } else { K_TEST_PEN }
         }
         _ => 0.5,
     };
-    if test_path { base * test_pen } else { base }
+    if test_path { base * K_TEST_PEN } else { base }
 }
 
 #[cfg(test)]
@@ -429,5 +428,167 @@ impl RunIndex {
             }
         }
         Self { run: 1, nodes, vocab, comm_toks: vec![], comm_label: vec![], name_inv, path_inv, comm_nodes: vec![], memo: RefCell::new(HashMap::new()) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn feat(grp: &str, slug: &str, title: &str, definition: &str) -> FeatureRow {
+        FeatureRow {
+            id: 1,
+            family: "f".into(),
+            grp: grp.into(),
+            slug: slug.into(),
+            title: title.into(),
+            definition: definition.into(),
+            counts_as_has: "".into(),
+            tier: "core".into(),
+            weight: 1,
+        }
+    }
+    fn near(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-9
+    }
+    fn term<'a>(ts: &'a [Term], text: &str) -> &'a Term {
+        ts.iter().find(|t| t.text == text).unwrap_or_else(|| panic!("no term {text} in {ts:?}"))
+    }
+
+    #[test]
+    fn tok_match_cases() {
+        for (a, b, want) in [
+            ("extract", "extraction", true),
+            ("resolution", "resolve", true),
+            ("signature", "signatures", true),
+            ("call", "callback", true), // the documented over-match
+            ("data", "database", true),
+            ("cat", "cats", false),
+            ("abc", "abd", false),
+            ("token", "tokio", false),
+            ("graph", "grain", false),
+            ("graph", "graphql", true),
+            ("größe", "größen", true), // chars, not bytes
+        ] {
+            assert_eq!(tok_match(a, b), want, "{a} ~ {b}");
+            assert_eq!(tok_match(b, a), want, "{b} ~ {a}");
+        }
+    }
+
+    #[test]
+    fn feature_kinds_cases() {
+        let k = |d: &str| feature_kinds(&feat("g", "g.s", "t", d));
+        assert_eq!(k("x [kinds: function, mcp-tool]"), vec!["function", "mcp-tool"]);
+        assert!(k("no suffix").is_empty());
+        assert_eq!(k("[kinds: bogus, test]"), vec!["test"]);
+        assert!(k("[kinds:]").is_empty());
+        assert_eq!(k("[kinds: cli"), vec!["cli"]);
+    }
+
+    #[test]
+    fn kind_prior_cases() {
+        for (kind, wants, test_path, want) in [
+            ("test", vec![], false, 0.15),
+            ("test", vec!["test"], false, 1.0),
+            ("file", vec![], false, 0.5),
+            ("file", vec!["config"], false, 0.9),
+            ("class", vec![], false, 0.8),
+            ("class", vec!["class"], false, 1.0),
+            ("type", vec![], false, 0.8),
+            ("route", vec![], false, 0.7),
+            ("route", vec!["cli"], false, 1.0),
+            ("function", vec![], true, 0.15),
+            ("test", vec![], true, 0.0225),
+            ("enum", vec![], false, 0.5),
+        ] {
+            let got = kind_prior(kind, &wants, test_path);
+            assert!(near(got, want), "{kind} {wants:?} test_path={test_path}: {got} != {want}");
+        }
+    }
+
+    #[test]
+    fn small_run_has_no_stop_words() {
+        let idx = RunIndex::from_rows(&[("function", "alpha_beta", "a.ts"), ("function", "alpha_gamma", "b.ts"), ("function", "delta", "c.ts")]);
+        let ts = idx.terms(&feat("zz", "zz.zz", "alpha delta", ""));
+        let (alpha, delta) = (term(&ts, "alpha"), term(&ts, "delta"));
+        assert!(near(alpha.share, 2.0 / 3.0));
+        assert!(alpha.informative(), "2 nodes < K_MIN_COMMON: a 3-node graph has no statistics");
+        assert!(near(alpha.idf, 1.5f64.ln().max(0.1)));
+        assert!(near(delta.idf, 3f64.ln()));
+    }
+
+    fn run_with(n: usize, carrying: usize, word: &str) -> RunIndex {
+        let names: Vec<String> = (0..n).map(|i| if i < carrying { format!("{word}_zq{i}") } else { format!("item_zq{i}") }).collect();
+        let rows: Vec<(&str, &str, &str)> = names.iter().map(|s| ("function", s.as_str(), "a.ts")).collect();
+        RunIndex::from_rows(&rows)
+    }
+
+    #[test]
+    fn common_word_weighs_zero_rare_word_weighs_ln() {
+        let common = run_with(100, 20, "graph");
+        let ts = common.terms(&feat("zz", "zz.zz", "graph", ""));
+        assert!(near(term(&ts, "graph").share, 0.2));
+        assert!(near(term(&ts, "graph").idf, 0.0));
+        assert!(!term(&ts, "graph").informative());
+        let rare = run_with(100, 5, "foo");
+        let ts = rare.terms(&feat("zz", "zz.zz", "foo", ""));
+        assert!(near(term(&ts, "foo").idf, 20f64.ln()));
+        let ts = rare.terms(&feat("zz", "zz.zz", "absentword", ""));
+        assert!(near(term(&ts, "absentword").idf, 0.0));
+        assert!(!term(&ts, "absentword").informative());
+    }
+
+    #[test]
+    fn slug_compound_and_definition_terms() {
+        let idx = run_with(12, 1, "foo");
+        let ts = idx.terms(&feat("graph", "graph.call-graph", "", ""));
+        let c = term(&ts, "callgraph");
+        assert!(c.compound && near(c.sw, 1.0));
+        let ts = idx.terms(&feat("zz", "zz.zz", "", "the foo [kinds: function]"));
+        let foo = term(&ts, "foo");
+        assert!(near(foo.sw, 0.5) && !foo.compound);
+        assert!(ts.iter().all(|t| t.text != "the" && t.text != "kinds" && t.text != "function"), "{ts:?}");
+    }
+
+    #[test]
+    fn rank_ties_break_by_qualified_name_and_are_stable() {
+        let mut rows = vec![("function", "widget", "src/b.ts"), ("function", "widget", "src/a.ts")];
+        rows.extend((0..20).map(|_| ("function", "filler", "src/z.ts")));
+        let idx = RunIndex::from_rows(&rows);
+        let f = feat("zz", "zz.zz", "widget", "");
+        let ts = idx.terms(&f);
+        let (r1, r2) = (idx.rank(&f, &ts, 5), idx.rank(&f, &ts, 5));
+        assert_eq!(r1.len(), 2);
+        assert!(near(r1[0].score, r1[1].score));
+        assert_eq!(idx.nodes[r1[0].i].qn, "src/a.ts::widget");
+        assert_eq!(idx.nodes[r1[1].i].qn, "src/b.ts::widget");
+        assert_eq!(r1.iter().map(|r| r.i).collect::<Vec<_>>(), r2.iter().map(|r| r.i).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn rank_is_empty_when_every_term_is_common() {
+        let idx = run_with(100, 20, "graph");
+        let f = feat("zz", "zz.zz", "graph", "");
+        assert!(idx.rank(&f, &idx.terms(&f), 5).is_empty());
+    }
+
+    #[test]
+    fn rank_on_an_empty_run_is_empty() {
+        let idx = RunIndex::from_rows(&[]);
+        let f = feat("graph", "graph.call-graph", "Call graph", "the thing");
+        assert!(idx.rank(&f, &idx.terms(&f), 5).is_empty());
+    }
+
+    #[test]
+    fn a_node_with_an_empty_name_scores_finite() {
+        let mut rows = vec![("function", "", "src/widget/x.ts")];
+        rows.extend((0..11).map(|_| ("function", "filler", "src/y.ts")));
+        let idx = RunIndex::from_rows(&rows);
+        let f = feat("zz", "zz.zz", "widget", "");
+        let r = idx.rank(&f, &idx.terms(&f), 5);
+        assert_eq!(r.len(), 1);
+        assert!(r[0].score.is_finite());
+        // path channel 0.35, coverage 0 -> K_LN_W, function prior 1, no callers
+        assert!(near(r[0].score, 12f64.ln() * K_PATH_W * K_LN_W), "{}", r[0].score);
     }
 }
