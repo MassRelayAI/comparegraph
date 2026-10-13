@@ -19,8 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `go.mod`, same-package calls. Gold recall: TypeScript 0.31 → 0.67, Go 0.25 → 1.00, pooled 0.63 → 0.83 at precision 0.99.
 - Plan 6, scale: indexed resolver lookups and a bounded thread pool for per-file analyses (store hash identical); incremental
   edges and communities proven hash-identical to a full build (fallbacks named in a limitation); bounded adjacency loading
-  for `impact`, `traverse`, `tests-for`, `entry-points`, `dead-code` (flat memory on 434k nodes); per-pass profiling with
-  `COMPAREGRAPH_PROFILE=1`.
+  for `impact`, `traverse`, `tests-for`, `entry-points`, `dead-code` (flat memory on 434k nodes), with edge indexes added on
+  open (traverse 1.7 s → 0.28 s on 1.3M edges); repeated limitations collapsed with a count; per-pass profiling with
+  `COMPAREGRAPH_PROFILE=1`; `COMPAREGRAPH_THREADS`; every test binary runs in its own PID namespace where the host allows
+  it (`tools/pidns-run.sh`).
 - Plan 6, a second engine: the external plugin host over JSON lines (`docs/plugin-protocol.md`), bounded reads and waits,
   validated plugin paths, process-group kill, a per-language conformance gate; `comparegraph-provider-crg` for
   code-review-graph and `build --providers a,b` with an agreement row per kind.
