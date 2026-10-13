@@ -594,3 +594,63 @@ answered: most gold lines sit inside anonymous arrow functions in test files, an
 would answer some of them and was not run. Caveats: 36 to 53 repo-target sites per project; the method decides the enclosing node
 with codegraph's own rule, which differs from ours (it can pick a class node); the gold has two agent readers; one run per project
 for timing, at load 7 to 10.
+
+## Feature-mapping baselines (2026-10-14)
+
+Task H2H of Plan 7 lane 1. Question: does our `map` beat the obvious baselines on the mapping gold? Answer at this HEAD: no. It ties plain
+full-text search exactly and is behind codegraph's name search on 11 of 94 features.
+
+Run: `scripts/map-baselines.sh <scratch> target/release/comparegraph <name>=<clone copy> ...` on 2026-10-14, source HEAD fc5c65d (the Rust
+source is unchanged since 7f3b6f2; only a README commit lies between), release binary built from it, reference provider, `family add
+families/code-graph-tools`, 121 agreed pairs (94 with a has/partial label and a resolvable location; 13 locations unresolved and left out
+exactly as in `map-score.sh`), load average 4 to 7.5.
+
+| clone | n | FTS-OR P@5 / R@5 | FTS-AND (`search` verb) | codegraph symbol_search | codegraph search_by_pattern | ours (`map`) |
+|---|---|---|---|---|---|---|
+| graphmind | 12 | 0.086 / 0.294 | - / 0.000 | 0.067 / 0.176 | 0.017 / 0.059 | 0.086 / 0.294 |
+| srclight | 22 | 0.065 / 0.143 | - / 0.000 | 0.064 / 0.200 | 0.064 / 0.200 | 0.065 / 0.143 |
+| code-review-graph | 23 | 0.050 / 0.139 | 0.000 / 0.000 | 0.026 / 0.083 | 0.017 / 0.056 | 0.050 / 0.139 |
+| CodeGraph | 17 | 0.012 / 0.045 | 0.000 / 0.000 | 0.012 / 0.045 | 0.000 / 0.000 | 0.012 / 0.045 |
+| codanna | 12 | 0.038 / 0.133 | - / 0.000 | 0.017 / 0.067 | 0.000 / 0.000 | 0.038 / 0.133 |
+| ripwire | 8 | 0.028 / 0.100 | 0.000 / 0.000 | 0.025 / 0.100 | 0.000 / 0.000 | 0.028 / 0.100 |
+| pooled | 94 | 0.046 / 0.141 | 0.000 / 0.000 | 0.036 / 0.118 | 0.021 / 0.074 | 0.046 / 0.141 |
+
+Pooled counts (candidates matching / candidates, gold locations hit / resolved gold locations): FTS-OR 19/410 and 19/135; FTS-AND 0/6 and
+0/135; symbol_search 17/470 and 16/135; search_by_pattern 10/470 and 10/135; ours 19/410 and 19/135. `-` = no candidates at all (every
+feature's AND query returned nothing).
+
+Where a baseline beats ours (more gold locations hit on the feature, ties broken by matching candidates; `hit/resolved gold` baseline vs ours):
+- FTS-OR, FTS-AND: nowhere. FTS-OR returns the identical top 5 as `map` on 180 of 180 (clone, feature) pairs: at this HEAD `map`'s symbol list
+  is the FTS-OR query with no further ranking (the `map` ranking IS the baseline; the improvement task starts from it).
+- codegraph symbol_search, 11 features: graphmind:export.formats (1/1 vs 1/1, more matching candidates), srclight:analysis.diff-review (1/1 vs 0/1),
+  srclight:graph.communities (1/1 vs 0/1), srclight:graph.inheritance (1/2 vs 0/2), srclight:serving.http-api (1/2 vs 0/2),
+  srclight:serving.mcp-server (1/1 vs 0/1), srclight:update.ignore-rules (1/2 vs 0/2), code-review-graph:graph.communities (1/3 vs 0/3),
+  code-review-graph:update.incremental (1/1 vs 0/1), CodeGraph:graph.call-resolution (1/1 vs 0/1), codanna:analysis.impact (1/1 vs 0/1).
+- codegraph search_by_pattern, 5 features: srclight:analysis.impact (2/2 vs 0/2), srclight:graph.communities (1/1 vs 0/1), srclight:serving.http-api
+  (1/2 vs 0/2), srclight:serving.mcp-server (1/1 vs 0/1), code-review-graph:serving.editor-integration (1/2 vs 0/2).
+Pooled, codegraph's symbol search is below ours on both measures (0.036 / 0.118 against 0.046 / 0.141); it wins on srclight (recall 0.200 vs 0.143)
+by finding symbols whose names carry the feature words that bm25 over the FTS columns ranks under test and CLI nodes.
+
+### Method
+- Identical inputs: for each of the 30 features the `terms` field of `comparegraph map` (group, slug tail and title tokens; the definition
+  is not used). Every method returns its top 5 candidates as path + bare name + line span; `scripts/lib/goldmap.py::score_map` scores all of
+  them with the same rule (path and bare name, or path and line inside the span), the same graph (so the same unresolved locations), the same
+  rows. The script asserts that its re-score of `map` equals the `map-score.sh` row (candidates, matches, gold, hits) before printing.
+- FTS-OR: the workspace's FTS5 index (`node_fts`), terms as quoted prefixes joined by OR, bm25 best first, queried directly in sqlite because
+  the `search` verb ANDs its tokens. FTS-AND: `comparegraph search "<terms>" --limit 5` as shipped; it returns nothing for most features
+  (needs one symbol holding every term) and is reported to show that the verb cannot serve this use.
+- codegraph: `codegraph-mcp --mcp --graph-only` over MCP stdio, one server per clone, `codegraph_symbol_search` (query = terms joined by
+  spaces, limit 5) and `codegraph_search_by_pattern` (regex = terms joined by `|`, limit 5; it matches names, signatures and bodies and is
+  unranked). Paths are made relative to the clone; the candidate name is codegraph's own symbol name.
+- Isolation: `HOME=<scratch>/home/<clone>-<pid>` for every server, fresh; the real `~/.codegraph` directory had the same modification time
+  (2026-10-13 14:25:48) before and after the whole run, printed by the script. Clone copies are read-only inputs.
+
+### Caveats
+- codegraph's symbol search is name-based (match reasons `SymbolName`; the server said "embeddings are building, results are from name/text
+  search only"); `--graph-only` runs without the embedding model, so its semantic matching was not measured. The pattern search has no ranking,
+  so its top 5 are the first 5 matches in index order.
+- Our `map` here is the pre-IMP ranking (bm25 over the symbol FTS, no call-graph or community signal); file nodes are candidates for us and
+  never for codegraph, which is a cost to our precision.
+- Small numbers: 94 features, 135 resolved gold locations, 19 hits for ours; one location is 0.7 points of pooled recall. The gold has two agent
+  readers (kappa 0.79) and 59 pairs they disagreed on are excluded. One run, no variance measured (all methods are deterministic given the
+  index).
