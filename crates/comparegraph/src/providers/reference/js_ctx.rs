@@ -571,3 +571,63 @@ mod tests {
         assert!(!got.iter().any(|(n, _)| n == "inner" || n == "expect" || n == "toBe"), "{got:?}");
     }
 }
+
+/// One `export … from '<source>'` statement: the named `(real, exported)` pairs, or `star` for `export * from`.
+pub struct ReExport {
+    pub source: String,
+    pub names: Vec<(String, String)>,
+    pub star: bool,
+}
+
+/// The re-exports a TS/JS file writes (`export { a, b as c } from './m'`, `export type { T } from './m'`, `export * from './m'`).
+/// `export * as ns from` is not a re-export of names and is skipped.
+pub fn reexports(text: &str) -> Vec<ReExport> {
+    let mut out = vec![];
+    for (at, _) in text.match_indices("export") {
+        if at > 0 && !text[..at].ends_with('\n') {
+            continue;
+        }
+        let mut rest = text[at + 6..].trim_start();
+        if let Some(r) = rest.strip_prefix("type ") {
+            rest = r.trim_start();
+        }
+        let (body, star, names) = if let Some(r) = rest.strip_prefix('*') {
+            (r, true, vec![])
+        } else if let Some(r) = rest.strip_prefix('{') {
+            let Some(end) = r.find('}') else { continue };
+            let names = r[..end]
+                .split(',')
+                .filter_map(|p| {
+                    let p = p.trim().trim_start_matches("type ").trim();
+                    let (real, alias) = p.split_once(" as ").map_or((p, p), |(a, b)| (a.trim(), b.trim()));
+                    (!real.is_empty()).then(|| (real.to_string(), alias.to_string()))
+                })
+                .collect();
+            (&r[end + 1..], false, names)
+        } else {
+            continue;
+        };
+        let Some(after_from) = body.trim_start().strip_prefix("from") else { continue };
+        let after_from = after_from.trim_start();
+        let Some(q) = after_from.chars().next().filter(|c| matches!(c, '\'' | '"')) else { continue };
+        let Some(end) = after_from[1..].find(q) else { continue };
+        out.push(ReExport { source: after_from[1..1 + end].to_string(), names, star });
+    }
+    out
+}
+
+#[cfg(test)]
+mod reexport_tests {
+    use super::reexports;
+    #[test]
+    fn reads_named_aliased_type_and_star_reexports() {
+        let t = "import { a } from './a'\nexport { render } from './render'\nexport type { T, U as V } from \"./t\"\nexport {\n  x,\n} from './x'\nexport * from './all'\nexport * as ns from './ns'\nexport { local }\nexport const q = 1\n";
+        let r = reexports(t);
+        assert_eq!(r.len(), 4);
+        assert_eq!(r[0].source, "./render");
+        assert_eq!(r[0].names, vec![("render".to_string(), "render".to_string())]);
+        assert_eq!(r[1].names, vec![("T".to_string(), "T".to_string()), ("U".into(), "V".into())]);
+        assert_eq!(r[2].names, vec![("x".to_string(), "x".to_string())]);
+        assert!(r[3].star && r[3].source == "./all");
+    }
+}

@@ -988,6 +988,14 @@ pub fn resolve_edges_with(files: &[ParsedFile], go_mods: super::go_ctx::GoModule
         let f = &files[i];
         (f.language == "python").then(|| py_ctx::analyze(&f.lines.join("\n")))
     });
+    // TS/JS `export … from` statements per file (read once; the re-export rounds below borrow their names)
+    let reexp: Vec<(usize, Vec<js_ctx::ReExport>)> = files
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| matches!(f.language.as_str(), "typescript" | "javascript" | "tsx" | "jsx"))
+        .map(|(i, f)| (i, js_ctx::reexports(&f.lines.join("\n"))))
+        .filter(|(_, r)| !r.is_empty())
+        .collect();
     // file → name → (first qn, name unique in that file)
     let mut file_syms: HashMap<&str, HashMap<&str, (String, bool)>> = HashMap::new();
     for (f, q) in files.iter().zip(&qns) {
@@ -1020,6 +1028,46 @@ pub fn resolve_edges_with(files: &[ParsedFile], go_mods: super::go_ctx::GoModule
         }
         for (file, alias, hit) in adds {
             file_syms.entry(file).or_default().entry(alias).or_insert(hit);
+        }
+    }
+    // TS/JS re-exports: `export { render } from './render'` in an index file makes `render` a name of that index (three rounds; a
+    // name the file defines itself is never replaced), so an import of the barrel reaches the real function at 1.0.
+    // ES: a name two `export *` statements supply from different targets is excluded from the barrel (`blocked`, for good).
+    let mut blocked: std::collections::HashSet<(&str, &str)> = std::collections::HashSet::new();
+    for _ in 0..3 {
+        let mut adds: Vec<(&str, &str, (String, bool), bool)> = vec![];
+        for (i, list) in &reexp {
+            let f = &files[*i];
+            for re in list {
+                let Some(t) = resolve_import_target(&f.rel_path, &re.source, &file_set).filter(|t| *t != f.rel_path) else { continue };
+                let pairs: Vec<(&str, &str)> = if re.star {
+                    file_syms.get(t.as_str()).map(|m| m.keys().copied().filter(|k| *k != "default").map(|k| (k, k)).collect()).unwrap_or_default()
+                } else {
+                    re.names.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()
+                };
+                for (real, alias) in pairs {
+                    if blocked.contains(&(f.rel_path.as_str(), alias)) || file_syms.get(f.rel_path.as_str()).is_some_and(|m| m.contains_key(alias)) {
+                        continue;
+                    }
+                    if let Some(hit) = symbol_in(std::slice::from_ref(&t), &file_syms, real) {
+                        adds.push((f.rel_path.as_str(), alias, hit, re.star));
+                    }
+                }
+            }
+        }
+        if adds.is_empty() {
+            break;
+        }
+        for (file, alias, _, _) in &adds {
+            let stars: std::collections::HashSet<&str> = adds.iter().filter(|a| a.3 && a.0 == *file && a.1 == *alias).map(|a| a.2 .0.as_str()).collect();
+            if stars.len() > 1 {
+                blocked.insert((*file, *alias));
+            }
+        }
+        for (file, alias, hit, _) in adds {
+            if !blocked.contains(&(file, alias)) {
+                file_syms.entry(file).or_default().entry(alias).or_insert(hit);
+            }
         }
     }
     for (f, q) in files.iter().zip(&qns) {
@@ -1336,8 +1384,15 @@ pub fn resolve_edges_with(files: &[ParsedFile], go_mods: super::go_ctx::GoModule
             if shadowed_callee || builtins::is_builtin(fam, &c.callee) {
                 continue;
             }
-            let first = by_name.get(c.callee.as_str()).and_then(|v| v.iter().find(|e| e.2 == fam && !e.3));
-            // a name-only rule never yields 1.0
+            let js = fam == lang_family("typescript");
+            let cands: Vec<&(String, bool, &str, bool)> = by_name
+                .get(c.callee.as_str())
+                .map(|v| v.iter().filter(|e| e.2 == fam && !e.3 && !(js && !name_guess_target(files, &qns, &file_set, &e.0, c.kind == "instantiates"))).collect())
+                .unwrap_or_default();
+            // JS/TS: a copy under benchmarks/, examples/, test dirs is not the function the caller meant; one real candidate or none
+            let cands: Vec<_> = if js && !in_side_dir(&f.rel_path) { cands.into_iter().filter(|e| !in_side_dir(e.0.split("::").next().unwrap_or(""))).collect() } else { cands };
+            // a name-only rule never yields 1.0; JS/TS: the same name in several files is ambiguous, so no edge
+            let first = if js { (cands.len() == 1).then(|| cands[0]) } else { cands.first().copied() };
             if let Some(first) = first {
                 out.push((EdgeKind::Calls, caller_qn.clone(), first.0.clone(), 0.5));
             }
@@ -1356,6 +1411,25 @@ pub fn resolve_edges_with(files: &[ParsedFile], go_mods: super::go_ctx::GoModule
     }
     dedup_max_confidence(&mut out);
     out
+}
+
+/// A directory component that marks sample, benchmark or test code: a name-only guess never lands on a copy there.
+fn in_side_dir(path: &str) -> bool {
+    let mut parts: Vec<&str> = path.split('/').collect();
+    parts.pop();
+    parts.iter().any(|d| matches!(*d, "benchmarks" | "examples" | "example" | "bench" | "__tests__" | "fixtures") || d.starts_with("test"))
+}
+
+/// Can a JS/TS bare name (or `new X()`) in another file name this symbol? Functions and classes; never a type alias or an interface,
+/// never a variable (the extractor's kind decides: a `const`/`let`/`var` arrow is a function, a data binding has no symbol); `new` binds only a class.
+fn name_guess_target(files: &[ParsedFile], qns: &[Vec<String>], file_set: &FileSet, qn: &str, new_expr: bool) -> bool {
+    let Some(gi) = qn.split("::").next().and_then(|p| file_set.pos(p)) else { return true };
+    let Some(si) = qns[gi].iter().position(|q| q == qn) else { return true };
+    let s = &files[gi].symbols[si];
+    if new_expr {
+        return matches!(s.kind, SymbolKind::Class);
+    }
+    !matches!(s.kind, SymbolKind::Interface | SymbolKind::Type)
 }
 
 /// One row per (kind, source, target), sorted, keeping the highest confidence.
@@ -1763,6 +1837,71 @@ mod tests {
         let c = lang(pf("c.ts", vec![span("Sq", SymbolKind::Class, 1, 4), span("area", SymbolKind::Method, 2, 3)], vec![], vec![]), "typescript");
         let e = resolve_edges(&[a, b, c]);
         assert!(has_call(&e, "a.ts::f", "b.ts::helper", 0.5), "{e:?}");
+        assert_eq!(calls_of(&e).len(), 1, "{e:?}");
+    }
+    #[test]
+    fn barrel_reexport_resolves_an_imported_name_at_full_confidence() {
+        let test = lang(pf("src/dom/index.test.tsx", vec![sym("t", 1)], vec![call("t", "render", None)], vec![imp("src/dom/index.test.tsx", ".", &["render"], false)]), "typescript");
+        let idx = with_lines(lang(pf("src/dom/index.ts", vec![], vec![], vec![]), "typescript"), &["export { render } from './render'"]);
+        let real = lang(pf("src/dom/render.ts", vec![sym("render", 1)], vec![], vec![]), "typescript");
+        let bench = lang(pf("benchmarks/jsx/hono.ts", vec![sym("render", 1)], vec![], vec![]), "typescript");
+        let e = resolve_edges(&[test, idx, real, bench]);
+        assert!(has_call(&e, "src/dom/index.test.tsx::t", "src/dom/render.ts::render", 1.0), "{e:?}");
+        assert_eq!(calls_of(&e).len(), 1, "{e:?}");
+    }
+    #[test]
+    fn same_name_in_several_files_without_an_import_binds_nothing() {
+        let a = lang(pf("src/a.ts", vec![sym("f", 1)], vec![call("f", "helper", None)], vec![]), "typescript");
+        let b = lang(pf("src/b.ts", vec![sym("helper", 1)], vec![], vec![]), "typescript");
+        let c = lang(pf("src/c.ts", vec![sym("helper", 1)], vec![], vec![]), "typescript");
+        assert!(calls_of(&resolve_edges(&[a, b, c])).is_empty());
+    }
+    #[test]
+    fn name_guess_ignores_benchmark_copies() {
+        let mk = || lang(pf("src/a.ts", vec![sym("f", 1)], vec![call("f", "helper", None)], vec![]), "typescript");
+        let real = lang(pf("src/b.ts", vec![sym("helper", 1)], vec![], vec![]), "typescript");
+        let copy = || lang(pf("benchmarks/x/b.ts", vec![sym("helper", 1)], vec![], vec![]), "typescript");
+        let e = resolve_edges(&[mk(), copy(), real]);
+        assert!(has_call(&e, "src/a.ts::f", "src/b.ts::helper", 0.5), "{e:?}");
+        assert_eq!(calls_of(&e).len(), 1, "{e:?}");
+        let e = resolve_edges(&[mk(), copy()]);
+        assert!(calls_of(&e).is_empty(), "{e:?}");
+    }
+    #[test]
+    fn new_binds_only_to_a_class_never_a_type_alias_or_interface() {
+        let a = || {
+            let mut site = call("f", "Response", None);
+            site.kind = "instantiates".into();
+            lang(pf("src/a.ts", vec![sym("f", 1)], vec![site], vec![]), "typescript")
+        };
+        let other = |path: &str, k: SymbolKind| lang(pf(path, vec![span("Response", k, 1, 2)], vec![], vec![]), "typescript");
+        assert!(calls_of(&resolve_edges(&[a(), other("src/types.ts", SymbolKind::Type)])).is_empty());
+        assert!(calls_of(&resolve_edges(&[a(), other("src/i.ts", SymbolKind::Interface)])).is_empty());
+        assert_eq!(calls_of(&resolve_edges(&[a(), other("src/c.ts", SymbolKind::Class)])).len(), 1);
+    }
+    #[test]
+    fn conflicting_star_reexports_exclude_the_name() {
+        let use_ = lang(pf("use.ts", vec![sym("u", 1)], vec![call("u", "x", None)], vec![imp("use.ts", "./star", &["x"], false)]), "typescript");
+        let star = with_lines(lang(pf("star.ts", vec![], vec![], vec![]), "typescript"), &["export * from './x1'", "export * from './x2'"]);
+        let x1 = lang(pf("x1.ts", vec![sym("x", 1)], vec![], vec![]), "typescript");
+        let x2 = lang(pf("x2.ts", vec![sym("x", 1)], vec![], vec![]), "typescript");
+        assert!(calls_of(&resolve_edges(&[use_, star, x1, x2])).is_empty());
+    }
+    #[test]
+    fn an_unimported_arrow_binding_keeps_the_name_guess() {
+        let c = || lang(pf("c.ts", vec![sym("f", 1)], vec![call("f", "handler", None), call("f", "later", None)], vec![]), "typescript");
+        let a = with_lines(lang(pf("a.ts", vec![sym("handler", 1), sym("later", 3)], vec![], vec![]), "typescript"), &["export const handler = () => 1", "", "let later = () => 2"]);
+        let e = resolve_edges(&[c(), a]);
+        assert!(has_call(&e, "c.ts::f", "a.ts::handler", 0.5), "{e:?}");
+        assert!(has_call(&e, "c.ts::f", "a.ts::later", 0.5), "{e:?}");
+        assert_eq!(calls_of(&e).len(), 2, "{e:?}");
+    }
+    #[test]
+    fn a_bare_name_never_binds_to_another_files_variable() {
+        let a = lang(pf("src/a.ts", vec![sym("f", 1)], vec![call("f", "limit", None), call("f", "real", None)], vec![]), "typescript");
+        let b = with_lines(lang(pf("src/b.ts", vec![sym("real", 3)], vec![], vec![]), "typescript"), &["export const limit = 10", "", "function real() {}"]);
+        let e = resolve_edges(&[a, b]);
+        assert!(has_call(&e, "src/a.ts::f", "src/b.ts::real", 0.5), "{e:?}");
         assert_eq!(calls_of(&e).len(), 1, "{e:?}");
     }
     #[test]
