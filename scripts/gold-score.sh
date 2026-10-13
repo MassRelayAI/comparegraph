@@ -29,13 +29,23 @@ NAME=$(basename "$SRC")
 if [ -z "$WS" ]; then WS=$(mktemp -d); trap 'rm -rf "$WS"' EXIT; fi
 mkdir -p "$WS"
 DB="$WS/.comparegraph/comparegraph.db"
+# a reused workspace must hold this project at the SAME path; a namesake from another checkout would be scored as if it were this one
+if [ -f "$DB" ]; then
+  REG=$(python3 -I -c "
+import sqlite3,sys
+r=sqlite3.connect(sys.argv[1]).execute('select path from repo where name=?',(sys.argv[2],)).fetchone(); print(r[0] if r else '')" "$DB" "$NAME")
+  if [ -n "$REG" ] && [ "$REG" != "$SRC" ]; then echo "gold-score: workspace repo '$NAME' is registered at $REG, not $SRC; use a fresh --workspace" >&2; exit 2; fi
+fi
 if ! [ -f "$DB" ] || ! python3 -I -c "
 import sqlite3,sys
 c=sqlite3.connect(sys.argv[1]); sys.exit(0 if c.execute(\"select 1 from run r join repo p on p.id=r.repo_id where p.name=? and r.provider=? and r.status='done'\",(sys.argv[2],sys.argv[3])).fetchone() else 1)" "$DB" "$NAME" "$PROVIDER" 2>/dev/null; then
   if [ "$ENGINE" = crg ]; then
     printf '[providers.crg]\ncommand = "%s"\n' "$(cd "$(dirname "$0")/.." && pwd)/providers/crg/comparegraph-provider-crg" > "$WS/comparegraph.toml"
   fi
-  nice -n 10 "$BIN" --root "$WS" add "$SRC" --name "$NAME" >/dev/null 2>&1 || true   # the repo may already be registered (another engine built it)
+  # the repo may already be registered by the other engine's run at the same path (checked above); any other add error is fatal
+  if ! nice -n 10 "$BIN" --root "$WS" add "$SRC" --name "$NAME" >/dev/null 2>"$WS/.add.err"; then
+    grep -q "already exists" "$WS/.add.err" || { cat "$WS/.add.err" >&2; exit 2; }
+  fi
   nice -n 10 "$BIN" --root "$WS" --allow-unverified build "$NAME" --provider "$PROVIDER" >/dev/null
 fi
 python3 -I - "$LIB" "$DB" "$NAME" "$GOLD" "$ENGINE" "$PROVIDER" <<'PY'
