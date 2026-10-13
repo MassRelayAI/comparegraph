@@ -271,3 +271,121 @@ fn a_node_reached_by_a_full_path_and_a_shorter_guessed_one_reports_full_confiden
     let it = items.iter().find(|i| i["qualified_name"] == "b.py::shared_name").unwrap_or_else(|| panic!("{v}"));
     assert_eq!(it["path_confidence"], 1.0, "{v}");
 }
+
+// ---- bounded-adjacency identity: every query on one generated fixture must equal the answer recorded from the
+// whole-run-in-memory implementation (f3259a6). Regenerate only with GOLDEN_UPDATE=1 and a reason in the commit. ----
+fn golden_fixture() -> Vec<(String, String)> {
+    let mut files: Vec<(String, String)> = vec![];
+    for m in 0..6 {
+        let mut s = String::new();
+        if m > 0 {
+            s.push_str(&format!("from src.m{} import f{}_0, f{}_1\n\n", m - 1, m - 1, m - 1));
+        }
+        for i in 0..12 {
+            s.push_str(&format!("def f{m}_{i}():\n"));
+            if i + 1 < 12 {
+                s.push_str(&format!("    f{m}_{}()\n", i + 1));
+            }
+            if i % 3 == 0 && m > 0 {
+                s.push_str(&format!("    f{}_0()\n", m - 1));
+            }
+            if i % 4 == 1 && m > 0 {
+                s.push_str(&format!("    f{}_1()\n", m - 1));
+            }
+            // a name that exists in two other modules: a guessed (0.5) edge
+            if i == 5 {
+                s.push_str("    dup_name()\n");
+            }
+            if i == 11 {
+                s.push_str(&format!("    f{m}_3()\n    f{m}_11()\n"));
+            }
+            if i < 11 {
+                s.push_str("    pass\n");
+            }
+            s.push('\n');
+        }
+        s.push_str(&format!("class K{m}:\n    def meth(self):\n        f{m}_0()\n\nclass Sub{m}(K{m}):\n    def other(self):\n        self.meth()\n\n"));
+        s.push_str(&format!("def _private{m}():\n    pass\n\ndef orphan{m}():\n    pass\n"));
+        files.push((format!("src/m{m}.py"), s));
+    }
+    files.push(("src/dups_a.py".into(), "def dup_name():\n    pass\n".into()));
+    files.push(("src/dups_b.py".into(), "def dup_name():\n    pass\n".into()));
+    files.push((
+        "src/server.py".into(),
+        "from src.m3 import f3_0\n\ndef handle_request():\n    f3_0()\n\ndef main():\n    handle_request()\n\nif __name__ == \"__main__\":\n    main()\n".into(),
+    ));
+    let mut t = String::from("from src.m1 import f1_0\nfrom src.m4 import f4_2\n\n");
+    for i in 0..4 {
+        t.push_str(&format!("def test_a{i}():\n    f1_{i}()\n    f4_2()\n\n"));
+    }
+    files.push(("tests/test_a.py".into(), t));
+    files.push((
+        "tests/test_b.py".into(),
+        "from src.m2 import f2_0\n\ndef test_b():\n    f2_0()\n\ndef helper_in_test():\n    f2_0()\n".into(),
+    ));
+    files
+}
+
+fn golden_queries() -> Vec<Vec<String>> {
+    let q = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let mut v = vec![];
+    for sym in ["src/m3.py::f3_5", "src/m0.py::f0_0", "src/m5.py::f5_11", "src/m2.py::K2", "src/m4.py::other", "src/dups_a.py::dup_name", "src/server.py::main"] {
+        for dir in ["callers", "callees", "both"] {
+            for (depth, max, conf) in [("1", "200", "0.5"), ("3", "200", "0.5"), ("10", "2000", "0.5"), ("10", "7", "0.5"), ("4", "200", "1.0")] {
+                v.push(q(&["traverse", "r", sym, "--direction", dir, "--depth", depth, "--max-nodes", max, "--min-confidence", conf]));
+            }
+        }
+        v.push(q(&["traverse", "r", sym, "--kinds", "calls", "--depth", "6"]));
+        v.push(q(&["traverse", "r", sym, "--kinds", "imports,tests,calls", "--depth", "6"]));
+        v.push(q(&["impact", "r", sym]));
+        v.push(q(&["impact", "r", sym, "--depth", "10", "--max-nodes", "9"]));
+        v.push(q(&["impact", "r", sym, "--min-confidence", "1.0", "--depth", "10"]));
+        v.push(q(&["tests-for", "r", sym]));
+        v.push(q(&["tests-for", "r", sym, "--max-nodes", "3"]));
+        v.push(q(&["tests-for", "r", sym, "--min-confidence", "1.0"]));
+    }
+    v.push(q(&["impact", "r", "--file", "src/m1.py"]));
+    v.push(q(&["impact", "r", "--file", "src/m1.py", "--file", "src/m4.py", "--depth", "10", "--max-nodes", "40"]));
+    v.push(q(&["impact", "r", "src/m2.py::f2_0", "--file", "src/dups_b.py"]));
+    for cmd in ["entry-points", "dead-code"] {
+        for conf in ["0.5", "1.0"] {
+            v.push(q(&[cmd, "r", "--min-confidence", conf]));
+            v.push(q(&[cmd, "r", "--limit", "7", "--min-confidence", conf]));
+            for cur in ["7", "14", "21", "999"] {
+                v.push(q(&[cmd, "r", "--limit", "7", "--cursor", cur, "--min-confidence", conf]));
+            }
+        }
+    }
+    v
+}
+
+#[test]
+fn bounded_adjacency_answers_equal_the_recorded_whole_run_answers() {
+    let files = golden_fixture();
+    let refs: Vec<(&str, &str)> = files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+    let (ws, _c) = ws_with(&refs);
+    let mut got = serde_json::Map::new();
+    for args in golden_queries() {
+        let out = cc(ws.path()).args(&args).assert().get_output().clone();
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let mut rec = serde_json::Map::new();
+        rec.insert("ok".into(), v["ok"].clone());
+        rec.insert("data".into(), v["data"].clone());
+        rec.insert("error".into(), v["error"].clone());
+        rec.insert("confidence".into(), v["evidence"]["confidence"].clone());
+        rec.insert("limitations".into(), v["evidence"]["limitations"].clone());
+        rec.insert("page".into(), v["page"].clone());
+        got.insert(args.join(" "), Value::Object(rec));
+    }
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/graph_queries.json");
+    if std::env::var("GOLDEN_UPDATE").is_ok() {
+        std::fs::write(&path, serde_json::to_string_pretty(&got).unwrap() + "\n").unwrap();
+        return;
+    }
+    let want: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let want = want.as_object().unwrap();
+    assert_eq!(want.len(), got.len(), "query count");
+    for (k, w) in want {
+        assert_eq!(&got[k], w, "answer changed for: {k}");
+    }
+}

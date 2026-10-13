@@ -1,11 +1,13 @@
 //! Graph queries over one run's stored edges: traverse, impact, tests-for, entry points, dead-code candidates.
-//! The edges are loaded once into memory and walked breadth-first, each node visited once, bounded by depth and max-nodes.
+//! Adjacency is read lazily from SQLite, one batch per breadth-first frontier (`json_each` id sets), so a query touches
+//! only the nodes and edges it reaches, never the whole run; each node is visited once, bounded by depth and max-nodes.
 //! Every answer is a JSON object; `evidence_confidence` and `limitation_items` are lifted into the envelope by the CLI layer.
 use super::{AppError, Result};
 use crate::domain::{EdgeKind, Limitation, Node, NodeKind};
 use crate::providers::reference::is_test_path;
 use crate::store::Store;
 use serde_json::{json, Value};
+use rusqlite::params;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
@@ -77,79 +79,229 @@ pub fn parse_kinds(s: &str) -> Result<Vec<EdgeKind>> {
     Ok(v)
 }
 
-type Adj = HashMap<i64, Vec<(i64, EdgeKind, f64)>>;
+type Adj = Vec<(i64, EdgeKind, f64)>;
+
+/// One run, read on demand. Nodes, adjacency and community labels are cached as they are first needed.
 struct Ctx {
+    store: Store,
+    run_id: i64,
     repo: String,
     nodes: HashMap<i64, Node>,
-    by_qn: HashMap<String, i64>,
-    out: Adj,
-    inn: Adj,
+    /// raw adjacency per (node, outgoing?) for the edge kinds of the current walk, parallel edges collapsed to the best
+    /// confidence, unsorted; cleared when the walk's kinds change
+    adj: HashMap<(i64, bool), Adj>,
+    adj_kinds: Vec<EdgeKind>,
+    adj_min_conf: f64,
     community: HashMap<i64, String>,
 }
 
-fn load(root: &Path, repo: &str) -> Result<Ctx> {
-    let store = Store::open_existing(root)?;
-    let r = store
-        .repo_by_name(repo)?
-        .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
-    let run = store
-        .latest_done_run(r.id.unwrap())?
-        .ok_or_else(|| AppError::NotFound(format!("{repo} has no finished run")))?;
-    let run_id = run.id.unwrap();
-    let mut nodes = HashMap::new();
-    let mut by_qn = HashMap::new();
-    for n in store.nodes_of_run(run_id)? {
-        let id = n.id.unwrap().0;
-        by_qn.insert(n.qualified_name.clone(), id);
-        nodes.insert(id, n);
-    }
-    // parallel edges of one kind collapse to the best confidence
-    let mut best: HashMap<(EdgeKind, i64, i64), f64> = HashMap::new();
-    for e in store.edges_of_run(run_id)? {
-        let k = (e.kind, e.source.0, e.target.0);
-        let c = best.entry(k).or_insert(e.confidence);
-        if e.confidence > *c {
-            *c = e.confidence;
-        }
-    }
-    let mut out: Adj = HashMap::new();
-    let mut inn: Adj = HashMap::new();
-    for ((k, s, t), c) in best {
-        out.entry(s).or_default().push((t, k, c));
-        inn.entry(t).or_default().push((s, k, c));
-    }
-    for adj in [&mut out, &mut inn] {
-        for v in adj.values_mut() {
-            v.sort_by(|a, b| {
-                nodes[&a.0]
-                    .qualified_name
-                    .cmp(&nodes[&b.0].qualified_name)
-                    .then(a.1.as_str().cmp(b.1.as_str()))
-            });
-        }
-    }
-    let mut community = HashMap::new();
-    {
-        let c = store.conn();
-        let mut st = c.prepare(
-            "SELECT x.node_id, cm.label FROM community_member x JOIN community cm ON cm.id = x.community_id WHERE cm.run_id = ?1",
-        )?;
-        let rows = st.query_map(rusqlite::params![run_id.0], |x| {
-            Ok((x.get::<_, i64>(0)?, x.get::<_, String>(1)?))
-        })?;
-        for row in rows {
-            let (n, l) = row?;
-            community.insert(n, l);
-        }
-    }
-    Ok(Ctx {
-        repo: r.name,
-        nodes,
-        by_qn,
-        out,
-        inn,
-        community,
+fn ids_json(ids: &[i64]) -> String {
+    serde_json::to_string(ids).unwrap()
+}
+fn node_from_row(r: &rusqlite::Row) -> rusqlite::Result<Node> {
+    Ok(Node {
+        id: Some(crate::domain::NodeId(r.get(0)?)),
+        kind: NodeKind::parse(&r.get::<_, String>(1)?).unwrap_or(NodeKind::Function),
+        name: r.get(2)?,
+        qualified_name: r.get(3)?,
+        path: r.get(4)?,
+        line_start: r.get(5)?,
+        line_end: r.get(6)?,
+        content_hash: r.get(7)?,
+        language: r.get(8)?,
+        provider_ref: r.get(9)?,
     })
+}
+const NODE_COLS: &str = "id,kind,name,qualified_name,path,line_start,line_end,content_hash,language,provider_ref";
+
+impl Ctx {
+    fn open(root: &Path, repo: &str) -> Result<Ctx> {
+        let store = Store::open_existing(root)?;
+        let r = store
+            .repo_by_name(repo)?
+            .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
+        let run = store
+            .latest_done_run(r.id.unwrap())?
+            .ok_or_else(|| AppError::NotFound(format!("{repo} has no finished run")))?;
+        let run_id = run.id.unwrap().0;
+        Ok(Ctx {
+            store,
+            run_id,
+            repo: r.name,
+            nodes: HashMap::new(),
+            adj: HashMap::new(),
+            adj_kinds: vec![],
+            adj_min_conf: 2.0,
+            community: HashMap::new(),
+        })
+    }
+
+    /// The symbol with this qualified name (the last in path/line order when several share it).
+    fn node(&mut self, qn: &str) -> Result<i64> {
+        let id: Option<i64> = {
+            let c = self.store.conn();
+            let mut st = c.prepare_cached(
+                "SELECT id FROM node WHERE run_id=?1 AND qualified_name=?2 ORDER BY path DESC, line_start DESC, kind DESC LIMIT 1",
+            )?;
+            let mut rows = st.query(params![self.run_id, qn])?;
+            match rows.next()? {
+                Some(r) => Some(r.get(0)?),
+                None => None,
+            }
+        };
+        let id = id.ok_or_else(|| AppError::NotFound(format!("no symbol {qn} in {}", self.repo)))?;
+        self.ensure_nodes(&[id])?;
+        Ok(id)
+    }
+
+    fn ensure_nodes(&mut self, ids: &[i64]) -> Result<()> {
+        let missing: Vec<i64> = ids.iter().copied().filter(|i| !self.nodes.contains_key(i)).collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let got: Vec<Node> = {
+            let c = self.store.conn();
+            let mut st = c.prepare(&format!(
+                "SELECT {NODE_COLS} FROM node WHERE id IN (SELECT value FROM json_each(?1))"
+            ))?;
+            let rows = st.query_map(params![ids_json(&missing)], node_from_row)?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        for n in got {
+            self.nodes.insert(n.id.unwrap().0, n);
+        }
+        Ok(())
+    }
+
+    fn ensure_communities(&mut self, ids: &[i64]) -> Result<()> {
+        let missing: Vec<i64> = ids.iter().copied().filter(|i| !self.community.contains_key(i)).collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let got: Vec<(i64, String)> = {
+            let c = self.store.conn();
+            let mut st = c.prepare(
+                "SELECT x.node_id, cm.label FROM community_member x JOIN community cm ON cm.id = x.community_id WHERE cm.run_id = ?1 AND x.node_id IN (SELECT value FROM json_each(?2))",
+            )?;
+            let rows = st.query_map(params![self.run_id, ids_json(&missing)], |x| {
+                Ok((x.get::<_, i64>(0)?, x.get::<_, String>(1)?))
+            })?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        for (n, l) in got {
+            self.community.insert(n, l);
+        }
+        Ok(())
+    }
+
+    /// Reads the raw adjacency of `ids` in one edge scan (the edge table is indexed by run only, so a frontier costs one
+    /// pass however many ids it holds).
+    fn prefetch(&mut self, ids: &[i64], outgoing: bool, kinds: &[EdgeKind], min_conf: f64) -> Result<()> {
+        if self.adj_kinds != kinds || self.adj_min_conf != min_conf {
+            self.adj.clear();
+            self.adj_kinds = kinds.to_vec();
+            self.adj_min_conf = min_conf;
+        }
+        let missing: Vec<i64> = ids
+            .iter()
+            .copied()
+            .filter(|i| !self.adj.contains_key(&(*i, outgoing)))
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let (key, other) = if outgoing {
+            ("source_node_id", "target_node_id")
+        } else {
+            ("target_node_id", "source_node_id")
+        };
+        let kind_list = kinds
+            .iter()
+            .map(|k| format!("'{}'", k.as_str()))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut best: HashMap<(i64, EdgeKind, i64), f64> = HashMap::new();
+        {
+            let c = self.store.conn();
+            let mut st = c.prepare(&format!(
+                "SELECT {key}, kind, {other}, confidence FROM edge WHERE run_id=?1 AND confidence>=?2 AND kind IN ({kind_list}) AND {key} IN (SELECT value FROM json_each(?3))"
+            ))?;
+            let rows = st.query_map(params![self.run_id, min_conf, ids_json(&missing)], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    EdgeKind::parse(&r.get::<_, String>(1)?).unwrap_or(EdgeKind::Calls),
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, f64>(3)?,
+                ))
+            })?;
+            for row in rows {
+                let (a, k, b, conf) = row?;
+                let e = best.entry((a, k, b)).or_insert(conf);
+                if conf > *e {
+                    *e = conf;
+                }
+            }
+        }
+        for id in &missing {
+            self.adj.insert((*id, outgoing), vec![]);
+        }
+        for ((a, k, b), conf) in best {
+            self.adj.get_mut(&(a, outgoing)).unwrap().push((b, k, conf));
+        }
+        Ok(())
+    }
+
+    /// `tests` edges into each of `ids` (confidence >= `min_conf`, parallel edges collapsed), sources in qualified-name order.
+    fn tests_into(&mut self, ids: &[i64], min_conf: f64) -> Result<HashMap<i64, Vec<(i64, f64)>>> {
+        let mut best: HashMap<(i64, i64), f64> = HashMap::new();
+        if !ids.is_empty() {
+            let c = self.store.conn();
+            let mut st = c.prepare(
+                "SELECT target_node_id, source_node_id, confidence FROM edge WHERE run_id=?1 AND confidence>=?2 AND kind='tests' AND target_node_id IN (SELECT value FROM json_each(?3))",
+            )?;
+            let rows = st.query_map(params![self.run_id, min_conf, ids_json(ids)], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, f64>(2)?))
+            })?;
+            for row in rows {
+                let (t, s, conf) = row?;
+                let e = best.entry((t, s)).or_insert(conf);
+                if conf > *e {
+                    *e = conf;
+                }
+            }
+        }
+        let srcs: Vec<i64> = best.keys().map(|(_, s)| *s).collect();
+        self.ensure_nodes(&srcs)?;
+        let mut out: HashMap<i64, Vec<(i64, f64)>> = HashMap::new();
+        for ((t, s), conf) in best {
+            out.entry(t).or_default().push((s, conf));
+        }
+        for v in out.values_mut() {
+            v.sort_by(|a, b| self.nodes[&a.0].qualified_name.cmp(&self.nodes[&b.0].qualified_name));
+        }
+        Ok(out)
+    }
+
+    fn hit(&self, v: &[Reached], i: usize) -> Value {
+        let r = &v[i];
+        let n = &self.nodes[&r.id];
+        let mut via = vec![];
+        let mut cur = Some(i);
+        while let Some(j) = cur {
+            via.push(self.nodes[&v[j].id].qualified_name.clone());
+            cur = v[j].parent;
+        }
+        via.reverse();
+        json!({ "qualified_name": n.qualified_name, "kind": n.kind.as_str(), "path": n.path,
+                "line_start": n.line_start, "hop": r.hop, "path_confidence": r.conf,
+                "via": via, "community": self.community.get(&r.id) })
+    }
+    /// Loads what `hit` reads for every reached node.
+    fn load_reached(&mut self, v: &[Reached]) -> Result<()> {
+        let ids: Vec<i64> = v.iter().map(|r| r.id).collect();
+        self.ensure_nodes(&ids)?;
+        self.ensure_communities(&ids)
+    }
 }
 
 struct Reached {
@@ -162,14 +314,14 @@ struct Reached {
 /// Breadth-first walk from `starts`; each node once; stops adding at `max_nodes` (starts not counted). Returns the visit list
 /// (starts first, hop 0) and whether it was cut short.
 fn bfs(
-    c: &Ctx,
+    c: &mut Ctx,
     starts: &[i64],
     dir: Direction,
     kinds: &[EdgeKind],
     min_conf: f64,
     depth: usize,
     max_nodes: usize,
-) -> (Vec<Reached>, bool) {
+) -> Result<(Vec<Reached>, bool)> {
     let mut seen: HashSet<i64> = HashSet::new();
     let mut v: Vec<Reached> = vec![];
     let mut q: VecDeque<usize> = VecDeque::new();
@@ -185,85 +337,92 @@ fn bfs(
         }
     }
     let n_starts = v.len();
+    let w = Walk { dir, kinds, depth, max_nodes, floor: min_conf };
     // best-confidence paths: exhaust the 1.0 edges first, then extend the frontier with the 0.5 edges (a node keeps the
     // 1.0 path even when a shorter 0.5 path exists)
     if min_conf < 1.0 {
-        if expand(c, &mut v, &mut seen, q.clone(), n_starts, dir, kinds, 1.0, depth, max_nodes) {
-            return (v, true);
+        if expand(c, &mut v, &mut seen, q.clone(), n_starts, &w, 1.0)? {
+            return Ok((v, true));
         }
         q = (0..v.len()).collect();
     }
-    let cut = expand(c, &mut v, &mut seen, q, n_starts, dir, kinds, min_conf, depth, max_nodes);
-    (v, cut)
+    let cut = expand(c, &mut v, &mut seen, q, n_starts, &w, min_conf)?;
+    Ok((v, cut))
 }
 
-#[allow(clippy::too_many_arguments)]
+struct Walk<'a> {
+    dir: Direction,
+    kinds: &'a [EdgeKind],
+    depth: usize,
+    max_nodes: usize,
+    /// the lowest confidence any pass of this walk reads: adjacency is fetched at this floor and cached across passes
+    floor: f64,
+}
+
 fn expand(
-    c: &Ctx,
+    c: &mut Ctx,
     v: &mut Vec<Reached>,
     seen: &mut HashSet<i64>,
     mut q: VecDeque<usize>,
     n_starts: usize,
-    dir: Direction,
-    kinds: &[EdgeKind],
+    w: &Walk,
     min_conf: f64,
-    depth: usize,
-    max_nodes: usize,
-) -> bool {
-    let empty = vec![];
+) -> Result<bool> {
+    let want_out = matches!(w.dir, Direction::Callees | Direction::Both);
+    let want_in = matches!(w.dir, Direction::Callers | Direction::Both);
     while let Some(i) = q.pop_front() {
         let (id, hop, conf) = (v[i].id, v[i].hop, v[i].conf);
-        if hop >= depth {
+        if hop >= w.depth {
             continue;
         }
-        let mut next: Vec<&(i64, EdgeKind, f64)> = vec![];
-        if matches!(dir, Direction::Callees | Direction::Both) {
-            next.extend(c.out.get(&id).unwrap_or(&empty));
+        // one batch per frontier: this node and everything still queued that has no adjacency yet
+        for (want, outgoing) in [(want_out, true), (want_in, false)] {
+            if want && !c.adj.contains_key(&(id, outgoing)) {
+                let mut batch: Vec<i64> = vec![id];
+                batch.extend(q.iter().map(|j| v[*j].id).filter(|x| !c.adj.contains_key(&(*x, outgoing))));
+                c.prefetch(&batch, outgoing, w.kinds, w.floor)?;
+            }
         }
-        if matches!(dir, Direction::Callers | Direction::Both) {
-            next.extend(c.inn.get(&id).unwrap_or(&empty));
-        }
-        for (t, k, ec) in next {
-            if !kinds.contains(k) || *ec < min_conf || seen.contains(t) {
+        // neighbours passing the filters, each direction sorted by (qualified name, kind) as the whole-run walk did
+        let mut next: Vec<(i64, EdgeKind, f64)> = vec![];
+        for (want, outgoing) in [(want_out, true), (want_in, false)] {
+            if !want {
                 continue;
             }
-            if v.len() - n_starts >= max_nodes {
-                return true;
+            let part: Vec<(i64, EdgeKind, f64)> = c.adj[&(id, outgoing)]
+                .iter()
+                .filter(|(t, k, ec)| w.kinds.contains(k) && *ec >= min_conf && !seen.contains(t))
+                .copied()
+                .collect();
+            let ids: Vec<i64> = part.iter().map(|p| p.0).collect();
+            c.ensure_nodes(&ids)?;
+            let mut part = part;
+            part.sort_by(|a, b| {
+                c.nodes[&a.0]
+                    .qualified_name
+                    .cmp(&c.nodes[&b.0].qualified_name)
+                    .then(a.1.as_str().cmp(b.1.as_str()))
+            });
+            next.extend(part);
+        }
+        for (t, _k, ec) in next {
+            if seen.contains(&t) {
+                continue;
             }
-            seen.insert(*t);
+            if v.len() - n_starts >= w.max_nodes {
+                return Ok(true);
+            }
+            seen.insert(t);
             v.push(Reached {
-                id: *t,
+                id: t,
                 hop: hop + 1,
-                conf: conf.min(*ec),
+                conf: conf.min(ec),
                 parent: Some(i),
             });
             q.push_back(v.len() - 1);
         }
     }
-    false
-}
-
-impl Ctx {
-    fn node(&self, qn: &str) -> Result<i64> {
-        self.by_qn
-            .get(qn)
-            .copied()
-            .ok_or_else(|| AppError::NotFound(format!("no symbol {qn} in {}", self.repo)))
-    }
-    fn hit(&self, v: &[Reached], i: usize) -> Value {
-        let r = &v[i];
-        let n = &self.nodes[&r.id];
-        let mut via = vec![];
-        let mut cur = Some(i);
-        while let Some(j) = cur {
-            via.push(self.nodes[&v[j].id].qualified_name.clone());
-            cur = v[j].parent;
-        }
-        via.reverse();
-        json!({ "qualified_name": n.qualified_name, "kind": n.kind.as_str(), "path": n.path,
-                "line_start": n.line_start, "hop": r.hop, "path_confidence": r.conf,
-                "via": via, "community": self.community.get(&r.id) })
-    }
+    Ok(false)
 }
 
 fn limitations(truncated: bool, max_nodes: usize, guessed: usize) -> Vec<Limitation> {
@@ -312,9 +471,10 @@ pub struct TraverseOpts<'a> {
 
 pub fn traverse(root: &Path, repo: &str, o: &TraverseOpts) -> Result<Value> {
     check_bounds(o.depth, o.max_nodes, o.min_conf)?;
-    let c = load(root, repo)?;
+    let mut c = Ctx::open(root, repo)?;
     let start = c.node(o.qualified_name)?;
-    let (v, truncated) = bfs(&c, &[start], o.direction, &o.kinds, o.min_conf, o.depth, o.max_nodes);
+    let (v, truncated) = bfs(&mut c, &[start], o.direction, &o.kinds, o.min_conf, o.depth, o.max_nodes)?;
+    c.load_reached(&v)?;
     let nodes: Vec<Value> = (1..v.len()).map(|i| c.hit(&v, i)).collect();
     let guessed = v.iter().skip(1).filter(|r| r.conf < 1.0).count();
     let total = nodes.len();
@@ -341,21 +501,22 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
             "give a qualified name or at least one --file".into(),
         ));
     }
-    let c = load(root, repo)?;
+    let mut c = Ctx::open(root, repo)?;
     let mut starts: Vec<i64> = vec![];
     if let Some(qn) = o.qualified_name {
         starts.push(c.node(qn)?);
     }
     for f in o.files {
-        let mut ids: Vec<i64> = c
-            .nodes
-            .iter()
-            .filter(|(_, n)| &n.path == f)
-            .map(|(i, _)| *i)
-            .collect();
+        let mut ids: Vec<i64> = {
+            let conn = c.store.conn();
+            let mut st = conn.prepare_cached("SELECT id FROM node WHERE run_id=?1 AND path=?2")?;
+            let rows = st.query_map(params![c.run_id, f], |r| r.get::<_, i64>(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
         if ids.is_empty() {
             return Err(AppError::NotFound(format!("no file {f} in {}", c.repo)));
         }
+        c.ensure_nodes(&ids)?;
         ids.sort_by(|a, b| c.nodes[a].qualified_name.cmp(&c.nodes[b].qualified_name));
         starts.extend(ids);
     }
@@ -365,7 +526,8 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
         EdgeKind::Implements,
         EdgeKind::Imports,
     ];
-    let (v, truncated) = bfs(&c, &starts, Direction::Callers, &kinds, o.min_conf, o.depth, o.max_nodes);
+    let (v, truncated) = bfs(&mut c, &starts, Direction::Callers, &kinds, o.min_conf, o.depth, o.max_nodes)?;
+    c.load_reached(&v)?;
     let n_starts = v.iter().take_while(|r| r.hop == 0).count();
     let mut by_hop: Vec<Value> = vec![];
     let mut hop_no = 1;
@@ -381,6 +543,8 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
         hop_no += 1;
     }
     // related tests: test-path nodes among the impacted, and sources of `tests` edges into the target or an impacted node
+    let reached: Vec<i64> = v.iter().map(|r| r.id).collect();
+    let into = c.tests_into(&reached, o.min_conf)?;
     let mut tests: HashMap<String, Value> = HashMap::new();
     let mut add_test = |id: i64, conf: f64, link: &str| {
         let n = &c.nodes[&id];
@@ -398,10 +562,8 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
         if i >= n_starts && is_test_path(&n.path) {
             add_test(r.id, r.conf, "impacted");
         }
-        for (s, k, ec) in c.inn.get(&r.id).map(Vec::as_slice).unwrap_or(&[]) {
-            if *k == EdgeKind::Tests && *ec >= o.min_conf {
-                add_test(*s, r.conf.min(*ec), "tests_edge");
-            }
+        for (s, ec) in into.get(&r.id).map(Vec::as_slice).unwrap_or(&[]) {
+            add_test(*s, r.conf.min(*ec), "tests_edge");
         }
     }
     let mut tests: Vec<Value> = tests.into_values().collect();
@@ -419,9 +581,27 @@ pub fn impact(root: &Path, repo: &str, o: &ImpactOpts) -> Result<Value> {
 
 pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: f64) -> Result<Value> {
     check_bounds(1, max_nodes, min_conf)?;
-    let c = load(root, repo)?;
+    let mut c = Ctx::open(root, repo)?;
     let start = c.node(qn)?;
-    let (v, truncated) = bfs(&c, &[start], Direction::Callers, &[EdgeKind::Calls], min_conf, 3, max_nodes);
+    let (v, truncated) = bfs(&mut c, &[start], Direction::Callers, &[EdgeKind::Calls], min_conf, 3, max_nodes)?;
+    c.ensure_nodes(&v.iter().map(|r| r.id).collect::<Vec<_>>())?;
+    // a `tests` edge into the symbol itself, or into its file
+    let start_path = c.nodes[&start].path.clone();
+    let file_id: Option<i64> = {
+        let conn = c.store.conn();
+        let mut st = conn.prepare_cached(
+            "SELECT id FROM node WHERE run_id=?1 AND path=?2 AND kind=?3 ORDER BY id LIMIT 1",
+        )?;
+        let mut rows = st.query(params![c.run_id, start_path, NodeKind::File.as_str()])?;
+        match rows.next()? {
+            Some(r) => Some(r.get(0)?),
+            None => None,
+        }
+    };
+    let mut want: Vec<i64> = vec![start];
+    want.extend(file_id);
+    want.extend(v.iter().filter(|r| r.hop > 0 && r.hop < 3).map(|r| r.id));
+    let into = c.tests_into(&want, min_conf)?;
     let mut found: HashMap<String, Value> = HashMap::new();
     let mut put = |id: i64, hop: usize, conf: f64, link: &str| {
         let n = &c.nodes[&id];
@@ -437,18 +617,10 @@ pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: 
             );
         }
     };
-    // a `tests` edge into the symbol itself, or into its file
-    let file_id = c
-        .nodes
-        .iter()
-        .find(|(_, n)| n.kind == NodeKind::File && n.path == c.nodes[&start].path)
-        .map(|(i, _)| *i);
     for (target, base_hop) in [(Some(start), 0usize), (file_id, 0)] {
         let Some(t) = target else { continue };
-        for (s, k, ec) in c.inn.get(&t).map(Vec::as_slice).unwrap_or(&[]) {
-            if *k == EdgeKind::Tests && *ec >= min_conf {
-                put(*s, base_hop, *ec, "tests_edge");
-            }
+        for (s, ec) in into.get(&t).map(Vec::as_slice).unwrap_or(&[]) {
+            put(*s, base_hop, *ec, "tests_edge");
         }
     }
     for r in &v {
@@ -457,10 +629,8 @@ pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: 
         }
         // a `tests` edge into a caller sits one hop further out than that caller
         if r.hop > 0 && r.hop < 3 {
-            for (s, k, ec) in c.inn.get(&r.id).map(Vec::as_slice).unwrap_or(&[]) {
-                if *k == EdgeKind::Tests && *ec >= min_conf {
-                    put(*s, r.hop + 1, r.conf.min(*ec), "tests_edge");
-                }
+            for (s, ec) in into.get(&r.id).map(Vec::as_slice).unwrap_or(&[]) {
+                put(*s, r.hop + 1, r.conf.min(*ec), "tests_edge");
             }
         }
     }
@@ -486,36 +656,63 @@ pub fn tests_for(root: &Path, repo: &str, qn: &str, max_nodes: usize, min_conf: 
 
 /// A file whose module-level code runs on its own: a conventional entry name, or a script with `if __name__ == "__main__":`
 /// (the provider marks those file nodes `entry-file`).
-fn is_entry_file(n: &Node) -> bool {
-    if n.provider_ref.as_deref() == Some(crate::providers::ENTRY_FILE_REF) {
+fn is_entry_file(path: &str, provider_ref: Option<&str>) -> bool {
+    if provider_ref == Some(crate::providers::ENTRY_FILE_REF) {
         return true;
     }
-    let base = n.path.rsplit('/').next().unwrap_or(&n.path);
+    let base = path.rsplit('/').next().unwrap_or(path);
     let stem = base.rsplit_once('.').map_or(base, |(s, _)| s);
     matches!(stem, "main" | "__main__" | "cli" | "index")
 }
 
-fn callers_of(c: &Ctx, id: i64, kinds: &[EdgeKind], min_conf: f64) -> usize {
-    c.inn
-        .get(&id)
-        .map(|v| {
-            v.iter()
-                // a module-level call counts only from an entry file: it does not make the callee live in any other file
-                .filter(|(s, _, _)| c.nodes[s].kind != NodeKind::File || is_entry_file(&c.nodes[s]))
-                .filter(|(s, k, ec)| *s != id && kinds.contains(k) && *ec >= min_conf)
-                .count()
-        })
-        .unwrap_or(0)
+/// Which symbols have at least one counted caller, for entry points and dead code. One streaming pass over the run's
+/// reference edges (no adjacency lists): `called` holds targets of a `calls` edge, `referenced` targets of a calls, extends
+/// or implements edge. A module-level call counts only from an entry file: it does not make the callee live in any other file.
+struct Referenced {
+    called: HashSet<i64>,
+    referenced: HashSet<i64>,
 }
+fn referenced(c: &Ctx, min_conf: f64) -> Result<Referenced> {
+    let conn = c.store.conn();
+    let mut st = conn.prepare(
+        "SELECT e.target_node_id, e.kind, CASE WHEN s.kind = ?3 THEN s.path END, CASE WHEN s.kind = ?3 THEN s.provider_ref END \
+         FROM edge e JOIN node s ON s.id = e.source_node_id \
+         WHERE e.run_id = ?1 AND e.confidence >= ?2 AND e.kind IN ('calls','extends','implements') AND e.source_node_id <> e.target_node_id \
+         GROUP BY 1, 2, 3, 4",
+    )?;
+    let mut called = HashSet::new();
+    let mut referenced = HashSet::new();
+    let rows = st.query_map(params![c.run_id, min_conf, NodeKind::File.as_str()], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<String>>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (t, k, file_path, pref) = row?;
+        if let Some(p) = &file_path {
+            if !is_entry_file(p, pref.as_deref()) {
+                continue;
+            }
+        }
+        referenced.insert(t);
+        if k == EdgeKind::Calls.as_str() {
+            called.insert(t);
+        }
+    }
+    Ok(Referenced { called, referenced })
+}
+
 fn handler_name(n: &str) -> bool {
     let l = n.to_ascii_lowercase();
     l == "main" || l.starts_with("handle") || l.ends_with("handler") || l.ends_with("_handler")
 }
-fn is_entry(c: &Ctx, id: i64, min_conf: f64) -> bool {
-    let n = &c.nodes[&id];
+fn is_entry(n: &Node, called: &HashSet<i64>) -> bool {
     if !matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Route)
         || is_test_path(&n.path)
-        || callers_of(c, id, &[EdgeKind::Calls], min_conf) > 0
+        || called.contains(&n.id.unwrap().0)
     {
         return false;
     }
@@ -523,38 +720,60 @@ fn is_entry(c: &Ctx, id: i64, min_conf: f64) -> bool {
     handler_name(&n.name) || n.kind == NodeKind::Route || exported
 }
 
-fn page(mut items: Vec<Value>, limit: usize, cursor: Option<&str>) -> Result<(Vec<Value>, Value)> {
-    let offset = match cursor {
-        Some(c) => c
-            .parse::<usize>()
-            .map_err(|_| AppError::InvalidArguments(format!("bad cursor {c}")))?,
-        None => 0,
-    };
-    let total = items.len();
-    let limit = limit.clamp(1, 500);
-    let rest = items.split_off(offset.min(total));
-    let next = (offset + limit < total).then(|| (offset + limit).to_string());
-    let items: Vec<Value> = rest.into_iter().take(limit).collect();
-    Ok((items, json!({ "next": next, "total": total })))
-}
 fn brief(n: &Node) -> Value {
     json!({ "qualified_name": n.qualified_name, "kind": n.kind.as_str(), "path": n.path, "line_start": n.line_start })
 }
-fn sorted_ids(c: &Ctx) -> Vec<i64> {
-    let mut ids: Vec<i64> = c.nodes.keys().copied().collect();
-    ids.sort_by(|a, b| c.nodes[a].qualified_name.cmp(&c.nodes[b].qualified_name));
-    ids
+
+/// One page of the qualified-name-ordered symbols of `kinds` that pass `keep`. The nodes stream in index order and only
+/// the page's rows become JSON; `total` is the count of all passing symbols (a cheap predicate per row, no list is built).
+fn paged_nodes(
+    c: &Ctx,
+    kinds: &[NodeKind],
+    limit: usize,
+    cursor: Option<&str>,
+    keep: &dyn Fn(&Node) -> bool,
+    render: &dyn Fn(&Node) -> Value,
+) -> Result<(Vec<Value>, Value)> {
+    let offset = match cursor {
+        Some(cur) => cur
+            .parse::<usize>()
+            .map_err(|_| AppError::InvalidArguments(format!("bad cursor {cur}")))?,
+        None => 0,
+    };
+    let limit = limit.clamp(1, 500);
+    let kind_list = kinds.iter().map(|k| format!("'{}'", k.as_str())).collect::<Vec<_>>().join(",");
+    let conn = c.store.conn();
+    let mut st = conn.prepare(&format!(
+        "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ({kind_list}) ORDER BY qualified_name"
+    ))?;
+    let rows = st.query_map(params![c.run_id], node_from_row)?;
+    let (mut total, mut items) = (0usize, vec![]);
+    for row in rows {
+        let n = row?;
+        if !keep(&n) {
+            continue;
+        }
+        if total >= offset && items.len() < limit {
+            items.push(render(&n));
+        }
+        total += 1;
+    }
+    let next = (offset + limit < total).then(|| (offset + limit).to_string());
+    Ok((items, json!({ "next": next, "total": total })))
 }
 
 pub fn entry_points(root: &Path, repo: &str, limit: usize, cursor: Option<&str>, min_conf: f64) -> Result<Value> {
     check_conf(min_conf)?;
-    let c = load(root, repo)?;
-    let items: Vec<Value> = sorted_ids(&c)
-        .into_iter()
-        .filter(|i| is_entry(&c, *i, min_conf))
-        .map(|i| brief(&c.nodes[&i]))
-        .collect();
-    let (items, pg) = page(items, limit, cursor)?;
+    let c = Ctx::open(root, repo)?;
+    let r = referenced(&c, min_conf)?;
+    let (items, pg) = paged_nodes(
+        &c,
+        &[NodeKind::Function, NodeKind::Method, NodeKind::Route],
+        limit,
+        cursor,
+        &|n| is_entry(n, &r.called),
+        &brief,
+    )?;
     Ok(answer(
         json!({ "repo": c.repo, "items": items, "page": pg }),
         0,
@@ -568,27 +787,27 @@ pub fn entry_points(root: &Path, repo: &str, limit: usize, cursor: Option<&str>,
 
 pub fn dead_code(root: &Path, repo: &str, limit: usize, cursor: Option<&str>, min_conf: f64) -> Result<Value> {
     check_conf(min_conf)?;
-    let c = load(root, repo)?;
-    let refs = [EdgeKind::Calls, EdgeKind::Extends, EdgeKind::Implements];
-    let items: Vec<Value> = sorted_ids(&c)
-        .into_iter()
-        .filter(|i| {
-            let n = &c.nodes[i];
-            matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class)
-                && !is_test_path(&n.path)
+    let c = Ctx::open(root, repo)?;
+    let r = referenced(&c, min_conf)?;
+    let (items, pg) = paged_nodes(
+        &c,
+        &[NodeKind::Function, NodeKind::Method, NodeKind::Class],
+        limit,
+        cursor,
+        &|n| {
+            !is_test_path(&n.path)
                 && !(n.name.starts_with("__") && n.name.ends_with("__"))
-                && callers_of(&c, *i, &refs, min_conf) == 0
-                && !is_entry(&c, *i, min_conf)
+                && !r.referenced.contains(&n.id.unwrap().0)
+                && !is_entry(n, &r.called)
                 && !handler_name(&n.name)
-        })
-        .map(|i| {
-            let mut b = brief(&c.nodes[&i]);
+        },
+        &|n| {
+            let mut b = brief(n);
             b["label"] = json!("candidate");
             b["confidence"] = json!("unknown");
             b
-        })
-        .collect();
-    let (items, pg) = page(items, limit, cursor)?;
+        },
+    )?;
     Ok(answer(
         json!({ "repo": c.repo, "items": items, "page": pg }),
         0,
