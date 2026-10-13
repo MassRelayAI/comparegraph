@@ -1,1 +1,39 @@
-{"_note": "Placeholder. Floors for the feature-mapping gold are set after the first measured run and only raised afterwards, never lowered."}
+{
+  "_note": "Placeholder. Floors for the feature-mapping gold are set after the first measured run and only raised afterwards, never lowered.",
+  "graphmind": {
+    "map_p5": 0.0762,
+    "map_r5": 0.2841,
+    "absent_precision": 0.99,
+    "absent_recall": 0.115
+  },
+  "srclight": {
+    "map_p5": 0.0549,
+    "map_r5": 0.1329,
+    "absent_recall": 0
+  },
+  "code-review-graph": {
+    "map_p5": 0.0395,
+    "map_r5": 0.1289,
+    "absent_recall": 0
+  },
+  "CodeGraph": {
+    "map_p5": 0.0018,
+    "map_r5": 0.0355
+  },
+  "codanna": {
+    "map_p5": 0.0277,
+    "map_r5": 0.1233,
+    "absent_recall": 0
+  },
+  "ripwire": {
+    "map_p5": 0.0178,
+    "map_r5": 0.09,
+    "absent_recall": 0
+  },
+  "pooled": {
+    "map_p5": 0.0363,
+    "map_r5": 0.1307,
+    "absent_precision": 0.99,
+    "absent_recall": 0.0426
+  }
+}
