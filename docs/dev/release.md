@@ -4,8 +4,10 @@ Maintainers only. A release is a tag; the workflow in `.github/workflows/release
 
 ## Before the tag
 
-1. The version is `[workspace.package] version` in `Cargo.toml`, and `server.json` repeats it (CI checks they agree).
-   Bump both in the commit that will be tagged; every release job exits 4 when the tag disagrees.
+1. The version is `[workspace.package] version` in `Cargo.toml`; `Cargo.lock` (the `comparegraph` entry), `server.json`,
+   `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` repeat it, and `docs/catalog.json` carries it
+   (`comparegraph catalog > docs/catalog.json` regenerates it). CI checks `server.json`; `cargo test` checks the rest.
+   Bump them in the commit that will be tagged; every release job exits 4 when the tag disagrees.
 2. Date the section in `CHANGELOG.md` (`## [x.y.z] - YYYY-MM-DD`), leave an empty `## [Unreleased]` above it, and update
    the two link lines at the bottom.
 3. `cargo test -p comparegraph` and `cargo clippy -p comparegraph --tests -- -D warnings` green; the `ci` workflow green on
@@ -14,8 +16,8 @@ Maintainers only. A release is a tag; the workflow in `.github/workflows/release
 ## The tag
 
 ```bash
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
 ## What the workflow does

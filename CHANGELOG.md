@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-14
+
 ### Added
 - `claim --batch <jsonl|->` and `decide --batch <jsonl|->`: many rows in one process, one store open and one transaction (a failing row writes nothing, the rest proceed); one envelope line per input row with its `line`, printed as each row is decided, then a `{rows, ok, failed, committed}` summary (an error envelope as the last line means nothing landed); exit 1 if any row failed. Store connections wait up to 5 s for a lock instead of failing at once.
 - `--root` is global: it may follow the verb (`comparegraph repos --root ws`).
@@ -79,5 +81,6 @@ The first public release.
 - A name-only call target no longer binds at 1.0 through a shadowed import, a class without the method, a type alias or
   interface, a benchmark or example copy, or another file's data binding.
 
-[Unreleased]: https://github.com/massrelay-ai/comparegraph/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/massrelay-ai/comparegraph/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/massrelay-ai/comparegraph/releases/tag/v0.1.1
 [0.1.0]: https://github.com/massrelay-ai/comparegraph/releases/tag/v0.1.0

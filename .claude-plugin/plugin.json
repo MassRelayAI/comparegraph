@@ -1,7 +1,7 @@
 {
   "name": "comparegraph",
   "description": "Compare many cloned repositories against taxonomy packs: code graph, relatedness, evidence-backed claims, a comparison matrix. No LLM inside the engine. Needs the comparegraph binary on PATH (the install script in the README).",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Nicholas Andrea Sujitno",
     "email": "support@massrelay.ai"

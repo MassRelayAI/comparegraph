@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "comparegraph",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./",
       "description": "Skills for the CompareGraph method plus its MCP server: add clones, define families, map features, write claims, read the matrix, record decisions. Needs the comparegraph binary on PATH.",
       "category": "development"
