@@ -219,17 +219,17 @@ protocol and the package.
 `comparegraph setup` detects client config files (Claude Code `.mcp.json` / settings, Codex, Cursor, Gemini CLI, OpenCode, Hermes),
 shows the planned change, writes additively and idempotently with a backup; `doctor` reports each as aligned / stale / missing.
 The MCP server exposes the read verbs (`search`, `map`, `relate`, `export json`, `check`) and `claim` (a write, with the same
-refusals). `method/` is listed in the npm package so plugin installers find it.
+refusals). `skills/` (with `method/` as its alias) ships in the repository, where the Claude Code plugin reads it.
 
 ## 11. Milestones
 - **v0.1** — the standard (schema v1), the store, `domain` + `contracts` + the catalog generator, the reference provider for
   TypeScript/JavaScript and Python, the crg adapter, `add build family map claim check export(vault,json) search(lexical) conform
-  doctor`, the MCP read verbs + `claim`, the `method/` skills, conformance fixtures for two languages, the npm shell with one
-  platform binary (linux-x64). Proven on three real clones: every exported location resolves; the reference and crg adapters agree
+  doctor`, the MCP read verbs + `claim`, the `method/` skills, conformance fixtures for two languages, a release binary for
+  linux-x64. Proven on three real clones: every exported location resolves; the reference and crg adapters agree
   ≥ 0.8 on nodes.
 - **v0.2** — Rust and Go in the reference provider, relatedness bands, vector ranking (a local embedding model, optional),
   agreement rows, `setup`, CSV export, macOS and Windows binaries, the docs site.
-- **v0.3** — codegraph-mcp and ripwire adapters; many workspaces under one registry; release automation (tags → binaries → npm).
+- **v0.3** — codegraph-mcp and ripwire adapters; many workspaces under one registry; release automation (tags → binaries, the tap, the registry entry).
 
 ## 12. Out of scope
 Diffing two files; editing code; running any clone; a hosted service; a model writing claims unattended (a model may propose
