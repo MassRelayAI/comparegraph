@@ -119,15 +119,21 @@ struct TermHits {
 
 /// Two tokens match when equal, or when they share a prefix of >= 4 chars that is the whole shorter token or leaves at most
 /// two of its chars (`extract`~`extraction`, `resolution`~`resolve`, `signature`~`signatures`). A shorter token of fewer
-/// than 6 chars must be equal instead, except that the longer may add one plural or verb suffix (`s`, `es`, `ed`, `ing`):
-/// `task`~`tasks` matches, `multi`~`multiplier` does not.
+/// than 6 chars must be equal instead, except that the longer may be the shorter plus one of `s`, `es`, `ed`, `ing`, `er`,
+/// `ers`, `or`, `ors`; or, when the shorter ends in `e`, minus that `e` plus `ed`, `ing`, `er`, `ers` (`serve`~`serving`,
+/// `parse`~`parser`); or, when it ends in `y`, minus the `y` plus `ies`, `ied`, `ier` (`query`~`queries`):
+/// `task`~`tasks` matches, `multi`~`multiplier`, `code`~`codegraph` and `graph`~`graphmind` do not.
 pub fn tok_match(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
     let (short, long) = if a.chars().count() <= b.chars().count() { (a, b) } else { (b, a) };
     if short.chars().count() < 6 {
-        return ["s", "es", "ed", "ing"].iter().any(|suf| long.strip_prefix(short).is_some_and(|rest| rest == *suf));
+        let rest = |stem: &str| long.strip_prefix(stem);
+        let plain = rest(short).is_some_and(|r| ["s", "es", "ed", "ing", "er", "ers", "or", "ors"].contains(&r));
+        let e_drop = short.strip_suffix('e').and_then(|st| rest(st)).is_some_and(|r| ["ed", "ing", "er", "ers"].contains(&r));
+        let y_drop = short.strip_suffix('y').and_then(|st| rest(st)).is_some_and(|r| ["ies", "ied", "ier"].contains(&r));
+        return plain || e_drop || y_drop;
     }
     let cp = a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count();
     let m = a.chars().count().min(b.chars().count());
@@ -476,6 +482,19 @@ mod tests {
             ("cach", "caching", true),
             ("class", "classes", true),
             ("multi", "multiplier", false),
+            ("code", "codegraph", false),
+            ("graph", "graphmind", false),
+            ("parse", "parser", true),
+            ("parse", "parsers", true),
+            ("call", "callers", true),
+            ("call", "caller", true),
+            ("serve", "served", true),
+            ("serve", "serving", true),
+            ("serve", "server", true),
+            ("query", "queries", true),
+            ("query", "queried", true),
+            ("index", "indexer", true),
+            ("visit", "visitor", true),
             ("multi", "multilingual", false),
             ("lang", "language", false),
             ("abc", "abd", false),
