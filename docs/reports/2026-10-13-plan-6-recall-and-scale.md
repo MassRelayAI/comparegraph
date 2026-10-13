@@ -8,7 +8,7 @@ status: done
 ---
 
 Measured at main `feef80c` (release build), 2026-10-13. Full tables: `docs/reports/2026-10-12-engine-parity.md`, section
-"After Plan 6 (2026-10-13)". The codegraph-mcp head-to-head was not run: it is the maintainer's timing and is still pending.
+"After Plan 6 (2026-10-13)". The codegraph-mcp head-to-head was run the same day on the same gold (`scripts/h2h-codegraph.sh`): codegraph-mcp scores 0.708 precision / 0.506 recall pooled against our 0.995 / 0.834, with a graph built in the same time on four of five projects (ours 1.1 to 1.3 times slower, 5.1 times on hono, 0.5 times on graphmind) once its fixed 12 s embedding-model load is excluded; the table, the method and the caveats are in `docs/reports/2026-10-12-engine-parity.md`, section "codegraph head-to-head (2026-10-13)".
 
 ## Targets vs measured
 
@@ -52,7 +52,7 @@ hold. Hash gate: `store_hash` of an incremental build must equal `build --full` 
 - Two readers, both agents; the labelling and the engines were not run blind to each other's authors.
 - The hono precision of 1.000 rests on 24 answered sites.
 - Build timings ran under load 6 to 15; the openclaw miss of 20 s is inside the noise of a single run, but the hermes-agent back-to-back (194.4 s, 64.5 s, 90.5 s) is a real 1.40x regression after B1 and was not diagnosed.
-- The product-repo build (<90 s target), the codegraph head-to-head and the private tree were not measured here.
+- The product-repo build (<90 s target), and the private tree were not measured here; the codegraph head-to-head ran afterwards (see above).
 - Query bounds were measured on one hub symbol (3,156 callers), at defaults, one run each.
 
 ## What is next

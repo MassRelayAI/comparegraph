@@ -532,3 +532,58 @@ was measured, not diagnosed.
 | calls, pooled | behind on recall | ahead on both: 0.834 / 0.995 vs 0.711 / 0.954 |
 | speed (cold, hermes-agent, same binary family) | ahead | 2.15x faster than before Plan 6; openclaw 38k files 499.6 s cold (was 1,866 s with every parse a cache hit), target 8 min missed by 20 s |
 | tests edges | behind (J 0.00 to 0.61) | unchanged; srclight tests J 0.594 |
+
+## codegraph head-to-head (2026-10-13)
+
+Measured at main `f7d408f` (release build). The comparator is `codegraph-mcp` (Apache-2.0, the Rust server of the CodeGraph project, in
+`--graph-only` mode, no embedding generation), on the same committed gold labels (`fixtures/gold/*/calls.jsonl`) and the same scorer
+(`scripts/lib/gold.py`). The project trees are the study copies at the heads pinned in `fixtures/gold/README.md`, exported with
+`git archive` into a scratch directory.
+
+Method (`scripts/h2h-codegraph.sh`, `scripts/lib/h2h_codegraph.py`): codegraph has no tool that dumps the whole call graph (its
+`get_call_graph`, `get_dependency_graph` and architecture-doc tools all start from one node), and its store is a RocksDB graph with no
+documented export. So one MCP stdio server per project is driven by a small JSON-RPC loop: `initialize`, then one
+`codegraph_get_callees` call per labelled site with the file URI and the gold line. The server picks the tightest node of its own graph
+containing the line and returns that node's callees; a callee counts when its name equals the callee's last segment (target
+`path::name`). A site where it found no containing node and fell back to a nearest node is not answered (131 to 136 of 150 sites are
+asked per project; the others are `unknown` or unlabelled). Every run uses a fresh `HOME` in the scratch directory, so its store and
+socket never touch the real one (verified: the real store was untouched, files only under the scratch home). Our side is rebuilt
+with the same binary and scored by `gold-score.sh`. Host load 7 to 10 on 40 cores.
+
+| project | ours P / R | crg through the adapter P / R | codegraph P / R | build ours : codegraph |
+|---|---|---|---|---|
+| graphmind [48] | 0.973 / 0.750 | 0.963 / 0.542 | 0.650 / 0.813 | 0.50 (1.7 s : 3.4 s) |
+| srclight [50] | 1.000 / 0.780 | 1.000 / 0.740 | 1.000 / 0.320 | 1.08 (0.8 s : 0.8 s) |
+| code-review-graph [53] | 1.000 / 0.925 | 1.000 / 1.000 | 0.913 / 0.396 | 1.23 (3.9 s : 3.1 s) |
+| hono [36] | 1.000 / 0.667 | 0.880 / 0.611 | none answered / 0.000 | 5.12 (6.4 s : 1.25 s) |
+| caddy [48] | 1.000 / 1.000 | 0.897 / 0.729 | 0.623 / 0.896 | 1.29 (2.7 s : 2.1 s) |
+| pooled [235] | 0.995 / 0.834 | 0.956 / 0.736 | 0.708 / 0.506 | |
+
+Our column is the Plan 6 number re-measured at `f7d408f` (unchanged). Pooled codegraph: 119 correct of 168 answered, 119 hits of 235
+repo-target sites. Build time for codegraph is from the first directory scan to its "Indexed N files" line; the whole `Indexing workspace`
+phase takes 12.6 to 15.1 s on every project because the server loads its embedding model (about 12 s) even with `--graph-only`, which
+would make the ratio 0.07 to 0.48 if counted. Ours is `add` + `build` on a fresh workspace.
+
+Graph size reported by codegraph: graphmind 3,077 nodes / 9,792 edges (204 files), srclight 2,044 / 4,469 (83), code-review-graph
+10,216 / 21,968 (283), hono 3,173 / 3,903 (429), caddy 8,446 / 20,469 (388). Determinism: hono indexed twice in fresh homes gave
+identical node (3,173) and edge (3,903) counts and identical answers (but the answers are empty, so this is weak evidence).
+
+Sites right by one engine and not the other (ours-only / codegraph-only / both):
+
+| project | ours only | codegraph only | both |
+|---|---|---|---|
+| graphmind | 5 | 8 | 31 |
+| srclight | 23 | 0 | 16 |
+| code-review-graph | 29 | 1 | 20 |
+| hono | 24 | 0 | 0 |
+| caddy | 5 | 0 | 43 |
+| total | 86 | 9 | 110 |
+
+Reading: codegraph is more precise than it is complete on Python and TypeScript, and the reverse on graphmind and caddy, where it
+answers every same-named callee in the function and so lists several targets (precision 0.65 and 0.62; our scorer counts a site
+correct when the true target is among them, and any answer on an external site as false). On hono none of the 36 repo-target sites is
+answered: most gold lines sit inside anonymous arrow functions in test files, and the tightest node codegraph finds there is an
+`arrow_function` node with no call edges, so a "tightest node" lookup returns nothing; a lookup through the nearest named ancestor
+would answer some of them and was not run. Caveats: 36 to 53 repo-target sites per project; the method decides the enclosing node
+with codegraph's own rule, which differs from ours (it can pick a class node); the gold has two agent readers; one run per project
+for timing, at load 7 to 10.
