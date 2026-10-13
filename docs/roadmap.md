@@ -50,6 +50,8 @@ rather than records); a clone-frequency rule and kinds scoping were tried and wi
 recorded a `none` on a clone that had the feature. 6 shipped as the whole-token rule for short tokens plus the pack's
 `synonyms` column. On the gold the absent check still records one absence in nineteen, and `map` on the held-out clones
 is unchanged, so the mapping stop condition stays open (`docs/reports/2026-10-14-mapping-gold-first-measurement.md`).
+Follow-up from the same run (2026-10-14): a re-run `claim --batch` skips rows equal to the live claim instead of
+writing them again, so an interrupted batch resumes without doubling its rows.
 
 ## Navigation parity with codegraph (the maintainer, 2026-10-13: "why not do what codegraph and other OSS do")
 
