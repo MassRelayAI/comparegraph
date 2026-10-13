@@ -23,6 +23,8 @@ pub struct BuildOptions {
     pub cache: Option<std::rc::Rc<dyn ParseCache>>,
     /// The latest done run of the same provider version, for an incremental build (None: resolve everything)
     pub prev: Option<std::rc::Rc<PrevGraph>>,
+    /// `build --progress`: stderr lines (`[progress] ...`) while parsing; never on stdout
+    pub progress: bool,
 }
 
 /// What an incremental build knows of the previous run, by qualified name (row ids are per run and never carried).
@@ -46,6 +48,7 @@ impl std::fmt::Debug for BuildOptions {
             .field("full", &self.full)
             .field("cache", &self.cache.is_some())
             .field("prev", &self.prev.is_some())
+            .field("progress", &self.progress)
             .finish()
     }
 }
@@ -57,6 +60,7 @@ impl Default for BuildOptions {
             full: false,
             cache: None,
             prev: None,
+            progress: false,
         }
     }
 }

@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 - `claim --batch <jsonl|->` and `decide --batch <jsonl|->`: many rows in one process, one store open and one transaction (a failing row writes nothing, the rest proceed); one envelope line per input row with its `line`, printed as each row is decided, then a `{rows, ok, failed, committed}` summary (an error envelope as the last line means nothing landed); exit 1 if any row failed. Store connections wait up to 5 s for a lock instead of failing at once.
+- `--root` is global: it may follow the verb (`comparegraph repos --root ws`).
+- `repos` takes `--limit` (default 50, maximum 500) and `--cursor`, and returns a `page`.
+- `impact`, `tests-for` and `traverse` take `--limit` and `--cursor` (and the MCP tools `limit` and `cursor`).
+- `build --progress` (or `COMPAREGRAPH_PROGRESS=1`) prints `[progress]` lines to stderr: one per 500 files parsed and one per pass.
+- README: the `<group>.<slug>` feature-id rule in the families section.
+
+### Changed
+- `impact`, `tests-for` and `traverse` answer summary-first: `data.summary` (`total`, `truncated`, `max_nodes`, `by_hop`,
+  `by_kind`), then `items` paged and ordered by `path_confidence` (high first), hop, name. `impact` no longer returns
+  `by_hop[].nodes`; its `items` is the flat list with `hop` on each, and its `tests` list is capped at the page size with a
+  `tests_capped` limitation. `total` and `truncated` stay at the top of `data`; `truncated` stays in `limitations[]`.
 
 ## [0.1.0] - 2026-10-13
 

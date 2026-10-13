@@ -283,3 +283,45 @@ fn read_verbs_on_an_empty_root_are_not_found_and_create_nothing() {
         );
     }
 }
+
+#[test]
+fn root_may_follow_the_verb_and_repos_pages() {
+    let ws = tempfile::tempdir().unwrap();
+    for n in ["a", "b", "c"] {
+        let c = clone();
+        cc(ws.path()).args(["add"]).arg(c.path()).args(["--name", n]).assert().success();
+    }
+    let run = |args: &[&str]| -> serde_json::Value {
+        let out = Command::cargo_bin("comparegraph").unwrap().args(args).arg("--root").arg(ws.path()).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let p1 = run(&["repos", "--limit", "2"]);
+    assert_eq!(p1["data"]["items"].as_array().unwrap().len(), 2);
+    assert_eq!(p1["page"]["total"], 3);
+    let next = p1["page"]["next"].as_str().unwrap().to_string();
+    let p2 = run(&["repos", "--limit", "2", "--cursor", &next]);
+    assert_eq!(p2["data"]["items"].as_array().unwrap().len(), 1);
+    assert!(p2["page"]["next"].is_null());
+    // front placement still works
+    cc(ws.path()).arg("repos").assert().success();
+}
+
+#[test]
+fn build_progress_goes_to_stderr_and_stdout_stays_one_envelope() {
+    let ws = tempfile::tempdir().unwrap();
+    let c = clone();
+    cc(ws.path()).args(["add"]).arg(c.path()).args(["--name", "a"]).assert().success();
+    let out = cc(ws.path()).args(["build", "a", "--progress"]).output().unwrap();
+    assert!(out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("[progress]"), "{err}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("[progress]"));
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("stdout is exactly one JSON value");
+    assert_eq!(v["ok"], true);
+    let quiet = cc(ws.path()).args(["build", "a", "--full"]).output().unwrap();
+    assert!(!String::from_utf8_lossy(&quiet.stderr).contains("[progress]"));
+    let env = cc(ws.path()).env("COMPAREGRAPH_PROGRESS", "1").args(["build", "a", "--full"]).output().unwrap();
+    assert!(String::from_utf8_lossy(&env.stderr).contains("[progress]"));
+}

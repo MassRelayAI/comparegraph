@@ -330,7 +330,7 @@ otherwise. List verbs take `--limit` (default 50, maximum 500) and `--cursor`. E
 
 ## CLI reference
 
-Global options on every command: `--root <ROOT>` (the workspace, default `.`), `--pretty`, `--allow-unverified` (use an
+Global options on every command, before or after the verb: `--root <ROOT>` (the workspace, default `.`), `--pretty`, `--allow-unverified` (use an
 external provider with no manifest). `comparegraph <verb> --help` prints every flag.
 
 ### Build and inspect
@@ -338,9 +338,9 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 | Command | What it does | Flags that matter |
 |---|---|---|
 | `add <PATH>` | Register a clone. Read, never run. | `--name`, `--as-root` |
-| `build <REPO>` | Parse a clone into the graph (one run). | `--provider` (default `reference`), `--providers a,b` (several engines in turn, with an agreement table), `--max-file-bytes`, `--max-files`, `--full` |
+| `build <REPO>` | Parse a clone into the graph (one run). | `--provider` (default `reference`), `--providers a,b` (several engines in turn, with an agreement table), `--max-file-bytes`, `--max-files`, `--full`, `--progress` (stderr lines every 500 files and per pass; also `COMPAREGRAPH_PROGRESS=1`; stdout stays one envelope) |
 | `check` | Verify schema, determinism and citation locations. | |
-| `repos` | Registered repos with their latest run. | |
+| `repos` | Registered repos with their latest run. | `--limit` (50), `--cursor` |
 | `doctor` | Report the store, every provider and each agent client's registration. | `--bin` |
 | `conform <PROVIDER>` | Run the golden fixtures against a provider. | `--fixtures` |
 | `catalog` | Print the MCP tool catalog as JSON. | `--check` (compare with `docs/catalog.json`) |
@@ -352,9 +352,9 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 | `search <QUERY>` | Full-text search over symbols of each latest run. | `--repo`, `--kind`, `--limit`, `--cursor` |
 | `show <REPO> <QN>` | A symbol with callers, callees, community, licence lane. | `--detail full` |
 | `communities <REPO>` | Module clusters of the latest run. | `--limit`, `--cursor` |
-| `traverse <REPO> <QN>` | Nodes reachable over calls, extends, implements, with hop distance and path. | `--direction`, `--depth` (3), `--max-nodes` (200), `--kinds`, `--min-confidence` (0.5) |
-| `impact <REPO> [QN]` | Everything that transitively depends on a symbol or files, by hop, plus the tests that reach it. | `--file`, `--depth` (5), `--max-nodes` (500) |
-| `tests-for <REPO> <QN>` | Tests linked directly or through at most 3 call hops. | `--max-nodes`, `--min-confidence` |
+| `traverse <REPO> <QN>` | Nodes reachable over calls, extends, implements, with hop distance and path. | `--direction`, `--depth` (3), `--max-nodes` (200), `--kinds`, `--min-confidence` (0.5), `--limit` (50), `--cursor` |
+| `impact <REPO> [QN]` | Everything that transitively depends on a symbol or files, plus the tests that reach it. Summary first (`total`, `by_hop`, `by_kind`), then `items` paged, best `path_confidence` first. | `--file`, `--depth` (5), `--max-nodes` (500), `--limit` (50), `--cursor` |
+| `tests-for <REPO> <QN>` | Tests linked directly or through at most 3 call hops. | `--max-nodes`, `--min-confidence`, `--limit` (50), `--cursor` |
 | `entry-points <REPO>` | Exported, handler or main symbols nothing calls. | `--limit`, `--cursor` |
 | `dead-code <REPO>` | Candidates nothing references. Dynamic dispatch is invisible. | `--limit`, `--cursor` |
 
@@ -452,7 +452,7 @@ To add your own engine, write a provider and pass `comparegraph conform <name>`;
 ## Families and the seven skills
 
 A family is a directory with a `rows.md`: front matter with `family:` and `description:`, then a table with `id`, `group`,
-`feature`, `definition`, `counts_as_has`, `tier` (`basics`, `common`, `extra` or `candidate`) and `weight`. Two packs ship:
+`feature`, `definition`, `counts_as_has`, `tier` (`basics`, `common`, `extra` or `candidate`) and `weight`. A feature id is `<group>.<slug>`: lowercase `[a-z0-9-]`, exactly one dot, and the `group` column must equal the id's group (`symbols.extraction` has group `symbols`); a row that breaks it is refused when the pack loads. Two packs ship:
 [`families/example-code-graph-tools`](families/example-code-graph-tools/rows.md) (10 features, the quick start) and
 [`families/code-graph-tools`](families/code-graph-tools/rows.md) (30 features, the mapping gold). `family propose <name>
 --repos a,b,c` drafts a pack from the terms the clones share, with no model. The tier names and band thresholds (`related` at

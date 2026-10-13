@@ -103,7 +103,14 @@ pub fn clamp_span(line_start: u32, line_end: u32, n_lines: u32) -> (u32, u32, bo
 pub fn profile_on() -> bool {
     std::env::var_os("COMPAREGRAPH_PROFILE").is_some_and(|v| v != "0" && !v.is_empty())
 }
+static PROGRESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+fn progress_on() -> bool {
+    PROGRESS.load(std::sync::atomic::Ordering::Relaxed)
+}
 pub fn profile_line(pass: &str, t: std::time::Instant, count: usize) {
+    if progress_on() {
+        eprintln!("[progress] pass {pass} done {:.1}s count={count}", t.elapsed().as_secs_f64());
+    }
     if profile_on() {
         eprintln!("[profile] {pass:<22} {:>9.3}s  count={count}", t.elapsed().as_secs_f64());
     }
@@ -239,11 +246,18 @@ impl GraphProvider for ReferenceProvider {
             }
         }
         let t_parse = std::time::Instant::now();
+        PROGRESS.store(opts.progress, std::sync::atomic::Ordering::Relaxed);
+        if opts.progress {
+            eprintln!("[progress] pass read+parse start files={}", files.len());
+        }
         let mut minified = walked.minified;
         let version = self.version();
         let mut fresh: Vec<(String, String, String, Vec<u8>)> = Vec::new();
         let mut parsed: Vec<ParsedFile> = Vec::new();
-        for f in &files {
+        for (file_no, f) in files.iter().enumerate() {
+            if opts.progress && file_no > 0 && file_no % 500 == 0 {
+                eprintln!("[progress] parsed {file_no}/{} files {:.1}s", files.len(), t_parse.elapsed().as_secs_f64());
+            }
             let bytes = match std::fs::read(repo_root.join(&f.rel_path)) {
                 Ok(b) => b,
                 Err(e) => {
