@@ -73,15 +73,19 @@ fn a_feature_nothing_matches_is_absent_and_the_claim_is_derived() {
     let (ws, _c, _p) = setup();
     let v = check(ws.path(), "quantum.teleport");
     assert_eq!(v["data"]["absent"], true, "{v}");
-    assert_eq!(v["evidence"]["confidence"], "derived", "{v}");
+    assert_eq!(v["evidence"]["confidence"], "inferred", "{v}");
     for ch in ["symbols", "paths", "communities", "kinds"] {
         assert_eq!(v["data"]["channels"][ch]["count"], 0, "{ch}: {v}");
     }
     let c = json(claim_none(ws.path(), "quantum.teleport", &[]).success());
     assert_eq!(c["data"]["verdict"], "none", "{c}");
-    assert_eq!(c["evidence"]["confidence"], "derived", "{c}");
+    assert_eq!(c["evidence"]["confidence"], "inferred", "{c}");
     let note = c["data"]["note"].as_str().unwrap();
-    assert!(note.starts_with("graph-absent: terms="), "{note}");
+    assert!(
+        note.starts_with("graph-absent (names, paths, community terms, kinds; not strings, flags or config keys): terms="),
+        "{note}"
+    );
+    assert!(note.contains("; stems=") && note.contains("; run=") && note.contains(" provider=reference"), "{note}");
     assert!(note.contains("channels=symbols:0,paths:0,communities:0,kinds:0"), "{note}");
 }
 
@@ -123,8 +127,7 @@ fn a_kind_only_hit_refuses() {
 
 #[test]
 fn a_community_keyword_alone_refuses() {
-    // `user` is a keyword of the community (loginUser, logoutUser, resetUser) but a mid-token of every symbol, and no
-    // path carries it: only the communities channel sees it.
+    // `user` is a keyword of the community (loginUser, logoutUser, resetUser).
     let (ws, _c, _p) = setup();
     let pack = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -134,8 +137,7 @@ fn a_community_keyword_alone_refuses() {
     .unwrap();
     cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
     let v = json(cc(ws.path()).args(["absent-check", "ts", "fam2", "acct.user"]).assert().success());
-    assert_eq!(v["data"]["channels"]["symbols"]["count"], 0, "{v}");
-    assert_eq!(v["data"]["channels"]["paths"]["count"], 0, "{v}");
+    // since the stem match splits camelCase, the symbols channel also sees `user`; the communities channel must still report it
     assert!(v["data"]["channels"]["communities"]["count"].as_i64().unwrap() > 0, "{v}");
     assert_eq!(v["data"]["absent"], false, "{v}");
     let r = json(
@@ -147,8 +149,12 @@ fn a_community_keyword_alone_refuses() {
 #[test]
 fn searched_still_records_the_manual_absence() {
     let (ws, _c, _p) = setup();
-    let c = json(claim_none(ws.path(), "math.counter", &["--searched", "zzzunknown qqqmissing"]).success());
-    assert!(c["data"]["note"].as_str().unwrap().starts_with("searched: zzzunknown qqqmissing → 0 hits"), "{c}");
+    let c = json(claim_none(ws.path(), "quantum.teleport", &["--searched", "teleport qqqmissing"]).success());
+    assert!(c["data"]["note"].as_str().unwrap().starts_with("searched (author-supplied): teleport qqqmissing → 0 hits"), "{c}");
+    assert_eq!(c["evidence"]["confidence"], "derived", "{c}");
+    // terms that do not name the feature are refused, whatever they find
+    let r = json(claim_none(ws.path(), "quantum.teleport", &["--searched", "qqqq"]).failure());
+    assert!(r["error"]["message"].as_str().unwrap().contains("searched terms do not name the feature"), "{r}");
 }
 
 #[test]
@@ -185,4 +191,70 @@ fn mcp_exposes_the_check_and_cannot_record_a_graph_absence() {
     assert_eq!(env["data"]["absent"], true, "{env}");
     // the claim tool cannot record a graph-backed absence: `none` over MCP needs --searched terms
     assert_eq!(lines[2]["result"]["isError"], true, "{}", lines[2]);
+}
+
+// ---- the reviewer's four probes (a mini repo that implements each feature) ----
+const PROBE_PACK: &str = "---\nfamily: pf\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n\
+| symbols.extraction | symbols | Extraction | x | x | basics | 1 |\n\
+| core.configuration | core | Configuration | x | x | basics | 1 |\n\
+| cli.verbose | cli | Verbose | x | x | basics | 1 |\n\
+| perf.caching | perf | Caching | x | x | basics | 1 |\n";
+
+fn probe_ws() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
+    let ws = tempfile::tempdir().unwrap();
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(pack.path().join("rows.md"), PROBE_PACK).unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
+    let clone = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(clone.path().join("pkg")).unwrap();
+    std::fs::write(clone.path().join("pkg/defs.py"), "def extract_defs():\n    return 1\n\ndef parse_tree():\n    return 2\n").unwrap();
+    std::fs::write(clone.path().join("pkg/cfg.py"), "def load_cfg():\n    return {}\n").unwrap();
+    std::fs::write(clone.path().join("pkg/args.py"), "FLAGS = [\"--verbose\"]\n\ndef run():\n    return FLAGS\n").unwrap();
+    std::fs::write(clone.path().join("pkg/helpers.py"), "def memoize(f):\n    return f\n").unwrap();
+    std::fs::write(clone.path().join("LICENSE"), "MIT License\n\nCopyright (c) 2026 S\n").unwrap();
+    git_commit(clone.path());
+    add_repo(ws.path(), clone.path(), Some("mini"), false).unwrap();
+    build_repo(ws.path(), "mini", "reference", &BuildOptions::default()).unwrap();
+    (ws, clone, pack)
+}
+
+#[test]
+fn probe_extraction_is_found_by_the_stem_match() {
+    let (ws, _c, _p) = probe_ws();
+    let v = json(cc(ws.path()).args(["absent-check", "mini", "pf", "symbols.extraction"]).assert().success());
+    assert_eq!(v["data"]["absent"], false, "{v}");
+    let hits = v["data"]["channels"]["symbols"]["hits"].as_array().unwrap();
+    assert!(hits.iter().any(|h| h["name"].as_str().unwrap().contains("extract_defs")), "{v}");
+    assert!(
+        hits.iter().any(|h| h["matched"].as_array().unwrap().iter().any(|m| m == "extraction")),
+        "the term that matched is named: {v}"
+    );
+    claim_probe(ws.path(), "symbols.extraction", &[]).failure();
+}
+fn claim_probe(ws: &Path, f: &str, extra: &[&str]) -> assert_cmd::assert::Assert {
+    let mut c = cc(ws);
+    c.args(["claim", "mini", f, "none", "--author", "me"]).args(extra);
+    c.assert()
+}
+
+#[test]
+fn probes_out_of_reach_are_recorded_inferred_with_the_coverage_limit_never_derived() {
+    // abbreviations (cfg), strings ("--verbose") and synonyms (memoize) are not names the graph can match:
+    // the claim is recorded, but as `inferred`, and its note says what the check could not see.
+    let (ws, _c, _p) = probe_ws();
+    for f in ["core.configuration", "cli.verbose", "perf.caching"] {
+        let c = json(claim_probe(ws.path(), f, &[]).success());
+        assert_eq!(c["evidence"]["confidence"], "inferred", "{f}: {c}");
+        let note = c["data"]["note"].as_str().unwrap();
+        assert!(note.contains("not strings, flags or config keys"), "{note}");
+    }
+}
+
+#[test]
+fn the_check_pins_the_reference_run() {
+    let (ws, _c, _p) = probe_ws();
+    let v = json(cc(ws.path()).args(["absent-check", "mini", "pf", "perf.caching"]).assert().success());
+    assert_eq!(v["data"]["provider"], "reference", "{v}");
+    assert!(v["data"]["run_id"].as_i64().unwrap() > 0, "{v}");
+    assert!(v["data"]["stems"].is_array(), "{v}");
 }

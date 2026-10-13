@@ -154,7 +154,7 @@ fn none_needs_searched_terms_that_miss() {
                 "--author",
                 "me",
                 "--searched",
-                "zzzunknown qqqmissing",
+                "routing zzzunknown qqqmissing",
             ],
         )
         .success(),
@@ -163,7 +163,7 @@ fn none_needs_searched_terms_that_miss() {
         ok["data"]["note"]
             .as_str()
             .unwrap()
-            .starts_with("searched: zzzunknown qqqmissing → 0 hits"),
+            .starts_with("searched (author-supplied): routing zzzunknown qqqmissing → 0 hits"),
         "{ok}"
     );
 }

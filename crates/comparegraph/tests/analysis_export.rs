@@ -125,7 +125,7 @@ fn analysed() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
             "--author",
             "me",
             "--searched",
-            "zzzqqq",
+            "memory zzzqqq",
         ])
         .assert()
         .success();

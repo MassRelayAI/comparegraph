@@ -250,6 +250,10 @@ impl Store {
     pub fn latest_done_run(&self, repo: RepoId) -> Result<Option<Run>> {
         Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE repo_id=?1 AND status='done' ORDER BY id DESC LIMIT 1", params![repo.0], row_to_run).optional()?)
     }
+    /// The latest done run of one provider at any version.
+    pub fn latest_done_run_by_provider(&self, repo: RepoId, provider: &str) -> Result<Option<Run>> {
+        Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE repo_id=?1 AND status='done' AND provider=?2 ORDER BY id DESC LIMIT 1", params![repo.0, provider], row_to_run).optional()?)
+    }
     /// The latest done run of one provider at one version (a run of another provider in between does not hide it).
     pub fn latest_done_run_of(&self, repo: RepoId, provider: &str, version: &str) -> Result<Option<Run>> {
         Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE repo_id=?1 AND status='done' AND provider=?2 AND provider_version=?3 ORDER BY id DESC LIMIT 1", params![repo.0, provider, version], row_to_run).optional()?)

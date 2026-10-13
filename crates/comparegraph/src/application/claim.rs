@@ -174,6 +174,7 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
     }
 
     let mut note = String::new();
+    let mut graph_absent = false;
     if i.verdict == "none" {
         if i.searched.is_some_and(|s| s.trim().is_empty()) {
             return invalid("--searched has no searchable term");
@@ -181,6 +182,21 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
         if let Some(terms_text) = i.searched {
             if super::search::fts_query_or(terms_text).is_none() {
                 return invalid("--searched has no searchable term");
+            }
+            let f = store
+                .features_of(&fam)?
+                .into_iter()
+                .find(|f| f.id == fid)
+                .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
+            let words = super::absent::feature_search_words(&f);
+            let named = super::communities::tokens(terms_text)
+                .iter()
+                .any(|t| words.iter().any(|w| w == t));
+            if !named {
+                return invalid(format!(
+                    "searched terms do not name the feature: \"{terms_text}\" has none of {}",
+                    words.join(", ")
+                ));
             }
             let terms: Vec<String> = terms_text
                 .split(|c: char| c.is_whitespace() || c == ',')
@@ -201,7 +217,7 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
                     sample.join(", ")
                 ));
             }
-            note = format!("searched: {terms_text} → 0 hits");
+            note = format!("searched (author-supplied): {terms_text} → 0 hits");
         } else {
             // no manual terms: the graph decides (four channels); a hit anywhere refuses, zero everywhere is `derived`
             let f = store
@@ -209,11 +225,13 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
                 .into_iter()
                 .find(|f| f.id == fid)
                 .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
-            let chk = super::absent::check_feature(&store, i.repo, run.0, &f)?;
+            let pin = super::absent::pinned_run(&store, i.repo)?;
+            let chk = super::absent::check_feature(&store, i.repo, pin.0, &pin.1, &f)?;
             if !chk.absent {
                 return invalid(chk.refusal());
             }
             note = chk.note();
+            graph_absent = true;
         }
     }
     if let Some(n) = i.note.filter(|n| !n.is_empty()) {
@@ -266,6 +284,8 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
 
     let confidence = if i.verdict == "unknown" {
         "unknown"
+    } else if graph_absent {
+        "inferred"
     } else {
         "derived"
     };

@@ -391,6 +391,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
             } else if matches!(cli.cmd, Cmd::Claim { .. }) {
                 match v["confidence"].as_str() {
                     Some("derived") => "derived",
+                    Some("inferred") => "inferred",
                     _ => "unknown",
                 }
             } else if let Some(c) = v["evidence_confidence"].as_str() {

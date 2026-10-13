@@ -40,6 +40,6 @@ Never cite lines you have not read.
 
 ## Graph-absent or manual
 `none` without `--searched` is the default: the engine searches the feature's terms itself and, only if all four channels
-are empty, records `derived` with the terms and the four counts in the note (`graph-absent: terms=...; channels=symbols:0,paths:0,communities:0,kinds:0`).
+are empty, records `inferred` (not `derived`: the check sees names, paths, community terms and kinds, never strings, flags, config keys, abbreviations or synonyms) with the terms, stems, four counts, run id and provider in the note (`graph-absent (names, paths, community terms, kinds; not strings, flags or config keys): terms=...; stems=...; channels=symbols:0,...; run=<id> provider=reference`). Terms match tokens by stem (`extract`~`extraction`). The check pins the latest `reference` run.
 Pass `--searched` when you disagree with the graph (it refuses on a path substring like `add` in `address`) or know a
-synonym the terms lack: that records a manual absence with your terms. There is no force flag. Absence is only as good as the terms: a clone that names the thing differently still reads as absent.
+synonym the terms lack: that records a manual absence with your terms; they must include at least one term or stem of the feature (else "searched terms do not name the feature"), and the note reads `searched (author-supplied): …`. There is no force flag. Absence is only as good as the terms: a clone that names the thing differently still reads as absent.

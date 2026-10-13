@@ -528,7 +528,7 @@ Usage: comparegraph impact [OPTIONS] <REPO> [QUALIFIED_NAME]
 | `relate` | Score each clone against each family and record the band. | `--repo`, `--family`, `--stored` (read, compute nothing) |
 | `map <REPO> <FAMILY>` | Candidate symbols and communities per feature. Writes nothing. | `--feature`, `--limit` (5) |
 | `absent-check <REPO> <FAMILY> <FEATURE>` | Is the feature absent from the graph? Counts and up to 5 hits over four channels: symbols, paths, community labels/keywords, node kinds the feature names. `data.absent` is true only when all four are zero. Reads only. | |
-| `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. `none` without `--searched` runs the absent check: all channels empty records it as `derived` (`graph-absent: terms=...; channels=...`), any hit refuses it and lists the candidates. `--searched` is the manual path. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family` |
+| `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. `none` without `--searched` runs the absent check: all channels empty records it as `inferred` (`graph-absent (names, paths, community terms, kinds; not strings, flags or config keys): ...`), any hit refuses it and lists the candidates. `--searched` is the manual path. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family` |
 | `claims` | Latest claim per clone and feature. | `--repo`, `--family`, `--feature`, `--history` |
 | `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family` |
 | `decisions` | Latest decision per scope. | `--repo`, `--history` |

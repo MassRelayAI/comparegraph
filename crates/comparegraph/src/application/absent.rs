@@ -3,15 +3,22 @@
 //! terms, the channels and the counts are the whole verdict and all of them are written into the claim note.
 //!
 //! Channels:
-//! - `symbols`: FTS prefix match (the same as `map`) OR an exact lowercase name, over node names/qualified names/paths.
-//! - `paths`: a lowercase SUBSTRING of a node's path for any term or path-segment form (`retry-backoff`,
+//! - `symbols`: FTS prefix match (the same as `map`), OR an exact lowercase name, OR a STEM match against the tokens of
+//!   a node's name: a term (or its suffix-stripped stem) and a token match when either is a prefix of the other and the
+//!   shorter has >= 4 chars (`extract`~`extraction`, `config`~`configuration`, `cach`~`cache`).
+//! - `paths`: a stem match against path tokens, OR a lowercase SUBSTRING of a node's path for any term or path-segment form (`retry-backoff`,
 //!   `retry_backoff`, `retrybackoff` of the slug tail); it sees what token-prefix FTS cannot (a term inside a token).
+//!   A directory name that holds a term refuses every file under it (over-refusal, documented).
 //! - `communities`: a community whose label tokens or keywords equal a term (the rule `map` uses).
 //! - `kinds`: node kinds the feature names. A feature is said to name a kind by a word of its group, slug tail or title
 //!   (never the definition): `route|routes|endpoint|endpoints` -> kind `route`; `test|tests|testing` -> kind `test`;
 //!   the words `mcp` + `tool|tools` (an MCP tool) -> kind `route` (a handler registered by name) OR any function,
 //!   method or class whose name or path carries `mcp` (the graph has no MCP-tool kind; this is the implementer set).
 //!   A feature naming no kind has an empty kinds channel (count 0).
+//!
+//! Coverage limit: names, paths, community terms and kinds only. Not strings, flags, config keys, abbreviations (`cfg`)
+//! or synonyms (`memoize`), so a graph-absent verdict is `inferred`, never `derived`. The check reads the latest done
+//! run of provider `reference` only.
 use super::communities::tokens;
 use super::map::feature_terms;
 use super::{AppError, Result};
@@ -48,12 +55,14 @@ pub struct AbsentCheck {
     pub family: String,
     pub feature: String,
     pub run_id: i64,
+    pub provider: String,
     pub terms: Vec<String>,
+    pub stems: Vec<String>,
     pub path_forms: Vec<String>,
     pub kinds_named: Vec<String>,
     pub channels: Channels,
     pub absent: bool,
-    /// `derived` when absent, `observed` when there are hits (the envelope lifts this into `evidence.confidence`)
+    /// `inferred` when absent (the graph cannot see strings, flags or abbreviations), `observed` when there are hits
     pub evidence_confidence: &'static str,
 }
 
@@ -61,12 +70,15 @@ impl AbsentCheck {
     pub fn note(&self) -> String {
         let c = &self.channels;
         format!(
-            "graph-absent: terms={}; channels=symbols:{},paths:{},communities:{},kinds:{}",
+            "graph-absent (names, paths, community terms, kinds; not strings, flags or config keys): terms={}; stems={}; channels=symbols:{},paths:{},communities:{},kinds:{}; run={} provider={}",
             self.terms.join(","),
+            self.stems.join(","),
             c.symbols.count,
             c.paths.count,
             c.communities.count,
-            c.kinds.count
+            c.kinds.count,
+            self.run_id,
+            self.provider
         )
     }
     pub fn total(&self) -> usize {
@@ -148,9 +160,6 @@ fn path_forms(f: &FeatureRow, terms: &[String]) -> Vec<String> {
     set.into_iter().collect()
 }
 
-fn like_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
-}
 
 fn hit_row(r: &rusqlite::Row, matched: Vec<String>) -> rusqlite::Result<AbsentHit> {
     Ok(AbsentHit {
@@ -162,30 +171,51 @@ fn hit_row(r: &rusqlite::Row, matched: Vec<String>) -> rusqlite::Result<AbsentHi
     })
 }
 
-fn symbols(c: &Connection, run: i64, terms: &[String]) -> Result<Channel> {
-    let mut ids: BTreeSet<i64> = BTreeSet::new();
-    if let Some(m) = super::search::fts_query_or(&terms.join(" ")) {
-        let mut st = c.prepare(
-            "SELECT n.id FROM node_fts JOIN node n ON n.id = node_fts.rowid WHERE node_fts MATCH ?1 AND n.run_id = ?2",
-        )?;
-        for r in st.query_map(params![m, run], |r| r.get::<_, i64>(0))? {
-            ids.insert(r?);
-        }
-    }
-    let mut ex = c.prepare("SELECT id FROM node WHERE run_id = ?1 AND lower(name) = ?2")?;
+/// Suffix-stripped forms of the terms (`extraction` -> `extract`, `caching` -> `cach`), kept when >= 4 chars and new.
+/// Returned as `(stem, term it came from)`.
+fn stems_of(terms: &[String]) -> Vec<(String, String)> {
+    const SUFFIXES: [&str; 11] = [
+        "ations", "ation", "ments", "ment", "ions", "ion", "ing", "ers", "er", "ed", "s",
+    ];
+    let mut out: Vec<(String, String)> = vec![];
     for t in terms {
-        for r in ex.query_map(params![run, t], |r| r.get::<_, i64>(0))? {
-            ids.insert(r?);
+        for suf in SUFFIXES {
+            if let Some(stem) = t.strip_suffix(suf) {
+                if stem.chars().count() >= 4 && !terms.contains(&stem.to_string()) {
+                    out.push((stem.to_string(), t.clone()));
+                }
+                break;
+            }
         }
     }
-    top(c, ids, |_| terms.to_vec())
+    out.sort();
+    out.dedup();
+    out
 }
 
-fn top(
-    c: &Connection,
-    ids: BTreeSet<i64>,
-    matched: impl Fn(&AbsentHit) -> Vec<String>,
-) -> Result<Channel> {
+/// A term (or stem) and a token match when equal, or when either is a prefix of the other and the shorter has >= 4 chars.
+fn stem_match(a: &str, b: &str) -> bool {
+    a == b
+        || (a.chars().count().min(b.chars().count()) >= 4 && (a.starts_with(b) || b.starts_with(a)))
+}
+
+/// The terms (not stems) that match any of the tokens, stems counted for the term they come from.
+fn matched_terms(toks: &[String], terms: &[String], stems: &[(String, String)]) -> Vec<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    for t in terms {
+        if toks.iter().any(|k| stem_match(t, k)) {
+            out.insert(t.clone());
+        }
+    }
+    for (st, t) in stems {
+        if toks.iter().any(|k| stem_match(st, k)) {
+            out.insert(t.clone());
+        }
+    }
+    out.into_iter().collect()
+}
+
+fn top(c: &Connection, ids: BTreeSet<i64>, matched: impl Fn(&AbsentHit) -> Vec<String>) -> Result<Channel> {
     let count = ids.len();
     let mut rows = vec![];
     let mut st = c.prepare("SELECT qualified_name, kind, path, line_start FROM node WHERE id = ?1")?;
@@ -200,7 +230,56 @@ fn top(
     Ok(Channel { count, hits: rows })
 }
 
-fn paths(c: &Connection, run: i64, forms: &[String]) -> Result<Channel> {
+fn hit_tokens(h: &AbsentHit) -> Vec<String> {
+    let mut t = tokens(&h.name);
+    t.extend(tokens(&h.path));
+    t
+}
+
+fn symbols(c: &Connection, run: i64, terms: &[String], stems: &[(String, String)]) -> Result<Channel> {
+    let mut ids: BTreeSet<i64> = BTreeSet::new();
+    if let Some(m) = super::search::fts_query_or(&terms.join(" ")) {
+        let mut st = c.prepare(
+            "SELECT n.id FROM node_fts JOIN node n ON n.id = node_fts.rowid WHERE node_fts MATCH ?1 AND n.run_id = ?2",
+        )?;
+        for r in st.query_map(params![m, run], |r| r.get::<_, i64>(0))? {
+            ids.insert(r?);
+        }
+    }
+    // exact lowercase name, and the stem match against the tokens of each node name
+    let mut st = c.prepare("SELECT id, name FROM node WHERE run_id = ?1")?;
+    let rows = st
+        .query_map(params![run], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let all: Vec<String> = terms.iter().cloned().chain(stems.iter().map(|s| s.0.clone())).collect();
+    for (id, name) in rows {
+        let lower = name.to_lowercase();
+        let toks = tokens(&name);
+        if all.iter().any(|t| *t == lower || toks.iter().any(|k| stem_match(t, k))) {
+            ids.insert(id);
+        }
+    }
+    let (terms, stems) = (terms.to_vec(), stems.to_vec());
+    top(c, ids, |h| {
+        let mut toks = hit_tokens(h);
+        toks.push(h.name.to_lowercase());
+        let mut m = matched_terms(&toks, &terms, &stems);
+        // FTS prefix hits: a term that is a prefix of a token or a substring of the name
+        for t in &terms {
+            if h.name.to_lowercase().contains(t.as_str()) && !m.contains(t) {
+                m.push(t.clone());
+            }
+        }
+        m.sort();
+        m
+    })
+}
+
+fn like_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+fn paths(c: &Connection, run: i64, forms: &[String], terms: &[String], stems: &[(String, String)]) -> Result<Channel> {
     let mut ids: BTreeSet<i64> = BTreeSet::new();
     let mut st = c.prepare("SELECT id FROM node WHERE run_id = ?1 AND lower(path) LIKE ?2 ESCAPE '\\'")?;
     for t in forms {
@@ -209,9 +288,28 @@ fn paths(c: &Connection, run: i64, forms: &[String]) -> Result<Channel> {
             ids.insert(r?);
         }
     }
-    let forms = forms.to_vec();
+    let mut st = c.prepare("SELECT id, path FROM node WHERE run_id = ?1")?;
+    let rows = st
+        .query_map(params![run], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut seen: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    for (id, path) in rows {
+        let hit = *seen.entry(path.clone()).or_insert_with(|| {
+            let toks = tokens(&path);
+            !matched_terms(&toks, terms, stems).is_empty()
+        });
+        if hit {
+            ids.insert(id);
+        }
+    }
+    let (forms, terms, stems) = (forms.to_vec(), terms.to_vec(), stems.to_vec());
     top(c, ids, |h| {
-        forms.iter().filter(|t| h.path.to_lowercase().contains(t.as_str())).cloned().collect()
+        let low = h.path.to_lowercase();
+        let mut m: BTreeSet<String> = matched_terms(&tokens(&h.path), &terms, &stems).into_iter().collect();
+        for f in forms.iter().filter(|f| low.contains(f.as_str())) {
+            m.insert(f.clone());
+        }
+        m.into_iter().collect()
     })
 }
 
@@ -266,8 +364,35 @@ fn communities(store: &Store, run: i64, terms: &[String]) -> Result<Channel> {
     Ok(Channel { count, hits })
 }
 
+/// The run both the check and the claim pin: the latest done run of provider `reference` (an external provider may have
+/// seen fewer files). Returns (run id, provider).
+pub(crate) fn pinned_run(store: &Store, repo: &str) -> Result<(i64, String)> {
+    let r = store
+        .repo_by_name(repo)?
+        .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
+    let run = store
+        .latest_done_run_by_provider(r.id.unwrap(), "reference")?
+        .ok_or_else(|| {
+            AppError::NotFound(format!("{repo} has no finished run of the reference provider; build it first"))
+        })?;
+    Ok((run.id.unwrap().0, run.provider))
+}
+
+/// The terms and the suffix-stripped stems a feature is searched with (the manual `--searched` path must name one).
+pub(crate) fn feature_search_words(f: &FeatureRow) -> Vec<String> {
+    let terms = feature_terms(f);
+    let stems = stems_of(&terms);
+    terms.into_iter().chain(stems.into_iter().map(|s| s.0)).collect()
+}
+
 /// The check on an open store for a feature row and a run; shared by `claim` and the verb.
-pub(crate) fn check_feature(store: &Store, repo: &str, run: i64, f: &FeatureRow) -> Result<AbsentCheck> {
+pub(crate) fn check_feature(
+    store: &Store,
+    repo: &str,
+    run: i64,
+    provider: &str,
+    f: &FeatureRow,
+) -> Result<AbsentCheck> {
     let terms = feature_terms(f);
     if terms.is_empty() {
         return Err(AppError::InvalidArguments(format!(
@@ -275,12 +400,13 @@ pub(crate) fn check_feature(store: &Store, repo: &str, run: i64, f: &FeatureRow)
             f.slug
         )));
     }
+    let stem_pairs = stems_of(&terms);
     let forms = path_forms(f, &terms);
     let (names, ks, mcp) = kinds_named(f);
     let c = store.conn();
     let channels = Channels {
-        symbols: symbols(c, run, &terms)?,
-        paths: paths(c, run, &forms)?,
+        symbols: symbols(c, run, &terms, &stem_pairs)?,
+        paths: paths(c, run, &forms, &terms, &stem_pairs)?,
         communities: communities(store, run, &terms)?,
         kinds: kinds(c, run, &ks, mcp)?,
     };
@@ -293,12 +419,14 @@ pub(crate) fn check_feature(store: &Store, repo: &str, run: i64, f: &FeatureRow)
         family: f.family.clone(),
         feature: f.slug.clone(),
         run_id: run,
+        provider: provider.into(),
         terms,
+        stems: stem_pairs.into_iter().map(|s| s.0).collect(),
         path_forms: forms,
         kinds_named: names,
         channels,
         absent,
-        evidence_confidence: if absent { "derived" } else { "observed" },
+        evidence_confidence: if absent { "inferred" } else { "observed" },
     })
 }
 
@@ -307,15 +435,7 @@ pub fn absent_check(root: &Path, repo: &str, family: &str, feature: &str) -> Res
     store
         .family_by_name(family)?
         .ok_or_else(|| AppError::NotFound(format!("no family named {family}")))?;
-    let r = store
-        .repo_by_name(repo)?
-        .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
-    let run = store
-        .latest_done_run(r.id.unwrap())?
-        .ok_or_else(|| AppError::NotFound(format!("{repo} has no finished run; build it first")))?
-        .id
-        .unwrap()
-        .0;
+    let (run, provider) = pinned_run(&store, repo)?;
     let f = store
         .features_of(family)?
         .into_iter()
@@ -324,5 +444,5 @@ pub fn absent_check(root: &Path, repo: &str, family: &str, feature: &str) -> Res
     if f.tier == "retired" {
         return Err(AppError::InvalidArguments(format!("feature {feature} is retired")));
     }
-    check_feature(&store, repo, run, &f)
+    check_feature(&store, repo, run, &provider, &f)
 }
