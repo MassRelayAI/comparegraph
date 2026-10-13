@@ -1,0 +1,3 @@
+# External providers shipped with this repository (docs/plugin-protocol.md).
+[providers.crg]
+command = "providers/crg/comparegraph-provider-crg"

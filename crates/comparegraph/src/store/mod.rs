@@ -233,6 +233,14 @@ impl Store {
         )?;
         Ok(())
     }
+    /// Replace a finished run's limitations (the multi-provider build adds its agreement rows this way); nothing else changes.
+    pub fn set_run_limitations(&self, id: RunId, limitations: &[Limitation]) -> Result<()> {
+        self.conn.execute(
+            "UPDATE run SET limitations_json=?2 WHERE id=?1",
+            params![id.0, serde_json::to_string(limitations).unwrap()],
+        )?;
+        Ok(())
+    }
     pub fn run(&self, id: RunId) -> Result<Option<Run>> {
         Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE id=?1", params![id.0], row_to_run).optional()?)
     }

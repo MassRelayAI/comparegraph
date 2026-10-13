@@ -1,4 +1,5 @@
 pub mod add;
+pub mod agreement;
 pub mod build;
 pub mod catalog;
 pub mod check;

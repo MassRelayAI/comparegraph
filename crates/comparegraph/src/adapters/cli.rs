@@ -48,6 +48,9 @@ pub enum Cmd {
         repo: String,
         #[arg(long, default_value = "reference")]
         provider: String,
+        /// build with several providers in turn (comma-separated, e.g. reference,crg) and score their agreement against the first
+        #[arg(long, value_delimiter = ',')]
+        providers: Vec<String>,
         #[arg(long, default_value_t = 1_048_576)]
         max_file_bytes: u64,
         #[arg(long, default_value_t = 50_000)]
@@ -447,9 +450,27 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         Cmd::Build {
             repo,
             provider,
+            providers,
             max_file_bytes,
             max_files,
             full,
+        } if !providers.is_empty() => {
+            let rep = crate::application::build::build_many(
+                &cli.root,
+                repo,
+                providers,
+                &BuildOptions { max_file_bytes: *max_file_bytes, max_files: *max_files, full: *full, ..BuildOptions::default() },
+            )?;
+            eprint!("{}", crate::application::agreement::table(&rep.agreement));
+            serde_json::to_value(rep).unwrap()
+        }
+        Cmd::Build {
+            repo,
+            provider,
+            max_file_bytes,
+            max_files,
+            full,
+            ..
         } => serde_json::to_value(build_repo(
             &cli.root,
             repo,

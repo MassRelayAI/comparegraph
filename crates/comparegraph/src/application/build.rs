@@ -247,3 +247,45 @@ fn try_reuse(
         reused: true,
     }))
 }
+
+/// `build --providers a,b,...`: every provider builds the same clone in the order given; the first run is the baseline and each
+/// later run is scored against it (`agreement`). The agreement rows below 0.8 are added to that later run's limitations.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MultiBuildReport {
+    pub runs: Vec<BuildReport>,
+    pub providers: Vec<String>,
+    pub agreement: Vec<super::agreement::AgreementRow>,
+    /// the last run's limitations, carried to the envelope
+    pub limitation_items: Vec<Limitation>,
+}
+
+pub fn build_many(root: &Path, repo_name: &str, providers: &[String], opts: &BuildOptions) -> Result<MultiBuildReport> {
+    if providers.is_empty() {
+        return Err(AppError::InvalidArguments("--providers needs at least one provider name".into()));
+    }
+    // validate every name before anything is built, so an unknown name leaves the store untouched
+    for p in providers {
+        if by_name_in(root, p).is_none() {
+            return Err(AppError::NotFound(format!("no provider '{p}'")));
+        }
+    }
+    let mut runs: Vec<BuildReport> = Vec::new();
+    let mut agreement = Vec::new();
+    for p in providers {
+        let mut rep = build_repo(root, repo_name, p, opts)?;
+        if let Some(base) = runs.first() {
+            let store = Store::open(root)?;
+            let rows = super::agreement::compute(&store, base.run, rep.run, &providers[0], p)?;
+            let lims = super::agreement::limitations(&rows);
+            if !lims.is_empty() {
+                rep.limitation_items.extend(lims);
+                rep.limitations = rep.limitation_items.len();
+                store.set_run_limitations(rep.run, &rep.limitation_items)?;
+            }
+            agreement.extend(rows);
+        }
+        runs.push(rep);
+    }
+    let limitation_items = runs.last().map(|r| r.limitation_items.clone()).unwrap_or_default();
+    Ok(MultiBuildReport { runs, providers: providers.to_vec(), agreement, limitation_items })
+}

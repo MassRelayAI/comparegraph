@@ -33,7 +33,7 @@ Environment: `COMPAREGRAPH_REPO_ROOT` (build only), `COMPAREGRAPH_NETWORK`. No a
 
 | request | `data` of the `{"ok":true,"data":…}` answer |
 |---|---|
-| `{"comparegraph":"1","op":"capabilities"}` | `{"languages":[…],"edge_kinds":[…],"communities":false,"embeddings":false}` |
+| `{"comparegraph":"1","op":"capabilities"}` | `{"languages":[…],"edge_kinds":[…],"communities":false,"embeddings":false}`; optional `"unavailable":"<reason and install hint>"` when the plugin's own engine is missing |
 | `{"comparegraph":"1","op":"build","repo_root":"/abs/clone","options":{"max_file_bytes":1048576,"max_files":50000,"full":false}}` | `{"nodes":[…],"edges":[…],"limitations":[…],"files_seen":n,"files_parsed":n}` (the two counts are optional) |
 
 * node: `kind` (file, module, class, function, method, type, route, test), `name`, `qualified_name`, `path`,
@@ -44,6 +44,11 @@ Environment: `COMPAREGRAPH_REPO_ROOT` (build only), `COMPAREGRAPH_NETWORK`. No a
 * A row with an unknown kind is dropped; one `unknown_kind` limitation counts them.
 * Failure: `{"ok":false,"error":{"code":"…","message":"…"}}`.
 * Progress: any number of `{"progress":{"files":n}}` lines before the answer; they are counted, not stored.
+
+## An engine that is not installed
+A plugin that wraps another tool answers `capabilities` with `"unavailable": "<reason>"` when that tool is missing. `doctor` shows
+the reason on the provider's row (`unavailable`), and `build` refuses before it starts a run (`provider_unavailable`, no run row).
+The shipped example is `providers/crg/` (the code-review-graph adapter; `comparegraph.toml` at the repository root registers it).
 
 ## Limits and failure
 Timeout 1800 s (`COMPAREGRAPH_PLUGIN_TIMEOUT`, whole seconds; an unparsable value or `0` is refused before the run, never

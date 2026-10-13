@@ -68,6 +68,9 @@ pub struct ExternalInfo {
     pub command: String,
     pub manifest: String,
     pub conformance: serde_json::Value,
+    /// the plugin's own `unavailable` reason from `capabilities` (e.g. its engine is not installed); absent when it is usable
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable: Option<String>,
 }
 
 fn unquote(v: &str) -> String {
@@ -187,7 +190,8 @@ impl ExternalProvider {
                     .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
                     .map(|v| serde_json::json!({ "passed": v["passed"], "fixtures": v["fixtures"].as_array().map(|a| a.len()) }))
                     .unwrap_or(serde_json::Value::Null);
-                ExternalInfo { name: p.name.clone(), command: p.command.display().to_string(), manifest: p.manifest_state(), conformance }
+                let unavailable = p.unavailable_reason();
+                ExternalInfo { name: p.name.clone(), command: p.command.display().to_string(), manifest: p.manifest_state(), conformance, unavailable }
             })
             .collect()
     }
@@ -226,6 +230,13 @@ impl ExternalProvider {
         } else {
             Err(format!("{0} has no passing conformance result: run `comparegraph conform {0}` first, or pass --allow-unverified", self.name))
         }
+    }
+
+    /// A plugin whose engine is missing answers `capabilities` with `"unavailable": "<reason + install hint>"`; `doctor` shows it
+    /// and `build` refuses before it starts a run. `None` when the plugin is usable, or cannot be asked (unverified, not runnable).
+    pub fn unavailable_reason(&self) -> Option<String> {
+        let (d, _) = self.exchange(serde_json::json!({ "comparegraph": PROTOCOL, "op": "capabilities" }), None).ok()?;
+        d["unavailable"].as_str().filter(|s| !s.is_empty()).map(String::from)
     }
 
     fn unavailable(&self, why: impl Into<String>) -> ProviderError {
@@ -417,7 +428,11 @@ impl GraphProvider for ExternalProvider {
         let (installed, detail) = if !self.command.is_file() {
             (false, format!("{} not found", self.command.display()))
         } else {
-            match self.allowed().and_then(|_| timeout_secs().map(|_| ())).and_then(|_| self.conformed()) {
+            let engine = match self.allowed() {
+                Ok(()) => self.unavailable_reason().map_or(Ok(()), Err),
+                Err(e) => Err(e),
+            };
+            match engine.and_then(|_| timeout_secs().map(|_| ())).and_then(|_| self.conformed()) {
                 Ok(()) => (true, format!("external, protocol {PROTOCOL}: {}", self.command.display())),
                 Err(e) => (false, e),
             }

@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""comparegraph-provider-crg: the code-review-graph adapter (plugin protocol v1, docs/plugin-protocol.md).
+
+Stdlib only. It needs `code-review-graph` (PyPI, tested with 2.3.9) in the user's environment; without it `capabilities`
+answers with an `unavailable` reason and `build` fails with the install hint. code-review-graph refuses a directory without a
+.git (and writes its store inside the repo), so `build` indexes a COPY of the repo in a temp dir, reads the SQLite store and
+emits our node and edge kinds. Kind mapping: scripts/compare-engines.sh header.
+
+Environment: COMPAREGRAPH_REPO_ROOT / the request's repo_root; COMPAREGRAPH_CRG_BIN (the executable, default
+`code-review-graph` on PATH); COMPAREGRAPH_PLUGIN_TIMEOUT (seconds; bounds the crg run).
+
+Confidence rule (plan 6, review focus 5). crg marks nearly every edge 1.0; we do not copy that. An edge is stored at 1.0 only
+when we could resolve the same edge from evidence: a containment, an import between two indexed files, a call whose target is
+defined in the caller's own file or in a file the caller imports, an inheritance target crg bound to an indexed class or type,
+a test link whose test file imports the tested file. A name-only target (a call into a file the caller does not import, a
+bare base-class name bound by being the only class of that name, a test link without the import) is stored at 0.5. A target
+that is not an indexed node is dropped and counted in a limitation, except one bare name crg left unresolved: it is bound (at 0.5)
+when exactly one symbol of that name is indexed, the call text is not `obj.name(`, and that symbol sits in the caller's file, in a
+file it imports, or in its Go package. Gold: this raises recall on every project and keeps precision at or above crg's own.
+"""
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+
+INSTALL_HINT = "code-review-graph is not installed: install code-review-graph (pip install code-review-graph==2.3.9) and put it on PATH or set COMPAREGRAPH_CRG_BIN"
+LANGUAGES = ["python", "typescript", "javascript", "tsx", "go", "rust", "java", "kotlin", "c", "cpp", "csharp", "ruby", "php", "swift", "scala", "bash", "lua", "dart"]
+EDGE_KINDS = ["contains", "imports", "calls", "implements", "extends", "tests"]
+KIND_MAP = {"CALLS": "calls", "IMPORTS_FROM": "imports", "CONTAINS": "contains", "INHERITS": "extends", "IMPLEMENTS": "implements", "TESTED_BY": "tests"}
+
+
+def say(obj):
+    sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+def fail(code, message):
+    say({"ok": False, "error": {"code": code, "message": message}})
+    sys.exit(0)
+
+
+def crg_bin():
+    b = os.environ.get("COMPAREGRAPH_CRG_BIN") or "code-review-graph"
+    return shutil.which(b)
+
+
+def crg_version(b):
+    try:
+        r = subprocess.run([b, "--version"], capture_output=True, text=True, timeout=30)
+        m = re.search(r"\d+\.\d+\.\d+", r.stdout + r.stderr)
+        return m.group(0) if m else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def timeout_secs():
+    try:
+        v = int(os.environ.get("COMPAREGRAPH_PLUGIN_TIMEOUT", "1800"))
+        return max(v - 10, 5)
+    except ValueError:
+        return 1790
+
+
+def rel_of(root, p):
+    return os.path.relpath(p, root) if os.path.isabs(p) else p
+
+
+def convert(db_path, root):
+    """crg SQLite -> (nodes, edges, limitations, files_in_db)"""
+    db = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True)
+    rows = list(db.execute("select qualified_name,kind,name,file_path,parent_name,line_start,line_end,language,is_test,file_hash,id from nodes"))
+    rows.sort(key=lambda r: (rel_of(root, r[3]), r[5] or 0, r[10]))
+    cmap = {}      # crg qualified_name -> (our qn, our kind, rel path)
+    nodes = []
+    seen = {}
+    for q, k, nm, fp, parent, ls, le, lang, is_test, fh, _id in rows:
+        rel = rel_of(root, fp)
+        if k == "File":
+            kind = "test" if is_test else "file"
+            qn, name = rel, os.path.basename(rel)
+        else:
+            kind = {"Class": "class", "Type": "type"}.get(k) or ("method" if parent else "function")
+            name = nm
+            n = seen.get((rel, name), 0) + 1
+            seen[(rel, name)] = n
+            qn = "%s::%s" % (rel, name) if n == 1 else "%s::%s#%d" % (rel, name, n)
+        cmap[q] = (qn, kind, rel)
+        node = {"kind": kind, "name": name, "qualified_name": qn, "path": rel, "language": (lang or "").lower()}
+        if ls is not None and le is not None:
+            node["line_start"], node["line_end"] = ls, le
+        if fh:
+            node["content_hash"] = fh
+        nodes.append(node)
+    file_of = {qn: rel for (qn, kind, rel) in cmap.values()}
+    by_class = {}
+    for q, (qn, kind, rel) in cmap.items():
+        if kind in ("class", "type"):
+            by_class.setdefault(qn.split("::", 1)[1].split("#")[0], []).append(qn)
+    raw_full = list(db.execute("select kind,source_qualified,target_qualified,file_path,line from edges"))
+    raw = [r[:3] for r in raw_full]
+    # import evidence first: (source file, target file) pairs crg resolved
+    imports = set()
+    for k, s, t in raw:
+        if k == "IMPORTS_FROM" and s in cmap and t in cmap:
+            imports.add((cmap[s][2], cmap[t][2]))
+    # a bare name crg left unresolved is bound only when exactly one function, method, class or type of that name is indexed
+    by_name = {}
+    for q, (qn, kind, rel) in cmap.items():
+        if kind in ("function", "method", "class", "type"):
+            by_name.setdefault(qn.split("::", 1)[1].split("#")[0], []).append(qn)
+    qn_file = {qn: rel for (qn, kind, rel) in cmap.values()}
+    qn_kind = {qn: kind for (qn, kind, rel) in cmap.values()}
+    node_of = {n["qualified_name"]: n for n in nodes}
+    src_line = {}
+
+    def header(qn):
+        """the declaration text of a class node (its first lines up to the first `{`), to tell implements from extends"""
+        if qn not in src_line:
+            n = node_of.get(qn)
+            txt = ""
+            if n and n.get("line_start"):
+                try:
+                    with open(os.path.join(root, n["path"]), errors="replace") as fh:
+                        ls = fh.read().splitlines()[n["line_start"] - 1:n["line_start"] + 3]
+                    txt = " ".join(ls).split("{")[0]
+                except OSError:
+                    pass
+            src_line[qn] = txt
+        return src_line[qn]
+
+    lines_cache = {}
+
+    def text_at(fp, line):
+        if fp not in lines_cache:
+            try:
+                with open(fp, errors="replace") as fh:
+                    lines_cache[fp] = fh.read().splitlines()
+            except OSError:
+                lines_cache[fp] = []
+        ls = lines_cache[fp]
+        return ls[line - 1] if line and 0 < line <= len(ls) else ""
+
+    edges = {}
+    dropped = {}
+    bound = 0
+    name_only = 0
+    unmapped = {}
+
+    def put(kind, s, t, c):
+        key = (kind, s, t)
+        if key not in edges or c > edges[key]:
+            edges[key] = c
+
+    for q, (qn, kind, rel) in sorted(cmap.items(), key=lambda kv: kv[1][0]):
+        if kind not in ("file", "test"):
+            put("contains", rel, qn, 1.0)       # our containment is file -> symbol, also for methods
+
+    def resolve(x, kind, sf, site):
+        if x in cmap:
+            return cmap[x][0], True
+        cand = by_name.get(x.split("::")[-1].split(".")[-1], [])
+        if len(cand) != 1:
+            return None, False
+        if kind not in ("extends", "implements"):
+            if not re.search(r"(?:(?<![\w.$:>])|(?<=\bthis\.)|(?<=\bself\.))%s\s*\(" % re.escape(x.split("::")[-1].split(".")[-1]), site):
+                return None, False      # a call on another receiver (`obj.name(`) has an unknown receiver: bind nothing; `this.`/`self.` is the caller's own class
+            tf = qn_file[cand[0]]
+            same_pkg = sf.endswith(".go") and tf.endswith(".go") and os.path.dirname(sf) == os.path.dirname(tf)
+            if not (sf == tf or (sf, tf) in imports or same_pkg):
+                return None, False      # evidence: the candidate sits in the caller's file, in a file it imports, or in its Go package
+        return cand[0], False
+
+    for k, s, t, efp, eline in raw_full:
+        ours = KIND_MAP.get(k)
+        if ours is None:
+            unmapped[k] = unmapped.get(k, 0) + 1
+            continue
+        if ours == "contains":
+            continue
+        if ours == "tests":
+            s, t = t, s       # TESTED_BY goes prod -> test; ours is test -> prod
+        if s not in cmap:
+            dropped[ours] = dropped.get(ours, 0) + 1
+            continue
+        sq = cmap[s][0]
+        sf = cmap[s][2]
+        tq, direct = resolve(t, ours, sf, text_at(efp, eline))
+        if tq is None or (ours == "imports" and not direct):
+            dropped[ours] = dropped.get(ours, 0) + 1
+            continue
+        tf = qn_file[tq]
+        if not direct:
+            bound += 1
+        evidence = sf == tf or (sf, tf) in imports
+        if ours == "imports":
+            c = 1.0
+        elif ours in ("calls", "tests"):
+            c = 1.0 if (direct and evidence) else 0.5
+        else:
+            c = 1.0 if ((direct or evidence) and tq != sq) else 0.5
+        if ours in ("extends", "implements"):
+            m = re.search(r"\bimplements\b(.*)", header(sq))
+            if m and re.search(r"\b%s\b" % re.escape(tq.split("::", 1)[1].split("#")[0]), m.group(1)):
+                ours = "implements"
+        if c < 1.0:
+            name_only += 1
+        put(ours, sq, tq, c)
+    # a symbol-level test link also links the two files (our reference does the same)
+    for (k, s, t), c in list(edges.items()):
+        if k == "tests" and qn_kind.get(s) not in ("file", "test") and qn_file[s] != qn_file[t]:
+            put("tests", qn_file[s], qn_file[t], c)
+    limitations = []
+    if dropped:
+        limitations.append({"code": "crg_unresolved_dropped", "detail": "%d crg edge(s) dropped, target (or source) is not an indexed node: %s" % (sum(dropped.values()), ", ".join("%s %d" % kv for kv in sorted(dropped.items())))})
+    if bound:
+        limitations.append({"code": "crg_name_bound", "detail": "%d edge(s) whose bare target name crg left unresolved were bound to the one indexed symbol of that name" % bound})
+    if name_only:
+        limitations.append({"code": "crg_name_only", "detail": "%d edge(s) stored at 0.5: the target is bound by name alone, or crg resolved it but no import or same-file evidence backs it" % name_only})
+    if unmapped:
+        limitations.append({"code": "crg_unmapped_kinds", "detail": "crg edge kinds with no counterpart here, not emitted: " + ", ".join("%s %d" % kv for kv in sorted(unmapped.items()))})
+    out_edges = [{"kind": k, "source_qn": s, "target_qn": t, "confidence": c} for (k, s, t), c in sorted(edges.items())]
+    nodes.sort(key=lambda n: (n["path"], n.get("line_start", 0), n["kind"], n["qualified_name"]))
+    return nodes, out_edges, limitations, sum(1 for n in nodes if n["kind"] in ("file", "test"))
+
+
+def build(req):
+    b = crg_bin()
+    if not b:
+        fail("provider_unavailable", INSTALL_HINT)
+    root = os.path.realpath(req["repo_root"])
+    tmp = tempfile.mkdtemp(prefix="cg-crg-")
+    try:
+        work = os.path.join(tmp, "work")
+        shutil.copytree(root, work, symlinks=True, ignore=shutil.ignore_patterns(".code-review-graph"), ignore_dangling_symlinks=True)
+        if not os.path.exists(os.path.join(work, ".git")):
+            os.mkdir(os.path.join(work, ".git"))      # crg refuses a directory that is not a project root
+        say({"progress": {"files": 0}})
+        try:
+            r = subprocess.run([b, "build", "--repo", work], capture_output=True, text=True, timeout=timeout_secs(), cwd=tmp)
+        except subprocess.TimeoutExpired:
+            fail("timeout", "code-review-graph build exceeded the time limit")
+        if r.returncode != 0:
+            fail("crg_failed", "code-review-graph build exited %d: %s" % (r.returncode, (r.stderr or r.stdout).strip()[-400:]))
+        db_path = os.path.join(work, ".code-review-graph", "graph.db")
+        if not os.path.isfile(db_path):
+            fail("crg_failed", "code-review-graph wrote no .code-review-graph/graph.db")
+        nodes, edges, limitations, in_db = convert(db_path, os.path.realpath(work))
+        m = re.search(r"(\d+) files", r.stdout + "\n" + r.stderr)
+        parsed = int(m.group(1)) if m else in_db
+        if not m:
+            limitations.append({"code": "files_count_inferred", "detail": "code-review-graph printed no file count; %d taken from its File nodes" % in_db})
+        say({"progress": {"files": parsed}})
+        say({"ok": True, "data": {"nodes": nodes, "edges": edges, "limitations": limitations, "files_seen": parsed, "files_parsed": parsed}})
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def main():
+    line = sys.stdin.readline()
+    try:
+        req = json.loads(line)
+    except ValueError:
+        fail("bad_request", "request is not JSON")
+    op = req.get("op")
+    if op == "capabilities":
+        data = {"languages": LANGUAGES, "edge_kinds": EDGE_KINDS, "communities": False, "embeddings": False}
+        b = crg_bin()
+        if b:
+            data["engine"] = "code-review-graph " + crg_version(b)
+        else:
+            data["unavailable"] = INSTALL_HINT
+        say({"ok": True, "data": data})
+    elif op == "build":
+        build(req)
+    else:
+        fail("bad_request", "unknown op %r" % op)
+
+
+if __name__ == "__main__":
+    main()
