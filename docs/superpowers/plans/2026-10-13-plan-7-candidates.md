@@ -53,3 +53,23 @@ recall on that consumer's languages with precision ≥ 0.96 (the same bar as Pla
 - **Port kit export.** For an adopted feature: the files, line ranges, licence text and attribution header a coding agent needs
   to take the module whole. This is the "systematic adopt" the maintainer asked about — a feature, not a skill: the method skill
   `using-comparegraph` already carries the workflow, and the adoption criteria stay the user's.
+
+## Left behind by Plan 7 lane 1 (the maintainer, 2026-10-13: "we can do those as well — nice to have")
+
+- **A text channel in the store.** The mapping-gold improvement task (IMP) doubled `map` recall but stalled on the held-out
+  copies at precision@5 0.038 / recall@5 0.149 (target 0.30 / 0.50; `docs/reports/2026-10-14-mapping-gold-first-measurement.md`,
+  "After IMP"). Diagnosis measured on the held-out copies: a gold location is inside the top 200 candidates for only 30 to
+  47 percent of features, because the store holds only symbol names, paths and community keywords. A feature word that is in no
+  symbol name cannot be found by any ranking. The lane: the reference provider also records the tokens of a symbol's doc
+  comment and signature (a `doc_tokens` column or table, per node), the build hash gate re-baselined once with the reason
+  recorded, `map` and `absent-check` gain a `doc` channel with its own weight tuned on the TUNE split and measured once on
+  HOLD-OUT. Stop condition: held-out recall@5 ≥ 0.50 at precision@5 ≥ 0.30, or the measured ceiling written down.
+- **A synonym channel.** Absent recall is held at 1/19 by spelling and synonym gaps (`visualisation`/`visualization`,
+  `lookup` for `fuzzy-name`): every stricter cutoff that added an absent call added a wrong one. A small, committed synonym
+  table per family pack (data, reviewed like the rows) rather than an embedding model, so the verdict stays computable
+  without a model. Measured on the same gold; absent precision must stay ≥ 0.95.
+- **A larger tuning set.** Three small clones (about 90 gold locations) chose the IMP parameters; the formula sits on a
+  plateau on them but that is not proof of transfer. Two more labelled clones in the TUNE split before the next tuning round.
+- **Ranking cost on large runs.** The IMP ranking loads every node of a run with its tokens: on a 454k-node run `map` took
+  61 s and 677 MB where the FTS path took 12 s and 27 MB. A fix round of lane 1 addresses it (inverted token index, candidate
+  pool per term, one index per run shared by `relate`); if the cost cannot be brought near the FTS path it becomes a lane.
