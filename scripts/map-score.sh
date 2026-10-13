@@ -77,7 +77,7 @@ if has_absent == "1":
     for line in open(ws + "/.absent.jsonl"):
         f, _, js = line.rstrip("\n").partition("\t")
         try:
-            d = json.loads(js).get("data", {})
+            d = json.loads(js).get("data") or {}
         except ValueError:
             continue
         checks[f] = bool(d.get("absent")) or d.get("verdict") == "absent"
