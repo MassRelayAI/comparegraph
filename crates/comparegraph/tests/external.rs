@@ -49,8 +49,15 @@ fn manifest(dir: &Path) {
     )
     .unwrap();
 }
-/// a workspace whose comparegraph.toml points `fake` at `cmd`
+/// a workspace whose comparegraph.toml points `fake` at `cmd`, with a passing conformance result on file
 fn ws(cmd: &Path) -> tempfile::TempDir {
+    let w = ws_raw(cmd);
+    std::fs::create_dir_all(w.path().join(".comparegraph")).unwrap();
+    std::fs::write(w.path().join(".comparegraph/conform-fake.json"), r#"{"passed":true,"fixtures":[]}"#).unwrap();
+    w
+}
+/// the same without any conformance result
+fn ws_raw(cmd: &Path) -> tempfile::TempDir {
     let w = tempfile::tempdir().unwrap();
     std::fs::write(w.path().join("comparegraph.toml"), format!("[providers.fake]\ncommand = \"{}\"\n", cmd.display())).unwrap();
     w
@@ -187,7 +194,7 @@ fn doctor_lists_it_and_conform_runs_the_fixtures_through_it() {
     let tools = tempfile::tempdir().unwrap();
     let cmd = script(tools.path(), "p", GOOD);
     manifest(tools.path());
-    let w = ws(&cmd);
+    let w = ws_raw(&cmd);
     let doctor = |w: &Path| json(&cc(w).args(["doctor"]).assert().success().get_output().stdout);
     let d = doctor(w.path());
     let ext = &d["data"]["external_providers"][0];
@@ -212,7 +219,7 @@ fn a_provider_that_misses_the_floors_fails_conform_with_the_shape_intact() {
     let body = "#!/bin/sh\ncat >/dev/null\necho '{\"ok\":true,\"data\":{\"nodes\":[{\"kind\":\"function\",\"qualified_name\":\"m.ts::zzz\",\"path\":\"m.ts\"}],\"edges\":[]}}'\n";
     let cmd = script(tools.path(), "p", body);
     manifest(tools.path());
-    let w = ws(&cmd);
+    let w = ws_raw(&cmd);
     let fx = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(fx.path().join("one")).unwrap();
     std::fs::write(fx.path().join("one/expected.json"), r#"{"nodes":["m.ts::a"],"edges":["calls m.ts::a m.ts::a"]}"#).unwrap();
@@ -223,4 +230,100 @@ fn a_provider_that_misses_the_floors_fails_conform_with_the_shape_intact() {
     let rep: serde_json::Value = serde_json::from_str(&rep).unwrap();
     assert_eq!(rep["passed"], false);
     assert_eq!(rep["fixtures"][0]["nodes"]["matched"], 0);
+}
+
+fn hostile(extra_env: &[(&str, &str)], body: &str) -> (tempfile::TempDir, std::process::Output, std::time::Duration) {
+    let tools = tempfile::tempdir().unwrap();
+    let cmd = script(tools.path(), "p", body);
+    manifest(tools.path());
+    let w = ws(&cmd);
+    let _c = added(w.path());
+    let mut b = std::process::Command::new(assert_cmd::cargo::cargo_bin("comparegraph"));
+    b.arg("--root").arg(w.path()).args(["build", "a", "--provider", "fake"]);
+    for (k, v) in extra_env {
+        b.env(k, v);
+    }
+    let t = std::time::Instant::now();
+    let out = b.output().unwrap();
+    let el = t.elapsed();
+    drop(tools);
+    (w, out, el)
+}
+
+#[test]
+fn eof_then_a_live_child_is_killed_within_the_timeout() {
+    let (w, out, el) = hostile(&[("COMPAREGRAPH_PLUGIN_TIMEOUT", "3")], "#!/bin/sh\nexec >&-\nsleep 20\n");
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(text.contains("provider_unavailable") && text.contains("kept running"), "{text}");
+    assert!(el < std::time::Duration::from_secs(8), "took {el:?}");
+    let _ = w;
+}
+
+#[test]
+fn a_grandchild_holding_stderr_does_not_block_a_non_zero_exit() {
+    let (_w, out, el) = hostile(&[("COMPAREGRAPH_PLUGIN_TIMEOUT", "30")], "#!/bin/sh\necho '{\"ok\":true,\"data\":{}}'\n(sleep 17.4242 >/dev/null &)\nexit 3\n");
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(text.contains("provider_unavailable") && text.contains("exited with"), "{text}");
+    assert!(el < std::time::Duration::from_secs(8), "took {el:?}");
+    let _ = Sys::new("pkill").args(["-x", "-f", "sleep 17.4242"]).status();
+}
+
+#[test]
+fn hostile_paths_are_dropped_with_their_edges_and_counted() {
+    let body = r#"#!/usr/bin/env python3
+import json, sys
+sys.stdin.readline()
+n = lambda qn, p: {"kind": "function", "name": "x", "qualified_name": qn, "path": p, "language": "x"}
+nodes = [n("ok::a", "src/a.ts"), n("bad::1", "../../etc/passwd"), n("bad::2", "/etc/shadow"), n("bad::3", "a\\..\\b"), n("bad::4", "a\u0000b")]
+edges = [{"kind": "calls", "source_qn": "ok::a", "target_qn": "bad::1", "confidence": 1}]
+print(json.dumps({"ok": True, "data": {"nodes": nodes, "edges": edges, "files_parsed": 1}}))
+"#;
+    let tools = tempfile::tempdir().unwrap();
+    let cmd = script(tools.path(), "p", body);
+    manifest(tools.path());
+    let w = ws(&cmd);
+    let _c = added(w.path());
+    let out = cc(w.path()).args(["build", "a", "--provider", "fake"]).assert().success().get_output().stdout.clone();
+    let text = String::from_utf8_lossy(&out).to_string();
+    let v = json(&out);
+    assert_eq!(v["data"]["nodes"], 1, "{text}");
+    assert_eq!(v["data"]["edges"], 0, "{text}");
+    assert!(text.contains("bad_path") && text.contains("5 node(s)/edge(s)"), "{text}");
+}
+
+#[test]
+fn a_line_longer_than_the_cap_fails_unavailable_without_buffering_it() {
+    let (_w, out, _) = hostile(&[("COMPAREGRAPH_PLUGIN_OUTPUT_CAP", "1000")], "#!/usr/bin/env python3\nimport sys\nsys.stdin.readline()\nsys.stdout.write('x' * 100000)\nsys.stdout.flush()\n");
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(text.contains("provider_unavailable") && text.contains("cap"), "{text}");
+}
+
+#[test]
+fn a_bad_timeout_value_is_refused_before_the_run() {
+    for v in ["abc", "0"] {
+        let (w, out, _) = hostile(&[("COMPAREGRAPH_PLUGIN_TIMEOUT", v)], GOOD);
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(text.contains("provider_unavailable") && text.contains("COMPAREGRAPH_PLUGIN_TIMEOUT"), "{text}");
+        assert_eq!(runs(w.path()), 0, "refused before a run row exists");
+    }
+}
+
+#[test]
+fn build_needs_a_passing_conformance_unless_allowed() {
+    let tools = tempfile::tempdir().unwrap();
+    let cmd = script(tools.path(), "p", GOOD);
+    manifest(tools.path());
+    let w = ws_raw(&cmd);
+    let _c = added(w.path());
+    let out = cc(w.path()).args(["build", "a", "--provider", "fake"]).assert().failure().get_output().stdout.clone();
+    let text = String::from_utf8_lossy(&out).to_string();
+    assert!(text.contains("conform fake"), "{text}");
+    assert_eq!(runs(w.path()), 0);
+    // a failing result does not open the gate either
+    std::fs::create_dir_all(w.path().join(".comparegraph")).unwrap();
+    std::fs::write(w.path().join(".comparegraph/conform-fake.json"), r#"{"passed":false}"#).unwrap();
+    cc(w.path()).args(["build", "a", "--provider", "fake"]).assert().failure();
+    cc(w.path()).args(["--allow-unverified", "build", "a", "--provider", "fake"]).assert().success();
+    std::fs::write(w.path().join(".comparegraph/conform-fake.json"), r#"{"passed":true}"#).unwrap();
+    cc(w.path()).args(["build", "a", "--provider", "fake"]).assert().success();
 }

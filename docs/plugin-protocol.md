@@ -46,9 +46,27 @@ Environment: `COMPAREGRAPH_REPO_ROOT` (build only), `COMPAREGRAPH_NETWORK`. No a
 * Progress: any number of `{"progress":{"files":n}}` lines before the answer; they are counted, not stored.
 
 ## Limits and failure
-Timeout 1800 s (`COMPAREGRAPH_PLUGIN_TIMEOUT`, seconds), stdout cap 256 MiB. A timeout, a line that is not JSON, an oversize
-output, an `ok:false` answer, or a non-zero exit all become `provider_unavailable`: the child is killed, no run row is
-written and the store is untouched.
+Timeout 1800 s (`COMPAREGRAPH_PLUGIN_TIMEOUT`, whole seconds; an unparsable value or `0` is refused before the run, never
+defaulted), stdout cap 256 MiB (enforced while a line is read, so one endless line is never buffered). A timeout, a line that
+is not JSON, an oversize output, an `ok:false` answer, a stdout that closes while the process keeps running (it is killed
+after a 2 s grace), or a non-zero exit all become `provider_unavailable`. The child's whole process group is killed. No nodes,
+edges or communities are written.
+
+Which cases leave a run row: once the build has started, a failure writes a `failed` run row whose limitation is
+`provider_unavailable` (timeout, garbage, oversize, `ok:false`, exit, EOF). Failures that happen before the row exists leave
+none: a missing binary, an unverified manifest or protocol mismatch, no passing conformance result, a bad
+`COMPAREGRAPH_PLUGIN_TIMEOUT`.
+
+A valid answer with no files is `empty_build`, not `provider_unavailable`. The plugin's own `files_seen`/`files_parsed` are
+taken as given; when `files_parsed` is absent it is inferred from the file nodes and a `files_parsed_inferred` limitation says so.
+
+Paths: a node whose `path` is absolute, has a `..` segment (`/` or `\\`), a NUL or a drive letter is dropped, as are edges to
+it; one `bad_path` limitation counts them.
+
+## Conformance gate
+An external provider is listed by `doctor` but `build` refuses it until `comparegraph conform <name>` has written a passing
+`.comparegraph/conform-<name>.json`; `--allow-unverified` (or `COMPAREGRAPH_ALLOW_UNVERIFIED=1`) waives both this and the
+manifest requirement. `conform` itself always runs.
 
 ## Example exchange
 ```

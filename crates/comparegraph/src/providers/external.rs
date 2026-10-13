@@ -16,6 +16,31 @@ pub const BIN_PREFIX: &str = "comparegraph-provider-";
 const DEFAULT_TIMEOUT_SECS: u64 = 1800;
 const OUTPUT_CAP: usize = 256 * 1024 * 1024;
 
+/// stdout byte cap; `COMPAREGRAPH_PLUGIN_OUTPUT_CAP` (bytes) lowers it, which the tests use.
+fn output_cap() -> usize {
+    std::env::var("COMPAREGRAPH_PLUGIN_OUTPUT_CAP").ok().and_then(|v| v.parse().ok()).unwrap_or(OUTPUT_CAP)
+}
+
+/// `COMPAREGRAPH_PLUGIN_TIMEOUT` in seconds: unset = 1800; unparsable or zero is refused, never silently defaulted.
+fn timeout_secs() -> Result<u64, String> {
+    match std::env::var("COMPAREGRAPH_PLUGIN_TIMEOUT") {
+        Err(_) => Ok(DEFAULT_TIMEOUT_SECS),
+        Ok(v) => match v.trim().parse::<u64>() {
+            Ok(n) if n > 0 => Ok(n),
+            _ => Err(format!("COMPAREGRAPH_PLUGIN_TIMEOUT='{v}' is not a positive number of seconds")),
+        },
+    }
+}
+
+/// A plugin path must be relative and stay inside the clone: no absolute path, no `..` segment, no NUL, no drive letter.
+fn path_ok(p: &str) -> bool {
+    !(p.contains('\0')
+        || p.starts_with('/')
+        || p.starts_with('\\')
+        || p.as_bytes().get(1) == Some(&b':')
+        || p.split(['/', '\\']).any(|seg| seg == ".."))
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Manifest {
     pub kind: String,
@@ -32,6 +57,8 @@ pub struct ExternalProvider {
     pub command: PathBuf,
     /// `None` = no manifest beside the command: the provider is `unverified`.
     pub manifest: Option<Manifest>,
+    /// where `comparegraph.toml` and `.comparegraph/conform-<name>.json` live
+    pub workspace: PathBuf,
 }
 
 /// What `doctor` reports for one discovered external provider.
@@ -115,26 +142,26 @@ fn is_file(p: &Path) -> bool {
 }
 
 impl ExternalProvider {
-    fn with_manifest(name: &str, command: PathBuf) -> Self {
+    fn with_manifest(workspace: &Path, name: &str, command: PathBuf) -> Self {
         let manifest = command
             .parent()
             .map(|d| d.join(MANIFEST_FILE))
             .and_then(|f| std::fs::read_to_string(f).ok())
             .map(|t| parse_manifest(&t));
-        Self { name: name.into(), command, manifest }
+        Self { name: name.into(), command, manifest, workspace: workspace.to_path_buf() }
     }
 
     /// (1) `comparegraph.toml` in the workspace, then (2) `comparegraph-provider-<name>` on PATH.
     pub fn discover(workspace: &Path, name: &str) -> Option<Self> {
         if let Some((_, c)) = configured(workspace).into_iter().find(|(n, _)| n == name) {
-            return Some(Self::with_manifest(name, c));
+            return Some(Self::with_manifest(workspace, name, c));
         }
         let bin = format!("{BIN_PREFIX}{name}");
         path_dirs()
             .into_iter()
             .map(|d| d.join(&bin))
             .find(|p| is_file(p))
-            .map(|c| Self::with_manifest(name, c))
+            .map(|c| Self::with_manifest(workspace, name, c))
     }
 
     /// Every external provider `doctor` can see, with the last conformance result.
@@ -185,6 +212,22 @@ impl ExternalProvider {
         }
     }
 
+    /// An external provider is listed but not used until `conform <name>` passed; `--allow-unverified` waives it.
+    fn conformed(&self) -> Result<(), String> {
+        if std::env::var("COMPAREGRAPH_ALLOW_UNVERIFIED").map(|v| v == "1").unwrap_or(false) {
+            return Ok(());
+        }
+        let passed = std::fs::read_to_string(conform_path(&self.workspace, &self.name))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .is_some_and(|v| v["passed"] == true);
+        if passed {
+            Ok(())
+        } else {
+            Err(format!("{0} has no passing conformance result: run `comparegraph conform {0}` first, or pass --allow-unverified", self.name))
+        }
+    }
+
     fn unavailable(&self, why: impl Into<String>) -> ProviderError {
         ProviderError::Unavailable(self.name.clone(), why.into())
     }
@@ -192,7 +235,8 @@ impl ExternalProvider {
     /// One request line in, answer lines out. Returns (the `data` of the `ok` answer, progress file count).
     fn exchange(&self, request: serde_json::Value, repo_root: Option<&Path>) -> Result<(serde_json::Value, usize), ProviderError> {
         self.allowed().map_err(|e| self.unavailable(e))?;
-        let secs = std::env::var("COMPAREGRAPH_PLUGIN_TIMEOUT").ok().and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_TIMEOUT_SECS);
+        let secs = timeout_secs().map_err(|e| self.unavailable(e))?;
+        let cap = output_cap();
         let deadline = Instant::now() + Duration::from_secs(secs);
         let mut cmd = Command::new(&self.command);
         #[cfg(unix)]
@@ -210,25 +254,30 @@ impl ExternalProvider {
         drop(stdin);
         let stdout = child.stdout.take().unwrap();
         let mut stderr = child.stderr.take().unwrap();
-        let err_thread = std::thread::spawn(move || {
+        let (err_tx, err_rx) = mpsc::channel::<String>();
+        std::thread::spawn(move || {
             let mut buf = Vec::new();
             let _ = std::io::Read::take(&mut stderr, 4096).read_to_end(&mut buf);
+            let _ = err_tx.send(String::from_utf8_lossy(&buf).trim().to_string());
             // drain the rest so the child never blocks on a full pipe
             let _ = std::io::copy(&mut stderr, &mut std::io::sink());
-            String::from_utf8_lossy(&buf).trim().to_string()
         });
+        // stderr text is a courtesy: never wait on it longer than a moment (a grandchild may hold the pipe open)
+        let err_text = |rx: &mpsc::Receiver<String>| rx.recv_timeout(Duration::from_millis(300)).unwrap_or_default();
         let (tx, rx) = mpsc::channel::<Result<String, String>>();
         std::thread::spawn(move || {
             let mut rd = BufReader::new(stdout);
             let mut total = 0usize;
             loop {
                 let mut l = String::new();
-                match rd.read_line(&mut l) {
+                let room = cap.saturating_sub(total);
+                // the cap applies while the line is read, so one endless line cannot be buffered
+                match std::io::Read::take(&mut rd, room as u64 + 1).read_line(&mut l) {
                     Ok(0) => break,
                     Ok(n) => {
                         total += n;
-                        if total > OUTPUT_CAP {
-                            let _ = tx.send(Err(format!("output exceeds the {} MiB cap", OUTPUT_CAP / 1024 / 1024)));
+                        if total > cap {
+                            let _ = tx.send(Err(format!("output exceeds the {cap}-byte cap")));
                             break;
                         }
                         if tx.send(Ok(l)).is_err() {
@@ -289,9 +338,24 @@ impl ExternalProvider {
             }
         }
         let Some(answer) = answer else {
-            let status = child.wait().ok();
-            let err = err_thread.join().unwrap_or_default();
-            return Err(self.unavailable(format!("exited ({}) without an answer {err}", status.map(|s| s.to_string()).unwrap_or_default())));
+            // stdout closed without an answer: give the process a moment to exit, then kill it; never wait unbounded
+            let grace = Instant::now() + Duration::from_secs(2).min(deadline.saturating_duration_since(Instant::now()));
+            let status = loop {
+                match child.try_wait() {
+                    Ok(Some(s)) => break Some(s),
+                    Ok(None) if Instant::now() < grace => std::thread::sleep(Duration::from_millis(10)),
+                    _ => break None,
+                }
+            };
+            let err = err_text(&err_rx);
+            return match status {
+                Some(s) => Err(self.unavailable(format!("exited ({s}) without an answer {err}"))),
+                None => {
+                    kill_tree(&mut child);
+                    let _ = child.wait();
+                    Err(self.unavailable(format!("closed stdout without an answer and kept running; killed {err}")))
+                }
+            };
         };
         if answer.is_err() {
             kill_tree(&mut child);
@@ -303,7 +367,7 @@ impl ExternalProvider {
             match child.try_wait() {
                 Ok(Some(s)) => {
                     if !s.success() {
-                        let err = err_thread.join().unwrap_or_default();
+                        let err = err_text(&err_rx);
                         return Err(self.unavailable(format!("exited with {s} {err}")));
                     }
                     break;
@@ -353,7 +417,7 @@ impl GraphProvider for ExternalProvider {
         let (installed, detail) = if !self.command.is_file() {
             (false, format!("{} not found", self.command.display()))
         } else {
-            match self.allowed() {
+            match self.allowed().and_then(|_| timeout_secs().map(|_| ())).and_then(|_| self.conformed()) {
                 Ok(()) => (true, format!("external, protocol {PROTOCOL}: {}", self.command.display())),
                 Err(e) => (false, e),
             }
@@ -383,7 +447,8 @@ impl GraphProvider for ExternalProvider {
             return Err(self.unavailable("build answer has no data object"));
         }
         let mut out = BuildOutput::default();
-        let (mut bad_nodes, mut bad_edges) = (0usize, 0usize);
+        let (mut bad_nodes, mut bad_edges, mut bad_paths) = (0usize, 0usize, 0usize);
+        let mut bad_qns = std::collections::HashSet::<String>::new();
         for n in data["nodes"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
             let Some(kind) = NodeKind::parse(&str_of(n, "kind")) else {
                 bad_nodes += 1;
@@ -392,6 +457,11 @@ impl GraphProvider for ExternalProvider {
             let qn = str_of(n, "qualified_name");
             if qn.is_empty() {
                 bad_nodes += 1;
+                continue;
+            }
+            if !path_ok(&str_of(n, "path")) {
+                bad_paths += 1;
+                bad_qns.insert(qn);
                 continue;
             }
             let lines = n.get("lines").and_then(|l| l.as_array());
@@ -423,6 +493,10 @@ impl GraphProvider for ExternalProvider {
                 bad_edges += 1;
                 continue;
             }
+            if bad_qns.contains(&s) || bad_qns.contains(&t) {
+                bad_paths += 1;
+                continue;
+            }
             let c = e.get("confidence").and_then(|c| c.as_f64()).filter(|c| (0.0..=1.0).contains(c)).unwrap_or(0.5);
             out.edges_by_qn.push((kind, s, t, c));
         }
@@ -430,6 +504,12 @@ impl GraphProvider for ExternalProvider {
             out.limitations.push(Limitation::new(
                 l.get("code").and_then(|c| c.as_str()).unwrap_or("plugin"),
                 l.get("detail").and_then(|c| c.as_str()).or_else(|| l.as_str()).unwrap_or(""),
+            ));
+        }
+        if bad_paths > 0 {
+            out.limitations.push(Limitation::new(
+                "bad_path",
+                format!("{bad_paths} node(s)/edge(s) dropped: a path that is absolute, has a '..' segment or a NUL, or an edge to such a node"),
             ));
         }
         if bad_nodes + bad_edges > 0 {
