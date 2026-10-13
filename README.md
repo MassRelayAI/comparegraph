@@ -240,6 +240,12 @@ Two reports in this repository are the source of every number here. Read their c
 - [`docs/reports/2026-10-12-engine-parity.md`](docs/reports/2026-10-12-engine-parity.md): CompareGraph against
   code-review-graph 2.3.9 on three upstream projects.
 - [`docs/reports/2026-10-12-plan-1-proof.md`](docs/reports/2026-10-12-plan-1-proof.md): three real clones through the pipeline.
+
+To re-score call edges against the committed gold labels, run `scripts/gold-score.sh <project-copy-dir> fixtures/gold/<project>/calls.jsonl
+--binary <comparegraph>`: it builds the copy in a scratch workspace and prints a JSON summary (sites, answered, correct, precision,
+recall, missed and false site ids). The matching rule is in `scripts/lib/gold.py`, shared with `scripts/compare-engines.sh`. The floors
+`fixtures/gold/FLOORS.json` are asserted by `crates/comparegraph/tests/gold.rs` when `COMPAREGRAPH_STUDY` points at a directory holding the
+five project copies (skipped otherwise); a floor is raised by later work, never lowered.
 - Re-run the comparison yourself: [`scripts/compare-engines.sh`](scripts/compare-engines.sh).
 
 ### Conformance per language

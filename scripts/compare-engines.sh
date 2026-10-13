@@ -58,7 +58,9 @@ clean() { for d in "$@"; do [ -d "$d" ] && find "$d" -mindepth 1 -delete && rmdi
 
 cat > "$SCR/tools/analyze.py" <<'PY'
 import json, os, random, sqlite3, sys
-proj, root, crg_db, cg_db, name, seed, nsample, outp, sdir, gold_n, gold_seed = sys.argv[1:12]
+proj, root, crg_db, cg_db, name, seed, nsample, outp, sdir, gold_n, gold_seed, libdir = sys.argv[1:13]
+sys.path.insert(0, libdir)
+import gold as G
 root = os.path.realpath(root)
 def rel(p):
     return os.path.relpath(p, root) if os.path.isabs(p) else p
@@ -226,28 +228,18 @@ if sdir != "-":
         write_jsonl(os.path.join(sdir, "gold.jsonl"), grows)
         # what each engine says at each gold site (for the scorer; not for readers): calls from the smallest function/method span
         # containing the line whose target name equals the callee's last segment
-        ospans = {}
-        for i, ls_, le_ in cg.execute("select id,line_start,line_end from node where run_id=?", (rid,)):
-            if on[i][0] in ("function", "method"): ospans.setdefault(on[i][1][0], []).append((le_ - ls_, ls_, le_, i))
-        oedges = {}
-        for k, s_, t_ in cg.execute("select kind,source_node_id,target_node_id from edge where run_id=?", (rid,)):
-            if k == "calls" and s_ in on and t_ in on: oedges.setdefault(s_, []).append(t_)
+        gnodes, ospans, gcalls = G.load_ours(cg, rid)
         cspans = {}
         for q, k, fp, ls_, le_ in crg.execute("select qualified_name,kind,file_path,line_start,line_end from nodes where kind in ('Function','Test')"):
             if ls_ is not None and le_ is not None: cspans.setdefault(rel(fp), []).append((le_ - ls_, ls_, le_, q))
         cedges = {}
         for s_, t_ in crg.execute("select source_qualified,target_qualified from edges where kind='CALLS'"):
             cedges.setdefault(s_, []).append(t_)
-        def enclosing(spans, path, line):
-            c = [x for x in spans.get(path, []) if x[1] <= line <= x[2]]
-            return min(c)[3] if c else None
         erows = []
         for g in grows:
-            nm = re.split(r"\.|::|\?\.", g["callee"])[-1]
-            o = enclosing(ospans, g["path"], g["line"]); ot = []
-            if o is not None:
-                ot = sorted({f"{on[t][1][0]}::{on[t][1][1]}" for t in oedges.get(o, []) if on[t][1][1] == nm})
-            c = enclosing(cspans, g["path"], g["line"]); ct = []
+            nm = G.last_segment(g["callee"])
+            enc_o, ot = G.ours_answer(gnodes, ospans, gcalls, g["path"], g["line"], g["callee"]); o = True if enc_o else None
+            c = G.enclosing(cspans, g["path"], g["line"]); ct = []
             if c is not None:
                 for t in cedges.get(c, []):
                     if t in cn:
@@ -280,7 +272,7 @@ for src in "$@"; do
   { echo "after:  $(uptime)"; echo "warm rebuild: $reused"; echo "ours cold s: ${gt[*]}"; echo "crg cold s: ${ct[*]}"; } >> "$SCR/out/$name.load.txt"
   c=$(printf '%s\n' "${ct[@]}" | median); r=$(printf '%s\n' "${rt[@]}" | median); g=$(printf '%s\n' "${gt[@]}" | median)
   printf '%-22s %9.2f %10.2f %9.2f %10.2f %5s %s\n' "$name" "$c" "$r" "$g" "$warm" "$REPS" "$reused"
-  python3 -I "$SCR/tools/analyze.py" "$name" "$W" "$W/.code-review-graph/graph.db" "$SCR/ws-$name/.comparegraph/comparegraph.db" "$name" "$SEED" "$SAMPLE" "$SCR/out/$name.json" "$([ "$EMIT" = 1 ] && echo "$SCR/samples/$name" || echo -)" "$GOLD" "$GOLD_SEED"
+  python3 -I "$SCR/tools/analyze.py" "$name" "$W" "$W/.code-review-graph/graph.db" "$SCR/ws-$name/.comparegraph/comparegraph.db" "$name" "$SEED" "$SAMPLE" "$SCR/out/$name.json" "$([ "$EMIT" = 1 ] && echo "$SCR/samples/$name" || echo -)" "$GOLD" "$GOLD_SEED" "$(cd "$(dirname "$0")/lib" && pwd)"
   python3 -I - "$SCR/out/$name.json" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
