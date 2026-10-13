@@ -236,12 +236,14 @@ fn hit_tokens(h: &AbsentHit) -> Vec<String> {
     t
 }
 
+/// The full-text part of the symbol channel. See `search::fts_plan_scans_fts_first` for the join order this must keep.
+pub(crate) const SYMBOLS_FTS_SQL: &str =
+    "SELECT n.id FROM node_fts CROSS JOIN node n ON n.id = node_fts.rowid WHERE node_fts MATCH ?1 AND n.run_id = ?2";
+
 fn symbols(c: &Connection, run: i64, terms: &[String], stems: &[(String, String)]) -> Result<Channel> {
     let mut ids: BTreeSet<i64> = BTreeSet::new();
     if let Some(m) = super::search::fts_query_or(&terms.join(" ")) {
-        let mut st = c.prepare(
-            "SELECT n.id FROM node_fts JOIN node n ON n.id = node_fts.rowid WHERE node_fts MATCH ?1 AND n.run_id = ?2",
-        )?;
+        let mut st = c.prepare(SYMBOLS_FTS_SQL)?;
         for r in st.query_map(params![m, run], |r| r.get::<_, i64>(0))? {
             ids.insert(r?);
         }

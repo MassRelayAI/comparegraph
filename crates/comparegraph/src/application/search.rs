@@ -95,7 +95,7 @@ pub fn search_any_in_repo(
     Ok(hits)
 }
 
-const WHERE: &str = "FROM node_fts JOIN node n ON n.id = node_fts.rowid JOIN repo r ON r.id = n.repo_id \
+pub(crate) const WHERE: &str = "FROM node_fts CROSS JOIN node n ON n.id = node_fts.rowid JOIN repo r ON r.id = n.repo_id \
  WHERE node_fts MATCH ?1 AND n.run_id = (SELECT MAX(id) FROM run WHERE repo_id = n.repo_id AND status = 'done') \
  AND (?2 IS NULL OR r.name = ?2) AND (?3 IS NULL OR n.kind = ?3)";
 
@@ -141,4 +141,35 @@ pub fn search(root: &Path, q: &SearchQuery) -> Result<SearchPage> {
         items,
         total,
     })
+}
+
+#[cfg(test)]
+mod fts_plan {
+    //! SQLite may plan a `node_fts JOIN node` with the node table outer and the MATCH re-run once per node: 136 s instead
+    //! of 0.8 s for one absent check on a 19k-node repo in a four-repo workspace. The full-text scan must come first.
+    use crate::store::Store;
+    fn first_step(c: &rusqlite::Connection, sql: &str, binds: &[&dyn rusqlite::ToSql]) -> String {
+        let mut st = c.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+        let rows: Vec<String> = st
+            .query_map(binds, |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        rows.into_iter().next().unwrap_or_default()
+    }
+    #[test]
+    fn fts_plan_scans_fts_first() {
+        let dir = std::env::temp_dir().join(format!("comparegraph-fts-plan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir).unwrap();
+        let c = store.conn();
+        let m = "\"agents\"* OR \"loop\"*";
+        let a = first_step(c, super::super::absent::SYMBOLS_FTS_SQL, &[&m, &1i64]);
+        assert!(a.starts_with("SCAN node_fts"), "absent symbols: first step is {a:?}");
+        let sql = format!("SELECT n.id {}", super::WHERE);
+        let none: Option<String> = None;
+        let b = first_step(c, &sql, &[&m, &none, &none]);
+        assert!(b.starts_with("SCAN node_fts"), "search: first step is {b:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
