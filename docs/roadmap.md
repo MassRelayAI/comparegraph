@@ -87,14 +87,14 @@ recall on that consumer's languages with precision ≥ 0.96 (the same bar as Pla
 
 ## Distribution
 
-Measured against the twelve study projects in `docs/reports/2026-10-13-install-surfaces.md`. Shipped: the Claude Code
-plugin (skills plus the MCP server through `npx`), `setup`/`doctor` for six clients, `scripts/install.sh` and
-`install.ps1` with the checksum check, npm with four prebuilt platforms, the MCP Registry manifest published by the
-release workflow, release assets with `SHA256SUMS`, `cargo install --locked` from source (`docs/dev/release.md`). Next:
+Measured against the twelve study projects in `docs/reports/2026-10-13-install-surfaces.md`, and following the Rust
+tools among them (the maintainer, 2026-10-14: "they don't use npm, so skip; just follow others"). Shipped: release
+binaries for five platforms with `SHA256SUMS`, `scripts/install.sh` and `install.ps1` with the checksum check, a Homebrew
+tap, the Claude Code plugin (skills plus the MCP server over the installed binary), `setup`/`doctor` for six clients,
+the MCP Registry entry, `cargo install --locked` from source (`docs/dev/release.md`). Next:
 
 1. `setup` writes a rules line into the agent's instruction file and, for Claude Code, a SessionStart `doctor` hook; the
    plugin ships the same hook; more clients from code-review-graph's table.
-2. A Homebrew tap, updated by the release workflow (a second repository).
 
-Not taken: crates.io (nobody asked; the from-source line covers it, and the yanked Perl grammar pin would have to survive
-`cargo publish`), Docker, a VS Code extension, a desktop app, a GitHub Action, Windows package managers.
+Not taken: npm (dropped 2026-10-14), crates.io (nobody asked; the from-source line covers it), an MCPB bundle for the
+registry entry, Docker, a VS Code extension, a desktop app, a GitHub Action, Windows package managers.

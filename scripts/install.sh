@@ -5,7 +5,7 @@
 #   COMPAREGRAPH_VERSION      a tag such as v0.1.0 (default: the latest release)
 #   COMPAREGRAPH_INSTALL_DIR  where the binary goes (default: ~/.local/bin)
 #   COMPAREGRAPH_BASE_URL     where the assets are read from (default: the GitHub release; tests point it at a file:// dir)
-# Platforms: linux-x64, darwin-arm64, darwin-x64. Windows: scripts/install.ps1. Anything else: build from source.
+# Platforms: linux-x64, linux-arm64, darwin-arm64, darwin-x64. Windows: scripts/install.ps1. Anything else: build from source.
 # The whole script is one function called on the last line, so a download cut short runs nothing.
 main() {
   set -eu
@@ -16,6 +16,7 @@ main() {
   os="$(uname -s)"; arch="$(uname -m)"
   case "$os/$arch" in
     Linux/x86_64|Linux/amd64) platform=linux-x64 ;;
+    Linux/aarch64|Linux/arm64) platform=linux-arm64 ;;
     Darwin/arm64|Darwin/aarch64) platform=darwin-arm64 ;;
     Darwin/x86_64) platform=darwin-x64 ;;
     *) echo "comparegraph: no prebuilt binary for $os/$arch; build from source:" >&2

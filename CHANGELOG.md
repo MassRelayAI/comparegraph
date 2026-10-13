@@ -22,7 +22,7 @@ The first public release.
   entry points and dead-code candidates, incremental builds, more conformance languages, and a measured parity report
   against code-review-graph (`docs/reports/2026-10-12-engine-parity.md`).
 - Plan 5: module-level calls with a file-node caller, declared return and field types, per-case `it:` test nodes, Python
-  re-exports through `__init__`, no-op builds reuse the latest run, `setup`/`doctor` for six MCP clients, the npm shell,
+  re-exports through `__init__`, no-op builds reuse the latest run, `setup`/`doctor` for six MCP clients,
   `export csv`, `catalog`, CI and release workflows, a gold standard of 150 labelled call sites per project under
   `fixtures/gold/`, and a proof on a real product.
 - Plan 6, recall: a reusable gold scorer (`scripts/gold-score.sh`, `tests/gold.rs` with floors); TypeScript `describe` nodes,
@@ -48,10 +48,11 @@ The first public release.
   `docs/dev/` (plugin protocol, PID namespaces, scripts); plan files are no longer tracked.
 - Claude Code plugin manifest and marketplace listing (`.claude-plugin/`), the `using-comparegraph` entry skill, and the
   contributor files (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`).
-- Install routes: the Claude Code plugin (`/plugin install comparegraph --marketplace massrelay-ai/comparegraph`)
-  carries the skills and starts the MCP server through `npx`; `scripts/install.sh` and `install.ps1` fetch the release
-  binary and check it against `SHA256SUMS`; `npm install -g comparegraph` with a prebuilt binary for four platforms;
-  an MCP Registry manifest (`server.json`) published by the release workflow; `cargo install --locked` from source.
+- Install routes, as the Rust tools in the field do it: `scripts/install.sh` and `install.ps1` fetch the release binary
+  (linux-x64, linux-arm64, darwin-arm64, darwin-x64, win32-x64) and check it against `SHA256SUMS`; a Homebrew tap; the
+  Claude Code plugin (`/plugin install comparegraph --marketplace massrelay-ai/comparegraph`) carries the skills and the
+  MCP server over the installed binary; an MCP Registry manifest (`server.json`) published by the release workflow;
+  `cargo install --locked` from source.
 
 ### Fixed
 - A `kill -KILL -<pid>` shell-out in a test became `kill(-1)` on hosts with 7-digit pids (every process of the user);

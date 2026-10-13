@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const script = path.join(root, 'scripts/install.sh');
 const skip = process.platform !== 'linux' || process.arch !== 'x64' ? 'needs a linux-x64 host' : false;
 

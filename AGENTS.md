@@ -11,7 +11,7 @@ crates/comparegraph/src/
   application/  workflows: add, build, relate, map, claim, check, export, search, conform, doctor, setup
   adapters/     cli (clap, one-shot) and mcp (stdio) - thin
 skills/ (method/ links here)  the markdown skills     families/  sample packs     fixtures/  golden repos per language
-packages/  npm shell     docs/  specs, plans, reports, design notes, THIRD_PARTY_NOTICES.md
+docs/      design, decisions, roadmap, reports, dev notes, THIRD_PARTY_NOTICES.md
 ```
 A module never imports outward. `domain` has no I/O; `providers` know engines, not workflows; `adapters` are thin.
 

@@ -1,2 +1,0 @@
-# built binaries are staged here by scripts/package-npm.sh, never committed
-platforms/*/bin/

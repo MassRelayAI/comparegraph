@@ -14,6 +14,7 @@ jobs:
       matrix:
         include:
           - { platform: linux-x64, os: ubuntu-latest, exe: comparegraph }
+          - { platform: linux-arm64, os: ubuntu-24.04-arm, exe: comparegraph }
           - { platform: darwin-arm64, os: macos-15, exe: comparegraph }
           - { platform: darwin-x64, os: macos-15-intel, exe: comparegraph }
           - { platform: win32-x64, os: windows-latest, exe: comparegraph.exe }
@@ -26,37 +27,33 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-${{ matrix.platform }}
-      # A tag whose version differs from Cargo.toml fails every job by design (exit 4):
-      # bump Cargo.toml in the tagged commit.
-      - name: Package (builds on this host, stamps the version)
+      - name: The tag must equal the Cargo.toml version (bump it in the tagged commit; exit 4)
         shell: bash
-        run: scripts/package-npm.sh "${GITHUB_REF_NAME#v}" ${{ matrix.platform }}
-      - name: Stage release asset and checksum
+        run: |
+          v=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="comparegraph") | .version')
+          [ "$v" = "${GITHUB_REF_NAME#v}" ] || { echo "Cargo.toml $v != tag ${GITHUB_REF_NAME#v}"; exit 4; }
+      - name: Build
+        if: runner.os != 'Windows'
+        run: cargo build --release --locked -p comparegraph
+      - name: Build (Windows with clang-cl; a grammar's C build passes a GCC warning flag that cl rejects)
+        if: runner.os == 'Windows'
+        env:
+          CC: clang-cl
+          CXX: clang-cl
+        run: cargo build --release --locked -p comparegraph
+      - name: Stage the release asset and its checksum
         shell: bash
         run: |
           mkdir -p dist
           ext=""; [ "${{ matrix.exe }}" = "comparegraph.exe" ] && ext=".exe"
           out="comparegraph-${{ matrix.platform }}$ext"
-          cp "packages/platforms/${{ matrix.platform }}/bin/${{ matrix.exe }}" "dist/$out"
+          cp "target/release/${{ matrix.exe }}" "dist/$out"
+          case "${{ matrix.platform }}" in linux-*) strip "dist/$out" ;; esac
           (cd dist && (sha256sum "$out" 2>/dev/null || shasum -a 256 "$out") > "$out.sha256")
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bin-${{ matrix.platform }}
           path: dist/*
-          if-no-files-found: error
-      - name: Tar stamped package (artifacts drop file modes; tar keeps them)
-        shell: bash
-        run: tar -czf pkg-${{ matrix.platform }}.tgz -C packages/platforms ${{ matrix.platform }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: pkg-${{ matrix.platform }}
-          path: pkg-${{ matrix.platform }}.tgz
-          if-no-files-found: error
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: matrix.platform == 'linux-x64'
-        with:
-          name: shell-pkg
-          path: packages/comparegraph/package.json
           if-no-files-found: error
 
   release:
@@ -80,71 +77,15 @@ jobs:
           files: dist/*
           generate_release_notes: true
 
-  publish-npm:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: npm # configure required reviewers = manual approval
-    permissions:
-      contents: read
-      id-token: write # npm provenance
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-    steps:
-      - name: Skip without token
-        if: env.NPM_TOKEN == ''
-        run: echo "NPM_TOKEN not set; nothing published." && echo "SKIP=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        if: env.SKIP != '1'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        if: env.SKIP != '1'
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        if: env.SKIP != '1'
-        with:
-          path: art
-      - name: Verify, then publish (idempotent)
-        if: env.SKIP != '1'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          for p in linux-x64 darwin-arm64 darwin-x64 win32-x64; do
-            tar -xzf "art/pkg-$p/pkg-$p.tgz" -C packages/platforms
-            v=$(node -p "require('./packages/platforms/$p/package.json').version")
-            [ "$v" = "$version" ] || { echo "platform $p version $v != tag $version"; exit 1; }
-            case "$p" in win32-*) ;; *) test -x "packages/platforms/$p/bin/comparegraph" || { echo "$p binary not executable"; exit 1; } ;; esac
-          done
-          cp art/shell-pkg/package.json packages/comparegraph/package.json
-          sv=$(node -p "require('./packages/comparegraph/package.json').version")
-          [ "$sv" = "$version" ] || { echo "shell version $sv != tag $version"; exit 1; }
-          # platform packages first, then the shell
-          for d in packages/platforms/*/ packages/comparegraph/; do
-            name=$(node -p "require('./$d/package.json').name")
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "::notice::$name@$version already on npm; skipping"
-              continue
-            fi
-            (cd "$d" && npm publish --provenance --access public)
-          done
-
   publish-registry:
-    needs: publish-npm
+    needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write # the registry authenticates this repository's owner through GitHub OIDC
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Skip unless the npm package for this tag exists (the registry verifies it)
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          if npm view "comparegraph@$version" version >/dev/null 2>&1; then echo "SKIP=0" >> "$GITHUB_ENV"
-          else echo "::notice::comparegraph@$version is not on npm; registry publish skipped" && echo "SKIP=1" >> "$GITHUB_ENV"; fi
       - name: mcp-publisher (pinned, checksum verified)
-        if: env.SKIP != '1'
         env:
           MCP_PUBLISHER_VERSION: v1.8.1
           MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
@@ -153,14 +94,11 @@ jobs:
           curl -fsSLo "$archive" "https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION/$archive"
           echo "$MCP_PUBLISHER_SHA256  $archive" | sha256sum --check --strict
           tar xzf "$archive" mcp-publisher && chmod +x mcp-publisher
-      - name: server.json version must equal the tag (bump it in the tagged commit)
-        if: env.SKIP != '1'
+      - name: server.json version must equal the tag (bump it in the tagged commit; exit 4)
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          v=$(jq -r .version server.json); pv=$(jq -r '.packages[0].version' server.json)
-          [ "$v" = "$version" ] && [ "$pv" = "$version" ] || { echo "server.json $v / $pv != tag $version"; exit 4; }
+          v=$(jq -r .version server.json)
+          [ "$v" = "${GITHUB_REF_NAME#v}" ] || { echo "server.json $v != tag ${GITHUB_REF_NAME#v}"; exit 4; }
       - name: Validate, authenticate, publish
-        if: env.SKIP != '1'
         run: |
           ./mcp-publisher validate
           ./mcp-publisher login github-oidc

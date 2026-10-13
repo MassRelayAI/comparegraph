@@ -24,13 +24,15 @@ What it is NOT: a diff tool, a reverse-engineering tool, a wiki written by a mod
 - The product shape of morluto/rea (MIT) is the model: evidence with a confidence class, provenance, a typed location and
   limitations on every answer; inward rings; named contracts generated into a catalog; `setup` and `doctor` for agent clients;
   conformance per provider. Nothing of REA's subject (binaries, Ghidra, Hopper) applies.
-- **Language (the orchestrator's choice, 2026-10-12, on the maintainer's question "Rust rather than Python?"): Rust core, npm shell.**
+- **Language (the orchestrator's choice, 2026-10-12, on the maintainer's question "Rust rather than Python?"): Rust core; distribution as the Rust tools in the field do it (superseded detail below).**
   Python is never our base; code-review-graph stays an optional external engine run as a subprocess. The core — parser, store,
   graph, relatedness, exports, the MCP server and the CLI — is ONE Rust crate; tree-sitter's first-class binding is Rust, the
-  clones are large (openclaw ≈ 10 M lines, hermes-agent ≈ 1.5 M), and a Rust binary ships with no runtime. Distribution is an
-  npm package holding prebuilt binaries per platform (the codegraph-mcp / esbuild shape) so `npx comparegraph` works wherever
-  agents already run; the npm shell also carries the agent-client `setup` and the `method/` skills. Cost: a Rust toolchain for
-  contributors and minutes of compile per change; one crate, not a workspace.
+  clones are large (openclaw ≈ 10 M lines, hermes-agent ≈ 1.5 M), and a Rust binary ships with no runtime. Distribution was first
+  planned as an npm package of prebuilt binaries; on 2026-10-14 the maintainer dropped npm ("they don't use npm, so skip;
+  just follow others") for what the Rust tools in the field ship: release binaries with `SHA256SUMS`, an install script, a
+  Homebrew tap, the Claude Code plugin over the installed binary, and the MCP Registry entry
+  (`docs/reports/2026-10-13-install-surfaces.md`). `setup` lives in the binary. Cost: a Rust toolchain for contributors
+  and minutes of compile per change; one crate, not a workspace.
 - Vector search and RAG are built in as RANKING (what to read first, which clones are related) and never write a verdict.
 - Licence policy for code taken from others: MIT / Apache-2.0 / BSD modules may be taken whole with their attribution header and
   a row in `THIRD_PARTY_NOTICES.md`; AGPL / GPL / fair-code / community-licensed code is never copied; no product is forked.
@@ -74,7 +76,7 @@ crates/comparegraph/src/
   providers/     one adapter per engine: reference (tree-sitter), crg (code-review-graph); the conformance runner
   application/   workflows: add · build · relate · map · claim · check · export · search · conform · doctor
   adapters/      cli/ (clap, one-shot) · mcp/ (stdio, rmcp) · the library surface (lib.rs)
-packages/comparegraph/   the npm shell: platform binaries (optionalDependencies), `setup` for agent clients, ships method/
+scripts/install.sh, install.ps1   the installers (release binary, checksum checked); `setup` for agent clients is in the binary
 method/               the markdown skills (the method)
 families/             sample taxonomy bases (`<name>/rows.md`)
 fixtures/             golden repositories per language with expected graphs (conformance)
@@ -191,7 +193,7 @@ work is verified (the command and its expected output). The method is the discip
 | `search <query> [--repo] [--family]` | ranked candidates over communities, symbols and claims; labelled `candidate` | no index |
 | `conform <provider>` | §7.1 | — |
 | `doctor` | §7.5 | — |
-| `setup` (npm shell) | registers the MCP with each agent client found, additively, plan shown first, backup kept | — |
+| `setup` | registers the MCP with each agent client found, additively, plan shown first, backup kept | — |
 
 ## 9b. One envelope for every answer — usable by any tool, cheap in tokens (the maintainer: "any tools, robust standardised, save tokens")
 Every verb, on the CLI, over MCP and through the library, answers with the same envelope:

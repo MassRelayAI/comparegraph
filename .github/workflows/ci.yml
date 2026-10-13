@@ -26,16 +26,9 @@ jobs:
       - name: Catalog check
         if: hashFiles('docs/catalog.json') != ''
         run: cargo run -q -p comparegraph -- catalog --check
-      - name: npm bin smoke test
-        if: hashFiles('packages/comparegraph/test/bin.test.mjs') != ''
-        run: node --test packages/comparegraph/test/bin.test.mjs
-      - name: npm packaging script test
-        if: hashFiles('packages/comparegraph/test/package-script.test.mjs') != ''
-        run: node --test packages/comparegraph/test/package-script.test.mjs
       - name: install script test (good sum installs, bad sum refuses)
-        if: hashFiles('packages/comparegraph/test/install-script.test.mjs') != ''
-        run: node --test packages/comparegraph/test/install-script.test.mjs
+        run: node --test scripts/test/install-script.test.mjs
       - name: server.json version equals Cargo.toml
         run: |
-          v=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml | head -1)
-          [ "$(jq -r .version server.json)" = "$v" ] && [ "$(jq -r '.packages[0].version' server.json)" = "$v" ] || { echo "server.json != Cargo.toml $v"; exit 1; }
+          v=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="comparegraph") | .version')
+          [ "$(jq -r .version server.json)" = "$v" ] || { echo "server.json != Cargo.toml $v"; exit 1; }

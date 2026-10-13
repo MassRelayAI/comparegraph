@@ -20,8 +20,8 @@ licence of anything adapted in `docs/THIRD_PARTY_NOTICES.md`.
 
 ## Releasing
 Maintainers only; the steps are in `docs/dev/release.md`. In short: bump the workspace version, date the changelog section,
-push a `v*` tag. The workflow builds the four platform binaries, publishes the GitHub release with `SHA256SUMS` and, after a
-manual approval, the npm packages.
+push a `v*` tag. The workflow builds the five platform binaries, publishes the GitHub release with `SHA256SUMS` and the
+MCP Registry entry; the Homebrew tap follows on its own.
 
 ## Skills
 The markdown skills live in `skills/` (`method/` is a symlink to it). Keep each skill short, command-first, and honest

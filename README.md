@@ -4,7 +4,6 @@
 
 [![CI](https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/massrelay-ai/comparegraph?display_name=tag)](https://github.com/massrelay-ai/comparegraph/releases/latest)
-[![npm](https://img.shields.io/npm/v/comparegraph.svg)](https://www.npmjs.com/package/comparegraph)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
 ![MCP tools: 18](https://img.shields.io/badge/MCP%20tools-18-green.svg)
@@ -73,38 +72,31 @@ For: teams comparing their product with the field, due diligence on a set of pro
 
 ## Install
 
-Pick one route. Each gives you the `comparegraph` binary; the first also registers it with Claude Code.
+Two steps: the binary, then your agent.
 
-**Claude Code plugin**, one step: the seven skills and the MCP server, which Claude Code starts through `npx` in your
-project.
-
-```text
-/plugin install comparegraph --marketplace massrelay-ai/comparegraph
-```
-
-**Install script**, a prebuilt binary checked against the release's `SHA256SUMS`, into `~/.local/bin`:
+**1. The binary.** One line, into `~/.local/bin`, checked against the release's `SHA256SUMS` (linux-x64, linux-arm64,
+darwin-arm64, darwin-x64):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
 ```
 
-On Windows (x64, PowerShell): `irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex`.
+Windows x64, in PowerShell: `irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex`.
+Homebrew: `brew install massrelay-ai/comparegraph/comparegraph`. By hand: `comparegraph-<platform>` and `SHA256SUMS`
+from the [latest release](https://github.com/massrelay-ai/comparegraph/releases/latest). Any other platform, with Rust
+1.85 or newer: `cargo install --locked --path crates/comparegraph` in the clone (`--locked` matters: the Perl grammar's
+newest release on crates.io is yanked, and only `Cargo.lock` resolves).
 
-**npm**, the same binaries as packages (linux-x64, darwin-arm64, darwin-x64, win32-x64; Node 18 or newer), and the
-[MCP Registry](https://registry.modelcontextprotocol.io) entry `io.github.massrelay-ai/comparegraph` points here:
+**2. Your agent.** Claude Code installs the seven skills and the MCP server as one plugin; it runs the `comparegraph`
+binary from your `PATH`:
 
-```bash
-npm install -g comparegraph                    # or once, without installing: npx comparegraph --version
-comparegraph setup --client claude --apply     # register with an agent (omit --apply for a dry run)
+```text
+/plugin install comparegraph --marketplace massrelay-ai/comparegraph
 ```
 
-**By hand**: download `comparegraph-<platform>` and `SHA256SUMS` from the
-[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest), check the sum, put the file on your `PATH`.
-On any other platform, build from source with Rust 1.85 or newer: `cargo install --locked --path crates/comparegraph` in
-the clone (`--locked` matters: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
-
-After any route but the plugin, run `setup`: it serves six agents ([table](#agents-platforms-uninstall)) and
-`comparegraph doctor` checks the result.
+Any other agent (Codex, Cursor, Gemini CLI, OpenCode, Hermes): `comparegraph setup --client <name> --apply` writes the
+entry (omit `--apply` for a dry run) and `comparegraph doctor` checks it ([table](#agents-platforms-uninstall)). The
+server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`.
 
 ## Quick start
 
@@ -531,13 +523,14 @@ backup named `<file>.bak-<unix-seconds>`; a differing entry is left alone unless
 | OpenCode | `opencode` | `~/.config/opencode/opencode.json` / `opencode.json` | `mcp.comparegraph` |
 | Hermes | `hermes` | `~/.hermes/config.yaml` (no project scope) | `mcp_servers.comparegraph` |
 
-Platforms: every release builds linux-x64, darwin-arm64, darwin-x64 and win32-x64 on their own runners and ships each as a
-release asset, listed in `SHA256SUMS`, and as an npm package; the test suite runs on linux-x64 only. Anywhere Rust 1.85+
-runs, build from source. Local only: the engine makes no network call, the MCP server speaks over stdio, the store is one
-SQLite file you own.
+Platforms: every release builds linux-x64, linux-arm64, darwin-arm64, darwin-x64 and win32-x64 on their own runners and
+ships each as a release asset listed in `SHA256SUMS`; the Homebrew tap follows the release. The test suite runs on
+linux-x64 only. Anywhere Rust 1.85+ runs, build from source. Local only: the engine makes no network call, the MCP server
+speaks over stdio, the store is one SQLite file you own.
 
-Uninstall: remove the entry above (in Claude Code with the plugin, `/plugin uninstall comparegraph`), then
-`npm uninstall -g comparegraph` or `cargo uninstall comparegraph`, and `rm -r .comparegraph` in each workspace.
+Uninstall: remove the entry above (in Claude Code with the plugin, `/plugin uninstall comparegraph`), then delete the
+binary (`~/.local/bin/comparegraph`, `brew uninstall comparegraph` or `cargo uninstall comparegraph`), and
+`rm -r .comparegraph` in each workspace.
 
 ## Library usage
 
@@ -566,12 +559,12 @@ The stable contracts: the JSON envelope (`export json`, every CLI answer), and
 |---|---|
 | `no workspace` or `not_found` on a read verb | read verbs never create `.comparegraph`. Run `comparegraph add <clone>` in the workspace first, or pass `--root`. |
 | `setup` says "running from a build directory" | a `target/` binary refuses to register itself. Pass `--bin <installed path>` or set `COMPAREGRAPH_BIN`. |
-| `npx comparegraph` or `install.sh` says "no prebuilt binary for <platform>" | four platforms are prebuilt. Elsewhere build from source: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph`. |
+| `install.sh` says "no prebuilt binary for <platform>" | five platforms are prebuilt. Elsewhere build from source: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph`. |
 | `install.sh` says "checksum mismatch" | the download does not match the release's `SHA256SUMS`; nothing was installed. Retry once; if it repeats, report it (`SECURITY.md`). |
 | A claim shows `unknown*` or `stale` after you edited the clone | a location goes stale only when `comparegraph check` runs. Run `check`, rebuild, and write the claim again. |
 | `conform` returns `below_floor` | the provider scored under 0.95 on nodes or 0.85 on edges. Fix the provider; the floors do not move. |
 | `build --provider crg` says `provider_unavailable` | code-review-graph is not installed, or its conformance failed for a language in the clone. `comparegraph doctor` names which. |
-| The agent does not see the server | run `comparegraph doctor`. `missing`: `setup --apply`. `stale` or `conflict`: add `--force`. Restart the client. |
+| The agent does not see the server | run `comparegraph doctor`. `missing`: `setup --apply`. `stale` or `conflict`: add `--force`. Restart the client. With the plugin, `comparegraph` must be on your `PATH`. |
 | A large repository is cut short | the run records `truncated_files` or `skipped_oversize`. Raise `--max-files` or `--max-file-bytes` and rebuild. |
 | `search` for a word returns 0 hits | search matches whole identifier tokens, so `reader` does not find `ReaderConfig`. Try another stem. |
 | `claim ... none` is refused | the engine's search found a hit (it lists the candidates), or the searched text named no token of the feature. |
@@ -634,7 +627,7 @@ of these exist yet, and the maintainer decides the order.
 |---|---|
 | [`docs/reports/README.md`](docs/reports/README.md) | The index of every measurement, with its verdict and status |
 | [`docs/dev/scripts.md`](docs/dev/scripts.md) | Which script reproduces which number |
-| [`docs/dev/release.md`](docs/dev/release.md) | How a release is cut: the tag, the workflow, the npm publish, what to check after |
+| [`docs/dev/release.md`](docs/dev/release.md) | How a release is cut: the tag, the workflow, the registry entry, the tap, what to check after |
 | [`docs/dev/plugin-protocol.md`](docs/dev/plugin-protocol.md) | The JSON-lines protocol for external engines, limits, conformance, a 25-line example |
 | [`docs/dev/pid-namespaces.md`](docs/dev/pid-namespaces.md) | Why tests run in a PID namespace and how to enable it |
 | [`docs/catalog.json`](docs/catalog.json) | The 18 MCP tools and 9 error codes, generated and CI-checked |

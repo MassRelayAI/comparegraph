@@ -4,7 +4,7 @@ date: 2026-10-13
 valid_until: 2027-01-13
 lane: distribution
 verdict: npm is one of three registries in use (three of twelve projects), not the norm; the surfaces that recur are a release binary with an install script, a Homebrew tap, an MCP Registry manifest, a one-command agent setup that also writes skills, hooks and a rules line, and a Claude Code plugin; we have the plugin, the agent setup for six clients, npm and release assets, and lack the install script, the registry manifest, the tap, hooks and the rules line
-status: decided; items 1 and 2 shipped 2026-10-14, crates.io dropped (the maintainer: nobody uses it); the rest is in docs/roadmap.md "Distribution"
+status: decided; shipped 2026-10-14 as the Rust tools do it (binaries, install scripts, a Homebrew tap, the registry entry, the plugin over the binary); npm and crates.io dropped by the maintainer; the rest is in docs/roadmap.md "Distribution"
 ---
 
 Method: the install sections of each project's README and the files that back them (package manifests, install scripts,
@@ -40,6 +40,10 @@ plugin that carries the seven skills and starts the MCP server through `npx`; no
 `server.json`, no hooks, no rules line written by `setup`, no crates.io.
 
 ## Verdict
+
+Update 2026-10-14, the maintainer: "they don't use npm, so skip; just follow others". npm was removed the same day; the
+first release run had also shown that the npm packaging script's `sed` did not run on macOS. The routes below are the
+Rust tools' routes.
 
 The gaps that cost little and reach far, in order:
 
