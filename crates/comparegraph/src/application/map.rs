@@ -2,7 +2,7 @@
 //! label or keywords carry a term), and a relatedness band per (clone, family). Candidates are never verdicts.
 use super::communities::tokens;
 use super::search::Hit;
-use super::termscore::RunIndex;
+use super::termscore::{tok_match, RunIndex};
 use super::{AppError, Result};
 use crate::store::{FeatureRow, Store};
 use rusqlite::params;
@@ -16,12 +16,22 @@ pub struct CommunityCandidate {
     pub matched: Vec<String>,
     pub candidate: &'static str,
 }
+/// A ranked symbol: the hit, and the informative terms its name carries.
+#[derive(Debug, Serialize)]
+pub struct SymbolCandidate {
+    #[serde(flatten)]
+    pub hit: Hit,
+    pub matched: Vec<String>,
+    /// the name carries one of the feature's own terms; what `relate` counts (see `termscore::Term::names_feature`)
+    #[serde(skip)]
+    pub named: bool,
+}
 #[derive(Debug, Serialize)]
 pub struct FeatureMap {
     pub id: String,
     pub title: String,
     pub terms: Vec<String>,
-    pub symbols: Vec<Hit>,
+    pub symbols: Vec<SymbolCandidate>,
     pub communities: Vec<CommunityCandidate>,
 }
 #[derive(Debug, Serialize)]
@@ -80,28 +90,32 @@ fn map_feature(
 ) -> Result<FeatureMap> {
     let wt = idx.terms(f);
     let terms: Vec<String> = wt.iter().filter(|t| t.informative()).map(|t| t.text.clone()).collect();
-    let symbols: Vec<Hit> = idx
+    let symbols: Vec<SymbolCandidate> = idx
         .rank(f, &wt, limit)
         .into_iter()
-        .map(|(i, score)| {
-            let n = &idx.nodes[i];
-            Hit {
-                repo: repo.into(),
-                qualified_name: n.qn.clone(),
-                kind: n.kind.to_string(),
-                path: n.path.to_string(),
-                line_start: n.ls,
-                line_end: n.le,
-                community: idx.community_label(i),
-                score,
-                label: "candidate",
+        .map(|r| {
+            let n = &idx.nodes[r.i];
+            SymbolCandidate {
+                hit: Hit {
+                    repo: repo.into(),
+                    qualified_name: n.qn.clone(),
+                    kind: n.kind.to_string(),
+                    path: n.path.to_string(),
+                    line_start: n.ls,
+                    line_end: n.le,
+                    community: idx.community_label(r.i),
+                    score: r.score,
+                    label: "candidate",
+                },
+                matched: r.matched,
+                named: r.named,
             }
         })
         .collect();
     let mut communities: Vec<CommunityCandidate> = idx
         .communities()
         .filter_map(|(label, have)| {
-            let matched: Vec<String> = terms.iter().filter(|t| have.contains(*t)).cloned().collect();
+            let matched: Vec<String> = terms.iter().filter(|t| have.iter().any(|k| tok_match(t, k))).cloned().collect();
             (!matched.is_empty()).then(|| CommunityCandidate {
                 label: label.to_string(),
                 matched,
@@ -186,7 +200,7 @@ fn relate_pair(store: &Store, repo: &str, family: &str, rid: i64, run: i64, idx:
     let mut basis = vec![];
     for f in &feats {
         let m = map_feature(repo, idx, f, 1)?;
-        if !m.symbols.is_empty() || !m.communities.is_empty() {
+        if m.symbols.first().is_some_and(|s| s.named) {
             basis.push(f.key());
         }
     }
@@ -304,4 +318,70 @@ pub fn latest_relatedness(
         i = j;
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn feature() -> FeatureRow {
+        FeatureRow {
+            id: 1,
+            family: "f".into(),
+            grp: "quality".into(),
+            slug: "quality.widget".into(),
+            title: "Widget".into(),
+            definition: "".into(),
+            counts_as_has: "".into(),
+            tier: "core".into(),
+            weight: 1,
+        }
+    }
+    /// eleven unrelated rows plus `extra`
+    fn run(extra: (&'static str, &'static str, &'static str)) -> RunIndex {
+        let mut rows: Vec<(&str, &str, &str)> = vec![
+            ("function", "alpha", "src/a.ts"),
+            ("function", "beta", "src/b.ts"),
+            ("function", "gamma", "src/c.ts"),
+            ("function", "delta", "src/d.ts"),
+            ("function", "epsilon", "src/e.ts"),
+            ("function", "zeta", "src/f.ts"),
+            ("function", "theta", "src/g.ts"),
+            ("function", "iota", "src/h.ts"),
+            ("function", "kappa", "src/i.ts"),
+            ("function", "lambda", "src/j.ts"),
+            ("function", "omicron", "src/k.ts"),
+        ];
+        rows.push(extra);
+        assert_eq!(rows.len(), 12);
+        RunIndex::from_rows(&rows)
+    }
+
+    #[test]
+    fn a_path_only_match_does_not_count_toward_the_basis() {
+        let idx = run(("function", "serve", "src/widget/serve.ts"));
+        let m = map_feature("r", &idx, &feature(), 1).unwrap();
+        assert_eq!(m.terms, vec!["widget".to_string()]);
+        assert_eq!(m.symbols.len(), 1, "the path hit is still a candidate");
+        assert!(m.symbols[0].matched.is_empty(), "no name carries the term");
+        assert!(!m.symbols[0].named);
+    }
+
+    #[test]
+    fn a_node_named_for_the_feature_counts() {
+        let idx = run(("function", "widget_something", "src/other/serve.ts"));
+        let m = map_feature("r", &idx, &feature(), 1).unwrap();
+        assert_eq!(m.symbols[0].matched, vec!["widget".to_string()]);
+        assert!(m.symbols[0].named);
+    }
+
+    #[test]
+    fn a_definition_word_alone_does_not_name_the_feature() {
+        let mut f = feature();
+        f.definition = "renders gadgets".into();
+        let idx = run(("function", "gadgets", "src/other/serve.ts"));
+        let m = map_feature("r", &idx, &f, 1).unwrap();
+        assert_eq!(m.symbols[0].matched, vec!["gadgets".to_string()]);
+        assert!(!m.symbols[0].named, "a definition token has source weight 0.5");
+    }
 }

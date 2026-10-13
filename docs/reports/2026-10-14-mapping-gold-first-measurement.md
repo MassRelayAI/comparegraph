@@ -86,10 +86,26 @@ Same scorer, same gold, same release build path. Pooled micro p5 / r5.
 Single-parameter sweeps on TUNE (cutoff 0.03 to 0.15, definition weight 0.25 to 0.8, path weight 0.2 to 0.6, community weight, idf power, callers weight) moved p5 by at most 0.02; the chosen values sit on the plateau.
 
 Final (all six, `scripts/map-score.sh`, release binary): TUNE p5 0.154 / r5 0.500; HOLD-OUT p5 0.038 / r5 0.149; pooled p5 0.109 / r5 0.378 (baseline 0.046 / 0.141). Absent unchanged: precision 1.00 (1 call), recall 1/19.
-relate 6/6 ok. Two `map` runs byte-identical. store_hash of `fixtures/typescript` unchanged (8a64f321...). Floors in `FLOORS.json` raised to measured minus 0.01 (pooled 0.0985 / 0.3678).
+relate 6/6 ok (but see "relate after the fix": that line checked nothing). Two `map` runs byte-identical. store_hash of `fixtures/typescript` unchanged (8a64f321...). Floors in `FLOORS.json` raised to measured minus 0.01 (pooled 0.0985 / 0.3678).
 
 ### Verdict
 The stop condition (HOLD-OUT p5 >= 0.30 and r5 >= 0.50) was NOT met; the floors were not lowered, the target stays open. Gains transfer weakly: x3.3 recall on TUNE, x1.75 on HOLD-OUT, and HOLD-OUT is far below TUNE.
 Why, from aggregate diagnostics (no per-feature reading of HOLD-OUT): the gold is reachable lexically on TUNE (a gold location is within the top 200 for 65 to 77 percent of locations) but not on HOLD-OUT (top 200: CodeGraph 32, codanna 47, ripwire 30 percent). The HOLD-OUT clones are 2 to 6 times larger (up to 16k functions, 2k test nodes in ripwire) and their implementers are named by words the feature text does not carry (types and classes are 4 of 10 gold locations in ripwire and 4 of 15 in codanna). Names, paths and community keywords are the only text the store holds; docstrings, comments, signatures and call-site neighbours are not stored, so a feature word that is in no node name cannot be found. Next levers sit outside this lane: a text channel (doc/comment tokens) in the store, a synonym or embedding channel, and a larger TUNE set so the formula is not fitted on three small repos.
 Absent recall: lexical channels cannot separate `none` from `has` when the implementer uses another word (`visualisation`/`visualization`, `lookup` for `fuzzy-name`): every cutoff that added a call added a wrong one.
 Five worst features after (pooled recall@5, all clones): search.embeddings 0/7, graph.type-info 0/5, serving.cli 0/5, symbols.visibility 0/4, registry.multi-repo 0/3 (symbols.test-detection 0/3, graph.inheritance 1/7, search.fuzzy-name 1/6 follow).
+
+### relate after the fix (2026-10-13, fix round)
+Reviewers found that `relate` could not say no: a term is informative only when some node token matches it, so every feature with an informative term had a candidate and counted, and "relate 6/6 ok" held for any code base. New rule: a feature counts only when its top candidate's NAME carries a term of source weight 1. `relate --repo X --family code-graph-tools`, score (features counted of 30), fresh workspace per binary:
+
+| clone | main | IMP before fix | after fix (rule 1) | after fix (stricter: name share <= 0.1) |
+|---|---|---|---|---|
+| codanna | 1.000 | 1.000 | 1.000 | 1.000 |
+| CodeGraph | 1.000 | 1.000 | 0.967 | 0.967 |
+| code-review-graph | 0.867 | 1.000 | 0.967 | 0.967 |
+| graphmind | 0.933 | 1.000 | 0.967 | 0.967 |
+| ripwire | 1.000 | 1.000 | 1.000 | 1.000 |
+| srclight | 0.833 | 1.000 | 0.967 | 0.967 |
+| hono (control, web framework) | 0.867 | 1.000 | 0.933 | 0.933 |
+| caddy (control, web server) | 0.733 | 1.000 | 0.900 | 0.900 |
+
+All six gold clones stay `related`; so do both controls (want: below 0.5). The control is NOT separated: the matches are one common feature word that names some function (`code` in `parseIPv6HexCode`, `file` in `saveContentToFile`, `update` in `update`). The stricter variant changes nothing. Kept: rule 1. The map precision and recall are unchanged by this fix.

@@ -49,7 +49,22 @@ pub struct Term {
     pub idf: f64,
     pub share: f64,
 }
+/// One ranked candidate.
+pub struct Ranked {
+    /// index into `RunIndex::nodes`
+    pub i: usize,
+    pub score: f64,
+    /// the informative terms the node's NAME carries, in term order
+    pub matched: Vec<String>,
+    /// the name carries a term that is the feature's own (group, slug tail, title or the compound)
+    pub named: bool,
+}
+
 impl Term {
+    /// A term the feature is named by (its group, slug tail, title or compound), not a word of its definition.
+    pub fn names_feature(&self) -> bool {
+        self.sw >= 1.0
+    }
     pub fn informative(&self) -> bool {
         self.idf > 0.0
     }
@@ -281,8 +296,8 @@ impl RunIndex {
         self.comm_label.iter().map(String::as_str).zip(self.comm_toks.iter())
     }
 
-    /// Ranked candidates: indices into `nodes` with their scores, best first, at most `limit`.
-    pub fn rank(&self, f: &FeatureRow, terms: &[Term], limit: usize) -> Vec<(usize, f64)> {
+    /// Ranked candidates, best first, at most `limit`.
+    pub fn rank(&self, f: &FeatureRow, terms: &[Term], limit: usize) -> Vec<Ranked> {
         let (path_w, comm_w) = (K_PATH_W, K_COMM_W);
         let (graph_w, test_pen, file_pen) = (K_GRAPH_W, K_TEST_PEN, K_FILE_PEN);
         let ln_w = K_LN_W;
@@ -294,14 +309,19 @@ impl RunIndex {
         let mut cand: Vec<usize> = hits.iter().flat_map(|h| h.nodes.iter().copied()).collect();
         cand.sort_unstable();
         cand.dedup();
-        let mut pool: Vec<(usize, f64)> = vec![];
+        let mut pool: Vec<Ranked> = vec![];
         for i in cand {
             let n = &self.nodes[i];
             let mut s = 0.0;
+            let (mut by_name, mut named) = (vec![], false);
             for (t, h) in active.iter().zip(&hits) {
                 let (nm, pa, cm) = self.matched(n, t, h);
                 let ch = if nm { 1.0 } else if pa { path_w } else if cm { comm_w } else { 0.0 };
                 s += t.idf * t.sw * ch;
+                if nm {
+                    by_name.push(t.text.clone());
+                    named |= t.names_feature();
+                }
             }
             if s <= 0.0 {
                 continue;
@@ -315,10 +335,10 @@ impl RunIndex {
             let kp = kind_prior(&n.kind, &fkinds, n.is_test_path && !about_tests, test_pen, file_pen);
             let score = s * kp * (1.0 + graph_w * (1.0 + n.callers as f64).ln());
             if score > 0.0 {
-                pool.push((i, score));
+                pool.push(Ranked { i, score, matched: by_name, named });
             }
         }
-        pool.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(self.nodes[a.0].qn.cmp(&self.nodes[b.0].qn)).then(a.0.cmp(&b.0)));
+        pool.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap().then(self.nodes[a.i].qn.cmp(&self.nodes[b.i].qn)).then(a.i.cmp(&b.i)));
         pool.truncate(limit);
         pool
     }
@@ -365,4 +385,49 @@ fn kind_prior(kind: &str, fkinds: &[&str], test_path: bool, test_pen: f64, file_
         _ => 0.5,
     };
     if test_path { base * test_pen } else { base }
+}
+
+#[cfg(test)]
+impl RunIndex {
+    /// An index over plain `(kind, name, path)` rows, without communities or edges.
+    pub(crate) fn from_rows(rows: &[(&str, &str, &str)]) -> Self {
+        let mut vocab: Vec<String> = vec![];
+        let mut vmap: HashMap<String, u32> = HashMap::new();
+        let mut intern = |t: String| -> u32 {
+            *vmap.entry(t.clone()).or_insert_with(|| {
+                vocab.push(t);
+                (vocab.len() - 1) as u32
+            })
+        };
+        let mut nodes = vec![];
+        for (i, (kind, name, path)) in rows.iter().enumerate() {
+            let mut pt: Vec<u32> = tokens(path).into_iter().map(&mut intern).collect();
+            pt.sort_unstable();
+            pt.dedup();
+            nodes.push(NodeInfo {
+                id: i as i64,
+                kind: (*kind).into(),
+                qn: format!("{path}::{name}"),
+                path: (*path).into(),
+                ls: 1,
+                le: 2,
+                ntoks: tokens(name).into_iter().map(&mut intern).collect(),
+                ptoks: pt.into(),
+                flat: name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect(),
+                community: None,
+                callers: 0,
+                is_test_path: is_test_path(path),
+            });
+        }
+        let (mut name_inv, mut path_inv): (HashMap<u32, Vec<usize>>, HashMap<u32, Vec<usize>>) = (HashMap::new(), HashMap::new());
+        for (i, n) in nodes.iter().enumerate() {
+            for t in n.ntoks.iter().collect::<HashSet<_>>() {
+                name_inv.entry(*t).or_default().push(i);
+            }
+            for t in n.ptoks.iter() {
+                path_inv.entry(*t).or_default().push(i);
+            }
+        }
+        Self { run: 1, nodes, vocab, comm_toks: vec![], comm_label: vec![], name_inv, path_inv, comm_nodes: vec![], memo: RefCell::new(HashMap::new()) }
+    }
 }
