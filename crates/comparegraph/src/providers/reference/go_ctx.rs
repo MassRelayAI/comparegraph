@@ -521,11 +521,10 @@ fn dir_of(p: &str) -> &str {
 
 impl<'a> GoIndex<'a> {
     /// `import_dir` maps an import path to the repo directory it names.
-    pub fn build(files: &'a [ParsedFile], qns: &[Vec<String>], import_dir: &dyn Fn(&str) -> Option<String>) -> Option<GoIndex<'a>> {
+    pub fn build(files: &'a [ParsedFile], infos: Vec<Option<GoInfo>>, qns: &[Vec<String>], import_dir: &dyn Fn(&str) -> Option<String>) -> Option<GoIndex<'a>> {
         if !files.iter().any(|f| f.language == "go") {
             return None;
         }
-        let infos: Vec<Option<GoInfo>> = files.iter().map(|f| (f.language == "go").then(|| analyze(&f.lines.join("\n")))).collect();
         let is_test: Vec<bool> = files.iter().map(|f| is_test_file(&f.rel_path)).collect();
         let mut keys: HashMap<(String, String), usize> = HashMap::new();
         let mut pkgs: Vec<Pkg> = vec![];

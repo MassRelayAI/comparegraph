@@ -183,6 +183,16 @@ fn class_like(k: &SymbolKind) -> bool {
 
 /// Resolved inheritance edges for all files: (kind, subclass_qn, base_qn, confidence). Sorted by the caller.
 pub fn inherit_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
+    inherit_edges_with(files, &find_all(files))
+}
+
+/// The written inheritance of every file (tree-sitter, in the thread pool), index-aligned with `files`.
+pub fn find_all(files: &[ParsedFile]) -> Vec<Vec<Raw>> {
+    super::resolve::par_map(files.len(), &|i| files[i].rel_path.clone(), &|i| find(&files[i].language, &files[i].lines.join("\n")))
+}
+
+/// `inherit_edges` over `find_all` results computed once by the caller.
+pub fn inherit_edges_with(files: &[ParsedFile], all_raws: &[Vec<Raw>]) -> Vec<(EdgeKind, String, String, f64)> {
     let file_set = FileSet::new(files);
     // per file: name → (first qn, kind)
     let mut syms: HashMap<&str, HashMap<&str, (String, &SymbolKind)>> = HashMap::new();
@@ -202,7 +212,6 @@ pub fn inherit_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         }
     }
     let mut out = Vec::new();
-    let all_raws = super::resolve::par_map(files.len(), &|i| files[i].rel_path.clone(), &|i| find(&files[i].language, &files[i].lines.join("\n")));
     for (f, raws) in files.iter().zip(all_raws) {
         super::mark_file(&f.rel_path);
         if raws.is_empty() {

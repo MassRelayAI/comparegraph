@@ -409,10 +409,13 @@ impl GraphProvider for ReferenceProvider {
             if let incr::Plan::Partial(a) = &plan {
                 profile_line("incr.plan", t, a.len());
             }
+            let raws = inherit::find_all(&parsed);
+            profile_line("inherit_find", t, raws.len());
+            let t = std::time::Instant::now();
             match plan {
                 incr::Plan::Partial(affected) => {
                     let prev = opts.prev.as_deref().expect("a partial plan has a previous run");
-                    out.edges_by_qn = resolve::resolve_edges_in(&parsed, go_mods.clone(), Some(&affected));
+                    out.edges_by_qn = resolve::resolve_edges_in(&parsed, go_mods.clone(), Some(&affected), &raws);
                     // the previous run's import and call edges of every unaffected source file; `contains` edges were just rebuilt, and a
                     // `tests` edge from a file's own module-level call (target a symbol) is a converted call, so it is copied too
                     // (naming-convention `tests` edges are rebuilt below by `tests_edges`, over all files)
@@ -434,14 +437,14 @@ impl GraphProvider for ReferenceProvider {
                 }
                 incr::Plan::Fallback(l) => {
                     out.limitations.push(l);
-                    out.edges_by_qn = resolve::resolve_edges_with(&parsed, go_mods.clone());
+                    out.edges_by_qn = resolve::resolve_edges_in(&parsed, go_mods.clone(), None, &raws);
                 }
-                incr::Plan::Full => out.edges_by_qn = resolve::resolve_edges_with(&parsed, go_mods.clone()),
+                incr::Plan::Full => out.edges_by_qn = resolve::resolve_edges_in(&parsed, go_mods.clone(), None, &raws),
             }
             resolve::dedup_max_confidence(&mut out.edges_by_qn);
             profile_line("resolve_edges", t, out.edges_by_qn.len());
             let t = std::time::Instant::now();
-            let inh = inherit::inherit_edges(&parsed);
+            let inh = inherit::inherit_edges_with(&parsed, &raws);
             profile_line("inherit_edges", t, inh.len());
             out.edges_by_qn.extend(inh);
             let t = std::time::Instant::now();

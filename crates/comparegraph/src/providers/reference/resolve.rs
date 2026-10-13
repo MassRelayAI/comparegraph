@@ -517,14 +517,24 @@ fn static_class_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &Fil
 /// `Foo.bar()` / `foo.bar()` with `foo: Foo`, where `Foo` is the class this file defines or imports (the import decides, so two
 /// classes called `Node` in different folders never collide): the method `callee` inside it, else inside its base classes
 /// (`extends` edges at 1.0, at most eight levels). `Some(None)`: the class is known and has no such method; `None`: not decided. `bases` maps a class qualified name to its base, computed on first use.
+/// State of `imported_class_method` shared across calls, each part built on first use: class → base, qualified name → (file,
+/// symbol) of a class.
+#[derive(Default)]
+struct ClassCtx {
+    bases: Option<HashMap<String, String>>,
+    class_at: Option<HashMap<String, (usize, usize)>>,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn imported_class_method(
     files: &[ParsedFile],
     qns: &[Vec<String>],
     file_set: &FileSet,
+    raws: &[Vec<super::inherit::Raw>],
     fi: usize,
     ty: &str,
     callee: &str,
-    bases: &mut Option<HashMap<String, String>>,
+    cx: &mut ClassCtx,
 ) -> Option<Option<String>> {
     if !ty.chars().next().is_some_and(char::is_uppercase) || !ty.chars().all(|c| c.is_alphanumeric() || c == '_') {
         return None;
@@ -547,16 +557,26 @@ fn imported_class_method(
         if !hit.is_empty() {
             return Some(None);
         }
-        let map = bases.get_or_insert_with(|| {
-            super::inherit::inherit_edges(files).into_iter().filter(|e| e.0 == EdgeKind::Extends && e.3 == 1.0).map(|e| (e.1, e.2)).collect()
+        let map = cx.bases.get_or_insert_with(|| {
+            super::inherit::inherit_edges_with(files, raws).into_iter().filter(|e| e.0 == EdgeKind::Extends && e.3 == 1.0).map(|e| (e.1, e.2)).collect()
         });
         // a chain that breaks (no base resolved: none written, or an alias such as `export { A as B }`) decides nothing
         let Some(base) = map.get(&qns[g][ci]) else {
             // no `extends` written: the class is complete and lacks the method; a base that did not resolve decides nothing
-            let written = super::inherit::find(&files[g].language, &files[g].lines.join("\n")).iter().any(|r| r.kind == EdgeKind::Extends && r.sub == class.name);
+            let written = raws[g].iter().any(|r| r.kind == EdgeKind::Extends && r.sub == class.name);
             return if written { None } else { Some(None) };
         };
-        let next = files.iter().enumerate().find_map(|(h, hf)| qns[h].iter().position(|q| q == base).filter(|&j| matches!(hf.symbols[j].kind, SymbolKind::Class)).map(|j| (h, j)))?;
+        // the first file (in order) whose qualified names hold `base`, when that symbol is a class
+        let class_at = cx.class_at.get_or_insert_with(|| {
+            let mut m: HashMap<String, (usize, usize)> = HashMap::new();
+            for (h, q) in qns.iter().enumerate() {
+                for (j, qn) in q.iter().enumerate() {
+                    m.entry(qn.clone()).or_insert((h, j));
+                }
+            }
+            m
+        });
+        let next = class_at.get(base.as_str()).copied().filter(|&(h, j)| matches!(files[h].symbols[j].kind, SymbolKind::Class))?;
         at = next;
     }
     Some(None)
@@ -983,12 +1003,20 @@ fn par_map_capped<T: Send>(cap: usize, n: usize, name: &(dyn Fn(usize) -> String
 }
 
 pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
-    resolve_edges_in(files, super::go_ctx::GoModules::default(), None)
+    resolve_edges_in(files, super::go_ctx::GoModules::default(), None, &super::inherit::find_all(files))
 }
 
 /// `resolve_edges` with the repo's `go.mod` module paths (plain data: the per-file workers read it by reference).
 pub fn resolve_edges_with(files: &[ParsedFile], go_mods: super::go_ctx::GoModules) -> Vec<(EdgeKind, String, String, f64)> {
-    resolve_edges_in(files, go_mods, None)
+    resolve_edges_in(files, go_mods, None, &super::inherit::find_all(files))
+}
+
+/// The TS/JS tree-sitter analyses of one file, computed once in the thread pool.
+struct JsFile {
+    reexp: Vec<js_ctx::ReExport>,
+    jsx: Vec<(String, u32)>,
+    type_only: std::collections::HashSet<String>,
+    locals: Vec<(String, u32, u32)>,
 }
 
 /// `only`: resolve imports and calls only for the files in the set (every index is still built over all files; `contains` edges
@@ -998,6 +1026,7 @@ pub fn resolve_edges_in(
     files: &[ParsedFile],
     go_mods: super::go_ctx::GoModules,
     only: Option<&std::collections::HashSet<String>>,
+    raws: &[Vec<super::inherit::Raw>],
 ) -> Vec<(EdgeKind, String, String, f64)> {
     let file_set = FileSet::new(files).with_go_mods(go_mods);
     // name → (qn, duplicates_in_that_file)
@@ -1005,18 +1034,28 @@ pub fn resolve_edges_in(
     let mut out = Vec::new();
     let qns: Vec<Vec<String>> = files.iter().map(qualified_names).collect();
     let names = |i: usize| files[i].rel_path.clone();
-    let py: Vec<Option<PyInfo>> = par_map(files.len(), &names, &|i| {
+    let t_pass = std::time::Instant::now();
+    // each file's source, joined once (every per-file analysis below borrows it)
+    let srcs: Vec<String> = par_map(files.len(), &names, &|i| files[i].lines.join("\n"));
+    super::profile_line("resolve:join", t_pass, files.len());
+    let t_pass = std::time::Instant::now();
+    let py: Vec<Option<PyInfo>> = par_map(files.len(), &names, &|i| (files[i].language == "python").then(|| py_ctx::analyze(&srcs[i])));
+    super::profile_line("resolve:py", t_pass, files.len());
+    // per-file TS/JS tree-sitter analyses, one parallel pass: `export … from`, JSX elements, type-only imports, local bindings
+    let t_pass = std::time::Instant::now();
+    let js: Vec<Option<JsFile>> = par_map(files.len(), &names, &|i| {
         let f = &files[i];
-        (f.language == "python").then(|| py_ctx::analyze(&f.lines.join("\n")))
+        if !matches!(f.language.as_str(), "typescript" | "javascript" | "tsx" | "jsx" | "mjs") {
+            return None;
+        }
+        let jsx = js_ctx::jsx_elements(&srcs[i], &f.language);
+        let type_only = if jsx.is_empty() { Default::default() } else { js_ctx::type_only_imports(&srcs[i], &f.language) };
+        let reexp = if matches!(f.language.as_str(), "typescript" | "javascript" | "tsx" | "jsx") { js_ctx::reexports(&srcs[i]) } else { vec![] };
+        Some(JsFile { reexp, jsx, type_only, locals: js_ctx::local_bindings(&srcs[i], &f.language) })
     });
+    super::profile_line("resolve:js", t_pass, files.len());
     // TS/JS `export … from` statements per file (read once; the re-export rounds below borrow their names)
-    let reexp: Vec<(usize, Vec<js_ctx::ReExport>)> = files
-        .iter()
-        .enumerate()
-        .filter(|(_, f)| matches!(f.language.as_str(), "typescript" | "javascript" | "tsx" | "jsx"))
-        .map(|(i, f)| (i, js_ctx::reexports(&f.lines.join("\n"))))
-        .filter(|(_, r)| !r.is_empty())
-        .collect();
+    let reexp: Vec<(usize, &Vec<js_ctx::ReExport>)> = js.iter().enumerate().filter_map(|(i, j)| j.as_ref().map(|j| (i, &j.reexp))).filter(|(_, r)| !r.is_empty()).collect();
     // file → name → (first qn, name unique in that file)
     let mut file_syms: HashMap<&str, HashMap<&str, (String, bool)>> = HashMap::new();
     for (f, q) in files.iter().zip(&qns) {
@@ -1059,7 +1098,7 @@ pub fn resolve_edges_in(
         let mut adds: Vec<(&str, &str, (String, bool), bool)> = vec![];
         for (i, list) in &reexp {
             let f = &files[*i];
-            for re in list {
+            for re in list.iter() {
                 let Some(t) = resolve_import_target(&f.rel_path, &re.source, &file_set).filter(|t| *t != f.rel_path) else { continue };
                 let pairs: Vec<(&str, &str)> = if re.star {
                     file_syms.get(t.as_str()).map(|m| m.keys().copied().filter(|k| *k != "default").map(|k| (k, k)).collect()).unwrap_or_default()
@@ -1127,23 +1166,31 @@ pub fn resolve_edges_in(
                 .map(|(_, qn)| qn.as_str())
         })
         .collect();
-    let ts: Vec<Option<TsDecls>> = par_map(files.len(), &names, &|i| decl_types::analyze(&files[i].lines.join("\n"), &files[i].language));
+    let ts: Vec<Option<TsDecls>> = par_map(files.len(), &names, &|i| decl_types::analyze(&srcs[i], &files[i].language));
     let mut cm = rust_ctx::CrateMap::default();
     for f in files.iter().filter(|f| f.language == "toml" && f.rel_path.rsplit('/').next() == Some("Cargo.toml")) {
         cm.add_manifest(f.rel_path.rsplit_once('/').map_or("", |d| d.0), &f.lines);
     }
     let rust: Vec<Option<RustInfo>> = par_map(files.len(), &names, &|i| {
         let f = &files[i];
-        (f.language == "rust").then(|| rust_ctx::analyze(&f.lines.join("\n")))
+        (f.language == "rust").then(|| rust_ctx::analyze(&srcs[i]))
     });
+    let t_pass2 = std::time::Instant::now();
     // per-file case calls and module-level calls: tree-sitter passes with no cross-file input
     let per_file_calls: Vec<(Vec<CallSite>, Vec<CallSite>)> = par_map(files.len(), &names, &|i| {
         let f = &files[i];
-        let case_calls = if super::is_test_path(&f.rel_path) { js_ctx::test_cases(&f.lines.join("\n"), &f.language).1 } else { vec![] };
-        (case_calls, super::module_ctx::module_calls(&f.lines.join("\n"), &f.language))
+        let case_calls = if super::is_test_path(&f.rel_path) { js_ctx::test_cases(&srcs[i], &f.language).1 } else { vec![] };
+        (case_calls, super::module_ctx::module_calls(&srcs[i], &f.language))
     });
-    let mut bases: Option<HashMap<String, String>> = None; // class → base class, computed on first use
-    let go = GoIndex::build(files, &qns, &|src| resolve_go_dir(src, &file_set).first().map(|f| f.rsplit_once('/').map_or("", |d| d.0).to_string()));
+    let mut bases = ClassCtx::default(); // class → base class and friends, each computed on first use
+    super::profile_line("resolve:per-file", t_pass2, files.len());
+    let t_pass = std::time::Instant::now();
+    let go_infos: Vec<Option<go_ctx::GoInfo>> = par_map(files.len(), &names, &|i| (files[i].language == "go").then(|| go_ctx::analyze(&srcs[i])));
+    super::profile_line("resolve:go-analyze", t_pass, files.len());
+    let t_pass = std::time::Instant::now();
+    let go = GoIndex::build(files, go_infos, &qns, &|src| resolve_go_dir(src, &file_set).first().map(|f| f.rsplit_once('/').map_or("", |d| d.0).to_string()));
+    super::profile_line("resolve:go-index", t_pass, files.len());
+    let t_pass = std::time::Instant::now();
     for (fi, (f, q)) in files.iter().zip(&qns).enumerate() {
         if only.is_some_and(|s| !s.contains(f.rel_path.as_str())) {
             continue;
@@ -1182,10 +1229,11 @@ pub fn resolve_edges_in(
         // the calls in `it(...)` / `test(...)` bodies belong to no symbol: they are the test file's own (item: tests, not calls)
         let (case_calls, module_calls) = &per_file_calls[fi];
         let edges_before = out.len();
-        let mut locals: Option<Vec<(String, u32, u32)>> = None; // names bound locally, computed on first use
+        let locals: &[(String, u32, u32)] = js[fi].as_ref().map_or(&[], |j| &j.locals); // names bound locally (TS/JS only)
         // a JSX element `<Foo />` is a rendering call from the smallest function, case or describe holding it (else the file)
-        let mut jsx: Vec<(CallSite, Option<usize>)> = js_ctx::jsx_elements(&f.lines.join("\n"), &f.language)
-            .into_iter()
+        let mut jsx: Vec<(CallSite, Option<usize>)> = js[fi].as_ref().map_or(&[][..], |j| &j.jsx[..])
+            .iter()
+            .cloned()
             .map(|(name, line)| {
                 let owner = f
                     .symbols
@@ -1199,8 +1247,8 @@ pub fn resolve_edges_in(
             .collect();
         // a type-only import is no component
         if !jsx.is_empty() {
-            let type_only = js_ctx::type_only_imports(&f.lines.join("\n"), &f.language);
-            jsx.retain(|(c, _)| !type_only.contains(&c.callee) || local.contains_key(c.callee.as_str()));
+            let type_only = js[fi].as_ref().map(|j| &j.type_only);
+            jsx.retain(|(c, _)| !type_only.is_some_and(|t| t.contains(&c.callee)) || local.contains_key(c.callee.as_str()));
         }
         let sited = f.call_sites.iter().chain(case_calls).chain(module_calls).map(|c| (c, None)).chain(jsx.iter().map(|(c, o)| (c, *o)));
         for (c, owner) in sited {
@@ -1371,11 +1419,11 @@ pub fn resolve_edges_in(
             if let Some(r) = recv {
                 if f.language != "rust" {
                     // a local, parameter or catch binding of this name hides the class: nothing binds
-                    if r.chars().next().is_some_and(char::is_uppercase) && locals.get_or_insert_with(|| js_ctx::local_bindings(&f.lines.join("\n"), &f.language)).iter().any(|b| b.0 == r && b.1 <= c.line && c.line <= b.2) {
+                    if r.chars().next().is_some_and(char::is_uppercase) && locals.iter().any(|b| b.0 == r && b.1 <= c.line && c.line <= b.2) {
                         continue;
                     }
                     // the class is the one this file defines or imports: its method (or its base's), else nothing
-                    if let Some(found) = imported_class_method(files, &qns, &file_set, fi, r, &c.callee, &mut bases) {
+                    if let Some(found) = imported_class_method(files, &qns, &file_set, raws, fi, r, &c.callee, &mut bases) {
                         if let Some(t) = found {
                             out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
                         }
@@ -1434,6 +1482,7 @@ pub fn resolve_edges_in(
         }));
     }
     dedup_max_confidence(&mut out);
+    super::profile_line("resolve:call-loop", t_pass, files.len());
     out
 }
 
