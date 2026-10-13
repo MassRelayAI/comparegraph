@@ -2,201 +2,237 @@
 
 **Many cloned repositories, one taxonomy, evidence on every cell.**
 
+[![CI](https://github.com/nicholasandreasujitno/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nicholasandreasujitno/comparegraph/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
 ![MCP tools: 18](https://img.shields.io/badge/MCP%20tools-18-green.svg)
 ![Languages: 29](https://img.shields.io/badge/languages-29-blue.svg)
 ![Agents: 6](https://img.shields.io/badge/agents-6-purple.svg)
-![100% local](https://img.shields.io/badge/100%25-local-brightgreen.svg)
+![100% local, no model calls](https://img.shields.io/badge/100%25-local%2C%20no%20model%20calls-brightgreen.svg)
 
-<!-- sources: Cargo.toml (licence, rust-version); adapters/mcp.rs (18 tools); reference/mod.rs (29 languages); application/setup.rs (6 clients) -->
+<!-- sources: Cargo.toml (licence, rust-version); docs/catalog.json (18 tools); walker.rs language_for (29 languages); application/setup.rs (6 clients); .github/workflows/ci.yml -->
 
-CompareGraph parses many cloned repositories into one SQLite graph. It scores each clone against
-a taxonomy (a "family" of features) and records, per clone and feature, a verdict with a
-citation to a file and line range. It is a single Rust binary with a CLI and an MCP server.
-It reads clones and never runs them. It never calls a model.
+CompareGraph parses many cloned repositories into one SQLite graph. It scores each clone against a taxonomy (a "family"
+of features) and records, per clone and feature, a verdict with a citation to a file and line range. It is one Rust
+binary with a CLI and an MCP server. It reads clones and never runs them. It never calls a model.
+
+![Workflow: clone repos, one graph, taxonomy, verdicts with citations, decisions, matrix](docs/assets/workflow.svg)
 
 ## Contents
 
 - [Why CompareGraph](#why-comparegraph)
-- [Get started](#get-started)
-- [Uninstall](#uninstall)
-- [Supported agents](#supported-agents)
-- [Supported platforms](#supported-platforms)
-- [Local only, no telemetry, verified releases](#local-only-no-telemetry-verified-releases)
+- [Quick start](#quick-start)
+- [How good is it](#how-good-is-it)
+- [Languages](#languages)
 - [How it works](#how-it-works)
-- [Measured coverage](#measured-coverage)
 - [What you get](#what-you-get)
 - [CLI reference](#cli-reference)
 - [MCP tools](#mcp-tools)
-- [Library usage](#library-usage)
-- [Configuration](#configuration)
-- [Languages](#languages)
+- [Plugins and the second engine](#plugins-and-the-second-engine)
+- [Families and the seven skills](#families-and-the-seven-skills)
 - [The vault](#the-vault)
-- [Families and the method](#families-and-the-method)
+- [Configuration](#configuration)
+- [Agents, platforms, uninstall](#agents-platforms-uninstall)
+- [Library usage](#library-usage)
 - [Troubleshooting](#troubleshooting)
-- [FAQ and comparisons](#faq-and-comparisons)
-- [Design notes, contributing, licence](#design-notes-contributing-licence)
+- [FAQ](#faq)
+- [Roadmap](#roadmap)
+- [Documentation](#documentation)
+- [Contributing, licence, third-party code](#contributing-licence-third-party-code)
 
 ## Why CompareGraph
 
-The problem:
+You have many repositories and one question: who has what? Reading each by hand does not scale, a summary without a line
+number cannot be checked, and notes go stale when the code moves. Five properties, each one you can test:
 
-- You have many open-source repositories and one question: who has what?
-- Reading each by hand does not scale, and a summary without a line number cannot be checked.
-- Notes go stale when the code changes, and nobody notices.
-
-What no code graph does:
+1. **Deterministic.** The same clone and version give the same `store_hash`. `comparegraph check` rebuilds and compares, and
+   an incremental build must equal `build --full` (equal on both large trees in the
+   [Plan 6 report](docs/reports/2026-10-13-plan-6-recall-and-scale.md)).
+2. **An evidence class on every answer.** Each envelope says `observed`, `derived`, `inferred` or `unknown`, plus a
+   `limitations[]` list of what the engine cannot see.
+3. **A claim needs a citation that resolves now.** `has` and `partial` need `--at path:start-end` matching a stored node;
+   otherwise the engine refuses. A moved citation shows as `unknown*` after `check`.
+4. **`none` needs proof of absence.** Either `--searched` terms that find nothing, or the graph check: four channels
+   (symbols, paths, community terms, node kinds) all empty. Any hit refuses the claim and lists the candidates.
+5. **No model in the engine.** Scores, bands, descriptions and candidates are computed from stored facts. An agent may do
+   the reading; the engine only stores, checks and refuses.
 
 | Need | Single-repo code graph | CompareGraph |
 |---|---|---|
-| Compare several repos on one feature list | no, one repo per index | yes: `family`, `relate`, `matrix` |
-| Keep the evidence beside the verdict | no | yes: a claim stores `path:start-end` and a content hash |
-| Refuse a claim it cannot support | no | yes: `has` and `partial` need a citation that resolves now; `none` needs a search the engine ran |
-| Show what changed after the code moved | no | yes: `check` marks a moved citation stale; the matrix shows `unknown*` |
-| Keep a trail of who said what | no | yes: claims and decisions are append-only |
+| Compare several repos on one feature list | no, one repo per index | `family`, `relate`, `matrix` |
+| Keep the evidence beside the verdict | no | a claim stores `path:start-end` and a content hash |
+| Refuse a claim it cannot support | no | `has` and `partial` need a live citation; `none` needs a search the engine ran |
+| Show what changed after the code moved | no | `check` marks a moved citation stale; the matrix shows `unknown*` |
+| Keep a trail of who said what | no | claims and decisions are append-only |
 
-Who it is for: teams comparing their product with the field, due diligence on a set of projects, a newcomer mapping a
-field (`family propose` drafts the taxonomy), and coding agents that need compact, token-cheap facts over MCP.
+For: teams comparing their product with the field, due diligence on a set of projects, a newcomer mapping a field
+(`family propose` drafts the taxonomy), and coding agents that need compact facts over MCP.
 
-## Get started
+## Quick start
 
-### 1. Install
-
-Clone the repository. The example family pack (`families/`) and the sample repositories (`fixtures/`) used below ship
-in the clone, not in the installed binary.
+The example family pack (`families/`) and the sample repositories (`fixtures/`) ship in the clone, not in the binary.
 
 ```bash
 git clone https://github.com/nicholasandreasujitno/comparegraph
 cd comparegraph
 cargo install --locked --path crates/comparegraph
+comparegraph setup --client claude --apply     # wire up an agent (omit --apply for a dry run)
 ```
 
-`--locked` is required: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` pins a version
-that resolves. `npm i -g comparegraph` is coming with the first release. Build from source with Rust 1.85 or newer.
+`--locked` is required: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` pins a version that
+resolves. Rust 1.85 or newer. npm package: coming with the first release. `comparegraph doctor` checks the setup; the
+[agent table](#agents-platforms-uninstall) lists the six clients.
 
-### 2. Wire up your agent
+Then compare. The sample is `fixtures/typescript` (three files) against the ten-feature example pack:
 
 ```bash
-comparegraph setup --client claude            # dry run: prints the plan, writes nothing
-comparegraph setup --client claude --apply    # writes the entry, backs up the old file
+mkdir ../ws && cd ../ws
+comparegraph add ../comparegraph/fixtures/typescript --name tsfix   # register a clone (read, never run)
+comparegraph build tsfix                                   # parse it: one run, one store hash
+comparegraph family add ../comparegraph/families/example-code-graph-tools
+comparegraph relate                                        # related | adjacent | unrelated
+comparegraph map tsfix example-code-graph-tools            # candidates per feature, writes nothing
+comparegraph claim tsfix symbols.extraction has --author me --at src/util.ts:11-11
+comparegraph claim tsfix search.embeddings none --author me  # no --searched: the graph check runs
+comparegraph matrix example-code-graph-tools               # features x clones, prevalence, gaps
+comparegraph export vault --out ./vault                    # open ./vault in Obsidian
 ```
 
-| Client | Command |
-|---|---|
-| Claude Code | `comparegraph setup --client claude --apply` |
-| Codex | `comparegraph setup --client codex --apply` |
-| Cursor | `comparegraph setup --client cursor --scope project --apply` |
-| Gemini CLI | `comparegraph setup --client gemini --apply` |
-| OpenCode | `comparegraph setup --client opencode --apply` |
-| Hermes | `comparegraph setup --client hermes --apply` |
+Every command prints one JSON envelope (add `--pretty` to indent it). Real output from the steps above, trimmed:
 
-`--client all` acts only on clients that look installed. Check the result with `comparegraph doctor`.
-
-### 3. Add and build your first clone
-
-Use a workspace folder next to the clone. The sample is `fixtures/python`, a four-file Python package that ships with the repository.
-
-```bash
-mkdir ws && cd ws
-comparegraph add ../comparegraph/fixtures/python --name pyfix   # register a clone (read, never run)
-comparegraph build pyfix                                        # parse it: one run, one store hash
-comparegraph search add --repo pyfix                            # symbols whose name contains "add"
-comparegraph show pyfix "pkg/core.py::add"                      # callers, callees, community, licence lane
+```text
+build   {"run":1,"nodes":13,"edges":21,"files_parsed":3,"communities":1,
+         "store_hash":"8a64f321...","reused":false}
+relate  {"repo":"tsfix","family":"example-code-graph-tools","score":0.0,"band":"unrelated"}
+claim   {"feature":"symbols.extraction","verdict":"has","confidence":"derived",
+         "locations":[{"path":"src/util.ts","line_start":11,"line_end":11,"stale":false}]}
+claim   {"feature":"search.embeddings","verdict":"none","confidence":"inferred",
+         "note":"graph-absent (names, paths, community terms, kinds; not strings, flags or config keys):
+                 terms=embedding,embeddings,search; stems=embedd; channels=symbols:0,paths:0,communities:0,kinds:0"}
+claim   a bad citation is refused: "src/nope.ts: file does not exist in the clone"  (error invalid_arguments)
+matrix  symbols.extraction -> has (prevalence 1.0);  search.embeddings -> none;  the other eight cells "-"
+check   {"repos":1,"runs_done":1,"stale_locations":0,"drifted_runs":0,"schema_ok":true,"problems":[]}
+export  {"written":"./vault","repos":1,"files":27,"communities":1,"symbols":10}
 ```
 
-### 4. Compare
+`relate` says `unrelated`, as it should: a three-file fixture is not a code-graph tool, and `map` finds no candidates. The
+matrix has two claimed cells and eight unclaimed `-` cells.
 
-The family pack comes from the clone: `../comparegraph/families/example-code-graph-tools`.
+## How good is it
 
-```bash
-comparegraph family add ../comparegraph/families/example-code-graph-tools   # load a taxonomy pack
-comparegraph relate                                         # related | adjacent | unrelated
-comparegraph map pyfix example-code-graph-tools             # candidate symbols per feature (writes nothing)
-comparegraph claim pyfix symbols.extraction has --author me --at pkg/core.py:1-2
-comparegraph matrix example-code-graph-tools                # features x clones, prevalence, gaps
-comparegraph export vault --out ./vault                     # then open ./vault in Obsidian
-```
+Every number below is copied from a report in this repository; read its caveats before quoting one. All were measured on
+2026-10-13 on one shared host.
 
-`relate` says `unrelated` here, as it should: a four-file package is not a code-graph tool. The matrix has one
-claimed cell (`symbols.extraction`, `has`, prevalence 1.0) and nine unclaimed `-` cells.
+### Call edges against a hand-labelled gold standard
 
-Every command prints one JSON envelope (add `--pretty` to indent it). Real output from the steps above (a fresh clone, an installed binary), trimmed:
+The gold: 150 call sites per project (750 in all) drawn at random from each project's own source, labelled by two readers
+who worked independently under one rubric (both are language-model agents; none was run blind to the engines). `final` keeps
+only the rows both agree on. How the gold is made: [`fixtures/gold/README.md`](fixtures/gold/README.md). Precision is over
+answered sites, recall over repo-target sites (shown in brackets). Kappa is Cohen's kappa on the call target between the two
+readers.
 
-| Command | Shape of `data` |
-|---|---|
-| `build` | `{"run":1,"nodes":14,"edges":20,"files_parsed":4,"communities":2,"store_hash":"580d220d..."}` |
-| `show` | `node`, `community:"pkg"`, `callers[]` (`pkg/cli.py::main`, `pkg/core.py::bump`, `pkg/test_core.py::test_add`), `stale`, `confidence` |
-| `export vault` | `{"written":"./vault","repos":1,"files":28,"communities":2,"symbols":10}` |
+| Project (sites) | Reader kappa | CompareGraph P / R | code-review-graph via adapter P / R | codegraph P / R |
+|---|---|---|---|---|
+| graphmind (48) | 0.98 | 0.973 / 0.750 | 0.963 / 0.542 | 0.650 / 0.813 |
+| srclight (50) | 0.96 | 1.000 / 0.780 | 1.000 / 0.740 | 1.000 / 0.320 |
+| code-review-graph (53) | 1.00 | 1.000 / 0.925 | 1.000 / 1.000 | 0.913 / 0.396 |
+| hono (36) | 0.89 | 1.000 / 0.667 | 0.880 / 0.611 | none answered / 0.000 |
+| caddy (48) | 0.92 | 1.000 / 1.000 | 0.897 / 0.729 | 0.623 / 0.896 |
+| **pooled (235)** | **0.95** | **0.995 / 0.834** | 0.956 / 0.736 | 0.708 / 0.506 |
 
-## Uninstall
+Pooled counts: CompareGraph 196 correct of 197 answered, 196 of 235 sites; codegraph 119 of 168 answered, 119 of 235.
+Sources: [`docs/reports/2026-10-12-engine-parity.md`](docs/reports/2026-10-12-engine-parity.md), sections "After Plan 6" and
+"codegraph head-to-head"; kappa from "After Plan 5", inter-reader agreement (pooled `is_call` kappa 0.94).
+Reproduce: `scripts/gold-score.sh <project-copy> fixtures/gold/<project>/calls.jsonl --binary <comparegraph>`,
+`scripts/compare-engines.sh` (all engines), `scripts/h2h-codegraph.sh` (codegraph).
 
-Remove the `comparegraph` entry from each client you set up, then delete the workspace store.
+Read it with these limits. Sites per project are 36 to 53, so per-project noise is about 0.1. caddy 1.000 means "every
+labelled site" (48 sites drawn before the Go work), and hono precision rests on 24 answered sites. codegraph is run in its
+`--graph-only` mode through one `get_callees` call per site; where it lists several same-named targets our scorer counts the
+site correct if the true one is among them. On hono none of its sites is answered, because the tightest node it finds there
+is an anonymous arrow function with no call edges; a lookup through the nearest named ancestor was not run. The floors in
+`fixtures/gold/FLOORS.json` are asserted by `crates/comparegraph/tests/gold.rs` and are only ever raised.
 
-| Client | File | Remove |
+### Build and query time
+
+| Measure | Result | Source section |
 |---|---|---|
-| Claude Code | `~/.claude.json` or `.mcp.json` | `mcpServers.comparegraph` |
-| Codex | `~/.codex/config.toml` or `.codex/config.toml` | the `[mcp_servers.comparegraph]` table |
-| Cursor | `.cursor/mcp.json` (project; user scope `~/.cursor/mcp.json` is unverified and not written) | `mcpServers.comparegraph` |
-| Gemini CLI | `~/.gemini/settings.json` or `.gemini/settings.json` | `mcpServers.comparegraph` |
-| OpenCode | `~/.config/opencode/opencode.json` or `opencode.json` | `mcp.comparegraph` |
-| Hermes | `~/.hermes/config.yaml` | `mcp_servers.comparegraph` |
+| Cold build, five study projects | 0.8 s to 6.4 s each; vs codegraph ours : codegraph time 0.50 to 1.29 on four projects and 5.12 on hono, after excluding codegraph's fixed 12 s embedding-model load | head-to-head |
+| Cold build vs code-review-graph | 1.6x to 3.4x faster, ratios only (host load 37 to 73) | After Plan 5 |
+| hermes-agent, 10,288 files | full 93.2 s; no-op rebuild 2.0 s; one-file edit 47.5 s; store hash equal to `--full` | After Plan 6, build time and scale |
+| openclaw, 38,258 files | full 499.6 s (the 8 minute target was missed by 20 s); no-op 7.5 s; one-file edit 289.7 s; max RSS 3.54 GB | After Plan 6, build time and scale |
+| Queries on the 1.29M-edge openclaw graph | `impact` 2.5 s, `traverse` 3.6 s, `dead-code` 1.6 s; 12 to 15 MB RSS | After Plan 6, query bounds |
 
-`setup --apply` leaves a backup named `<file>.bak-<unix-seconds>` next to every file it changed. Then:
+Caveats from the reports: build times ran at load 6 to 15 on 40 cores, so read the ratios, not the seconds. The hermes-agent
+build is 1.40x slower than at the end of Plan 6 lane B1, a regression that was measured and not diagnosed. Query bounds are one
+hub symbol (3,156 callers), at defaults, one run each. A 4.4k-file private product monorepo built in 211 s in an earlier run
+([proof report](docs/reports/2026-10-13-proof-on-a-real-product.md)); that report also records two comparator builds that
+panicked on non-ASCII text, found before this README's numbers were taken, so read it as history.
+Reproduce: `scripts/compare-engines.sh`, `scripts/h2h-codegraph.sh`, and `COMPAREGRAPH_PROFILE=1 comparegraph build <repo>`.
 
-```bash
-cargo uninstall comparegraph
-rm -r .comparegraph      # in each workspace: the SQLite store
-```
+### Overlap with code-review-graph (symbols and edges)
 
-<!-- b1-report.md "Verified config shapes" and "Behaviour" (backup name) -->
+Jaccard over nodes and resolved edges, on three projects ([parity report](docs/reports/2026-10-12-engine-parity.md), "After the
+review fixes"; symbols and extends from "After the precision and recall pass"):
 
-## Supported agents
-
-`comparegraph setup` writes the entry; `comparegraph doctor` reports each client's state.
-
-| Agent | Config path (user / project) | Entry shape | Verified from |
+| Measure | graphmind | srclight | code-review-graph |
 |---|---|---|---|
-| Claude Code | `~/.claude.json` / `.mcp.json` | `mcpServers.<name> = {command, args}` | documented Claude Code MCP config |
-| Codex | `~/.codex/config.toml` / `.codex/config.toml` | `[mcp_servers.<name>]` | developers.openai.com/codex/mcp |
-| Cursor | `~/.cursor/mcp.json` (unverified, skipped) / `.cursor/mcp.json` (verified) | `mcpServers.<name>` | cursor.com/docs/mcp |
-| Gemini CLI | `~/.gemini/settings.json` / `.gemini/settings.json` | `mcpServers.<name>` | gemini-cli docs/tools/mcp-server.md |
-| OpenCode | `~/.config/opencode/opencode.json` / `opencode.json` | `mcp.<name> = {type:"local", command:[...]}` | opencode.ai/docs/mcp-servers |
-| Hermes | `~/.hermes/config.yaml` (no project scope) | `mcp_servers.<name> = {command, args}` | hermes-agent.nousresearch.com docs, features/mcp |
+| Symbols (function, method, class, type) | 0.946 | 0.988 | 0.939 |
+| Calls, resolved | 0.713 | 0.969 | 0.963 |
+| Imports, file to file | 0.647 | 0.904 | 0.901 |
+| Tests (test to tested symbol) | 0.119 | 0.605 | 0.513 |
+| Extends and implements | 0.938 | 0.667 | 0.730 |
 
-<!-- b1-report.md "Verified config shapes (docs fetched 2026-10-13)" and "B1 fix round 1" R4 (Cursor user scope unverified, skipped) -->
+Test links are the weak spot on all three projects. Reproduce: `scripts/compare-engines.sh`.
 
-`doctor` state names:
+### Conformance fixtures (reference engine)
 
-| State | Meaning |
-|---|---|
-| `aligned` | the entry matches this workspace and binary |
-| `stale` | same arguments, different binary path; `--force` refreshes it |
-| `conflict` | the entry differs in another way, or the file cannot be parsed; untouched without `--force` |
-| `missing` | no `comparegraph` entry |
-| `unverified` | the client's config location is not verified; setup skips it |
+`comparegraph conform reference` runs the golden fixtures in `fixtures/`; a provider below the floor (nodes 0.95, edges 0.85,
+recall and precision) is refused. Output at this commit:
 
-## Supported platforms
+| Fixture | Node recall / precision | Edge recall / precision |
+|---|---|---|
+| go | 1.00 / 1.00 | 1.00 / 1.00 |
+| java | 1.00 / 1.00 | 1.00 / 1.00 |
+| python | 1.00 / 1.00 | 0.952 / 1.00 |
+| rust | 1.00 / 1.00 | 1.00 / 1.00 |
+| typescript | 1.00 / 1.00 | 0.955 / 1.00 |
 
-| Platform | Status |
-|---|---|
-| linux-x64 | built and tested here |
-| darwin-arm64, darwin-x64, win32-x64 | built by the release workflow; untested until the first release |
-| Anywhere Rust 1.85+ runs | build from source with `cargo install` |
+Five fixtures are five small repositories: they prove the extractors against a hand-checked graph, not every language
+feature.
 
-## Local only, no telemetry, verified releases
+### Feature mapping gold
 
-- The engine makes no network call. It reads clones on disk and the MCP server speaks over stdio.
-- The store is one SQLite file you own: `.comparegraph/comparegraph.db`.
-- `comparegraph check` proves that every stored location still resolves and that a rebuild gives the same hash.
-- Release checksums are planned. They do not exist yet.
+A second gold standard scores `map` and the graph-backed absent check: 30 features of
+[`families/code-graph-tools/rows.md`](families/code-graph-tools/rows.md) against six study copies of code-graph tools, 180
+pairs, two independent readers, disagreements left out of the scores (method:
+[`fixtures/gold-map/README.md`](fixtures/gold-map/README.md)). First measurement in progress; see
+[`docs/reports/`](docs/reports/). No number is quoted here until a report exists. Reproduce: `scripts/map-score.sh`.
+
+## Languages
+
+29 languages are parsed. Five are resolved deeply. Four have a measured gold standard. Read the tiers, not the headline.
+
+| Tier | Languages | What the engine extracts |
+|---|---|---|
+| **Parsed** (29) | `typescript` (+`tsx`), `javascript` (+`jsx`, `mjs`), `python`, `rust`, `go`, `java`, `ruby`, `php`, `swift`, `kotlin`, `dart`, `scala`, `c`, `cpp`, `csharp`, `objc`, `perl`, `r`, `bash`, `powershell`, `sql`, `yaml`, `toml`, `hcl`, `dockerfile`, `graphql`, `css`, `scss`, `html` | symbols, files, containment, imports, and the direct calls the extractor reports. Config and markup (`yaml` to `html`) yield symbols only; treat them as noise for comparison. |
+| **Resolved** (5) | `typescript`/`javascript`, `python`, `rust`, `go`, `java` | adds imports resolved to files, declared types, typed receivers, barrel re-exports, inheritance (`extends`, `implements`), and test links; `go` has no inheritance edges by design |
+| **Measured** | `typescript` (hono, graphmind, code-review-graph), `python` (srclight, code-review-graph), `rust` (graphmind), `go` (caddy) have a call-edge gold; all five resolved languages have a conformance fixture | the [gold table](#call-edges-against-a-hand-labelled-gold-standard); `java` has the fixture only |
+
+The registry holds 32 identifiers (`tsx`, `jsx`, `mjs` count with their language). Unresolved languages bind a call only by
+name, at confidence 0.5, and only inside the same language family. Known gaps: a Java `new T()` has no call site, a Rust trait
+method and its impl share one qualified name, and Go calls on a method result, range variables and generics bind nothing yet
+([Plan 7 candidates](docs/superpowers/plans/2026-10-13-plan-7-candidates.md)). Skipped on every build: the directories
+`node_modules`, `target`, `dist`, `build`, `.git`, `vendor`, `__pycache__`, `.venv`, `venv`; files that `.gitignore` or
+`.ignore` exclude; minified files. Skips are counted in the run's `limitations`.
+<!-- crates/comparegraph/src/providers/reference/walker.rs language_for (29 languages, 32 ids); resolve.rs (ts/js, python, rust, go contexts), module_ctx.rs and decl_types (java); inherit.rs -->
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    clones["cloned repos"] --> engine["reference engine: tree-sitter"]
-    engine --> store[("SQLite store, schema v1")]
+    clones["cloned repos"] --> engines["engines: reference (tree-sitter), external plugins"]
+    engines --> store[("SQLite store, schema v1")]
     store --> graph["communities, search, graph queries"]
     store --> families["families: taxonomy packs"]
     families --> relate["relate and map"]
@@ -207,120 +243,28 @@ flowchart LR
     claims --> out
 ```
 
-The code is arranged in rings. Dependencies point inward. The folders under `crates/comparegraph/src/` carry the same names.
+The code is arranged in rings; dependencies point inward, and the folders under `crates/comparegraph/src/` carry the same
+names. Two engines sit in the providers ring: the built-in reference engine, and any external plugin that speaks the
+[plugin protocol](#plugins-and-the-second-engine).
 
 ```mermaid
 flowchart LR
     adapters["adapters: CLI, MCP"] --> application["application: workflows"]
-    application --> providers["providers: reference engine"]
+    application --> providers["providers: reference tree-sitter engine, external plugins"]
     providers --> store["store: SQLite"]
     store --> domain["domain: graph, claim, evidence, run"]
 ```
 
-<!-- docs/superpowers/specs/2026-10-12-codecross-design.md section 3 (the rings) -->
-
 ### The three rules
 
 1. **The engine never calls a model.** Every score, band, description and candidate is computed from stored facts.
-2. **A claim needs a citation that resolves now.** `has` and `partial` need `--at path:start-end` that matches a
-   stored node. `none` needs `--searched` terms that find nothing in the engine's own index. Otherwise the engine
-   refuses, or writes `unknown`.
-3. **Claims and decisions are append-only, enforced by the database.** A change is a new row that names the one it
-   supersedes. The latest row wins, and the trail stays.
+2. **A claim needs a citation that resolves now.** `has` and `partial` need `--at path:start-end` matching a stored node.
+   `none` needs `--searched` terms that find nothing, or the graph check. Otherwise the engine refuses or writes `unknown`.
+3. **Claims and decisions are append-only, enforced by the database.** A change is a new row naming the one it supersedes.
+   The latest wins, and the trail stays.
 
-<!-- docs/superpowers/specs/2026-10-12-codecross-design.md sections 2b, 4, 5 -->
-
-Every answer carries `confidence` (`observed`, `derived`, `inferred`, `unknown`) and a `limitations[]` list of what
-the engine cannot see. A candidate from `search` or `map` is labelled `candidate`, never `has`.
-
-## Measured coverage
-
-Two reports in this repository are the source of every number here. Read their caveats before quoting one.
-
-- [`docs/reports/2026-10-12-engine-parity.md`](docs/reports/2026-10-12-engine-parity.md): CompareGraph against
-  code-review-graph 2.3.9 on three upstream projects.
-- [`docs/reports/2026-10-12-plan-1-proof.md`](docs/reports/2026-10-12-plan-1-proof.md): three real clones through the pipeline.
-
-To re-score call edges against the committed gold labels, run `scripts/gold-score.sh <project-copy-dir> fixtures/gold/<project>/calls.jsonl
---binary <comparegraph>`: it builds the copy in a scratch workspace and prints a JSON summary (sites, answered, correct, precision,
-recall, missed and false site ids). The matching rule is in `scripts/lib/gold.py`, shared with `scripts/compare-engines.sh`. The floors
-`fixtures/gold/FLOORS.json` are asserted by `crates/comparegraph/tests/gold.rs` when `COMPAREGRAPH_STUDY` points at a directory holding the
-five project copies (skipped otherwise); a floor is raised by later work, never lowered.
-- Re-run the comparison yourself: [`scripts/compare-engines.sh`](scripts/compare-engines.sh).
-
-### Conformance per language
-
-`comparegraph conform reference` runs the golden fixtures in `fixtures/`. A provider below the floor is refused:
-nodes need recall and precision of at least 0.95, edges at least 0.85.
-
-| Fixture | Node recall / precision | Edge recall / precision |
-|---|---|---|
-| go | 1.00 / 1.00 | 1.00 / 1.00 |
-| java | 1.00 / 1.00 | 1.00 / 1.00 |
-| python | 1.00 / 1.00 | 0.952 / 1.00 |
-| rust | 1.00 / 1.00 | 1.00 / 1.00 |
-| typescript | 1.00 / 1.00 | 0.955 / 1.00 |
-
-<!-- output of `comparegraph conform reference` at this commit (fixtures/*/expected.json); floors: docs/superpowers/specs/2026-10-12-codecross-design.md section 7 -->
-
-Five fixtures are five small repositories. They prove the extractors against a hand-checked graph, not every
-language feature.
-
-### Overlap with code-review-graph
-
-Jaccard over nodes keyed `(path, name)` and over resolved edges. Seed 7, `nice -n 10`, one run on one shared host.
-Calls, imports, tests and the edge counts are from the run after the review fixes. Symbols and extends/implements are
-from the run before them; the review-fix run did not report those two.
-
-| Measure | graphmind (Rust + TS) | srclight (Python) | code-review-graph (Python + TS) |
-|---|---|---|---|
-| Symbols (function, method, class, type) | 0.946 | 0.988 | 0.939 |
-| Calls, resolved | 0.713 | 0.969 | 0.963 |
-| Imports, file to file | 0.647 | 0.904 | 0.901 |
-| Tests (test to tested symbol) | 0.119 | 0.605 | 0.513 |
-| Extends and implements | 0.938 (15 vs 16 edges) | 0.667 (9 vs 6) | 0.730 (32 vs 32) |
-| Call edges only they have / only we have | 265 / 736 | 14 / 89 | 364 / 69 |
-| Our call edges below confidence 1.0 | 66 (2.0 percent) | 14 (0.4) | 199 (1.8) |
-
-
-The limit: code-review-graph resolves only 16 to 35 percent of its own call targets to an indexed node, so each edge
-Jaccard is over the comparable minority.
-<!-- docs/reports/2026-10-12-engine-parity.md#what-is-compared-and-its-limit -->
-
-Precision, as samples read by hand by one reader, on the run before the review fixes:
-
-| Sample | Result |
-|---|---|
-| 30 call edges only CompareGraph has (10 per project) | 26 correct, 2 false, 2 ambiguous |
-| 54 call edges only code-review-graph has | 43 our misses, 10 their false edges, 1 ambiguous |
-
-<!-- engine-parity.md#after-the-review-fixes-2026-10-13: calls 0.713/0.969/0.963, imports 0.647/0.904/0.901, tests 0.119/0.605/0.513, edges 265/736, 14/89, 364/69, 0.5 share 66 (2.0), 14 (0.4), 199 (1.8); #after-the-precision-and-recall-pass-2026-10-13: symbols 0.946/0.988/0.939, extends 0.938/0.667/0.730 -->
-<!-- docs/reports/2026-10-12-engine-parity.md#samples-read-by-hand: "total of 30 | 26 | 2 | 2"; "total of 54 | 43 | 10 | 1" -->
-
-These are samples, not rates. The review fixes that came after were not re-read by hand. The report says so.
-
-### Build time
-
-Seconds, median of 3 cold builds, one run (the final run before the review fixes), same host and nice level.
-code-review-graph's figure includes Python start-up and its flows and community post-processing. CompareGraph's includes communities.
-
-| Project | code-review-graph full | CompareGraph cold | CompareGraph unchanged rebuild |
-|---|---|---|---|
-| graphmind (251 files) | 6.28 | 2.57 | 2.09 |
-| srclight (100 files) | 5.97 | 1.48 | 1.01 |
-| code-review-graph (470 files) | 18.95 | 6.50 | 4.34 |
-
-<!-- engine-parity.md#after-the-precision-and-recall-pass-2026-10-13, "Build time (seconds, median of 3 cold builds; final run)": 6.28/2.57/2.09, 5.97/1.48/1.01, 18.95/6.50/4.34; file counts from the first build table -->
-
-Caveats: a shared host (the report notes its own timings varied 5 to 15 percent run to run), and no query latency or answer
-quality measured on real tasks. Treat the table as one machine's timings, not a speed-up claim.
-
-srclight stays at 50 percent: its 38 files sit in one package directory, which the directory split cannot divide.
-
-Behind code-review-graph: call recall on Rust and TS/JSX; semantic search, execution flows and diff-aware review (absent).
-Test links are behind on all three projects: Jaccard 0.119 on graphmind (its Rust tests sit in the same files as the code),
-0.605 on srclight and 0.513 on code-review-graph (it makes one node per `it(...)` case; we attribute to the file). The graph is rewritten each run; unchanged files reuse a parse cache.
-<!-- docs/reports/2026-10-12-engine-parity.md "Verdict per area, now" -->
+A candidate from `search` or `map` is labelled `candidate`, never `has`. Design:
+[`docs/superpowers/specs/2026-10-12-codecross-design.md`](docs/superpowers/specs/2026-10-12-codecross-design.md).
 
 ## What you get
 
@@ -333,190 +277,51 @@ Four levels. Each answer says how it knows.
 | Symbols | callers, callees, blast radius, tests that reach a symbol, entry points, dead-code candidates | `show`, `traverse`, `impact`, `tests-for`, `entry-points`, `dead-code` |
 | Claims | verdict, citation, author, trail of superseded rows | `claim`, `claims`, `matrix` |
 
-A real `show` answer from step 3 (trimmed):
+A real `show` answer from the quick start (trimmed):
 
 ```json
 {"ok":true,"verb":"show","schema":1,
- "data":{"repo":"pyfix","licence":null,"lane":"study",
-  "node":{"kind":"function","qualified_name":"pkg/core.py::add",
-          "path":"pkg/core.py","line_start":1,"line_end":2,"language":"python"},
-  "community":"pkg",
-  "callers":["pkg/cli.py::main","pkg/core.py::bump","pkg/test_core.py::test_add"],
-  "callees":[],"stale":false,"confidence":"observed"},
- "evidence":{"confidence":"observed","limitations":[]},
- "cost":{"rows":1,"bytes":453}}
+ "data":{"repo":"tsfix","lane":"study",
+  "node":{"kind":"method","qualified_name":"src/util.ts::bump","path":"src/util.ts",
+          "line_start":11,"line_end":11,"language":"typescript"},
+  "community":"src","callers":[],"callees":["src/util.ts::add"],"stale":false,"confidence":"observed"},
+ "evidence":{"confidence":"observed","limitations":[]}}
 ```
 
-Envelope fields: `ok`, `verb`, `schema`, `data`, `evidence`, `page`, `cost`, `error`. The exit code is 0 when `ok`
-and 1 otherwise. List verbs take `--limit` (default 50, maximum 500) and `--cursor`. Error codes: `store_error`,
-`provider_unavailable`, `not_found`, `empty`, `below_floor`, `check_failed`, `io_error`.
+Envelope fields: `ok`, `verb`, `schema`, `data`, `evidence`, `page`, `cost`, `error`. The exit code is 0 when `ok` and 1
+otherwise. List verbs take `--limit` (default 50, maximum 500) and `--cursor`. Error codes (from
+[`docs/catalog.json`](docs/catalog.json)): `below_floor`, `catalog_stale`, `check_failed`, `empty`, `invalid_arguments`,
+`io_error`, `not_found`, `provider_unavailable`, `store_error`.
 
 ## CLI reference
 
-Global options on every command: `--root <ROOT>` (the workspace, default `.`) and `--pretty`.
-Each table row is a command listed by `comparegraph --help`. The `--help` text of the commands with flags is in the blocks below.
+Global options on every command: `--root <ROOT>` (the workspace, default `.`), `--pretty`, `--allow-unverified` (use an
+external provider with no manifest). `comparegraph <verb> --help` prints every flag.
 
 ### Build and inspect
 
 | Command | What it does | Flags that matter |
 |---|---|---|
 | `add <PATH>` | Register a clone. Read, never run. | `--name`, `--as-root` |
-| `build <REPO>` | Parse a clone into the graph (one run). | `--provider` (default `reference`), `--max-file-bytes`, `--max-files`, `--full` (bypass the parse cache) |
-| `check` | Verify schema, determinism and citation locations. | none |
-| `repos` | Registered repos with their latest run. | none |
+| `build <REPO>` | Parse a clone into the graph (one run). | `--provider` (default `reference`), `--providers a,b` (several engines in turn, with an agreement table), `--max-file-bytes`, `--max-files`, `--full` |
+| `check` | Verify schema, determinism and citation locations. | |
+| `repos` | Registered repos with their latest run. | |
 | `doctor` | Report the store, every provider and each agent client's registration. | `--bin` |
 | `conform <PROVIDER>` | Run the golden fixtures against a provider. | `--fixtures` |
-
-<details>
-<summary><code>comparegraph add</code></summary>
-
-```text
-Register a clone (read, never run)
-Usage: comparegraph add [OPTIONS] <PATH>
-  <PATH>  
-      --name <NAME>  
-      --as-root      register this clone as the workspace's root (spec §2b product/baseline modes)
-```
-</details>
-<details>
-<summary><code>comparegraph build</code></summary>
-
-```text
-Parse a registered clone into the graph (one run)
-Usage: comparegraph build [OPTIONS] <REPO>
-  <REPO>  
-      --provider <PROVIDER>              [default: reference]
-      --max-file-bytes <MAX_FILE_BYTES>  [default: 1048576]
-      --max-files <MAX_FILES>            [default: 50000]
-      --full                             bypass the per-file parse cache
-```
-</details>
-<details>
-<summary><code>comparegraph doctor</code></summary>
-
-```text
-Report the store, every provider and each agent client's registration of the MCP server
-Usage: comparegraph doctor [OPTIONS]
-      --bin <BIN>  compare registrations against this command instead of the running executable
-```
-</details>
-<details>
-<summary><code>comparegraph conform</code></summary>
-
-```text
-Run the golden fixtures against a provider
-Usage: comparegraph conform [OPTIONS] <PROVIDER>
-  <PROVIDER>  
-      --fixtures <FIXTURES>  [default: fixtures]
-```
-</details>
-
+| `catalog` | Print the MCP tool catalog as JSON. | `--check` (compare with `docs/catalog.json`) |
 
 ### Graph queries
 
 | Command | What it does | Flags that matter |
 |---|---|---|
 | `search <QUERY>` | Full-text search over symbols of each latest run. | `--repo`, `--kind`, `--limit`, `--cursor` |
-| `show <REPO> <QUALIFIED_NAME>` | A symbol with callers, callees, community, licence lane. | `--detail full` adds its current lines |
+| `show <REPO> <QN>` | A symbol with callers, callees, community, licence lane. | `--detail full` |
 | `communities <REPO>` | Module clusters of the latest run. | `--limit`, `--cursor` |
-| `traverse <REPO> <QUALIFIED_NAME>` | Nodes reachable over calls, extends, implements, with hop distance and path. | `--direction`, `--depth` (3), `--max-nodes` (200), `--kinds`, `--min-confidence` (0.5) |
-| `impact <REPO> [QUALIFIED_NAME]` | Everything that transitively depends on a symbol or files, by hop, plus the tests that reach it. | `--file`, `--depth` (5), `--max-nodes` (500), `--min-confidence` |
-| `tests-for <REPO> <QUALIFIED_NAME>` | Tests linked directly or through at most 3 call hops. | `--max-nodes`, `--min-confidence` |
-| `entry-points <REPO>` | Exported, handler or main symbols nothing calls. | `--limit`, `--cursor`, `--min-confidence` |
-| `dead-code <REPO>` | Candidates nothing references. Dynamic dispatch is invisible. | `--limit`, `--cursor`, `--min-confidence` |
-
-<details>
-<summary><code>comparegraph tests-for</code></summary>
-
-```text
-Tests linked to a symbol directly or through at most 3 call hops
-Usage: comparegraph tests-for [OPTIONS] <REPO> <QUALIFIED_NAME>
-  <REPO>            
-  <QUALIFIED_NAME>  
-      --max-nodes <MAX_NODES>            [default: 200]
-      --min-confidence <MIN_CONFIDENCE>  [default: 0.5]
-```
-</details>
-
-<details>
-<summary><code>comparegraph entry-points</code></summary>
-
-```text
-Symbols nothing calls that are exported, handlers or main
-Usage: comparegraph entry-points [OPTIONS] <REPO>
-  <REPO>  
-      --limit <LIMIT>                    [default: 50]
-      --cursor <CURSOR>                  
-      --min-confidence <MIN_CONFIDENCE>  [default: 0.5]
-```
-</details>
-
-<details>
-<summary><code>comparegraph dead-code</code></summary>
-
-```text
-Candidates nothing references (dynamic dispatch is invisible)
-Usage: comparegraph dead-code [OPTIONS] <REPO>
-  <REPO>  
-      --limit <LIMIT>                    [default: 50]
-      --cursor <CURSOR>                  
-      --min-confidence <MIN_CONFIDENCE>  [default: 0.5]
-```
-</details>
-<details>
-<summary><code>comparegraph search</code></summary>
-
-```text
-Full-text search over symbols of each repo's latest run
-Usage: comparegraph search [OPTIONS] <QUERY>
-  <QUERY>  
-      --repo <REPO>      
-      --kind <KIND>      
-      --limit <LIMIT>    [default: 50]
-      --cursor <CURSOR>  
-```
-</details>
-<details>
-<summary><code>comparegraph show</code></summary>
-
-```text
-A symbol with callers, callees, community, licence lane; --detail full adds its current lines
-Usage: comparegraph show [OPTIONS] <REPO> <QUALIFIED_NAME>
-  <REPO>            
-  <QUALIFIED_NAME>  
-      --detail <DETAIL>  
-```
-</details>
-<details>
-<summary><code>comparegraph traverse</code></summary>
-
-```text
-Nodes reachable from a symbol over calls/extends/implements, with hop distance and the path to each
-Usage: comparegraph traverse [OPTIONS] <REPO> <QUALIFIED_NAME>
-  <REPO>            
-  <QUALIFIED_NAME>  
-      --direction <DIRECTION>            [default: both]
-      --depth <DEPTH>                    [default: 3]
-      --max-nodes <MAX_NODES>            [default: 200]
-      --kinds <KINDS>                    [default: calls,extends,implements]
-      --min-confidence <MIN_CONFIDENCE>  [default: 0.5]
-```
-</details>
-<details>
-<summary><code>comparegraph impact</code></summary>
-
-```text
-Everything that transitively depends on a symbol or file(s), by hop, plus the tests that reach it
-Usage: comparegraph impact [OPTIONS] <REPO> [QUALIFIED_NAME]
-  <REPO>            
-  [QUALIFIED_NAME]  
-      --file <FILE>                      
-      --depth <DEPTH>                    [default: 5]
-      --max-nodes <MAX_NODES>            [default: 500]
-      --min-confidence <MIN_CONFIDENCE>  [default: 0.5]
-```
-</details>
-
+| `traverse <REPO> <QN>` | Nodes reachable over calls, extends, implements, with hop distance and path. | `--direction`, `--depth` (3), `--max-nodes` (200), `--kinds`, `--min-confidence` (0.5) |
+| `impact <REPO> [QN]` | Everything that transitively depends on a symbol or files, by hop, plus the tests that reach it. | `--file`, `--depth` (5), `--max-nodes` (500) |
+| `tests-for <REPO> <QN>` | Tests linked directly or through at most 3 call hops. | `--max-nodes`, `--min-confidence` |
+| `entry-points <REPO>` | Exported, handler or main symbols nothing calls. | `--limit`, `--cursor` |
+| `dead-code <REPO>` | Candidates nothing references. Dynamic dispatch is invisible. | `--limit`, `--cursor` |
 
 ### Families and claims
 
@@ -524,138 +329,37 @@ Usage: comparegraph impact [OPTIONS] <REPO> [QUALIFIED_NAME]
 |---|---|---|
 | `family add <DIR>` | Load a pack (`rows.md`). Features it no longer lists become retired. | |
 | `family list` / `family show` | Registered families; one family by group. | |
-| `family propose` | Write a draft `rows.draft.md` from terms the given repos share. No model. | `--repos a,b,c`, `--min-repos`, `--max`, `--out` |
-| `relate` | Score each clone against each family and record the band. | `--repo`, `--family`, `--stored` (read, compute nothing) |
+| `family propose <NAME>` | Draft `rows.draft.md` from terms the given repos share. No model. | `--repos a,b,c`, `--min-repos`, `--max`, `--out` |
+| `relate` | Score each clone against each family and record the band. | `--repo`, `--family`, `--stored` |
 | `map <REPO> <FAMILY>` | Candidate symbols and communities per feature. Writes nothing. | `--feature`, `--limit` (5) |
-| `absent-check <REPO> <FAMILY> <FEATURE>` | Is the feature absent from the graph? Counts and up to 5 hits over four channels: symbols, paths, community labels/keywords, node kinds the feature names. `data.absent` is true only when all four are zero. Reads only. | |
-| `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. `none` without `--searched` runs the absent check: all channels empty records it as `inferred` (`graph-absent (names, paths, community terms, kinds; not strings, flags or config keys): ...`), any hit refuses it and lists the candidates. `--searched` is the manual path. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family` |
+| `absent-check <REPO> <FAMILY> <FEATURE>` | Is the feature absent? Counts and up to 5 hits over four channels: symbols, paths, community labels and keywords, node kinds the feature names. `data.absent` is true only when all four are zero. Reads only. | |
+| `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. `none` without `--searched` runs the absent check: all channels empty records it as `inferred`; any hit refuses it and lists the candidates. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family` |
 | `claims` | Latest claim per clone and feature. | `--repo`, `--family`, `--feature`, `--history` |
 | `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family` |
 | `decisions` | Latest decision per scope. | `--repo`, `--history` |
 | `matrix <FAMILY>` | Features against every clone: verdicts, prevalence, gaps, differentiators. | |
 
-<details>
-<summary><code>comparegraph family propose</code></summary>
-
-```text
-Write a draft taxonomy (rows.draft.md) from the terms the given repos share; no model
-Usage: comparegraph family propose [OPTIONS] --repos <REPOS> <NAME>
-  <NAME>  
-      --repos <REPOS>          
-      --out <OUT>              
-      --min-repos <MIN_REPOS>  [default: 2]
-      --max <MAX>              [default: 60]
-```
-</details>
-<details>
-<summary><code>comparegraph relate</code></summary>
-
-```text
-Score each clone against each family (related|adjacent|unrelated) and record the band
-Usage: comparegraph relate [OPTIONS]
-      --repo <REPO>      
-      --family <FAMILY>  
-      --stored           read the latest stored rows; compute and record nothing
-```
-</details>
-<details>
-<summary><code>comparegraph map</code></summary>
-
-```text
-Candidate symbols and communities per feature of a family in one clone; writes nothing
-Usage: comparegraph map [OPTIONS] <REPO> <FAMILY>
-  <REPO>    
-  <FAMILY>  
-      --feature <FEATURE>  
-      --limit <LIMIT>      [default: 5]
-```
-</details>
-<details>
-<summary><code>comparegraph claim</code></summary>
-
-```text
-Record a claim (has|partial|none|unknown) about a feature in a clone, with citations that resolve now
-Usage: comparegraph claim [OPTIONS] --author <AUTHOR> <REPO> <FEATURE> <VERDICT>
-  <REPO>     
-  <FEATURE>  
-  <VERDICT>  
-      --author <AUTHOR>      
-      --family <FAMILY>      
-      --at <AT>              
-      --searched <SEARCHED>  
-      --note <NOTE>          
-```
-</details>
-<details>
-<summary><code>comparegraph decide</code></summary>
-
-```text
-Record a decision (adopt|reject|park) about a clone, or one feature of it; append-only
-Usage: comparegraph decide [OPTIONS] --why <WHY> --by <BY> <REPO> <DISPOSITION>
-  <REPO>         
-  <DISPOSITION>  
-      --why <WHY>          
-      --by <BY>            
-      --feature <FEATURE>  
-      --family <FAMILY>    disambiguates --feature when its id exists in several families
-```
-</details>
-<details>
-<summary><code>comparegraph matrix</code></summary>
-
-```text
-Active features of a family against every clone: verdicts, prevalence, gaps and differentiators
-Usage: comparegraph matrix <FAMILY>
-  <FAMILY>  
-```
-</details>
-
-
 ### Exports and agents
 
 | Command | What it does | Flags that matter |
 |---|---|---|
-| `export json` | The graph as JSON. | `--repo`, `--out` |
+| `export json` | The graph as JSON (to stdout). | `--repo`, `--out` |
+| `export csv` | RFC 4180 CSV: nodes, edges, claims, decisions, one matrix per family. | `--out` (required) |
 | `export vault` | An Obsidian-style markdown vault, regenerated whole. | `--out` |
 | `mcp` | Serve the read verbs over MCP stdio (JSON-RPC, one object per line). | |
 | `setup` | Register the MCP server with agent clients. A plan by default. | `--client`, `--scope`, `--apply`, `--force`, `--bin` |
 
-<details>
-<summary><code>comparegraph export vault</code></summary>
-
-```text
-An Obsidian-style markdown vault, regenerated whole
-Usage: comparegraph export vault --out <OUT>
-      --out <OUT>  
-```
-</details>
-<details>
-<summary><code>comparegraph setup</code></summary>
-
-```text
-Register the MCP server with agent clients: a plan by default, `--apply` writes (additive, backed up)
-Usage: comparegraph setup [OPTIONS]
-      --client <CLIENT>  claude, codex, cursor, gemini, opencode, hermes, or all (installed clients only) [default: all]
-      --scope <SCOPE>    user (the client's own config) or project (the current directory) [default: user]
-      --apply            
-      --force            replace a `comparegraph` entry that differs: another workspace or shape (conflict) or a moved binary (stale); both are left untouched without it
-      --bin <BIN>        the command to register (default: this binary)
-```
-</details>
-
-
-
 ## MCP tools
 
-`comparegraph mcp` speaks JSON-RPC 2.0 over stdio, one object per line, protocol `2025-06-18`. Every tool returns the
-same envelope as the CLI. Seventeen tools: sixteen read-only, one write.
-<!-- crates/comparegraph/src/adapters/mcp.rs: tools() lists 18 -->
+`comparegraph mcp` speaks JSON-RPC 2.0 over stdio, one object per line, protocol `2025-06-18`. Every tool returns the same
+envelope as the CLI. Eighteen tools: seventeen read-only, one write (`comparegraph_claim`). The list is generated into
+[`docs/catalog.json`](docs/catalog.json) and checked in CI by `comparegraph catalog --check`.
 
 | Tool | Answers | Key arguments |
 |---|---|---|
 | `comparegraph_repos` | Which repos, with licence, lane, role, head and latest run | none |
 | `comparegraph_search` | Which symbols match these words | `query`, `repo`, `kind`, `limit`, `cursor` |
-| `comparegraph_show` | One symbol: callers, callees, community, licence lane | `repo`, `qualified_name`, `detail` (`compact` or `full`) |
+| `comparegraph_show` | One symbol: callers, callees, community, licence lane | `repo`, `qualified_name`, `detail`, `max_callers` |
 | `comparegraph_communities` | Module clusters of a repo | `repo`, `limit`, `cursor` |
 | `comparegraph_check` | Is the store sound | none |
 | `comparegraph_families` | Which families, with feature counts | none |
@@ -664,7 +368,7 @@ same envelope as the CLI. Seventeen tools: sixteen read-only, one write.
 | `comparegraph_relate` | Stored relatedness band per clone and family (reads, does not compute) | `repo`, `family` |
 | `comparegraph_claims` | Latest claim per clone and feature, with citations | `repo`, `family`, `feature`, `history` |
 | `comparegraph_matrix` | Features against clones, prevalence, gaps, differentiators | `family` |
-| `comparegraph_claim` | **Write.** Record a claim | `repo`, `feature`, `verdict`, `author`, `at[]`, `searched`, `note`, `family` |
+| `comparegraph_claim` | **Write.** Record a claim | `repo`, `feature`, `family`, `verdict`, `author`, `at[]`, `searched`, `note` |
 | `comparegraph_traverse` | Reachable nodes with hop distance and path confidence | `repo`, `qualified_name`, `direction`, `depth` (max 10), `max_nodes` (max 2000), `kinds`, `min_confidence` |
 | `comparegraph_impact` | Blast radius by hop, plus the tests that reach it | `repo`, `qualified_name` or `files[]`, `depth`, `max_nodes`, `min_confidence` |
 | `comparegraph_tests_for` | Tests linked to a symbol | `repo`, `qualified_name`, `max_nodes`, `min_confidence` |
@@ -672,104 +376,66 @@ same envelope as the CLI. Seventeen tools: sixteen read-only, one write.
 | `comparegraph_dead_code` | Dead-code candidates (never proof) | `repo`, `limit`, `cursor`, `min_confidence` |
 | `comparegraph_doctor` | Store and provider status | none |
 
-There is no `decide` tool. Adopting or rejecting a clone is a human act on the CLI.
-<!-- docs/design-notes-for-review.md: "no MCP decide tool" -->
-
-`min_confidence` is `0.5` or `1.0`. The default is `0.5`, which includes guessed hops. A guessed hop is labelled in
-`evidence`, and `1.0` drops them. A name-only match is capped at `0.5` and never binds onto a method.
-Truncation (`depth`, `max_nodes`) is recorded in `evidence.limitations`.
-<!-- docs/design-notes-for-review.md Plan 4: "MCP default min_confidence 0.5 includes guessed hops (labelled in evidence)"; "name-only binds ... capped at 0.5 and never bind a method" -->
-
-### Client setup
-
-```bash
-comparegraph setup --client claude --apply
-```
-
-`--client` takes `claude`, `codex`, `cursor`, `gemini`, `opencode`, `hermes` or `all` (installed clients only).
-Without `--apply` it prints the plan and writes nothing. With it, the change is additive and the old file is backed up.
-A differing `comparegraph` entry (another workspace, or a moved binary) is left alone unless you pass `--force`.
-`--scope` is `user` (the client's own config) or `project` (the current directory). Cursor user scope is unverified.
-`comparegraph doctor` reports each client's registration. A development build refuses to register itself; pass
-`--bin <installed path>`.
-
-By hand, add this to `.mcp.json`:
+There is no `decide` tool: adopting or rejecting a clone is a human act on the CLI. `min_confidence` is `0.5` (default,
+includes guessed hops, labelled in `evidence`) or `1.0`. A name-only match is capped at `0.5` and never binds onto a method.
+Truncation (`depth`, `max_nodes`) is recorded in `evidence.limitations`. By hand, add this to `.mcp.json`:
 
 ```json
 {"mcpServers":{"comparegraph":{"command":"comparegraph","args":["--root","/path/to/workspace","mcp"]}}}
 ```
 
-## Library usage
+## Plugins and the second engine
 
-The crate is `comparegraph`. Each verb is a function in `comparegraph::application::*` that takes the workspace root
-and returns a typed result. The CLI and MCP server are thin adapters over them.
+An external provider is any executable that speaks JSON lines on stdin and stdout: the host writes one request line, closes
+stdin, and reads answer lines until the first `ok` answer. Everything it prints is data, parsed into our own types. Register
+one in `comparegraph.toml` (`[providers.mine] command = "tools/my-provider"`) or as `comparegraph-provider-<name>` on `PATH`,
+with a `comparegraph-plugin.toml` manifest beside it (`kind`, `name`, `protocol = "1"`, `languages`, `network`). Without a
+manifest it runs only with `--allow-unverified`.
 
-```rust
-use comparegraph::application::{add, build, matrix};
-use comparegraph::providers::BuildOptions;
-use std::path::Path;
-
-let root = Path::new(".");
-add::add_repo(root, Path::new("../comparegraph/fixtures/python"), Some("pyfix"), false)?;
-let report = build::build_repo(root, "pyfix", "reference", &BuildOptions::default())?;
-let m = matrix::matrix(root, "example-code-graph-tools")?;
-println!("{} nodes, {} comparators", report.nodes, m.comparators);
-```
-
-<!-- crates/comparegraph/src/application/{add.rs:40 add_repo, build.rs:36 build_repo, matrix.rs:42 matrix}; providers/mod.rs BuildOptions::default; modules listed in application/mod.rs -->
-
-| Contract | Use it for |
+| Request | Answer `data` |
 |---|---|
-| The JSON envelope (`export json`, every CLI answer) | the stable data contract; fields in [What you get](#what-you-get) |
-| [`crates/comparegraph/src/store/schema.sql`](crates/comparegraph/src/store/schema.sql) | direct read-only SQL on `.comparegraph/comparegraph.db` |
+| `{"comparegraph":"1","op":"capabilities"}` | `languages`, `edge_kinds`, `communities`, `embeddings`; `unavailable` when the plugin's own engine is missing |
+| `{"comparegraph":"1","op":"build","repo_root":"/abs/clone","options":{...}}` | `nodes`, `edges`, `limitations`, `files_seen`, `files_parsed` |
 
-`claim` and `decision` rows are append-only. Read them; do not update them.
+Guards: a 1800 s timeout (`COMPAREGRAPH_PLUGIN_TIMEOUT`) that kills the whole process group, a 256 MiB output cap, paths that
+are absolute or contain `..` dropped, and a failure becomes `provider_unavailable` with no nodes written. Conformance is per
+language: `comparegraph conform <name>` runs the five fixtures, and `build` refuses only when a language present in the clone
+failed its fixture. Full protocol, a 25-line Python provider and the failure matrix:
+[`docs/plugin-protocol.md`](docs/plugin-protocol.md).
 
-## Configuration
+**The second engine.** [`providers/crg/`](providers/crg) is `comparegraph-provider-crg`, an adapter that runs
+code-review-graph 2.3.9 through the protocol (registered in the root `comparegraph.toml`; code-review-graph itself must be
+installed, else `doctor` shows it `unavailable`). `comparegraph build <repo> --providers reference,crg` builds both and
+prints an agreement table. On srclight: calls Jaccard 0.962, contains 0.981, imports 0.904, tests 0.594 (below the 0.8 mark),
+nodes 0.797 to 1.000 by kind ([parity report](docs/reports/2026-10-12-engine-parity.md), "Agreement between the engines").
+Adapter conformance: go, python and typescript pass; java (edge recall 0.77) and rust (nodes 0.86, edge recall 0.53) stay below
+the floors, so the gate refuses it on clones that contain them. Through the adapter, code-review-graph scores like its native
+self on three gold projects and slightly higher on hono and caddy (the [gold table](#call-edges-against-a-hand-labelled-gold-standard)).
 
-| Setting | Where | Meaning |
-|---|---|---|
-| `--root <dir>` | every command (default `.`) | the workspace; the store is `<root>/.comparegraph/comparegraph.db` |
-| `--pretty` | every command | indent the JSON |
-| `COMPAREGRAPH_BIN` | environment | the command `setup` registers, when `--bin` is not given |
-| `COMPAREGRAPH_NOW` | environment | a fixed clock for tests (a test hook; do not set it in real use) |
-| `COMPAREGRAPH_THREADS` | environment | `build`: the cap on the per-file analysis threads, a whole number 1 to 64 (default 8, also bounded by the CPU count); `0` or an unparsable value is ignored |
-| `COMPAREGRAPH_PROFILE` | environment | `build`: `1` prints one stderr line per pass with its wall time and a count |
-| `COMPAREGRAPH_PLUGIN_TIMEOUT` | environment | an external provider's run limit in whole seconds (default 1800; `0` or an unparsable value is refused before the run) |
-| `--min-confidence` | `traverse`, `impact`, `tests-for`, `entry-points`, `dead-code` | `0.5` (default, includes guessed hops) or `1.0` |
-| `--max-file-bytes` | `build` | skip files over this size (default 1048576) |
-| `--max-files` | `build` | keep the first N files by sorted path (default 50000) |
-| `--full` | `build` | bypass the per-file parse cache |
+To add your own engine, write a provider and pass `comparegraph conform <name>`; a provider below the floor is refused.
 
-Skipped on every build: the directories `node_modules`, `target`, `dist`, `build`, `.git`, `vendor`, `__pycache__`,
-`.venv` and `venv`; files that `.gitignore` or `.ignore` exclude; minified files (`*.min.js`, `*.min.css`,
-`*.bundle.js`, or a line over 5,000 characters). Skips are counted in the run's `limitations`.
-<!-- crates/comparegraph/src/providers/reference/walker.rs: ALWAYS_SKIP, is_minified_name, MINIFIED_LINE_CHARS; setup.rs COMPAREGRAPH_BIN, COMPAREGRAPH_NOW; providers/mod.rs BuildOptions::default -->
+## Families and the seven skills
 
-## Languages
+A family is a directory with a `rows.md`: front matter with `family:` and `description:`, then a table with `id`, `group`,
+`feature`, `definition`, `counts_as_has`, `tier` (`basics`, `common`, `extra` or `candidate`) and `weight`. Two packs ship:
+[`families/example-code-graph-tools`](families/example-code-graph-tools/rows.md) (10 features, the quick start) and
+[`families/code-graph-tools`](families/code-graph-tools/rows.md) (30 features, the mapping gold). `family propose <name>
+--repos a,b,c` drafts a pack from the terms the clones share, with no model. The tier names and band thresholds (`related` at
+0.5 or more, `adjacent` at 0.2 or more) are provisional, and a relatedness score is vocabulary overlap, not evidence
+([design notes](docs/design-notes-for-review.md)).
 
-The reference engine registers 32 language identifiers. TSX counts with TypeScript, and JSX and MJS with
-JavaScript, so that is 29 languages.
-<!-- crates/comparegraph/src/providers/reference/mod.rs capabilities(): 32 entries -->
+The method is seven plain-markdown skills in [`skills/`](skills) that any agent can read. Each gives when to use the verb, the
+exact commands, what the engine refuses, and how to check.
 
-| Group | Identifiers | Extracted |
-|---|---|---|
-| Golden fixtures | `typescript` (+ `tsx`), `python`, `rust`, `go`, `java` | symbols, contains, imports, calls; floors enforced by `conform` |
-| Also parsed | `javascript`, `jsx`, `mjs`, `ruby`, `php`, `swift`, `kotlin`, `dart`, `scala`, `c`, `cpp`, `csharp`, `objc`, `perl`, `r`, `bash`, `powershell`, `sql` | symbols and direct calls from the taken extractors |
-| Config and markup | `yaml`, `toml`, `hcl`, `dockerfile`, `graphql`, `css`, `scss`, `html` | symbols only; treat as noise for comparison |
-
-| Capability | Languages |
+| Skill | One line |
 |---|---|
-| Inheritance edges (`extends`, `implements`) | `typescript`, `tsx`, `javascript`, `jsx`, `mjs`, `python`, `rust`, `java`, `csharp` |
-| No inheritance edges | `go` by design: struct embedding and implicit interfaces are not modelled |
-| Context passes (typed receivers, import aliases, test links) | Rust, Python, TypeScript and JavaScript |
-
-<!-- crates/comparegraph/src/providers/reference/inherit.rs match arms; fixtures/go/NOTES.md; docs/reports/2026-10-12-engine-parity.md "recall pass" -->
-
-"Symbol-only" means the file yields symbols and the direct calls its extractor reports, but no type-aware call
-binding, no import resolution beyond names, and no inheritance. Known gaps: a Java `new T()` has no call site, and a
-trait method and its impl method share one qualified name in Rust. Config files such as `Cargo.toml` become symbols.
-<!-- docs/design-notes-for-review.md Plan 4 and Open items -->
+| [`using-comparegraph`](skills/using-comparegraph/SKILL.md) | Entry point: which skill applies, the order of the workflow, the habits that keep verdicts honest. |
+| [`adding-a-clone`](skills/adding-a-clone/SKILL.md) | Register a clone as a comparator or the root, parse it, verify the build. |
+| [`defining-a-family`](skills/defining-a-family/SKILL.md) | Write a pack, seed one with `family propose`, reload it safely. |
+| [`mapping-features`](skills/mapping-features/SKILL.md) | Find candidate evidence and score relatedness. Candidates are leads, never verdicts. |
+| [`writing-a-claim`](skills/writing-a-claim/SKILL.md) | Record has, partial, none or unknown with citations that resolve now. |
+| [`recording-a-decision`](skills/recording-a-decision/SKILL.md) | Record a person's adopt, reject or park with their name and reason. |
+| [`reading-the-vault`](skills/reading-the-vault/SKILL.md) | Read the matrix, the vault and the JSON export, and read gaps correctly. |
 
 ## The vault
 
@@ -777,69 +443,75 @@ trait method and its impl method share one qualified name in Rust. Config files 
 
 ```text
 vault/
-  index.md           entry point: counts every note group
-  llms.txt           a short map for agents
-  AGENTS.md          the short workflow for an agent in this vault
-  repos/             one note per clone
-  communities/       one folder per clone, one note per community
-  symbols/           one folder per clone, one note per symbol
-  families/          one note per family
-  features/          one folder per family, one note per feature, with its cells
-  history/           one note per clone: dated claim and decision trail, superseded rows marked
+  index.md      llms.txt      AGENTS.md     entry point, a short map, the short workflow for an agent
+  repos/        one note per clone
+  communities/  symbols/      one folder per clone
+  families/     features/     one note per family; one folder per family with a note per feature and its cells
+  history/      one note per clone: the dated claim and decision trail, superseded rows marked
 ```
 
-Every note starts with a front matter block that has a one-line `description:` built from stored facts by a
-template, not by a model:
+Every note starts with a front-matter `description:` built from stored facts by a template, not by a model, for example
+`function pkg/core.py::add in pkg/core.py:1-2, 3 callers, 0 callees`. An agent reads the descriptions first and opens a note
+only when the line is not enough. At 4.4k files the vault is one file per symbol (66,970 files, 275 MB in the proof report), too
+large to open as one vault in a note tool.
 
-```text
-description: "function pkg/core.py::add in pkg/core.py:1-2, 3 callers, 0 callees"
+## Configuration
+
+| Setting | Where | Meaning |
+|---|---|---|
+| `--root <dir>` | every command (default `.`) | the workspace; the store is `<root>/.comparegraph/comparegraph.db` |
+| `COMPAREGRAPH_THREADS` | environment | `build`: cap on per-file analysis threads, 1 to 64 (default 8, also bounded by the CPU count); `0` or an unparsable value is ignored |
+| `COMPAREGRAPH_PROFILE` | environment | `build`: `1` prints one stderr line per pass with its wall time and a count |
+| `COMPAREGRAPH_PLUGIN_TIMEOUT` | environment | an external provider's run limit in whole seconds (default 1800; `0` or unparsable is refused) |
+| `COMPAREGRAPH_PLUGIN_CAPS_TIMEOUT` | environment | the deadline of a `capabilities` probe in whole seconds (default 10) |
+| `COMPAREGRAPH_PLUGIN_OUTPUT_CAP` | environment | the plugin stdout cap (default 256 MiB) |
+| `COMPAREGRAPH_ALLOW_UNVERIFIED` | environment | `1` is the same as `--allow-unverified` |
+| `COMPAREGRAPH_BIN` | environment | the command `setup` registers, when `--bin` is not given |
+| `COMPAREGRAPH_NO_PIDNS` | environment | `1` skips the PID-namespace test runner, for contributors ([`docs/dev/pid-namespaces.md`](docs/dev/pid-namespaces.md)) |
+| `COMPAREGRAPH_NOW` | environment | a fixed clock for tests; do not set it in real use |
+| `--min-confidence` | `traverse`, `impact`, `tests-for`, `entry-points`, `dead-code` | `0.5` (default, includes guessed hops) or `1.0` |
+| `--max-file-bytes`, `--max-files`, `--full` | `build` | skip files over this size (1048576); keep the first N files by sorted path (50000); bypass the per-file parse cache |
+
+## Agents, platforms, uninstall
+
+`comparegraph setup` writes the entry; `comparegraph doctor` reports each client's state (`aligned`, `stale`, `conflict`,
+`missing`, `unverified`). `--client all` acts only on clients that look installed. `setup --apply` is additive and leaves a
+backup named `<file>.bak-<unix-seconds>`; a differing entry is left alone unless you pass `--force`.
+
+| Agent | `--client` | Config (user / project) | Remove on uninstall |
+|---|---|---|---|
+| Claude Code | `claude` | `~/.claude.json` / `.mcp.json` | `mcpServers.comparegraph` |
+| Codex | `codex` | `~/.codex/config.toml` / `.codex/config.toml` | the `[mcp_servers.comparegraph]` table |
+| Cursor | `cursor --scope project` | `.cursor/mcp.json` (user scope unverified, skipped) | `mcpServers.comparegraph` |
+| Gemini CLI | `gemini` | `~/.gemini/settings.json` / `.gemini/settings.json` | `mcpServers.comparegraph` |
+| OpenCode | `opencode` | `~/.config/opencode/opencode.json` / `opencode.json` | `mcp.comparegraph` |
+| Hermes | `hermes` | `~/.hermes/config.yaml` (no project scope) | `mcp_servers.comparegraph` |
+
+Platforms: linux-x64 is built and tested; darwin-arm64, darwin-x64 and win32-x64 are built by the release workflow but
+untested until the first release; anywhere Rust 1.85+ runs, build from source. Local only: the engine makes no network call,
+the MCP server speaks over stdio, the store is one SQLite file you own. Release checksums are planned and do not exist yet.
+Uninstall: remove the entry above, then `cargo uninstall comparegraph` and `rm -r .comparegraph` in each workspace.
+
+## Library usage
+
+The crate is `comparegraph`. Each verb is a function in `comparegraph::application::*` taking the workspace root; the CLI and
+MCP server are thin adapters over them.
+
+```rust
+use comparegraph::application::{add, build, matrix};
+use comparegraph::providers::BuildOptions;
+use std::path::Path;
+
+let root = Path::new(".");
+add::add_repo(root, Path::new("../comparegraph/fixtures/typescript"), Some("tsfix"), false)?;
+let report = build::build_repo(root, "tsfix", "reference", &BuildOptions::default())?;
+let m = matrix::matrix(root, "example-code-graph-tools")?;
+println!("{} nodes, {} comparators", report.nodes, m.comparators);
 ```
 
-An agent reads the descriptions first and opens a note only when the line is not enough.
-
-<!-- screenshot: Obsidian graph view of a 3-repo vault — add when available -->
-
-## Families and the method
-
-A family is a directory with a `rows.md` file: front matter with `family:` and `description:`, then a table. Example:
-[`families/example-code-graph-tools/rows.md`](families/example-code-graph-tools/rows.md).
-
-| Column | Meaning |
-|---|---|
-| `id` | stable key, such as `graph.call-graph` |
-| `group`, `feature` | where it sits and what it is called |
-| `definition` | one sentence |
-| `counts_as_has` | what evidence earns a `has` |
-| `tier`, `weight` | `basics`, `common`, `extra` or `candidate`; a number |
-
-`family propose <name> --repos a,b,c` drafts a pack from the terms the clones share and writes `rows.draft.md`.
-It uses no model. In the three-clone proof it returned 60 candidate terms and stopped at its `--max 60` cap.
-<!-- docs/reports/2026-10-12-plan-1-proof.md#plan-3: "returned 60 candidate terms (the default --max 60 cap ...)" -->
-
-The tier names and the band thresholds (`related` at 0.5 or more, `adjacent` at 0.2 or more) are provisional. A
-relatedness score is vocabulary overlap, not evidence: in the proof all three clones scored 0.9 to 1.0 against the
-example pack, and the bands do not tell close cousins apart.
-<!-- docs/design-notes-for-review.md; docs/reports/2026-10-12-plan-1-proof.md#plan-3 relatedness table -->
-
-### The method: seven skills
-
-Plain markdown in [`method/`](method): an entry skill, [`using-comparegraph`](method/using-comparegraph/SKILL.md),
-and the six below. Any agent can read them. Each gives when to use the verb, the exact commands, what the engine refuses, and how to check.
-
-| Skill | One line |
-|---|---|
-| [`adding-a-clone`](method/adding-a-clone/SKILL.md) | Register a clone as a comparator or the root, parse it, verify the build. |
-| [`defining-a-family`](method/defining-a-family/SKILL.md) | Write a pack, seed one with `family propose`, reload it safely. |
-| [`mapping-features`](method/mapping-features/SKILL.md) | Find candidate evidence and score relatedness. Candidates are leads, never verdicts. |
-| [`writing-a-claim`](method/writing-a-claim/SKILL.md) | Record has, partial, none or unknown with citations that resolve now. |
-| [`recording-a-decision`](method/recording-a-decision/SKILL.md) | Record a person's adopt, reject or park with their name and reason. |
-| [`reading-the-vault`](method/reading-the-vault/SKILL.md) | Read the matrix, the vault and the JSON export, and read gaps correctly. |
-
-Plugin install (the manifest ships with lane B3; the line is what it will be):
-
-```text
-/plugin install comparegraph
-```
+The stable contracts: the JSON envelope (`export json`, every CLI answer), and
+[`crates/comparegraph/src/store/schema.sql`](crates/comparegraph/src/store/schema.sql) for read-only SQL on
+`.comparegraph/comparegraph.db`. `claim` and `decision` rows are append-only: read them, do not update them.
 
 ## Troubleshooting
 
@@ -849,58 +521,86 @@ Plugin install (the manifest ships with lane B3; the line is what it will be):
 | `setup` says "running from a build directory" | a `target/` binary refuses to register itself. Pass `--bin <installed path>` or set `COMPAREGRAPH_BIN`. |
 | A claim shows `unknown*` or `stale` after you edited the clone | a location goes stale only when `comparegraph check` runs. Run `check`, rebuild, and write the claim again. |
 | `conform` returns `below_floor` | the provider scored under 0.95 on nodes or 0.85 on edges. Fix the provider; the floors do not move. |
-| The agent does not see the server | run `comparegraph doctor`. `missing`: run `setup --apply`. `stale` or `conflict`: add `--force`. Restart the client. |
+| `build --provider crg` says `provider_unavailable` | code-review-graph is not installed, or its conformance failed for a language in the clone. `comparegraph doctor` names which. |
+| The agent does not see the server | run `comparegraph doctor`. `missing`: `setup --apply`. `stale` or `conflict`: add `--force`. Restart the client. |
 | A large repository is cut short | the run records `truncated_files` or `skipped_oversize`. Raise `--max-files` or `--max-file-bytes` and rebuild. |
 | `search` for a word returns 0 hits | search matches whole identifier tokens, so `reader` does not find `ReaderConfig`. Try another stem. |
-| `claim ... none` is refused | `none` needs `--searched` terms that find nothing; the engine ran the search and found a hit, or the text had no token. |
+| `claim ... none` is refused | the engine's search found a hit (it lists the candidates), or the searched text named no token of the feature. |
+| Tests note that the PID namespace is unavailable | contributors only: user namespaces are restricted on this host; tests still run unconfined. See [`docs/dev/pid-namespaces.md`](docs/dev/pid-namespaces.md). |
 
-<!-- crates/comparegraph/src/store/mod.rs:124 "never creates .comparegraph"; b1-report.md R2 (build-directory refusal); docs/design-notes-for-review.md (stale only at check; none needs --searched); docs/reports/2026-10-12-plan-1-proof.md#plan-2 (reader: 0 hits) -->
+## FAQ
 
-## FAQ and comparisons
+**How is this different from code-review-graph and codegraph?**
+Both index one repository for navigation and search; CompareGraph's unit of output is a cell in a features-by-clones matrix,
+with a citation. On the gold set above it scores higher on call-edge precision and recall, and builds at comparable speed
+(table above, with its limits). What they have that we do not:
 
-**How is this different from code-review-graph?**
-code-review-graph goes deeper on one repository: embeddings, execution flows, diff-aware review, hub and refactor
-tools, and 30 MCP tools. CompareGraph compares many repositories and keeps cited claims. On three projects the two
-engines agree closely on symbols and Python calls and differ elsewhere; the numbers are in [Measured coverage](#measured-coverage) and
-in the [parity report](docs/reports/2026-10-12-engine-parity.md). The parity report lists multi-repo comparison,
-claims and the vault as absent in code-review-graph, and embeddings, flows and diff review as absent here.
-<!-- docs/reports/2026-10-12-engine-parity.md "Feature parity": MCP tools 30 vs 17 -->
+| Capability | code-review-graph | codegraph | CompareGraph |
+|---|---|---|---|
+| Embedding or semantic search | yes | yes | no |
+| Markdown or doc indexing and search | not assessed | yes | no |
+| A memory store for the agent | not assessed | yes | no |
+| PR context and diff-aware review | yes | yes (`pr_context`) | no |
+| Execution flows | yes | not assessed | no |
+| Compare many repos, cited claims, a vault | claims: no; multi-repo: a search only | not assessed | yes |
 
-**How is it different from codegraph, graphmind and codanna?**
-They index one repository for navigation and search. CompareGraph's unit of output is a cell in a
-features-by-clones matrix, with a citation. Its parser layer is taken from graphmind (MIT).
-<!-- docs/superpowers/specs/2026-10-12-codecross-design.md section 6: parser layer taken from graphmind -->
+The table follows the [parity report](docs/reports/2026-10-12-engine-parity.md) ("Feature parity") for code-review-graph and
+the tool lists of codegraph's MCP server, which exposes memory, doc-index and `pr_context` tools. Our parser layer is taken
+from graphmind (MIT).
 
-**Does it use an LLM?**
-No. Nothing in the engine calls a model. An agent fits in the loop: it reads `map` candidates, opens the cited
-lines, and writes the `claim` with its own name as `--author`.
+**Does it use an LLM?** No. An agent fits in the loop: it reads `map` candidates, opens the cited lines, and writes the
+`claim` with its own name as `--author`.
 
-**Can it adopt code for me?**
-No. It gives you `path:start-end` and the clone's licence lane. Whether to take the code is a person's decision,
-recorded with `decide`.
+**Can it adopt code for me?** No. It gives you `path:start-end` and the clone's licence lane. Taking the code is a person's
+decision, recorded with `decide`. A port-kit export is on the [roadmap](#roadmap).
 
-**How do I add my own engine?**
-Implement the `GraphProvider` trait (`name`, `version`, `detect`, `capabilities`, `build`) and pass the golden
-fixtures: `comparegraph conform <provider>`. A provider below the floor is refused.
-<!-- docs/superpowers/specs/2026-10-12-codecross-design.md sections 6 and 7 -->
+**Why are some call edges 0.5?** A call matched by name only, with no import or declared type behind it, is a guess, stored
+at 0.5 (0.4 to 2.0 percent of call edges on the three parity projects; 24 to 33 percent on hono and caddy before Plan 6).
+Queries take `--min-confidence 1.0` to drop them.
 
-**Why are some call edges 0.5?**
-A call matched by name only, with no import or declared type to back it, is a guess. It is stored at confidence 0.5.
-In the latest run, 0.4 to 2.0 percent of call edges are at 0.5. Queries take `--min-confidence 1.0` to drop them.
+**Is my code sent anywhere?** No. The engine makes no network calls.
 
-**Is my code sent anywhere?**
-No. The engine makes no network calls. It reads the clone on disk, writes a SQLite file in the workspace, and the
-MCP server speaks over stdio.
+**What does it not do?** It does not diff two versions, run a clone, or infer types. A `none` claim means a search found
+nothing, not that the feature is absent. Entry points and dead code are candidates, never proof.
 
-**What does it not do?**
-It does not diff two versions, run a clone, or infer types. Semantic search, execution flows and diff-aware review
-are not built. A `none` claim means a search found nothing, not that the feature is absent.
+## Roadmap
 
-## Design notes, contributing, licence
+From [`docs/superpowers/plans/2026-10-13-plan-7-candidates.md`](docs/superpowers/plans/2026-10-13-plan-7-candidates.md); none
+of these exist yet, and the maintainer decides the order.
 
-- [`docs/design-notes-for-review.md`](docs/design-notes-for-review.md): every provisional choice, with the
-  alternative and what would change it.
-- [`docs/superpowers/specs/2026-10-12-codecross-design.md`](docs/superpowers/specs/2026-10-12-codecross-design.md): the design.
-- Contributing: `CONTRIBUTING.md` arrives with lane B3.
-- Third-party code: [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md) lists graphmind's parser layer (MIT).
-- Licence: Apache-2.0. See [`LICENSE`](LICENSE).
+- Feature stats export: per feature, how many comparators carry it and the counts behind it. Counts only; no priority formula.
+- Claim import from a CSV, and `family import/export` for a shared taxonomy format.
+- Graph-parity queries: circular dependencies, dead imports, complexity and hot paths, an architecture summary, edit context.
+- A resolver for C, C++ and C# (they are parsed today, not resolved).
+- A per-file analysis cache and an edge index, for the large-tree build and `traverse` times above.
+- Go and TypeScript recall leftovers; crg adapter gaps.
+- Port-kit export: for an adopted feature, the files, line ranges, licence text and attribution header.
+- The `npm i -g comparegraph` package and release checksums.
+
+## Documentation
+
+| Document | What it is |
+|---|---|
+| [`docs/plugin-protocol.md`](docs/plugin-protocol.md) | The JSON-lines protocol for external engines, limits, conformance, a 25-line example |
+| [`docs/dev/pid-namespaces.md`](docs/dev/pid-namespaces.md) | Why tests run in a PID namespace and how to enable it |
+| [`docs/catalog.json`](docs/catalog.json) | The 18 MCP tools and 9 error codes, generated and CI-checked |
+| [`docs/reports/2026-10-12-engine-parity.md`](docs/reports/2026-10-12-engine-parity.md) | The engine comparison: Jaccards, gold standard, codegraph head-to-head, scale |
+| [`docs/reports/2026-10-13-plan-6-recall-and-scale.md`](docs/reports/2026-10-13-plan-6-recall-and-scale.md) | Plan 6 targets against measured, per lane, with limits |
+| [`docs/reports/2026-10-13-proof-on-a-real-product.md`](docs/reports/2026-10-13-proof-on-a-real-product.md) | The pipeline on a private product monorepo (an earlier state) |
+| [`docs/reports/2026-10-12-plan-1-proof.md`](docs/reports/2026-10-12-plan-1-proof.md) | Three real clones through the pipeline |
+| [`docs/design-notes-for-review.md`](docs/design-notes-for-review.md) | Every provisional choice, the alternative, and what would change it |
+| [`docs/superpowers/specs/2026-10-12-codecross-design.md`](docs/superpowers/specs/2026-10-12-codecross-design.md) | The design |
+| [`docs/superpowers/plans/`](docs/superpowers/plans) | Plans 1 to 7: scope, lanes, candidates |
+| [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md) | Origin and licence of adapted code |
+| [`skills/`](skills) | The seven method skills |
+| [`fixtures/gold/README.md`](fixtures/gold/README.md) | How the call-edge gold is drawn and labelled |
+| [`fixtures/gold-map/README.md`](fixtures/gold-map/README.md) | How the feature-mapping gold is made |
+| [`families/`](families) | The example pack and the 30-feature code-graph-tools pack |
+| [`CHANGELOG.md`](CHANGELOG.md) | Changes by release |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md), [`AGENTS.md`](AGENTS.md), [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Contributing: rings, invariants, the never-list |
+
+## Contributing, licence, third-party code
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) first. A bug fix starts with a failing test, extraction
+changes extend a conformance fixture, and no model or network call enters the engine. The vendored parser layer comes from
+graphmind (MIT); see [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md). Licence: Apache-2.0, see [`LICENSE`](LICENSE).

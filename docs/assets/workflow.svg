@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 250" width="1050" role="img" aria-labelledby="t d">
+<title id="t">CompareGraph workflow</title><desc id="d">Six steps: clone repos, build one graph, apply a taxonomy, record verdicts with citations, record decisions, read the matrix.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#57606a"/></marker></defs>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="Helvetica, Arial, sans-serif" fill="#1f2328">
+<rect x="20" y="40" width="150" height="110" rx="8" fill="#ddf4ff" stroke="#57606a" stroke-width="1.2"/>
+<text x="32" y="66" font-size="13" fill="#57606a">1</text>
+<text x="32" y="90" font-size="18" font-weight="700">Clone</text>
+<text x="32" y="110" font-size="12">repos you want to</text>
+<text x="32" y="125" font-size="12">compare</text>
+<text x="95" y="182" font-size="12" text-anchor="middle" font-family="monospace" fill="#0550ae">add</text>
+<line x1="172" y1="95" x2="190" y2="95" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="192" y="40" width="150" height="110" rx="8" fill="#ddf4ff" stroke="#57606a" stroke-width="1.2"/>
+<text x="204" y="66" font-size="13" fill="#57606a">2</text>
+<text x="204" y="90" font-size="18" font-weight="700">One graph</text>
+<text x="204" y="110" font-size="12">parsed by</text>
+<text x="204" y="125" font-size="12">tree-sitter, one</text>
+<text x="204" y="140" font-size="12">store</text>
+<text x="267" y="182" font-size="12" text-anchor="middle" font-family="monospace" fill="#0550ae">build</text>
+<line x1="344" y1="95" x2="362" y2="95" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="364" y="40" width="150" height="110" rx="8" fill="#ddf4ff" stroke="#57606a" stroke-width="1.2"/>
+<text x="376" y="66" font-size="13" fill="#57606a">3</text>
+<text x="376" y="90" font-size="18" font-weight="700">Taxonomy</text>
+<text x="376" y="110" font-size="12">a family of</text>
+<text x="376" y="125" font-size="12">features</text>
+<text x="439" y="182" font-size="12" text-anchor="middle" font-family="monospace" fill="#0550ae">family add, relate</text>
+<line x1="516" y1="95" x2="534" y2="95" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="536" y="40" width="150" height="110" rx="8" fill="#fff8c5" stroke="#57606a" stroke-width="1.2"/>
+<text x="548" y="66" font-size="13" fill="#57606a">4</text>
+<text x="548" y="90" font-size="18" font-weight="700">Verdicts</text>
+<text x="548" y="110" font-size="12">has / partial /</text>
+<text x="548" y="125" font-size="12">none, with</text>
+<text x="548" y="140" font-size="12">path:lines</text>
+<text x="611" y="182" font-size="12" text-anchor="middle" font-family="monospace" fill="#0550ae">map, claim</text>
+<line x1="688" y1="95" x2="706" y2="95" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="708" y="40" width="150" height="110" rx="8" fill="#fff8c5" stroke="#57606a" stroke-width="1.2"/>
+<text x="720" y="66" font-size="13" fill="#57606a">5</text>
+<text x="720" y="90" font-size="18" font-weight="700">Decisions</text>
+<text x="720" y="110" font-size="12">adopt / reject /</text>
+<text x="720" y="125" font-size="12">park, by a person</text>
+<text x="783" y="182" font-size="12" text-anchor="middle" font-family="monospace" fill="#0550ae">decide</text>
+<line x1="860" y1="95" x2="878" y2="95" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="880" y="40" width="150" height="110" rx="8" fill="#dafbe1" stroke="#57606a" stroke-width="1.2"/>
+<text x="892" y="66" font-size="13" fill="#57606a">6</text>
+<text x="892" y="90" font-size="18" font-weight="700">Matrix</text>
+<text x="892" y="110" font-size="12">features x clones,</text>
+<text x="892" y="125" font-size="12">gaps, vault</text>
+<text x="955" y="182" font-size="12" text-anchor="middle" font-family="monospace" fill="#0550ae">matrix, export</text>
+<text x="525" y="24" font-size="13" text-anchor="middle" fill="#57606a">An agent or a person does the reading. The engine stores, checks and refuses. No model is called.</text>
+<text x="525" y="222" font-size="12" text-anchor="middle" fill="#57606a">Claims and decisions are append-only; check marks a moved citation stale.</text>
+</g></svg>
