@@ -6,8 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `setup` writes a CompareGraph rules block (between `<!-- comparegraph -->` markers) into the project's agent instruction file: `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or `.github/instructions/comparegraph.instructions.md`, one row per file. An older block is refreshed; a hand-edited one is a `conflict` unless `--force`. `--no-rules` skips it.
+- `setup` registers a Claude Code `SessionStart` hook (`.claude/settings.json`, or `~/.claude/settings.json` at user scope) that runs `comparegraph doctor --brief`. `--no-hook` skips it.
+- `doctor --brief`: plain text for the hook (nothing without a store; else the repo count and each detected client's registration).
+- `setup` and `doctor` know six more clients: Windsurf, Antigravity, Kiro, GitHub Copilot (VS Code), GitHub Copilot CLI and Qwen Code.
+- `hooks/hooks.json`: the plugin ships the same session-start hook.
+
 ### Changed
 - `claim --batch` skips a row equal to the live claim (same run, verdict, author, note and locations): it writes nothing, reports `skipped: true` with the existing claim, and the summary gains `skipped`. An interrupted batch can be re-run without doubling its rows. `decide --batch` summaries report `skipped: 0`.
+- `setup` and `doctor` rows carry `kind` (`config`, `rules` or `hook`); a `rules` row's `client` lists the clients that read the file, comma-joined.
+- The `using-comparegraph` skill no longer points to npm for the binary.
 
 ## [0.1.1] - 2026-10-14
 

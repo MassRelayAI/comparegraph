@@ -216,8 +216,10 @@ orient without reading everything · SQLite as the store (readable by every lang
 protocol and the package.
 
 ## 10. Agent surface
-`comparegraph setup` detects client config files (Claude Code `.mcp.json` / settings, Codex, Cursor, Gemini CLI, OpenCode, Hermes),
-shows the planned change, writes additively and idempotently with a backup; `doctor` reports each as aligned / stale / missing.
+`comparegraph setup` detects client config files (twelve clients: Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf,
+Antigravity, Kiro, Copilot, Copilot CLI, Qwen Code), shows the planned change, writes additively and idempotently with a backup;
+`doctor` reports each as aligned / stale / missing. Each row carries a `kind`: `config` (the server entry), `rules` (a marked block
+in the project's instruction file) and `hook` (Claude Code's SessionStart hook, which runs `doctor --brief`).
 The MCP server exposes the read verbs (`search`, `map`, `relate`, `export json`, `check`) and `claim` (a write, with the same
 refusals). `skills/` (with `method/` as its alias) ships in the repository, where the Claude Code plugin reads it.
 

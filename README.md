@@ -8,10 +8,10 @@
 ![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
 ![MCP tools: 18](https://img.shields.io/badge/MCP%20tools-18-green.svg)
 ![Languages: 29](https://img.shields.io/badge/languages-29-blue.svg)
-![Agents: 6](https://img.shields.io/badge/agents-6-purple.svg)
+![Agents: 12](https://img.shields.io/badge/agents-12-purple.svg)
 ![100% local, no model calls](https://img.shields.io/badge/100%25-local%2C%20no%20model%20calls-brightgreen.svg)
 
-<!-- sources: Cargo.toml (licence, rust-version); docs/catalog.json (18 tools); walker.rs language_for (29 languages); application/setup.rs (6 clients); .github/workflows/ci.yml -->
+<!-- sources: Cargo.toml (licence, rust-version); docs/catalog.json (18 tools); walker.rs language_for (29 languages); application/setup.rs (12 clients); .github/workflows/ci.yml -->
 
 CompareGraph parses many cloned repositories into one SQLite graph. It scores each clone against a taxonomy (a "family"
 of features) and records, per clone and feature, a verdict with a citation to a file and line range. It is one Rust
@@ -94,9 +94,10 @@ binary from your `PATH`:
 /plugin install comparegraph --marketplace massrelay-ai/comparegraph
 ```
 
-Any other agent (Codex, Cursor, Gemini CLI, OpenCode, Hermes): `comparegraph setup --client <name> --apply` writes the
-entry (omit `--apply` for a dry run) and `comparegraph doctor` checks it ([table](#agents-platforms-uninstall)). The
-server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`.
+Any other agent (Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf, and more): `comparegraph setup --client <name> --apply`
+writes the entry (omit `--apply` for a dry run) and `comparegraph doctor` checks it ([table](#agents-platforms-uninstall)).
+`setup --apply` also writes a short rules block into the agent's instruction file in the current directory and, for Claude
+Code, a session-start hook; the plugin ships the same hook. The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`.
 
 ## Quick start
 
@@ -341,7 +342,7 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 | `build <REPO>` | Parse a clone into the graph (one run). | `--provider` (default `reference`), `--providers a,b` (several engines in turn, with an agreement table), `--max-file-bytes`, `--max-files`, `--full`, `--progress` (stderr lines every 500 files and per pass; also `COMPAREGRAPH_PROGRESS=1`; stdout stays one envelope) |
 | `check` | Verify schema, determinism and citation locations. | |
 | `repos` | Registered repos with their latest run. | `--limit` (50), `--cursor` |
-| `doctor` | Report the store, every provider and each agent client's registration. | `--bin` |
+| `doctor` | Report the store, every provider and each agent client's registration. | `--bin`, `--brief` (plain text for a session-start hook: nothing without a store, else one or two lines; the one output that is not an envelope) |
 | `conform <PROVIDER>` | Run the golden fixtures against a provider. | `--fixtures` |
 | `catalog` | Print the MCP tool catalog as JSON. | `--check` (compare with `docs/catalog.json`) |
 
@@ -382,7 +383,7 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 | `export csv` | RFC 4180 CSV: nodes, edges, claims, decisions, one matrix per family. | `--out` (required) |
 | `export vault` | An Obsidian-style markdown vault, regenerated whole. | `--out` |
 | `mcp` | Serve the read verbs over MCP stdio (JSON-RPC, one object per line). | |
-| `setup` | Register the MCP server with agent clients. A plan by default. | `--client`, `--scope`, `--apply`, `--force`, `--bin` |
+| `setup` | Register the MCP server with agent clients. A plan by default. | `--client`, `--scope`, `--apply`, `--force`, `--bin`, `--no-rules`, `--no-hook` |
 
 ## MCP tools
 
@@ -514,14 +515,29 @@ large to open as one vault in a note tool.
 `missing`, `unverified`). `--client all` acts only on clients that look installed. `setup --apply` is additive and leaves a
 backup named `<file>.bak-<unix-seconds>`; a differing entry is left alone unless you pass `--force`.
 
-| Agent | `--client` | Config (user / project) | Remove on uninstall |
-|---|---|---|---|
-| Claude Code | `claude` | `~/.claude.json` / `.mcp.json` | `mcpServers.comparegraph` |
-| Codex | `codex` | `~/.codex/config.toml` / `.codex/config.toml` | the `[mcp_servers.comparegraph]` table |
-| Cursor | `cursor --scope project` | `.cursor/mcp.json` (user scope unverified, skipped) | `mcpServers.comparegraph` |
-| Gemini CLI | `gemini` | `~/.gemini/settings.json` / `.gemini/settings.json` | `mcpServers.comparegraph` |
-| OpenCode | `opencode` | `~/.config/opencode/opencode.json` / `opencode.json` | `mcp.comparegraph` |
-| Hermes | `hermes` | `~/.hermes/config.yaml` (no project scope) | `mcp_servers.comparegraph` |
+Besides the entry, `setup` writes a CompareGraph block, between `<!-- comparegraph -->` and `<!-- /comparegraph -->`, into
+the agent's instruction file in the current directory (the `Rules file` column; skip it with `--no-rules`), and for Claude
+Code a `SessionStart` hook in `.claude/settings.json` (project scope) or `~/.claude/settings.json` (user scope; skip it with
+`--no-hook`). The hook runs `comparegraph doctor --brief`, which prints nothing outside a workspace with a store. A block from
+an older release is refreshed in place; a block you edited by hand is left alone unless you pass `--force`.
+
+| Agent | `--client` | Config (user / project) | Rules file | Remove on uninstall |
+|---|---|---|---|---|
+| Claude Code | `claude` | `~/.claude.json` / `.mcp.json` | `CLAUDE.md` | `mcpServers.comparegraph` |
+| Codex | `codex` | `~/.codex/config.toml` / `.codex/config.toml` | `AGENTS.md` | the `[mcp_servers.comparegraph]` table |
+| Cursor | `cursor --scope project` | `.cursor/mcp.json` (user scope unverified, skipped) | `AGENTS.md` | `mcpServers.comparegraph` |
+| Gemini CLI | `gemini` | `~/.gemini/settings.json` / `.gemini/settings.json` | `GEMINI.md` | `mcpServers.comparegraph` |
+| OpenCode | `opencode` | `~/.config/opencode/opencode.json` / `opencode.json` | `AGENTS.md` | `mcp.comparegraph` |
+| Hermes | `hermes` | `~/.hermes/config.yaml` (no project scope) | `AGENTS.md` | `mcp_servers.comparegraph` |
+| Windsurf | `windsurf` | `~/.codeium/windsurf/mcp_config.json` (no project scope) | `AGENTS.md` | `mcpServers.comparegraph` |
+| Antigravity | `antigravity` | `~/.gemini/antigravity/mcp_config.json` (no project scope) | `GEMINI.md` | `mcpServers.comparegraph` |
+| Kiro | `kiro --scope project` | `.kiro/settings/mcp.json` (no user scope) | `AGENTS.md` | `mcpServers.comparegraph` |
+| GitHub Copilot (VS Code) | `copilot --scope project` | `.vscode/mcp.json` (no user scope) | `.github/instructions/comparegraph.instructions.md` | `servers.comparegraph` |
+| GitHub Copilot CLI | `copilot-cli` | `~/.copilot/mcp-config.json` (no project scope) | `AGENTS.md` | `mcpServers.comparegraph` |
+| Qwen Code | `qwen` | `~/.qwen/settings.json` (no project scope) | `GEMINI.md` | `mcpServers.comparegraph` |
+
+To uninstall the rules block, delete the lines from `<!-- comparegraph -->` to `<!-- /comparegraph -->`; to uninstall the
+hook, delete the `SessionStart` entry whose command is `comparegraph doctor --brief`.
 
 Platforms: every release builds linux-x64, linux-arm64, darwin-arm64, darwin-x64 and win32-x64 on their own runners and
 ships each as a release asset listed in `SHA256SUMS`; the Homebrew tap follows the release. The test suite runs on
@@ -564,6 +580,7 @@ The stable contracts: the JSON envelope (`export json`, every CLI answer), and
 | A claim shows `unknown*` or `stale` after you edited the clone | a location goes stale only when `comparegraph check` runs. Run `check`, rebuild, and write the claim again. |
 | `conform` returns `below_floor` | the provider scored under 0.95 on nodes or 0.85 on edges. Fix the provider; the floors do not move. |
 | `build --provider crg` says `provider_unavailable` | code-review-graph is not installed, or its conformance failed for a language in the clone. `comparegraph doctor` names which. |
+| The session-start hook prints nothing | it is silent outside a workspace with a store. Run `comparegraph doctor`. |
 | The agent does not see the server | run `comparegraph doctor`. `missing`: `setup --apply`. `stale` or `conflict`: add `--force`. Restart the client. With the plugin, `comparegraph` must be on your `PATH`. |
 | A large repository is cut short | the run records `truncated_files` or `skipped_oversize`. Raise `--max-files` or `--max-file-bytes` and rebuild. |
 | `search` for a word returns 0 hits | search matches whole identifier tokens, so `reader` does not find `ReaderConfig`. Try another stem. |
@@ -619,7 +636,7 @@ of these exist yet, and the maintainer decides the order.
 - Port-kit export: for an adopted feature, the files, line ranges, licence text and attribution header.
 - A text channel in the store (doc-comment and signature tokens) and a per-family synonym table, the two levers the
   mapping gold points at; a second signal for `relate` so that a repository outside a family scores below 0.5.
-- Distribution: `setup` writing a rules line and a session-start hook, more clients, a Homebrew tap.
+- Distribution: more clients (Zed, Continue) once their config shapes are verified.
 
 ## Documentation
 

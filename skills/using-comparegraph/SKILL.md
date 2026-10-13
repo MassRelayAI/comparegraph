@@ -9,13 +9,15 @@ model and never decides: you read the code, you write the claim, a person record
 
 ## Once per machine
 In Claude Code, `/plugin install comparegraph --marketplace massrelay-ai/comparegraph` installs these skills and the MCP
-server together; nothing else is needed. For any other agent, install the binary (`npm install -g comparegraph`, a release
-asset, or `cargo install --locked --path crates/comparegraph` from a clone) and register it:
+server together; the `comparegraph` binary must be on your `PATH`. Install it with the README's install line (`curl | sh`,
+Homebrew, a release asset, or `cargo install --locked --path crates/comparegraph` from a clone). For any other agent,
+register the server too:
 ```
 comparegraph setup --client claude --apply
 ```
-Without `--apply` it only prints its plan. It writes additively and leaves a timestamped backup. `comparegraph doctor`
-reports whether the registration is `aligned` or `stale`.
+Without `--apply` it only prints its plan. It writes additively and leaves a timestamped backup. `--apply` also writes a
+short rules block into the agent's instruction file in the current directory and, for Claude Code, a session-start hook.
+`comparegraph doctor` reports whether the registration is `aligned` or `stale`.
 
 ## Which skill, when
 | situation | skill |

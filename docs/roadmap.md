@@ -117,11 +117,11 @@ recall on that consumer's languages with precision ≥ 0.96 (the same bar as Pla
 Measured against the twelve study projects in `docs/reports/2026-10-13-install-surfaces.md`, and following the Rust
 tools among them (the maintainer, 2026-10-14: "they don't use npm, so skip; just follow others"). Shipped: release
 binaries for five platforms with `SHA256SUMS`, `scripts/install.sh` and `install.ps1` with the checksum check, a Homebrew
-tap, the Claude Code plugin (skills plus the MCP server over the installed binary), `setup`/`doctor` for six clients,
-the MCP Registry entry, `cargo install --locked` from source (`docs/dev/release.md`). Next:
+tap, the Claude Code plugin (skills plus the MCP server over the installed binary), `setup`/`doctor` for twelve clients
+(with a rules block in the agent's instruction file and a Claude Code session-start hook), the MCP Registry entry,
+`cargo install --locked` from source (`docs/dev/release.md`). Next:
 
-1. `setup` writes a rules line into the agent's instruction file and, for Claude Code, a SessionStart `doctor` hook; the
-   plugin ships the same hook; more clients from code-review-graph's table.
+1. More clients (Zed, Continue) once their config shapes are verified.
 
 Not taken: npm (dropped 2026-10-14), crates.io (nobody asked; the from-source line covers it), an MCPB bundle for the
 registry entry, Docker, a VS Code extension, a desktop app, a GitHub Action, Windows package managers.
