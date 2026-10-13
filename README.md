@@ -165,9 +165,9 @@ is an anonymous arrow function with no call edges; a lookup through the nearest 
 
 Caveats from the reports: build times ran at load 6 to 15 on 40 cores, so read the ratios, not the seconds. The hermes-agent
 build is 1.40x slower than at the end of Plan 6 lane B1, a regression that was measured and not diagnosed. Query bounds are one
-hub symbol (3,156 callers), at defaults, one run each. A 4.4k-file private product monorepo built in 211 s in an earlier run
-([proof report](docs/reports/2026-10-13-proof-on-a-real-product.md)); that report also records two comparator builds that
-panicked on non-ASCII text, found before this README's numbers were taken, so read it as history.
+hub symbol (3,156 callers), at defaults, one run each. A 4.4k-file private product monorepo builds in 103 s (53k nodes) and its three
+harness comparators in 25 s, 81 s and 436 s ([proof report](docs/reports/2026-10-13-proof-on-a-real-product.md), last
+section); the ranked `map` over 12 features takes 1.2 s on the product and 12.1 s on the 454k-node comparator.
 Reproduce: `scripts/compare-engines.sh`, `scripts/h2h-codegraph.sh`, and `COMPAREGRAPH_PROFILE=1 comparegraph build <repo>`.
 
 ### Overlap with code-review-graph (symbols and edges)
@@ -606,7 +606,7 @@ of these exist yet, and the maintainer decides the order.
 | [`docs/catalog.json`](docs/catalog.json) | The 18 MCP tools and 9 error codes, generated and CI-checked |
 | [`docs/reports/2026-10-12-engine-parity.md`](docs/reports/2026-10-12-engine-parity.md) | The engine comparison: Jaccards, gold standard, codegraph head-to-head, scale |
 | [`docs/reports/2026-10-13-plan-6-recall-and-scale.md`](docs/reports/2026-10-13-plan-6-recall-and-scale.md) | Plan 6 targets against measured, per lane, with limits |
-| [`docs/reports/2026-10-13-proof-on-a-real-product.md`](docs/reports/2026-10-13-proof-on-a-real-product.md) | The pipeline on a private product monorepo (an earlier state) |
+| [`docs/reports/2026-10-13-proof-on-a-real-product.md`](docs/reports/2026-10-13-proof-on-a-real-product.md) | The pipeline on a private product monorepo with three comparators, and the mapping outputs read against the source |
 | [`docs/reports/2026-10-12-plan-1-proof.md`](docs/reports/2026-10-12-plan-1-proof.md) | Three real clones through the pipeline |
 | [`docs/decisions.md`](docs/decisions.md) | Every provisional choice, the alternative, and what would change it |
 | [`docs/design.md`](docs/design.md) | The design |

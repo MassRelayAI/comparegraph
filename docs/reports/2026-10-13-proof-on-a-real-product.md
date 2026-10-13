@@ -4,7 +4,7 @@ date: 2026-10-13
 valid_until: 2027-01-13
 lane: plan-5-P
 verdict: the graph read and the claim and matrix machinery work on a 4.4k-file private monorepo and on goose, but two of three comparator builds crash on a UTF-8 slicing bug, the product build takes 3.5 minutes, and the head-to-head with codegraph-mcp could not be measured because the incumbent hung
-status: decided
+status: measured; re-run after Plan 7 lane 1 (last section)
 ---
 
 Subject: a private product monorepo (Rust services + a TypeScript API + a React web app, ~2k source files; 4,370 files
@@ -192,3 +192,53 @@ Matrix, `harness-agents`, all four columns (`-` is no claim, not an absence):
 Prevalence of `mcp-tools` and `subagents` among comparators is now 2 of 3 claimed columns only in the sense of claims made;
 openclaw has no claims yet, so the matrix still shows coverage of claims, not of the products. Next: claim openclaw, extend
 claims to all 12 basics, and profile the resolution passes on the 434k-node graph.
+
+## After Plan 7 lane 1 (2026-10-13): the mapping outputs read against the source
+
+Fresh workspace, the private product monorepo as root (`--as-root`) and the same three comparators, the reference provider
+at the commit that carries the mapping gold, the ranked `map` and the graph-backed absent check. Builds: product 103 s
+(53,145 nodes, 145,071 edges, 1,182 communities; 211 s in the run above), goose 25 s (19,657 nodes), hermes-agent 81 s
+(168,725 nodes), openclaw 436 s (454,166 nodes, 1,290,051 edges; store hash identical to the Plan 6 build of the same
+commit). No build crashed. Family `harness-agents`, 12 basics features.
+
+| | `map`, 12 features | `absent-check`, 12 features | `relate` |
+|---|---|---|---|
+| product | 1.2 s, 40 MB | 5 s, 0 absent calls | related 1.000 |
+| goose | 0.4 s, 23 MB | 2 s, 0 absent calls | related 0.917 |
+| hermes-agent | 3.0 s, 99 MB | 13 s, 0 absent calls | related 0.917 |
+| openclaw | 12.1 s, 287 MB | 41 s, 0 absent calls | related 1.000 |
+
+**A defect found by this step, fixed before these numbers were taken.** The first run took about four minutes per absent
+check on the product and 71 s on goose: SQLite planned the full-text join (`node_fts JOIN node`) with the node table as
+the outer loop and re-ran the MATCH once per node (136 s against 0.8 s for the same query with the full-text scan outer,
+measured with `EXPLAIN QUERY PLAN` on the workspace). `search` had the same join. Both now write `CROSS JOIN`, which fixes
+the order in SQLite, and a unit test asserts the plan. The gold workspaces hold one repo each and never showed it.
+
+**The top three candidates per feature, read against the source** (the maintainer read every product hit; comparator hits
+were read by name and path). Product: 8 of 12 features show a true implementer in the top three: the audit chain
+(`record_audit` in the kernel crate and `recordAudit` in the API), context compaction (`render_compaction_summary`), loop
+guards (`guards.rs` and the runtime loop-guard profile loader), the MCP client executor and the MCP server crate, model-hop
+recovery (`record_hop`, `recover_hop_error_after`), streaming (`fold_stream`, `stream_chat_completion`,
+`scan_stream_delta`), the task lifecycle (`accept_task`, the hybrid-task state mapping) and the approval gates
+(`resume_after_approval`, the R5 approve-only action types, `assertApproverRole`). The four misses share one cause: a short
+term matched a longer token under the prefix rule, `multi` to `multiplier` (three margin multipliers for "multi-channel
+bridges"), `collab` to `collect` (two docs tools for "presence and collaboration"), and the orchestrator and subagent rows
+matched generic agent-loop functions. No test block and no file node appears in the product top three (the run above had
+several). goose: loop guards (`ClientLoopGuard`), compaction (`compact_messages`, `do_compact`), MCP servers, subagents
+(`create_subagent_session`) and tool approval are right; `recovers` matched `isRecord` three times and `audit` matched
+`useAudioRecorder`; two of three task-lifecycle hits are test functions named `test_…` inside a non-test file.
+hermes-agent: loop guards (`BotLoopGuardSettings`), MCP tools, compaction, subagents, the feishu and whatsapp adapters for
+multi-channel bridges, and `recover_before_classification` for hop recovery are right; `audit` matched `AudioRecorder`.
+openclaw: loop guards (`detectToolCallLoop`, the post-compaction loop guard), MCP tools, compaction, subagents, multi-channel,
+hop recovery (`recordModelFallbackStop`, the telegram retry wait) and the audit appenders are right; "streaming answers"
+returned three wizard `answer` methods, and two subagent hits are `.test-helpers.ts` files the test-path rule does not
+recognise.
+
+**The absent check never spoke**: all 48 pairs had hits on at least one channel (every repo carries words such as
+`channel`, `presence`, `task`), so no `none` claim can be derived here, and none would have been wrong. That matches the
+gold measurement (recall 1 of 19 at precision 1.0). `relate` is `related` for all four, which is correct for three harness
+projects and a harness product, and uninformative for the reason recorded in the decisions file.
+
+Verdict: the ranked `map` is usable as a lead list on a 53k-node product and a 454k-node comparator within the second to
+twelve-second range; its noise is one rule (short-term prefix match) that the gold can measure; the absent check is safe
+and silent; the join-order defect was found only because this step runs a multi-repo workspace.

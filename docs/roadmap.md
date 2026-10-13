@@ -76,3 +76,11 @@ recall on that consumer's languages with precision ≥ 0.96 (the same bar as Pla
 - **Ranking cost on large runs.** The IMP ranking loads every node of a run with its tokens: on a 454k-node run `map` took
   61 s and 677 MB where the FTS path took 12 s and 27 MB. A fix round of lane 1 addresses it (inverted token index, candidate
   pool per term, one index per run shared by `relate`); if the cost cannot be brought near the FTS path it becomes a lane.
+- **Short-term prefix match.** The ranking's token rule (a shared prefix of at least four characters that leaves at most two
+  of the shorter token) lets `multi` match `multiplier`, `collab` match `collect`, `audit` match `audio` and `recovers` match
+  `record`; on the real-product check this one rule explains every wrong top-three hit. Candidate fix: a term shorter than
+  six characters matches only whole tokens or tokens that are an inflection of it (the absent check's suffix list); measure on
+  the mapping gold before and after.
+- **Test detection by name.** Functions named `test_…` inside a non-test file (Rust `#[cfg(test)]` modules) and files named
+  `*.test-helpers.ts` or `*.test-support.ts` rank as implementers; the kind prior only sees `test` nodes and test paths.
+
