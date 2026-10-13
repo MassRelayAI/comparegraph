@@ -291,6 +291,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 at,
                 searched,
                 note: str_arg(a, "note")?,
+                batch: None,
             }
         }
         _ => Cmd::Communities {

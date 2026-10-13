@@ -308,3 +308,93 @@ fn vault_shows_a_stale_claim_as_unknown_star() {
         "{feat}"
     );
 }
+
+fn lines(out: &[u8]) -> Vec<serde_json::Value> {
+    String::from_utf8_lossy(out)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+const BATCH4: &str = concat!(
+    "{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/net/a.py:1-2\"]}\n",
+    "{\"repo\":\"a\",\"feature\":\"memory.recall\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/net/a.py:4\"]}\n",
+    "\n",
+    "{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"unknown\",\"author\":\"me\"}\n",
+    "{\"repo\":\"a\",\"feature\":\"memory.recall\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/net/a.py:1-99\"]}\n",
+);
+
+#[test]
+fn batch_of_four_writes_three_and_reports_the_failing_row_like_the_single_path() {
+    let (ws, _a, _p) = setup();
+    let path = ws.path().join("rows.jsonl");
+    std::fs::write(&path, BATCH4).unwrap();
+    let a = cc(ws.path())
+        .args(["claim", "--batch"])
+        .arg(&path)
+        .assert()
+        .failure()
+        .code(1);
+    let out = lines(&a.get_output().stdout);
+    assert_eq!(out.len(), 5, "{out:?}");
+    assert_eq!(
+        out.iter().map(|v| v["line"].clone()).take(4).collect::<Vec<_>>(),
+        [1, 2, 4, 5].map(serde_json::Value::from)
+    );
+    assert_eq!(
+        out[..4].iter().map(|v| v["ok"].as_bool().unwrap()).collect::<Vec<_>>(),
+        [true, true, true, false]
+    );
+    assert!(out[..4].iter().all(|v| v["verb"] == "claim"));
+    assert_eq!(out[0]["data"]["verdict"], "has");
+    assert_eq!(out[4]["data"], serde_json::json!({"rows":4,"ok":3,"failed":1}));
+    let single = json(
+        claim(ws.path(), &["has", "--author", "me", "--at", "src/net/a.py:1-99"]).failure(),
+    );
+    // single-path message for the same citation on the same feature
+    let single_msg = {
+        let v = json(
+            cc(ws.path())
+                .args(["claim", "a", "memory.recall", "has", "--author", "me", "--at", "src/net/a.py:1-99"])
+                .assert()
+                .failure(),
+        );
+        v["error"]["message"].clone()
+    };
+    let _ = single;
+    assert_eq!(out[3]["error"]["message"], single_msg, "{out:?}");
+    assert_eq!(out[3]["error"]["code"], "invalid_arguments");
+    let all = json(cc(ws.path()).args(["claims", "--history"]).assert().success());
+    assert_eq!(all["data"]["items"].as_array().unwrap().len(), 3, "{all}");
+}
+
+#[test]
+fn batch_dash_reads_stdin() {
+    let (ws, _a, _p) = setup();
+    let a = cc(ws.path())
+        .args(["claim", "--batch", "-"])
+        .write_stdin("{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"unknown\",\"author\":\"me\"}\n")
+        .assert()
+        .success();
+    let out = lines(&a.get_output().stdout);
+    assert_eq!(out.len(), 2);
+    assert_eq!(out[1]["data"]["ok"], 1);
+}
+
+#[test]
+fn batch_reports_a_malformed_json_line_and_continues() {
+    let (ws, _a, _p) = setup();
+    let input = "not json\n{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"unknown\",\"author\":\"me\"}\n";
+    let a = cc(ws.path())
+        .args(["claim", "--batch", "-"])
+        .write_stdin(input)
+        .assert()
+        .failure()
+        .code(1);
+    let out = lines(&a.get_output().stdout);
+    assert_eq!(out[0]["line"], 1);
+    assert_eq!(out[0]["ok"], false);
+    assert_eq!(out[0]["error"]["code"], "invalid_arguments");
+    assert!(out[0]["error"]["message"].as_str().unwrap().contains("line 1"));
+    assert_eq!(out[1]["ok"], true);
+    assert_eq!(out[2]["data"]["failed"], 1);
+}

@@ -368,9 +368,9 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 | `relate` | Score each clone against each family and record the band. | `--repo`, `--family`, `--stored` |
 | `map <REPO> <FAMILY>` | Candidate symbols and communities per feature. Writes nothing. | `--feature`, `--limit` (5) |
 | `absent-check <REPO> <FAMILY> <FEATURE>` | Is the feature absent? Counts and up to 5 hits over four channels: symbols, paths, community labels and keywords, node kinds the feature names. `data.absent` is true only when all four are zero. Reads only. | |
-| `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. `none` without `--searched` runs the absent check: all channels empty records it as `inferred`; any hit refuses it and lists the candidates. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family` |
+| `claim <REPO> <FEATURE> <VERDICT>` | Record `has`, `partial`, `none` or `unknown`. `none` without `--searched` runs the absent check: all channels empty records it as `inferred`; any hit refuses it and lists the candidates. | `--author` (required), `--at path:start-end`, `--searched`, `--note`, `--family`, `--batch <jsonl\|->` (one JSON object per line, e.g. `{"repo":"a","feature":"x.y","verdict":"has","author":"me","at":["src/a.rs:1-9"]}`; one store open and one transaction; one envelope line per row with its `line`, then a summary; exit 1 if any row failed) |
 | `claims` | Latest claim per clone and feature. | `--repo`, `--family`, `--feature`, `--history` |
-| `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family` |
+| `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family`, `--batch <jsonl\|->` (rows like `{"repo":"a","disposition":"park","why":"...","by":"me"}`; output as for `claim`) |
 | `decisions` | Latest decision per scope. | `--repo`, `--history` |
 | `matrix <FAMILY>` | Features against every clone: verdicts, prevalence, gaps, differentiators. | |
 

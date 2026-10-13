@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `claim --batch <jsonl|->` and `decide --batch <jsonl|->`: many rows in one process, one store open and one transaction (a failing row writes nothing, the rest proceed); one envelope line per input row with its `line`, then a `{rows, ok, failed}` summary; exit 1 if any row failed.
+
 ## [0.1.0] - 2026-10-13
 
 The first public release.

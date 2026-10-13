@@ -312,3 +312,30 @@ fn decide_feature_is_disambiguated_by_family() {
     );
     assert_eq!(v["data"]["scope"], "feature");
 }
+
+#[test]
+fn decide_batch_of_two_records_both_and_chains_the_second() {
+    let (ws, _k, _p) = setup();
+    let input = concat!(
+        "{\"repo\":\"b\",\"disposition\":\"park\",\"why\":\"later\",\"by\":\"me\"}\n",
+        "{\"repo\":\"b\",\"disposition\":\"adopt\",\"why\":\"now\",\"by\":\"me\"}\n",
+        "{\"repo\":\"b\",\"disposition\":\"maybe\",\"why\":\"x\",\"by\":\"me\"}\n",
+    );
+    let a = cc(ws.path())
+        .args(["decide", "--batch", "-"])
+        .write_stdin(input)
+        .assert()
+        .failure()
+        .code(1);
+    let out: Vec<serde_json::Value> = String::from_utf8_lossy(&a.get_output().stdout)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(out.len(), 4, "{out:?}");
+    assert_eq!(out[0]["verb"], "decide");
+    assert_eq!(out[1]["data"]["supersedes_id"], out[0]["data"]["id"]);
+    assert_eq!(out[2]["ok"], false);
+    assert_eq!(out[3]["data"]["ok"], 2);
+    let h = json(cc(ws.path()).args(["decisions", "--history"]).assert().success());
+    assert_eq!(h["data"]["items"].as_array().unwrap().len(), 2);
+}

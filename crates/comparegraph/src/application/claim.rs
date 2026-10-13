@@ -136,6 +136,12 @@ pub(crate) fn lookup_feature(
 }
 
 pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
+    check_input(i)?;
+    let store = Store::open(root)?;
+    claim_on(&store, i)
+}
+
+fn check_input(i: &ClaimInput) -> Result<()> {
     if !["has", "partial", "none", "unknown"].contains(&i.verdict) {
         return invalid(format!(
             "unknown verdict {} (has|partial|none|unknown)",
@@ -151,7 +157,12 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
             i.verdict
         ));
     }
-    let store = Store::open(root)?;
+    Ok(())
+}
+
+/// The body of `claim` on an already open store; inside a batch transaction the write is a savepoint.
+pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
+    check_input(i)?;
     let repo = store
         .repo_by_name(i.repo)?
         .ok_or_else(|| AppError::NotFound(format!("no repo named {}", i.repo)))?;
@@ -163,7 +174,7 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
         })?
         .id
         .unwrap();
-    let (fid, fam) = lookup_feature(&store, i.feature, i.family)?;
+    let (fid, fam) = lookup_feature(store, i.feature, i.family)?;
     let tier: String = store.conn().query_row(
         "SELECT tier FROM feature WHERE id = ?1",
         params![fid],
@@ -203,7 +214,7 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
                 .filter(|t| !t.is_empty())
                 .map(String::from)
                 .collect();
-            let hits = search_any_in_repo(&store, i.repo, &terms, 1000)?;
+            let hits = search_any_in_repo(store, i.repo, &terms, 1000)?;
             if !hits.is_empty() {
                 let sample: Vec<&str> = hits
                     .iter()
@@ -225,8 +236,8 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
                 .into_iter()
                 .find(|f| f.id == fid)
                 .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
-            let pin = super::absent::pinned_run(&store, i.repo)?;
-            let chk = super::absent::check_feature(&store, i.repo, pin.0, &pin.1, &f)?;
+            let pin = super::absent::pinned_run(store, i.repo)?;
+            let chk = super::absent::check_feature(store, i.repo, pin.0, &pin.1, &f)?;
             if !chk.absent {
                 return invalid(chk.refusal());
             }
@@ -290,35 +301,48 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
         "derived"
     };
     let now = now_iso();
-    let tx = store.conn().unchecked_transaction()?;
-    let supersedes: Option<i64> = tx.query_row(
-        "SELECT MAX(id) FROM claim WHERE repo_id = ?1 AND feature_id = ?2",
-        params![rid.0, fid],
-        |r| r.get(0),
-    )?;
-    tx.execute(
-        "INSERT INTO claim(repo_id, feature_id, run_id, verdict, confidence, author, note, created_at, supersedes_id) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-        params![rid.0, fid, run.0, i.verdict, confidence, i.author, note, now, supersedes],
-    )?;
-    let cid = tx.last_insert_rowid();
-    let mut locations = vec![];
-    for r in &res {
-        tx.execute(
-            "INSERT INTO location(claim_id, node_id, path, line_start, line_end, content_hash, resolved_at, stale) VALUES (?1,?2,?3,?4,?5,?6,?7,0)",
-            params![cid, r.node, r.path, r.s as i64, r.e as i64, r.hash, now],
+    let tx = store.conn();
+    tx.execute_batch("SAVEPOINT cg_claim")?;
+    let written: Result<(Option<i64>, i64, Vec<LocationOut>)> = (|| {
+        let supersedes: Option<i64> = tx.query_row(
+            "SELECT MAX(id) FROM claim WHERE repo_id = ?1 AND feature_id = ?2",
+            params![rid.0, fid],
+            |r| r.get(0),
         )?;
-        locations.push(LocationOut {
-            id: tx.last_insert_rowid(),
-            node_id: r.node,
-            path: r.path.clone(),
-            line_start: r.s as i64,
-            line_end: r.e as i64,
-            content_hash: r.hash.clone(),
-            stale: false,
-        });
-    }
-    tx.commit()?;
+        tx.execute(
+            "INSERT INTO claim(repo_id, feature_id, run_id, verdict, confidence, author, note, created_at, supersedes_id) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![rid.0, fid, run.0, i.verdict, confidence, i.author, note, now, supersedes],
+        )?;
+        let cid = tx.last_insert_rowid();
+        let mut locations = vec![];
+        for r in &res {
+            tx.execute(
+                "INSERT INTO location(claim_id, node_id, path, line_start, line_end, content_hash, resolved_at, stale) VALUES (?1,?2,?3,?4,?5,?6,?7,0)",
+                params![cid, r.node, r.path, r.s as i64, r.e as i64, r.hash, now],
+            )?;
+            locations.push(LocationOut {
+                id: tx.last_insert_rowid(),
+                node_id: r.node,
+                path: r.path.clone(),
+                line_start: r.s as i64,
+                line_end: r.e as i64,
+                content_hash: r.hash.clone(),
+                stale: false,
+            });
+        }
+        Ok((supersedes, cid, locations))
+    })();
+    let (supersedes, cid, locations) = match written {
+        Ok(x) => {
+            tx.execute_batch("RELEASE cg_claim")?;
+            x
+        }
+        Err(e) => {
+            let _ = tx.execute_batch("ROLLBACK TO cg_claim; RELEASE cg_claim");
+            return Err(e);
+        }
+    };
     Ok(ClaimOut {
         id: cid,
         repo: i.repo.into(),
@@ -332,6 +356,101 @@ pub fn claim(root: &Path, i: &ClaimInput) -> Result<ClaimOut> {
         supersedes_id: supersedes,
         note,
         locations,
+    })
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct BatchError {
+    pub code: &'static str,
+    pub message: String,
+}
+
+/// One input line's outcome: `data` on success, `error` otherwise. `line` is 1-based in the input.
+#[derive(Debug, Serialize, Clone)]
+pub struct BatchRow<T> {
+    pub line: usize,
+    pub ok: bool,
+    pub data: Option<T>,
+    pub error: Option<BatchError>,
+}
+
+impl<T> BatchRow<T> {
+    pub fn from_result(line: usize, r: Result<T>) -> Self {
+        match r {
+            Ok(d) => BatchRow { line, ok: true, data: Some(d), error: None },
+            Err(e) => BatchRow::fail(line, e.code(), e.to_string()),
+        }
+    }
+    pub fn fail(line: usize, code: &'static str, message: String) -> Self {
+        BatchRow { line, ok: false, data: None, error: Some(BatchError { code, message }) }
+    }
+}
+
+/// Run `each` over the non-blank lines of `lines` on one open store inside one transaction. A line that is not a JSON
+/// object of type `L`, or whose `each` fails, is a failed row and writes nothing; the rest proceed.
+pub fn run_batch<L: serde::de::DeserializeOwned, T>(
+    root: &Path,
+    lines: impl std::io::BufRead,
+    mut each: impl FnMut(&Store, L) -> Result<T>,
+) -> Result<Vec<BatchRow<T>>> {
+    let store = Store::open(root)?;
+    store.conn().execute_batch("BEGIN IMMEDIATE")?;
+    let mut out = vec![];
+    for (n, line) in lines.lines().enumerate() {
+        let line_no = n + 1;
+        let text = match line {
+            Ok(t) => t,
+            Err(e) => {
+                out.push(BatchRow::fail(line_no, "io_error", format!("reading line {line_no}: {e}")));
+                continue;
+            }
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        let row = match serde_json::from_str::<L>(&text) {
+            Ok(l) => BatchRow::from_result(line_no, each(&store, l)),
+            Err(e) => BatchRow::fail(line_no, "invalid_arguments", format!("line {line_no}: not a valid row: {e}")),
+        };
+        out.push(row);
+    }
+    store.conn().execute_batch("COMMIT")?;
+    Ok(out)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimLine {
+    pub repo: String,
+    pub feature: String,
+    pub verdict: String,
+    pub author: String,
+    #[serde(default)]
+    pub family: Option<String>,
+    #[serde(default)]
+    pub at: Vec<String>,
+    #[serde(default)]
+    pub searched: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// `claim` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line.
+pub fn claim_batch(root: &Path, lines: impl std::io::BufRead) -> Result<Vec<BatchRow<ClaimOut>>> {
+    run_batch(root, lines, |store, l: ClaimLine| {
+        claim_on(
+            store,
+            &ClaimInput {
+                repo: &l.repo,
+                feature: &l.feature,
+                family: l.family.as_deref(),
+                verdict: &l.verdict,
+                author: &l.author,
+                at: &l.at,
+                searched: l.searched.as_deref(),
+                note: l.note.as_deref(),
+            },
+        )
     })
 }
 
