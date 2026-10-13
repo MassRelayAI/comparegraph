@@ -3,10 +3,18 @@
   "description": "Compare many cloned repositories against taxonomy packs: code graph, relatedness, evidence-backed claims, a comparison matrix. No LLM inside the engine.",
   "version": "0.1.0",
   "author": {
-    "name": "Nicholas Andrea Sujitno"
+    "name": "Nicholas Andrea Sujitno",
+    "email": "support@massrelay.ai"
   },
   "homepage": "https://github.com/nicholasandreasujitno/comparegraph",
   "repository": "https://github.com/nicholasandreasujitno/comparegraph",
   "license": "Apache-2.0",
-  "keywords": ["code-graph", "comparison", "taxonomy", "mcp", "skills", "repositories"]
+  "keywords": [
+    "code-graph",
+    "comparison",
+    "taxonomy",
+    "mcp",
+    "skills",
+    "repositories"
+  ]
 }

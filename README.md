@@ -621,6 +621,9 @@ of these exist yet, and the maintainer decides the order.
 
 ## Contributing, licence, third-party code
 
+Security reports go to support@massrelay.ai or a private advisory ([`SECURITY.md`](SECURITY.md)); conduct reports to the
+same address ([`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)).
+
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) first. A bug fix starts with a failing test, extraction
 changes extend a conformance fixture, and no model or network call enters the engine. The vendored parser layer comes from
 graphmind (MIT); see [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md). Licence: Apache-2.0, see [`LICENSE`](LICENSE).

@@ -1,7 +1,8 @@
 {
   "name": "comparegraph",
   "owner": {
-    "name": "Nicholas Andrea Sujitno"
+    "name": "Nicholas Andrea Sujitno",
+    "email": "support@massrelay.ai"
   },
   "metadata": {
     "description": "CompareGraph: compare cloned repositories against taxonomy packs"

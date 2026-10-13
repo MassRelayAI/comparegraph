@@ -21,5 +21,9 @@
     "@comparegraph/darwin-arm64": "0.1.0",
     "@comparegraph/darwin-x64": "0.1.0",
     "@comparegraph/win32-x64": "0.1.0"
+  },
+  "bugs": {
+    "url": "https://github.com/nicholasandreasujitno/comparegraph/issues",
+    "email": "support@massrelay.ai"
   }
 }
