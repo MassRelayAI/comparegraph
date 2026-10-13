@@ -43,6 +43,14 @@ Most costly first, as the user ranked them; the measured numbers are theirs.
 Kept, by the same user: the refusal of a `has` without a resolving citation, `none` needing proof, the envelope, the
 deterministic store hash, the pack format, the build speed per clone, one binary with no model calls.
 
+Status, 2026-10-14 (Plan 8): 1, 3, 4 and 5 shipped as asked (`claim --batch` about twenty times faster than single
+processes on 2,000 rows; summary-first answers with a cursor; `build --progress`). 2 shipped as the family-word rule
+(a term shared by at least half of a family's features is set aside and named; zero hits for the rest then refuses
+rather than records); a clone-frequency rule and kinds scoping were tried and withdrawn after review, each having
+recorded a `none` on a clone that had the feature. 6 shipped as the whole-token rule for short tokens plus the pack's
+`synonyms` column. On the gold the absent check still records one absence in nineteen, and `map` on the held-out clones
+is unchanged, so the mapping stop condition stays open (`docs/reports/2026-10-14-mapping-gold-first-measurement.md`).
+
 ## Navigation parity with codegraph (the maintainer, 2026-10-13: "why not do what codegraph and other OSS do")
 
 Graph-derived answers that codegraph serves and we do not, all plain queries over the store, no model:
