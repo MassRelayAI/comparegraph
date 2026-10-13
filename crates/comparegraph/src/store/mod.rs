@@ -496,6 +496,45 @@ mod tests {
         assert_eq!(again.schema_version().unwrap(), 1);
     }
     #[test]
+    fn open_adds_the_edge_indexes_to_a_store_created_without_them() {
+        let d = tempfile::tempdir().unwrap();
+        // a v1 store as the earlier binary made it: the schema minus the two edge indexes
+        let dir = d.path().join(".comparegraph");
+        std::fs::create_dir_all(&dir).unwrap();
+        {
+            let conn = Connection::open(dir.join("comparegraph.db")).unwrap();
+            let old: String = SCHEMA.lines().filter(|l| !l.contains("idx_edge_src") && !l.contains("idx_edge_tgt")).collect::<Vec<_>>().join("\n");
+            conn.execute_batch(&old).unwrap();
+            conn.execute("INSERT INTO meta(key, value) VALUES ('schema_version', '1')", []).unwrap();
+        }
+        let names = |s: &Store| -> Vec<String> {
+            let mut st = s.conn.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_edge_%' ORDER BY name").unwrap();
+            st.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+        };
+        {
+            let raw = Connection::open(dir.join("comparegraph.db")).unwrap();
+            let n: i64 = raw.query_row("SELECT count(*) FROM sqlite_master WHERE name IN ('idx_edge_src','idx_edge_tgt')", [], |r| r.get(0)).unwrap();
+            assert_eq!(n, 0, "the old store has neither index");
+        }
+        let s = Store::open(d.path()).unwrap();
+        assert_eq!(s.schema_version().unwrap(), 1);
+        assert_eq!(names(&s), vec!["idx_edge_run", "idx_edge_src", "idx_edge_tgt"]);
+    }
+    #[test]
+    fn indexes_do_not_change_store_hash() {
+        let (_d, s) = tmp();
+        let repo = s.insert_repo(&RepoRow::new("r", "/abs/r")).unwrap();
+        let run = s
+            .insert_run(&Run { id: None, repo, provider: "reference".into(), provider_version: "0.1.0".into(), started_at: "2026-10-12T00:00:00Z".into(), seconds: 0.0, status: RunStatus::Running, limitations: vec![], store_hash: None })
+            .unwrap();
+        let mut a = vec![node("a.py", "a.f", 1), node("a.py", "a.g", 10)];
+        s.insert_nodes(repo, run, &mut a).unwrap();
+        s.insert_edges(repo, run, &[Edge { kind: EdgeKind::Calls, source: a[0].id.unwrap(), target: a[1].id.unwrap(), confidence: 1.0 }]).unwrap();
+        let with = s.store_hash(run).unwrap();
+        s.conn.execute_batch("DROP INDEX IF EXISTS idx_edge_src; DROP INDEX IF EXISTS idx_edge_tgt;").unwrap();
+        assert_eq!(s.store_hash(run).unwrap(), with);
+    }
+    #[test]
     fn open_refuses_unwritable_root_with_path_in_error() {
         let d = tempfile::tempdir().unwrap();
         let file = d.path().join("not-a-dir");

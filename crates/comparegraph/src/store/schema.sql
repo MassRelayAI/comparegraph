@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS edge (
   kind TEXT NOT NULL, source_node_id INTEGER NOT NULL REFERENCES node(id), target_node_id INTEGER NOT NULL REFERENCES node(id),
   confidence REAL NOT NULL DEFAULT 1.0);
 CREATE INDEX IF NOT EXISTS idx_edge_run ON edge(run_id);
+CREATE INDEX IF NOT EXISTS idx_edge_src ON edge(run_id, source_node_id);
+CREATE INDEX IF NOT EXISTS idx_edge_tgt ON edge(run_id, target_node_id);
 CREATE TABLE IF NOT EXISTS community (
   id INTEGER PRIMARY KEY, repo_id INTEGER NOT NULL REFERENCES repo(id), run_id INTEGER NOT NULL REFERENCES run(id),
   label TEXT NOT NULL, keywords_json TEXT NOT NULL DEFAULT '[]', cohesion REAL, size INTEGER NOT NULL);
