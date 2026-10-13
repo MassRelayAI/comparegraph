@@ -21,6 +21,22 @@ pub struct BuildOptions {
     /// `build --full`: bypass the parse cache
     pub full: bool,
     pub cache: Option<std::rc::Rc<dyn ParseCache>>,
+    /// The latest done run of the same provider version, for an incremental build (None: resolve everything)
+    pub prev: Option<std::rc::Rc<PrevGraph>>,
+}
+
+/// What an incremental build knows of the previous run, by qualified name (row ids are per run and never carried).
+#[derive(Debug, Default)]
+pub struct PrevGraph {
+    /// file or test node path → its content hash
+    pub file_hashes: std::collections::HashMap<String, String>,
+    /// path → the symbols the previous run held there, in node order: (name, kind, signature)
+    pub symbols_by_file: std::collections::HashMap<String, Vec<(String, String, Option<String>)>>,
+    /// qualified name → path, for every node
+    pub path_of_qn: std::collections::HashMap<String, String>,
+    pub edges: Vec<(EdgeKind, String, String, f64)>,
+    /// the `go.mod` fingerprint the previous run recorded (`reference::incr::go_fingerprint`); empty when it had none
+    pub go_fp: String,
 }
 impl std::fmt::Debug for BuildOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -29,6 +45,7 @@ impl std::fmt::Debug for BuildOptions {
             .field("max_files", &self.max_files)
             .field("full", &self.full)
             .field("cache", &self.cache.is_some())
+            .field("prev", &self.prev.is_some())
             .finish()
     }
 }
@@ -39,6 +56,7 @@ impl Default for BuildOptions {
             max_files: 50_000,
             full: false,
             cache: None,
+            prev: None,
         }
     }
 }
@@ -65,6 +83,10 @@ pub struct BuildOutput {
     pub files_parsed: usize,
     pub cache_hits: usize,
     pub cache_misses: usize,
+    /// incremental build: the files whose edges were recomputed (None: every edge was); communities touching one are recomputed
+    pub touched_paths: Option<std::collections::HashSet<String>>,
+    /// incremental build: edges copied from the previous run
+    pub edges_copied: usize,
 }
 
 #[derive(Debug, thiserror::Error)]

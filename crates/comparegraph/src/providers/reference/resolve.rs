@@ -134,6 +134,23 @@ impl FileSet {
     }
 }
 
+/// The path (no extension) a relative specifier names from `from`: `.`/`..`/`./`/`../x` segments applied to the importer's directory.
+pub(super) fn relative_stem(from: &str, source: &str) -> String {
+    let base = std::path::Path::new(from).parent().unwrap_or_else(|| std::path::Path::new(""));
+    let joined = base.join(source);
+    let mut parts: Vec<String> = Vec::new();
+    for c in joined.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                parts.pop();
+            }
+            std::path::Component::Normal(p) => parts.push(p.to_string_lossy().to_string()),
+            _ => {}
+        }
+    }
+    parts.join("/")
+}
+
 pub(super) fn resolve_import_target(from: &str, source: &str, files: &FileSet) -> Option<String> {
     if from.ends_with(".py") {
         return resolve_py_import(from, source, files);
@@ -147,21 +164,7 @@ pub(super) fn resolve_import_target(from: &str, source: &str, files: &FileSet) -
     if !source.starts_with('.') {
         return None;
     } // external module: no edge
-    let base = std::path::Path::new(from)
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new(""));
-    let joined = base.join(source);
-    let mut parts: Vec<String> = Vec::new();
-    for c in joined.components() {
-        match c {
-            std::path::Component::ParentDir => {
-                parts.pop();
-            }
-            std::path::Component::Normal(p) => parts.push(p.to_string_lossy().to_string()),
-            _ => {}
-        }
-    }
-    let stem = parts.join("/");
+    let stem = relative_stem(from, source);
     [
         stem.clone(),
         format!("{stem}.ts"),
@@ -973,11 +976,22 @@ pub(super) fn par_map<T: Send>(n: usize, name: &(dyn Fn(usize) -> String + Sync)
 }
 
 pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64)> {
-    resolve_edges_with(files, super::go_ctx::GoModules::default())
+    resolve_edges_in(files, super::go_ctx::GoModules::default(), None)
 }
 
 /// `resolve_edges` with the repo's `go.mod` module paths (plain data: the per-file workers read it by reference).
 pub fn resolve_edges_with(files: &[ParsedFile], go_mods: super::go_ctx::GoModules) -> Vec<(EdgeKind, String, String, f64)> {
+    resolve_edges_in(files, go_mods, None)
+}
+
+/// `only`: resolve imports and calls only for the files in the set (every index is still built over all files; `contains` edges
+/// are always produced). The incremental build copies the other files' edges from the previous run; it passes the same module table
+/// a full build does.
+pub fn resolve_edges_in(
+    files: &[ParsedFile],
+    go_mods: super::go_ctx::GoModules,
+    only: Option<&std::collections::HashSet<String>>,
+) -> Vec<(EdgeKind, String, String, f64)> {
     let file_set = FileSet::new(files).with_go_mods(go_mods);
     // name → (qn, duplicates_in_that_file)
     let mut by_name: HashMap<&str, Vec<(String, bool, &str, bool)>> = HashMap::new();
@@ -1124,6 +1138,9 @@ pub fn resolve_edges_with(files: &[ParsedFile], go_mods: super::go_ctx::GoModule
     let mut bases: Option<HashMap<String, String>> = None; // class → base class, computed on first use
     let go = GoIndex::build(files, &qns, &|src| resolve_go_dir(src, &file_set).first().map(|f| f.rsplit_once('/').map_or("", |d| d.0).to_string()));
     for (fi, (f, q)) in files.iter().zip(&qns).enumerate() {
+        if only.is_some_and(|s| !s.contains(f.rel_path.as_str())) {
+            continue;
+        }
         super::mark_file(&f.rel_path);
         if let Some(info) = &rust[fi] {
             for t in rust_ctx::mod_files(&f.rel_path, &info.mods, &file_set) {

@@ -108,6 +108,29 @@ fn split_big(group: Vec<usize>, files: &[&Node], total: usize) -> Vec<Vec<usize>
 
 /// Every file node lands in exactly one community; symbols follow their file by path.
 pub fn compute(nodes: &[Node], edges: &[Edge]) -> Vec<CommunityRow> {
+    compute_inner(nodes, edges, None)
+}
+
+/// The previous run's keywords and cohesion per community, keyed by the sorted paths of its files.
+pub type PrevByFiles = HashMap<Vec<String>, (Vec<String>, Option<f64>)>;
+
+/// Incremental build: a community none of whose files is in `touched` (no edge of it was recomputed, no node of it changed) has the
+/// same files, nodes and file-graph pairs as in the previous run, so its keywords and cohesion are copied; every other one is computed.
+/// The grouping, labels (with their `(n)` suffixes) and member ids are always derived from this run, so the rows equal `compute`'s.
+pub fn compute_with_prev(
+    nodes: &[Node],
+    edges: &[Edge],
+    touched: &std::collections::HashSet<String>,
+    prev: &PrevByFiles,
+) -> Vec<CommunityRow> {
+    compute_inner(nodes, edges, Some((touched, prev)))
+}
+
+fn compute_inner(
+    nodes: &[Node],
+    edges: &[Edge],
+    reuse: Option<(&std::collections::HashSet<String>, &PrevByFiles)>,
+) -> Vec<CommunityRow> {
     let mut files: Vec<&Node> = nodes.iter().filter(|n| n.kind == NodeKind::File).collect();
     files.sort_by(|a, b| a.path.cmp(&b.path));
     files.dedup_by(|a, b| a.path == b.path);
@@ -165,7 +188,17 @@ pub fn compute(nodes: &[Node], edges: &[Edge]) -> Vec<CommunityRow> {
             label = format!("{label} ({c})");
         }
         let n = fs.len();
-        let cohesion = if n < 2 {
+        let copied = reuse.and_then(|(touched, prev)| {
+            if paths.iter().any(|p| touched.contains(*p)) {
+                return None;
+            }
+            let mut key: Vec<String> = paths.iter().map(|p| p.to_string()).collect();
+            key.sort();
+            prev.get(&key)
+        });
+        let cohesion = if let Some((_, c)) = copied {
+            *c
+        } else if n < 2 {
             None
         } else {
             let set: BTreeSet<usize> = fs.iter().copied().collect();
@@ -180,18 +213,23 @@ pub fn compute(nodes: &[Node], edges: &[Edge]) -> Vec<CommunityRow> {
             .flat_map(|i| members_by_file.get(i).into_iter().flatten().copied())
             .collect();
         members.sort_by_key(|n| n.id);
-        let mut freq: BTreeMap<String, usize> = BTreeMap::new();
-        for n in members.iter().filter(|n| n.kind != NodeKind::File) {
-            for t in tokens(&n.name) {
-                *freq.entry(t).or_default() += 1;
+        let keywords = if let Some((k, _)) = copied {
+            k.clone()
+        } else {
+            let mut freq: BTreeMap<String, usize> = BTreeMap::new();
+            for n in members.iter().filter(|n| n.kind != NodeKind::File) {
+                for t in tokens(&n.name) {
+                    *freq.entry(t).or_default() += 1;
+                }
             }
-        }
-        let mut kw: Vec<(String, usize)> = freq.into_iter().collect();
-        kw.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            let mut kw: Vec<(String, usize)> = freq.into_iter().collect();
+            kw.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            kw.into_iter().take(5).map(|(k, _)| k).collect()
+        };
         out.push(CommunityRow {
             id: 0,
             label,
-            keywords: kw.into_iter().take(5).map(|(k, _)| k).collect(),
+            keywords,
             cohesion,
             members: members.iter().filter_map(|n| n.id).collect(),
         });

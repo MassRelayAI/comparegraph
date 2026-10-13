@@ -1,6 +1,7 @@
 pub mod builtins;
 pub mod decl_types;
 pub mod go_ctx;
+pub mod incr;
 pub mod inherit;
 pub mod js_ctx;
 pub mod module_ctx;
@@ -39,7 +40,7 @@ type CachedParse = (
     Vec<vendor::ResolvedImport>,
 );
 
-fn hex_sha256(b: &[u8]) -> String {
+pub(crate) fn hex_sha256(b: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     Sha256::digest(b)
         .iter()
@@ -207,10 +208,14 @@ impl GraphProvider for ReferenceProvider {
                 })
                 .collect(),
         );
+        let go_fp = incr::go_fingerprint(repo_root, &walked.go_mods);
         let mut out = BuildOutput {
             files_seen: files.len(),
             ..Default::default()
         };
+        if !go_fp.is_empty() {
+            out.limitations.push(Limitation::new(incr::GO_MODULES, go_fp.clone()));
+        }
         for (code, n, what) in [
             (
                 "truncated_files",
@@ -393,7 +398,47 @@ impl GraphProvider for ReferenceProvider {
             }
             profile_line("nodes", t, out.nodes.len());
             let t = std::time::Instant::now();
-            out.edges_by_qn = resolve::resolve_edges_with(&parsed, go_mods.clone());
+            let hashes: std::collections::HashMap<&str, &str> = out
+                .nodes
+                .iter()
+                .filter(|n| matches!(n.kind, NodeKind::File | NodeKind::Test))
+                .map(|n| (n.path.as_str(), n.content_hash.as_str()))
+                .collect();
+            let plan = incr::plan(opts.prev.as_deref(), &parsed, &hashes, &go_fp);
+            drop(hashes);
+            if let incr::Plan::Partial(a) = &plan {
+                profile_line("incr.plan", t, a.len());
+            }
+            match plan {
+                incr::Plan::Partial(affected) => {
+                    let prev = opts.prev.as_deref().expect("a partial plan has a previous run");
+                    out.edges_by_qn = resolve::resolve_edges_in(&parsed, go_mods.clone(), Some(&affected));
+                    // the previous run's import and call edges of every unaffected source file; `contains` edges were just rebuilt, and a
+                    // `tests` edge from a file's own module-level call (target a symbol) is a converted call, so it is copied too
+                    // (naming-convention `tests` edges are rebuilt below by `tests_edges`, over all files)
+                    for (k, s, t2, c) in &prev.edges {
+                        let keep = match k {
+                            EdgeKind::Imports | EdgeKind::Calls => true,
+                            // a file node's qualified name is its path, so `path_of_qn[s] == s` means the source is a file node
+                            // (a converted module-level call); a naming-link `tests` edge has a file target, never a `::` one
+                            EdgeKind::Tests => t2.contains("::") && prev.path_of_qn.get(s).is_some_and(|p| p == s),
+                            _ => false,
+                        };
+                        let Some(src_path) = prev.path_of_qn.get(s) else { continue };
+                        if keep && !affected.contains(src_path) {
+                            out.edges_by_qn.push((*k, s.clone(), t2.clone(), *c));
+                            out.edges_copied += 1;
+                        }
+                    }
+                    out.touched_paths = Some(affected);
+                }
+                incr::Plan::Fallback(l) => {
+                    out.limitations.push(l);
+                    out.edges_by_qn = resolve::resolve_edges_with(&parsed, go_mods.clone());
+                }
+                incr::Plan::Full => out.edges_by_qn = resolve::resolve_edges_with(&parsed, go_mods.clone()),
+            }
+            resolve::dedup_max_confidence(&mut out.edges_by_qn);
             profile_line("resolve_edges", t, out.edges_by_qn.len());
             let t = std::time::Instant::now();
             let inh = inherit::inherit_edges(&parsed);

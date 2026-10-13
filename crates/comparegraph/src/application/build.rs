@@ -23,6 +23,9 @@ pub struct BuildReport {
     /// true when nothing changed since the latest done run and that run was returned (no new rows)
     #[serde(default)]
     pub reused: bool,
+    /// incremental build: edges copied from the previous run instead of resolved again
+    #[serde(default)]
+    pub edges_copied: usize,
 }
 
 /// The workspace db as the provider's parse cache (its own connection; written only after the parse loop).
@@ -85,9 +88,20 @@ pub fn build_repo(
         store_hash: None,
     })?;
     let mut opts = opts.clone();
+    let mut prev_comms: Option<PrevComms> = None;
     if opts.full {
         opts.cache = None;
-    } else if opts.cache.is_none() {
+        opts.prev = None;
+    } else if provider.name() == "reference" && opts.prev.is_none() {
+        let tp = Instant::now();
+        let loaded = load_prev(&store, repo_id, &provider.version())?;
+        crate::providers::reference::profile_line("load_prev", tp, loaded.as_ref().map_or(0, |l| l.0.edges.len()));
+        if let Some((g, c)) = loaded {
+            opts.prev = Some(std::rc::Rc::new(g));
+            prev_comms = Some(c);
+        }
+    }
+    if !opts.full && opts.cache.is_none() {
         opts.cache = Some(std::rc::Rc::new(StoreCache(Store::open(root)?)));
     }
     let out = match provider.build(Path::new(&repo.path), &opts) {
@@ -150,7 +164,12 @@ pub fn build_repo(
         store.insert_edges(repo_id, run, &edges)?;
         crate::providers::reference::profile_line("store.insert_edges", tp, edges.len());
         let tp = std::time::Instant::now();
-        let comms = super::communities::compute(&nodes, &edges);
+        let comms = match (&out.touched_paths, &prev_comms) {
+            (Some(touched), Some(pc)) => {
+                super::communities::compute_with_prev(&nodes, &edges, touched, &pc.by_files)
+            }
+            _ => super::communities::compute(&nodes, &edges),
+        };
         crate::providers::reference::profile_line("communities", tp, comms.len());
         let tp = std::time::Instant::now();
         store.insert_communities(repo_id, run, &comms)?;
@@ -188,7 +207,71 @@ pub fn build_repo(
         store_hash: hash,
         seconds: secs,
         reused: false,
+        edges_copied: out.edges_copied,
     })
+}
+
+/// The previous community rows, keyed by the sorted paths of their files.
+struct PrevComms {
+    by_files: HashMap<Vec<String>, (Vec<String>, Option<f64>)>,
+}
+
+/// The latest done run of the same provider version as the base of an incremental build.
+fn load_prev(
+    store: &Store,
+    repo_id: crate::domain::RepoId,
+    version: &str,
+) -> Result<Option<(crate::providers::PrevGraph, PrevComms)>> {
+    use crate::domain::{EdgeKind, NodeKind};
+    let Some(last) = store.latest_done_run_of(repo_id, "reference", version)? else {
+        return Ok(None);
+    };
+    let Some(last_id) = last.id else {
+        return Ok(None);
+    };
+    let nodes = store.nodes_of_run(last_id)?;
+    let mut g = crate::providers::PrevGraph {
+        go_fp: go_fp_of(&last),
+        ..Default::default()
+    };
+    let mut qn_of: HashMap<NodeId, &str> = HashMap::new();
+    let mut path_of_id: HashMap<NodeId, &str> = HashMap::new();
+    for n in &nodes {
+        let id = n.id.unwrap();
+        qn_of.insert(id, n.qualified_name.as_str());
+        path_of_id.insert(id, n.path.as_str());
+        g.path_of_qn.insert(n.qualified_name.clone(), n.path.clone());
+        if matches!(n.kind, NodeKind::File | NodeKind::Test) {
+            g.file_hashes.insert(n.path.clone(), n.content_hash.clone());
+        } else {
+            g.symbols_by_file.entry(n.path.clone()).or_default().push((
+                n.name.clone(),
+                n.kind.as_str().to_string(),
+                n.provider_ref.clone(),
+            ));
+        }
+    }
+    for e in store.edges_of_run(last_id)? {
+        if matches!(e.kind, EdgeKind::Contains) {
+            continue;
+        }
+        if let (Some(s), Some(t)) = (qn_of.get(&e.source), qn_of.get(&e.target)) {
+            g.edges.push((e.kind, s.to_string(), t.to_string(), e.confidence));
+        }
+    }
+    let mut by_files = HashMap::new();
+    for c in store.communities_of_run(last_id)? {
+        let mut paths: Vec<String> = c
+            .members
+            .iter()
+            .filter_map(|m| path_of_id.get(m))
+            .map(|p| p.to_string())
+            .collect();
+        paths.sort();
+        paths.dedup();
+        by_files.insert(paths, (c.keywords, c.cohesion));
+    }
+    Ok(Some((g, PrevComms { by_files })))
 }
 
 /// The no-op rule: the (path, content hash) set the walker would parse equals the latest done run's file nodes, and the provider
@@ -203,15 +286,12 @@ fn try_reuse(
 ) -> Result<Option<BuildReport>> {
     use crate::domain::{content_hash, NodeKind};
     use crate::providers::reference::walker;
-    let Some(last) = store.latest_done_run(repo_id)? else {
+    let Some(last) = store.latest_done_run_of(repo_id, "reference", version)? else {
         return Ok(None);
     };
     let Some(last_id) = last.id else {
         return Ok(None);
     };
-    if last.provider != "reference" || last.provider_version != version {
-        return Ok(None);
-    }
     let nodes = store.nodes_of_run(last_id)?;
     let mut recorded: HashMap<&str, &str> = HashMap::new();
     for n in nodes
@@ -222,6 +302,10 @@ fn try_reuse(
     }
     let root = Path::new(repo_path);
     let walked = walker::walk(root, opts);
+    // go.mod files are read by Go import resolution but are not parsed files: a changed one makes the recorded graph stale
+    if crate::providers::reference::incr::go_fingerprint(root, &walked.go_mods) != go_fp_of(&last) {
+        return Ok(None);
+    }
     let mut seen = 0usize;
     for f in &walked.files {
         let Ok(bytes) = std::fs::read(root.join(&f.rel_path)) else {
@@ -257,6 +341,7 @@ fn try_reuse(
         store_hash: last.store_hash.clone().unwrap_or_default(),
         seconds: t.elapsed().as_secs_f64(),
         reused: true,
+        edges_copied: 0,
     }))
 }
 
@@ -300,4 +385,13 @@ pub fn build_many(root: &Path, repo_name: &str, providers: &[String], opts: &Bui
     }
     let limitation_items = runs.last().map(|r| r.limitation_items.clone()).unwrap_or_default();
     Ok(MultiBuildReport { runs, providers: providers.to_vec(), agreement, limitation_items })
+}
+
+/// The `go.mod` fingerprint a run recorded (empty when it had none).
+fn go_fp_of(run: &Run) -> String {
+    run.limitations
+        .iter()
+        .find(|l| l.code == crate::providers::reference::incr::GO_MODULES)
+        .map(|l| l.detail.clone())
+        .unwrap_or_default()
 }
