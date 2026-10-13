@@ -113,7 +113,10 @@ pub fn build_repo(
     }
     let stored = (|| -> Result<(usize, usize, usize, String, f64)> {
         let mut nodes = out.nodes;
+        let tp = std::time::Instant::now();
         store.insert_nodes(repo_id, run, &mut nodes)?;
+        crate::providers::reference::profile_line("store.insert_nodes", tp, nodes.len());
+        let tp = std::time::Instant::now();
         let ids: HashMap<&str, NodeId> = nodes
             .iter()
             .map(|n| (n.qualified_name.as_str(), n.id.unwrap()))
@@ -130,10 +133,19 @@ pub fn build_repo(
                 })
             })
             .collect();
+        crate::providers::reference::profile_line("store.map_edges", tp, edges.len());
+        let tp = std::time::Instant::now();
         store.insert_edges(repo_id, run, &edges)?;
+        crate::providers::reference::profile_line("store.insert_edges", tp, edges.len());
+        let tp = std::time::Instant::now();
         let comms = super::communities::compute(&nodes, &edges);
+        crate::providers::reference::profile_line("communities", tp, comms.len());
+        let tp = std::time::Instant::now();
         store.insert_communities(repo_id, run, &comms)?;
+        crate::providers::reference::profile_line("store.insert_comms", tp, comms.len());
+        let tp = std::time::Instant::now();
         let hash = store.store_hash(run)?;
+        crate::providers::reference::profile_line("store.store_hash", tp, 0);
         let secs = t.elapsed().as_secs_f64();
         store.finish_run(run, RunStatus::Done, secs, &out.limitations, Some(&hash))?;
         Ok((nodes.len(), edges.len(), comms.len(), hash, secs))

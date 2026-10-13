@@ -97,6 +97,16 @@ pub fn clamp_span(line_start: u32, line_end: u32, n_lines: u32) -> (u32, u32, bo
     }
 }
 
+/// `COMPAREGRAPH_PROFILE=1`: one stderr line per pass with wall time and a count.
+pub fn profile_on() -> bool {
+    std::env::var_os("COMPAREGRAPH_PROFILE").is_some_and(|v| v != "0" && !v.is_empty())
+}
+pub fn profile_line(pass: &str, t: std::time::Instant, count: usize) {
+    if profile_on() {
+        eprintln!("[profile] {pass:<22} {:>9.3}s  count={count}", t.elapsed().as_secs_f64());
+    }
+}
+
 thread_local! {
     static CURRENT_FILE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
     #[cfg(test)]
@@ -212,6 +222,7 @@ impl GraphProvider for ReferenceProvider {
                     .push(Limitation::new(code, format!("{n} {what}")));
             }
         }
+        let t_parse = std::time::Instant::now();
         let mut minified = walked.minified;
         let version = self.version();
         let mut fresh: Vec<(String, String, String, Vec<u8>)> = Vec::new();
@@ -304,8 +315,10 @@ impl GraphProvider for ReferenceProvider {
         if let Some(c) = &opts.cache {
             c.put_many(&fresh);
         }
+        profile_line("read+parse", t_parse, parsed.len());
         CURRENT_FILE.with(|c| c.borrow_mut().clear());
         let resolved = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let t = std::time::Instant::now();
             for pf in &parsed {
                 mark_file(&pf.rel_path);
                 let n_lines = pf.lines.len() as u32;
@@ -359,11 +372,21 @@ impl GraphProvider for ReferenceProvider {
                     });
                 }
             }
+            profile_line("nodes", t, out.nodes.len());
+            let t = std::time::Instant::now();
             out.edges_by_qn = resolve::resolve_edges(&parsed);
-            out.edges_by_qn.extend(inherit::inherit_edges(&parsed));
+            profile_line("resolve_edges", t, out.edges_by_qn.len());
+            let t = std::time::Instant::now();
+            let inh = inherit::inherit_edges(&parsed);
+            profile_line("inherit_edges", t, inh.len());
+            out.edges_by_qn.extend(inh);
+            let t = std::time::Instant::now();
             let links = tests_link::tests_edges(&parsed, &out.edges_by_qn);
+            profile_line("tests_edges", t, links.len());
             out.edges_by_qn.extend(links);
+            let t = std::time::Instant::now();
             resolve::dedup_max_confidence(&mut out.edges_by_qn);
+            profile_line("dedup", t, out.edges_by_qn.len());
             {
                 let paths: std::collections::HashSet<&str> = parsed.iter().map(|p| p.rel_path.as_str()).collect();
                 if out.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && paths.contains(e.1.as_str())) {
