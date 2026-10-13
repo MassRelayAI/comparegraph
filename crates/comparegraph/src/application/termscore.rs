@@ -11,7 +11,9 @@
 use super::communities::tokens;
 use crate::store::{FeatureRow, Store};
 use rusqlite::params;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::rc::Rc;
 
 // Parameters, chosen on the TUNE clones only (see docs/design-notes-for-review.md, "Plan 7 IMP").
 /// a term carried by more than this share of the run's node names (or of its path tokens) weighs 0
@@ -53,16 +55,20 @@ impl Term {
     }
 }
 
+/// A file's interned path, its distinct path-token ids and whether it is a test path.
+type PathInfo = (Rc<str>, Rc<[u32]>, bool);
+
 pub struct NodeInfo {
     pub id: i64,
-    pub kind: String,
-    pub name: String,
+    pub kind: Rc<str>,
     pub qn: String,
-    pub path: String,
+    pub path: Rc<str>,
     pub ls: i64,
     pub le: i64,
-    ntoks: Vec<String>,
-    ptoks: Vec<String>,
+    /// name tokens, as ids into `RunIndex::vocab`
+    ntoks: Vec<u32>,
+    /// distinct path tokens (shared by every node of the file)
+    ptoks: Rc<[u32]>,
     flat: String,
     pub community: Option<usize>,
     pub callers: usize,
@@ -72,10 +78,26 @@ pub struct NodeInfo {
 pub struct RunIndex {
     pub run: i64,
     pub nodes: Vec<NodeInfo>,
+    /// every distinct name/path token of the run; nodes hold ids into it
+    vocab: Vec<String>,
     comm_toks: Vec<HashSet<String>>,
     comm_label: Vec<String>,
-    name_df: HashMap<String, usize>,
-    path_df: HashMap<String, usize>,
+    /// token -> indices of the nodes (distinct, ascending) whose name tokens / path tokens carry it
+    name_inv: HashMap<u32, Vec<usize>>,
+    path_inv: HashMap<u32, Vec<usize>>,
+    /// community index -> its member nodes (those whose first community it is)
+    comm_nodes: Vec<Vec<usize>>,
+    /// what each distinct term matches in this run, computed once and shared by every feature
+    memo: RefCell<HashMap<(String, bool), Rc<TermHits>>>,
+}
+
+/// The run-wide facts about one term: its share and every node it can score on (name, path or community channel).
+struct TermHits {
+    share: f64,
+    /// ascending node indices
+    nodes: Vec<usize>,
+    /// per community: does its token set carry the term
+    comm: Vec<bool>,
 }
 
 /// Two tokens match when equal, or when they share a prefix of >= 4 chars that is the whole shorter token or leaves at most
@@ -98,27 +120,46 @@ impl RunIndex {
     pub fn load(store: &Store, run: i64) -> super::Result<Self> {
         let c = store.conn();
         let mut st = c.prepare("SELECT id, kind, name, qualified_name, path, line_start, line_end FROM node WHERE run_id=?1 ORDER BY id")?;
-        let mut nodes: Vec<NodeInfo> = st
-            .query_map(params![run], |r| {
-                let name: String = r.get(2)?;
-                let path: String = r.get(4)?;
-                Ok(NodeInfo {
-                    id: r.get(0)?,
-                    kind: r.get(1)?,
-                    ntoks: tokens(&name),
-                    ptoks: tokens(&path),
-                    flat: name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect(),
-                    is_test_path: is_test_path(&path),
-                    name,
-                    qn: r.get(3)?,
-                    path,
-                    ls: r.get(5)?,
-                    le: r.get(6)?,
-                    community: None,
-                    callers: 0,
-                })
-            })?
-            .collect::<std::result::Result<_, _>>()?;
+        let mut vocab: Vec<String> = vec![];
+        let mut vmap: HashMap<String, u32> = HashMap::new();
+        let mut intern = |t: String| -> u32 {
+            *vmap.entry(t.clone()).or_insert_with(|| {
+                vocab.push(t);
+                (vocab.len() - 1) as u32
+            })
+        };
+        let mut kinds: HashMap<String, Rc<str>> = HashMap::new();
+        let mut paths: HashMap<String, PathInfo> = HashMap::new();
+        let mut nodes: Vec<NodeInfo> = vec![];
+        let rows = st.query_map(params![run], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, i64>(5)?, r.get::<_, i64>(6)?))
+        })?;
+        for row in rows {
+            let (id, kind, name, qn, path, ls, le) = row?;
+            let kind = kinds.entry(kind.clone()).or_insert_with(|| kind.as_str().into()).clone();
+            if !paths.contains_key(&path) {
+                let mut pt: Vec<u32> = tokens(&path).into_iter().map(&mut intern).collect();
+                pt.sort_unstable();
+                pt.dedup();
+                paths.insert(path.clone(), (path.as_str().into(), pt.into(), is_test_path(&path)));
+            }
+            let (pr, pt, tp) = paths[&path].clone();
+            nodes.push(NodeInfo {
+                id,
+                kind,
+                ntoks: tokens(&name).into_iter().map(&mut intern).collect(),
+                ptoks: pt,
+                flat: name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect(),
+                is_test_path: tp,
+                qn,
+                path: pr,
+                ls,
+                le,
+                community: None,
+                callers: 0,
+            });
+        }
+        drop(st);
         let idx: HashMap<i64, usize> = nodes.iter().enumerate().map(|(i, n)| (n.id, i)).collect();
         let comms = store.communities_of_run(crate::domain::RunId(run))?;
         let mut comm_toks = vec![];
@@ -144,26 +185,53 @@ impl RunIndex {
                 }
             }
         }
-        let (mut name_df, mut path_df) = (HashMap::new(), HashMap::new());
-        for n in &nodes {
+        let (mut name_inv, mut path_inv): (HashMap<u32, Vec<usize>>, HashMap<u32, Vec<usize>>) = (HashMap::new(), HashMap::new());
+        let mut comm_nodes: Vec<Vec<usize>> = vec![vec![]; comm_toks.len()];
+        for (i, n) in nodes.iter().enumerate() {
             for t in n.ntoks.iter().collect::<HashSet<_>>() {
-                *name_df.entry(t.clone()).or_insert(0) += 1;
+                name_inv.entry(*t).or_default().push(i);
             }
-            for t in n.ptoks.iter().collect::<HashSet<_>>() {
-                *path_df.entry(t.clone()).or_insert(0) += 1;
+            for t in n.ptoks.iter() {
+                path_inv.entry(*t).or_default().push(i);
+            }
+            if let Some(c) = n.community {
+                comm_nodes[c].push(i);
             }
         }
-        Ok(Self { run, nodes, comm_toks, comm_label, name_df, path_df })
+        Ok(Self { run, nodes, vocab, comm_toks, comm_label, name_inv, path_inv, comm_nodes, memo: RefCell::new(HashMap::new()) })
     }
 
-    fn share(&self, t: &str, compound: bool) -> f64 {
-        let n = self.nodes.len().max(1) as f64;
-        if compound {
-            let c = self.nodes.iter().filter(|x| x.flat.contains(t)).count();
-            return c as f64 / n;
+    /// What term `t` matches in this run (memoised across features).
+    fn hits(&self, t: &str, compound: bool) -> Rc<TermHits> {
+        if let Some(h) = self.memo.borrow().get(&(t.to_string(), compound)) {
+            return h.clone();
         }
-        let f = |m: &HashMap<String, usize>| m.iter().filter(|(k, _)| tok_match(t, k)).map(|(_, v)| *v).sum::<usize>() as f64 / n;
-        f(&self.name_df).max(f(&self.path_df)).min(1.0)
+        let n = self.nodes.len().max(1) as f64;
+        let h = if compound {
+            let nodes: Vec<usize> = (0..self.nodes.len()).filter(|&i| self.nodes[i].flat.contains(t)).collect();
+            TermHits { share: nodes.len() as f64 / n, nodes, comm: vec![false; self.comm_toks.len()] }
+        } else {
+            let (mut sn, mut sp) = (0usize, 0usize);
+            let mut nodes: Vec<usize> = vec![];
+            for (_, v) in self.name_inv.iter().filter(|(k, _)| tok_match(t, &self.vocab[**k as usize])) {
+                sn += v.len();
+                nodes.extend_from_slice(v);
+            }
+            for (_, v) in self.path_inv.iter().filter(|(k, _)| tok_match(t, &self.vocab[**k as usize])) {
+                sp += v.len();
+                nodes.extend_from_slice(v);
+            }
+            let comm: Vec<bool> = self.comm_toks.iter().map(|set| set.iter().any(|k| tok_match(t, k))).collect();
+            for (c, _) in comm.iter().enumerate().filter(|(_, m)| **m) {
+                nodes.extend_from_slice(&self.comm_nodes[c]);
+            }
+            nodes.sort_unstable();
+            nodes.dedup();
+            TermHits { share: (sn as f64 / n).max(sp as f64 / n).min(1.0), nodes, comm }
+        };
+        let h = Rc::new(h);
+        self.memo.borrow_mut().insert((t.to_string(), compound), h.clone());
+        h
     }
 
     /// The feature's terms with their weights in this run.
@@ -188,7 +256,7 @@ impl RunIndex {
         }
         raw.into_iter()
             .map(|(text, (sw, compound))| {
-                let share = self.share(&text, compound);
+                let share = self.hits(&text, compound).share;
                 // a term is a stop word only when it is both a large share and a large count: a three-node graph has no statistics
                 let common = share > cutoff && share * n_nodes >= K_MIN_COMMON;
                 let idf = if common || share == 0.0 { 0.0 } else { (1.0 / share).ln().max(0.1) };
@@ -197,15 +265,20 @@ impl RunIndex {
             .collect()
     }
 
-    fn matched(&self, n: &NodeInfo, t: &Term) -> (bool, bool, bool) {
-        let name = if t.compound { n.flat.contains(&t.text) } else { n.ntoks.iter().any(|k| tok_match(&t.text, k)) };
-        let path = !t.compound && n.ptoks.iter().any(|k| tok_match(&t.text, k));
-        let comm = !t.compound && n.community.is_some_and(|c| self.comm_toks[c].iter().any(|k| tok_match(&t.text, k)));
+    fn matched(&self, n: &NodeInfo, t: &Term, h: &TermHits) -> (bool, bool, bool) {
+        let name = if t.compound { n.flat.contains(&t.text) } else { n.ntoks.iter().any(|&k| tok_match(&t.text, &self.vocab[k as usize])) };
+        let path = !t.compound && n.ptoks.iter().any(|&k| tok_match(&t.text, &self.vocab[k as usize]));
+        let comm = !t.compound && n.community.is_some_and(|c| h.comm[c]);
         (name, path, comm)
     }
 
     pub fn community_label(&self, i: usize) -> Option<String> {
         self.nodes[i].community.map(|c| self.comm_label[c].clone())
+    }
+
+    /// Every community of the run, in store order: its label and its token set (label tokens and lowercased keywords).
+    pub fn communities(&self) -> impl Iterator<Item = (&str, &HashSet<String>)> {
+        self.comm_label.iter().map(String::as_str).zip(self.comm_toks.iter())
     }
 
     /// Ranked candidates: indices into `nodes` with their scores, best first, at most `limit`.
@@ -216,11 +289,17 @@ impl RunIndex {
         let fkinds = feature_kinds(f);
         let about_tests = fkinds.contains(&"test") || terms.iter().any(|t| t.text.starts_with("test"));
         let active: Vec<&Term> = terms.iter().filter(|t| t.informative()).collect();
-        let mut raw: Vec<f64> = vec![0.0; self.nodes.len()];
-        for (i, n) in self.nodes.iter().enumerate() {
+        // a node no active term can reach scores 0: only the union of the terms' hit lists is scored
+        let hits: Vec<Rc<TermHits>> = active.iter().map(|t| self.hits(&t.text, t.compound)).collect();
+        let mut cand: Vec<usize> = hits.iter().flat_map(|h| h.nodes.iter().copied()).collect();
+        cand.sort_unstable();
+        cand.dedup();
+        let mut pool: Vec<(usize, f64)> = vec![];
+        for i in cand {
+            let n = &self.nodes[i];
             let mut s = 0.0;
-            for t in &active {
-                let (nm, pa, cm) = self.matched(n, t);
+            for (t, h) in active.iter().zip(&hits) {
+                let (nm, pa, cm) = self.matched(n, t, h);
                 let ch = if nm { 1.0 } else if pa { path_w } else if cm { comm_w } else { 0.0 };
                 s += t.idf * t.sw * ch;
             }
@@ -230,14 +309,15 @@ impl RunIndex {
             let cov = if n.ntoks.is_empty() {
                 0.0
             } else {
-                n.ntoks.iter().filter(|k| active.iter().any(|t| !t.compound && tok_match(&t.text, k))).count() as f64 / n.ntoks.len() as f64
+                n.ntoks.iter().filter(|&&k| active.iter().any(|t| !t.compound && tok_match(&t.text, &self.vocab[k as usize]))).count() as f64 / n.ntoks.len() as f64
             };
             s *= ln_w + (1.0 - ln_w) * cov;
             let kp = kind_prior(&n.kind, &fkinds, n.is_test_path && !about_tests, test_pen, file_pen);
-            raw[i] = s * kp * (1.0 + graph_w * (1.0 + n.callers as f64).ln());
+            let score = s * kp * (1.0 + graph_w * (1.0 + n.callers as f64).ln());
+            if score > 0.0 {
+                pool.push((i, score));
+            }
         }
-        let score = raw;
-        let mut pool: Vec<(usize, f64)> = score.iter().enumerate().filter(|(_, s)| **s > 0.0).map(|(i, s)| (i, *s)).collect();
         pool.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(self.nodes[a.0].qn.cmp(&self.nodes[b.0].qn)).then(a.0.cmp(&b.0)));
         pool.truncate(limit);
         pool

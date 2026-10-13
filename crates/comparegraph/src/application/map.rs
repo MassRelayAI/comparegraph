@@ -73,7 +73,6 @@ fn latest_done(store: &Store, repo: &str) -> Result<(i64, i64)> {
 }
 
 fn map_feature(
-    store: &Store,
     repo: &str,
     idx: &RunIndex,
     f: &FeatureRow,
@@ -89,8 +88,8 @@ fn map_feature(
             Hit {
                 repo: repo.into(),
                 qualified_name: n.qn.clone(),
-                kind: n.kind.clone(),
-                path: n.path.clone(),
+                kind: n.kind.to_string(),
+                path: n.path.to_string(),
                 line_start: n.ls,
                 line_end: n.le,
                 community: idx.community_label(i),
@@ -99,22 +98,12 @@ fn map_feature(
             }
         })
         .collect();
-    let run = idx.run;
-    let mut communities: Vec<CommunityCandidate> = store
-        .communities_of_run(crate::domain::RunId(run))?
-        .into_iter()
-        .filter_map(|c| {
-            let have: BTreeSet<String> = tokens(&c.label)
-                .into_iter()
-                .chain(c.keywords.iter().map(|k| k.to_lowercase()))
-                .collect();
-            let matched: Vec<String> = terms
-                .iter()
-                .filter(|t| have.contains(*t))
-                .cloned()
-                .collect();
-            (!matched.is_empty()).then_some(CommunityCandidate {
-                label: c.label,
+    let mut communities: Vec<CommunityCandidate> = idx
+        .communities()
+        .filter_map(|(label, have)| {
+            let matched: Vec<String> = terms.iter().filter(|t| have.contains(*t)).cloned().collect();
+            (!matched.is_empty()).then(|| CommunityCandidate {
+                label: label.to_string(),
                 matched,
                 candidate: "candidate",
             })
@@ -168,7 +157,7 @@ pub fn map(
     let idx = RunIndex::load(&store, run)?;
     let features = feats
         .iter()
-        .map(|f| map_feature(&store, repo, &idx, f, limit))
+        .map(|f| map_feature(repo, &idx, f, limit))
         .collect::<Result<Vec<_>>>()?;
     Ok(Mapped {
         repo: repo.into(),
@@ -188,17 +177,15 @@ pub(crate) fn pack_hash(store: &Store, family: &str) -> Result<String> {
     Ok(crate::domain::content_hash(&refs))
 }
 
-fn relate_pair(store: &Store, repo: &str, family: &str) -> Result<Related> {
-    let (rid, run) = latest_done(store, repo)?;
+fn relate_pair(store: &Store, repo: &str, family: &str, rid: i64, run: i64, idx: &RunIndex) -> Result<Related> {
     let fam = store
         .family_by_name(family)?
         .ok_or_else(|| AppError::NotFound(format!("no family named {family}")))?;
     let feats = active(store, family)?;
     let ph = pack_hash(store, family)?;
     let mut basis = vec![];
-    let idx = RunIndex::load(store, run)?;
     for f in &feats {
-        let m = map_feature(store, repo, &idx, f, 1)?;
+        let m = map_feature(repo, idx, f, 1)?;
         if !m.symbols.is_empty() || !m.communities.is_empty() {
             basis.push(f.key());
         }
@@ -249,8 +236,15 @@ pub fn relate(root: &Path, repo: Option<&str>, family: Option<&str>) -> Result<V
     };
     let mut out = vec![];
     for r in &repos {
+        // the index depends on the run only: one per repo, loaded on the first family
+        let mut run_idx: Option<(i64, i64, RunIndex)> = None;
         for f in &fams {
-            out.push(relate_pair(&store, r, f)?);
+            if run_idx.is_none() {
+                let (rid, run) = latest_done(&store, r)?;
+                run_idx = Some((rid, run, RunIndex::load(&store, run)?));
+            }
+            let (rid, run, idx) = run_idx.as_ref().unwrap();
+            out.push(relate_pair(&store, r, f, *rid, *run, idx)?);
         }
     }
     Ok(out)
