@@ -440,3 +440,95 @@ dropping them slightly flatters both recalls (hono ours 0.273 to 0.306, graphmin
 - hono false edges (11 of 96 agreed ours-only rows false): never bind a bare name to `benchmarks/**` copies when a non-benchmark definition of the same name is imported in the file (the `render()` case), and do not bind `new Response` / `Response(...)` to a type alias (the constructor is a global).
 - Tests (J 0.00 to 0.61): link a test to its callees through the new per-case nodes in TS and Go test files; hono's 0.00 is not diagnosed beyond the keying difference.
 - Symbols on caddy and hono: align the kind mapping (Go `type` declarations, TS type aliases) in `compare-engines.sh` before reading these Jaccards as disagreement.
+
+## After Plan 6 (2026-10-13)
+
+The sections above are left as written. This section re-measures at main `feef80c` (release build), code-review-graph 2.3.9 through
+the Plan 6 C2 adapter (`providers/crg`, conformance gate per language), the same committed gold labels (`fixtures/gold/*/calls.jsonl`,
+150 sites per project, two readers, labels unchanged), scored with `scripts/gold-score.sh` in fresh workspaces. Host load during the
+gold scoring was 5 to 9 on 40 cores (scoring is not timed); build timings below ran at load 6 to 15 and are read as ratios between
+binaries measured back to back. The codegraph-mcp head-to-head is NOT re-run here: it is the maintainer's timing and still pending.
+
+### Gold standard, after Plan 6 (precision / recall; repo-target sites in brackets)
+
+| project | ours Plan 5 | ours Plan 6 | crg native (Plan 5) | crg through the adapter (Plan 6) |
+|---|---|---|---|---|
+| graphmind [48] | 0.973 / 0.750 | 0.973 / 0.750 | 0.963 / 0.542 | 0.963 / 0.542 |
+| srclight [50] | 1.000 / 0.780 | 1.000 / 0.780 | 1.000 / 0.740 | 1.000 / 0.740 |
+| code-review-graph [53] | 1.000 / 0.925 | 1.000 / 0.925 | 1.000 / 1.000 | 1.000 / 1.000 |
+| hono [36] | 0.846 / 0.306 | 1.000 / 0.667 | 0.870 / 0.556 | 0.880 / 0.611 |
+| caddy [48] | 1.000 / 0.250 | 1.000 / 1.000 | 0.886 / 0.646 | 0.897 / 0.729 |
+| pooled [235] | 0.980 / 0.626 | 0.995 / 0.834 | 0.954 / 0.711 | 0.956 / 0.736 |
+
+Counts behind the pooled row: ours 196 correct of 197 answered, 196 hits of 235 repo-target sites (Plan 5: 147 of 150, 147 of 235);
+crg through the adapter 173 of 181 answered, 173 of 235. The adapter reproduces native crg on graphmind, srclight and
+code-review-graph exactly and differs slightly on hono (+0.055 recall) and caddy (+0.083 recall) because it binds a bare name crg left
+unresolved at 0.5. Inter-reader kappa is unchanged (the labels did not change; see the Plan 5 table). The floors in
+`fixtures/gold/FLOORS.json` (pooled 0.984 / 0.819, hono 0.99 / 0.656, caddy 0.99 / 0.99) all hold.
+
+Caveat on caddy 1.000: the gold has 48 repo-target sites drawn before the Go work; read it as "every labelled site", not a rate. A
+separate 40-edge read of the build found 40 correct (wrong-edge rate under about 7 percent at 95 percent confidence).
+
+### Agreement between the engines (srclight, `build --providers reference,crg`)
+
+Jaccard over qualified names (nodes) or (source, target) pairs (edges); `<` marks below 0.8. Ours first.
+
+| scope | kind | ours | crg | both | Jaccard |
+|---|---|---|---|---|---|
+| nodes | class | 91 | 96 | 84 | 0.816 |
+| nodes | file | 35 | 33 | 33 | 0.943 |
+| nodes | function | 1,234 | 1,144 | 1,144 | 0.927 |
+| nodes | method | 366 | 450 | 362 | 0.797 < |
+| nodes | test | 50 | 50 | 50 | 1.000 |
+| nodes | type | 13 | 0 | 0 | 0.000 < |
+| edges | calls | 3,271 | 3,195 | 3,170 | 0.962 |
+| edges | contains | 1,704 | 1,690 | 1,681 | 0.981 |
+| edges | extends | 6 | 8 | 6 | 0.750 < |
+| edges | implements | 0 | 1 | 0 | 0.000 < |
+| edges | imports | 179 | 198 | 179 | 0.904 |
+| edges | tests | 1,785 | 2,003 | 1,412 | 0.594 < |
+
+The adapter dropped 10,162 crg edges whose endpoint is not an indexed node (calls 7,208, tests 2,507, imports 438, extends 9).
+Conformance of the adapter: go, python, typescript pass; java (edges recall 0.77) and rust (nodes 0.86, edges recall 0.53) stay below the floors.
+
+### Build time and scale (release build, `COMPAREGRAPH_PROFILE=1`)
+
+Hermes-agent (10,288 files) and openclaw (38,258 files) on scratch copies; the incremental edit is one function appended to one source
+file of a copy (`hermes_cli/gateway_migrate_guards.py`, `src/entry.ts`). Host load average 6 to 15.
+
+| tree | step | wall | cache hits / misses | edges copied | store_hash |
+|---|---|---|---|---|---|
+| hermes-agent | full | 93.2 s | 0 / 10,288 | 0 | 2f3fb527... |
+| hermes-agent | no-op rebuild | 2.0 s (reused) | | 0 | same as full |
+| hermes-agent | one-file edit, incremental | 47.5 s | 10,287 / 1 | 215,935 | d51b68f0... |
+| hermes-agent | same tree `--full` | 85.2 s | | 0 | equal to the incremental |
+| openclaw | full | 499.6 s | 0 / 38,258 | 0 | 2acfc1f0... |
+| openclaw | no-op rebuild | 7.5 s (reused) | | 0 | same as full |
+| openclaw | one-file edit, incremental | 289.7 s | 38,257 / 1 | 670,907 | 43dbae2f... |
+| openclaw | same tree `--full` | 499.2 s | | 0 | equal to the incremental |
+
+Per pass, openclaw full: read+parse 299.6 s, resolve_edges 145.0 s, nodes 8.7 s, inherit 13.7 s, store inserts 17.8 s, store_hash 7.9 s;
+max RSS 3.54 GB. Incremental: read+parse 171.0 s (all cache hits, the per-file analyses still run), resolve_edges 41.4 s, load_prev 3.3 s.
+
+Back to back on hermes-agent, full build, three binaries, same load window (6 to 9): pre-Plan 6 binary 194.4 s, Plan 6 B1 final 64.5 s,
+`feef80c` 90.5 s. So `feef80c` is 2.15x faster than before Plan 6 and 1.40x slower than B1 alone: resolve_edges went 10.0 s to 30.3 s
+and read+parse 38.8 s to 44.6 s after the A lanes (go_ctx, barrel re-exports, class-receiver shadowing, describe nodes) merged. This
+was measured, not diagnosed.
+
+### Query bounds on the openclaw graph (454k nodes, 1.29M edges, defaults unless stated)
+
+| query | wall | max RSS | response | note |
+|---|---|---|---|---|
+| `impact` on `normalizeOptionalString` (3,156 callers) | 2.5 s | 14 MB | 328 KB | 500 nodes (cap), `truncated`, 458 tests |
+| `traverse` same symbol, `--direction both --depth 5` | 3.6 s | 12 MB | 110 KB | 200 nodes (cap), `truncated` |
+| `dead-code --limit 50` | 1.6 s | 15 MB | 12 KB | 50 items |
+
+### What Plan 6 changed in the verdict table
+
+| area | after Plan 5 | after Plan 6 |
+|---|---|---|
+| calls, TypeScript (hono) | behind: recall 0.31 vs 0.56 | ahead: 0.667 / P 1.000 vs crg 0.556 / 0.870 (adapter 0.611 / 0.880) |
+| calls, Go (caddy) | behind: 0.25 vs 0.65 | ahead on the labelled sites: 1.000 / 1.000 vs 0.646 / 0.886 (48 sites) |
+| calls, pooled | behind on recall | ahead on both: 0.834 / 0.995 vs 0.711 / 0.954 |
+| speed (cold, hermes-agent, same binary family) | ahead | 2.15x faster than before Plan 6; openclaw 38k files 499.6 s cold (was 1,866 s with every parse a cache hit), target 8 min missed by 20 s |
+| tests edges | behind (J 0.00 to 0.61) | unchanged; srclight tests J 0.594 |
