@@ -3,6 +3,8 @@
 **Many cloned repositories, one taxonomy, evidence on every cell.**
 
 [![CI](https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/massrelay-ai/comparegraph?display_name=tag)](https://github.com/massrelay-ai/comparegraph/releases/latest)
+[![npm](https://img.shields.io/npm/v/comparegraph.svg)](https://www.npmjs.com/package/comparegraph)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
 ![MCP tools: 18](https://img.shields.io/badge/MCP%20tools-18-green.svg)
@@ -21,6 +23,7 @@ binary with a CLI and an MCP server. It reads clones and never runs them. It nev
 ## Contents
 
 - [Why CompareGraph](#why-comparegraph)
+- [Install](#install)
 - [Quick start](#quick-start)
 - [How good is it](#how-good-is-it)
 - [Languages](#languages)
@@ -68,22 +71,45 @@ number cannot be checked, and notes go stale when the code moves. Five propertie
 For: teams comparing their product with the field, due diligence on a set of projects, a newcomer mapping a field
 (`family propose` drafts the taxonomy), and coding agents that need compact facts over MCP.
 
-## Quick start
+## Install
 
-The example family pack (`families/`) and the sample repositories (`fixtures/`) ship in the clone, not in the binary.
+Pick one route. Each gives you the `comparegraph` binary; the first also registers it with Claude Code.
+
+**Claude Code plugin**, one step: the seven skills and the MCP server, which Claude Code starts through `npx` in your
+project.
+
+```text
+/plugin install comparegraph --marketplace massrelay-ai/comparegraph
+```
+
+**npm**, a prebuilt binary for linux-x64, darwin-arm64, darwin-x64 and win32-x64 (Node 18 or newer):
+
+```bash
+npm install -g comparegraph                    # or once, without installing: npx comparegraph --version
+comparegraph setup --client claude --apply     # register with an agent (omit --apply for a dry run)
+```
+
+**Release binary**: download `comparegraph-<platform>` and `SHA256SUMS` from the
+[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest), check the sum, put the file on your `PATH`,
+then run `setup` as above.
+
+**From source**, anywhere Rust 1.85 or newer runs:
 
 ```bash
 git clone https://github.com/massrelay-ai/comparegraph
 cd comparegraph
 cargo install --locked --path crates/comparegraph
-comparegraph setup --client claude --apply     # wire up an agent (omit --apply for a dry run)
 ```
 
 `--locked` is required: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` pins a version that
-resolves. Rust 1.85 or newer. npm package: coming with the first release. `comparegraph doctor` checks the setup; the
-[agent table](#agents-platforms-uninstall) lists the six clients.
+resolves. `setup` serves six agents ([table](#agents-platforms-uninstall)) and `comparegraph doctor` checks the result; the
+plugin route needs neither.
 
-Then compare. The sample is `fixtures/typescript` (three files) against the ten-feature example pack:
+## Quick start
+
+The example family pack (`families/`) and the sample repositories (`fixtures/`) ship in the repository, not in the binary,
+so clone it once even if you installed the binary another way; the commands below start inside that clone. The sample is
+`fixtures/typescript` (three files) against the ten-feature example pack:
 
 ```bash
 mkdir ../ws && cd ../ws
@@ -441,7 +467,8 @@ A family is a directory with a `rows.md`: front matter with `family:` and `descr
 ([design notes](docs/decisions.md)).
 
 The method is seven plain-markdown skills in [`skills/`](skills) that any agent can read. Each gives when to use the verb, the
-exact commands, what the engine refuses, and how to check.
+exact commands, what the engine refuses, and how to check. In Claude Code the skills and the MCP server arrive together as
+one plugin ([Install](#install)); other agents read the `skills/` directory from the clone.
 
 | Skill | One line |
 |---|---|
@@ -503,10 +530,13 @@ backup named `<file>.bak-<unix-seconds>`; a differing entry is left alone unless
 | OpenCode | `opencode` | `~/.config/opencode/opencode.json` / `opencode.json` | `mcp.comparegraph` |
 | Hermes | `hermes` | `~/.hermes/config.yaml` (no project scope) | `mcp_servers.comparegraph` |
 
-Platforms: linux-x64 is built and tested; darwin-arm64, darwin-x64 and win32-x64 are built by the release workflow but
-untested until the first release; anywhere Rust 1.85+ runs, build from source. Local only: the engine makes no network call,
-the MCP server speaks over stdio, the store is one SQLite file you own. Release checksums are planned and do not exist yet.
-Uninstall: remove the entry above, then `cargo uninstall comparegraph` and `rm -r .comparegraph` in each workspace.
+Platforms: every release builds linux-x64, darwin-arm64, darwin-x64 and win32-x64 on their own runners and ships each as a
+release asset, listed in `SHA256SUMS`, and as an npm package; the test suite runs on linux-x64 only. Anywhere Rust 1.85+
+runs, build from source. Local only: the engine makes no network call, the MCP server speaks over stdio, the store is one
+SQLite file you own.
+
+Uninstall: remove the entry above (in Claude Code with the plugin, `/plugin uninstall comparegraph`), then
+`npm uninstall -g comparegraph` or `cargo uninstall comparegraph`, and `rm -r .comparegraph` in each workspace.
 
 ## Library usage
 
@@ -535,6 +565,7 @@ The stable contracts: the JSON envelope (`export json`, every CLI answer), and
 |---|---|
 | `no workspace` or `not_found` on a read verb | read verbs never create `.comparegraph`. Run `comparegraph add <clone>` in the workspace first, or pass `--root`. |
 | `setup` says "running from a build directory" | a `target/` binary refuses to register itself. Pass `--bin <installed path>` or set `COMPAREGRAPH_BIN`. |
+| `npx comparegraph` says "no prebuilt binary for <platform>" | npm carries four platforms. Elsewhere build from source: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph`. |
 | A claim shows `unknown*` or `stale` after you edited the clone | a location goes stale only when `comparegraph check` runs. Run `check`, rebuild, and write the claim again. |
 | `conform` returns `below_floor` | the provider scored under 0.95 on nodes or 0.85 on edges. Fix the provider; the floors do not move. |
 | `build --provider crg` says `provider_unavailable` | code-review-graph is not installed, or its conformance failed for a language in the clone. `comparegraph doctor` names which. |
@@ -593,7 +624,7 @@ of these exist yet, and the maintainer decides the order.
 - Port-kit export: for an adopted feature, the files, line ranges, licence text and attribution header.
 - A text channel in the store (doc-comment and signature tokens) and a per-family synonym table, the two levers the
   mapping gold points at; a second signal for `relate` so that a repository outside a family scores below 0.5.
-- The `npm i -g comparegraph` package and release checksums.
+- Distribution: publishing on crates.io (the Perl grammar pin has to survive `cargo publish`), a Homebrew tap, an install script.
 
 ## Documentation
 
@@ -601,6 +632,7 @@ of these exist yet, and the maintainer decides the order.
 |---|---|
 | [`docs/reports/README.md`](docs/reports/README.md) | The index of every measurement, with its verdict and status |
 | [`docs/dev/scripts.md`](docs/dev/scripts.md) | Which script reproduces which number |
+| [`docs/dev/release.md`](docs/dev/release.md) | How a release is cut: the tag, the workflow, the npm publish, what to check after |
 | [`docs/dev/plugin-protocol.md`](docs/dev/plugin-protocol.md) | The JSON-lines protocol for external engines, limits, conformance, a 25-line example |
 | [`docs/dev/pid-namespaces.md`](docs/dev/pid-namespaces.md) | Why tests run in a PID namespace and how to enable it |
 | [`docs/catalog.json`](docs/catalog.json) | The 18 MCP tools and 9 error codes, generated and CI-checked |

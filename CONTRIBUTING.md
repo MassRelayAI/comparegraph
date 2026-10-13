@@ -18,6 +18,11 @@ Vendored code under `providers/reference/vendor/` is never edited. No LLM or net
 need a ruling in the issue first. Code from copyleft or community-licensed projects is not accepted; record the origin and
 licence of anything adapted in `docs/THIRD_PARTY_NOTICES.md`.
 
+## Releasing
+Maintainers only; the steps are in `docs/dev/release.md`. In short: bump the workspace version, date the changelog section,
+push a `v*` tag. The workflow builds the four platform binaries, publishes the GitHub release with `SHA256SUMS` and, after a
+manual approval, the npm packages.
+
 ## Skills
 The markdown skills live in `skills/` (`method/` is a symlink to it). Keep each skill short, command-first, and honest
 about what the engine cannot see.

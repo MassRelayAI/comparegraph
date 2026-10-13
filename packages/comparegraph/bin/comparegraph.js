@@ -16,7 +16,7 @@ try {
 } catch {
   process.stderr.write(
     `comparegraph: no prebuilt binary for ${platform}-${arch}; ` +
-      'build from source: cargo install --git https://github.com/massrelay-ai/comparegraph comparegraph\n'
+      'build from source: cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph\n'
   );
   process.exit(1);
 }

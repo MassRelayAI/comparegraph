@@ -84,3 +84,9 @@ recall on that consumer's languages with precision ≥ 0.96 (the same bar as Pla
 - **Test detection by name.** Functions named `test_…` inside a non-test file (Rust `#[cfg(test)]` modules) and files named
   `*.test-helpers.ts` or `*.test-support.ts` rank as implementers; the kind prior only sees `test` nodes and test paths.
 
+
+## Distribution
+
+Shipped: the Claude Code plugin (skills plus the MCP server through `npx`), npm with four prebuilt platforms, release assets
+with `SHA256SUMS`, `cargo install --locked` from source (`docs/dev/release.md`). Not shipped: crates.io (the Perl grammar
+pin has to survive `cargo publish`, untested), a Homebrew tap, an install script. None has been asked for yet.

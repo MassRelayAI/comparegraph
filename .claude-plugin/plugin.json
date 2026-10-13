@@ -16,5 +16,15 @@
     "mcp",
     "skills",
     "repositories"
-  ]
+  ],
+  "mcpServers": {
+    "comparegraph": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "comparegraph",
+        "mcp"
+      ]
+    }
+  }
 }

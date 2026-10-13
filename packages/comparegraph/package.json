@@ -7,6 +7,15 @@
     "type": "git",
     "url": "git+https://github.com/massrelay-ai/comparegraph.git"
   },
+  "homepage": "https://github.com/massrelay-ai/comparegraph#readme",
+  "keywords": [
+    "code-graph",
+    "comparison",
+    "taxonomy",
+    "mcp",
+    "tree-sitter",
+    "cli"
+  ],
   "bin": {
     "comparegraph": "bin/comparegraph.js"
   },

@@ -8,10 +8,13 @@ CompareGraph parses clones into one SQLite code graph and compares them against 
 model and never decides: you read the code, you write the claim, a person records the decision.
 
 ## Once per machine
+In Claude Code, `/plugin install comparegraph --marketplace massrelay-ai/comparegraph` installs these skills and the MCP
+server together; nothing else is needed. For any other agent, install the binary (`npm install -g comparegraph`, a release
+asset, or `cargo install --locked --path crates/comparegraph` from a clone) and register it:
 ```
 comparegraph setup --client claude --apply
 ```
-Available from 0.1.0. Without `--apply` it only prints its plan. It writes additively and leaves a timestamped backup. `comparegraph doctor`
+Without `--apply` it only prints its plan. It writes additively and leaves a timestamped backup. `comparegraph doctor`
 reports whether the registration is `aligned` or `stale`.
 
 ## Which skill, when
