@@ -24,6 +24,25 @@ to our structure?" — answered: metrics yes, prioritization no, interoperabilit
 3. The parity script per family (a bake-off per family, not per project).
 4. `family import/export` for a shared taxonomy format (`_rows-<family>.md`).
 
+## From a user's run (2026-10-14: ten packs, 116 clones, about 4,400 claims through the CLI)
+
+Most costly first, as the user ranked them; the measured numbers are theirs.
+
+1. `claim --batch` and `decide --batch` (JSON lines or stdin): one store open and one transaction per batch instead of one
+   process per verdict over a 5 GB store.
+2. The absent check speaks too rarely (recall 0.05 on the gold; in a large tree every `none` became `unknown` because the
+   clone carries words like `task` and `channel`): drop terms common in the clone and say so, scope by the kinds a feature
+   names, and let a pack declare synonyms so `--searched` can name them.
+3. Rules stricter than the README: `--root` only before the verb, `repos` without `--limit`, the `<group>.<slug>` id rule
+   undocumented in the family section.
+4. `impact`, `tests-for`, `traverse` answer 90 to 312 KB prefixes; `show` caps callers at 50: counts and the top few first,
+   a cursor, every cap in `limitations[]`.
+5. `build` is silent for minutes: `--progress`.
+6. The ranked `map` matches `multi` to `multiplier`: whole-token matching for short terms, synonyms from the pack.
+
+Kept, by the same user: the refusal of a `has` without a resolving citation, `none` needing proof, the envelope, the
+deterministic store hash, the pack format, the build speed per clone, one binary with no model calls.
+
 ## Navigation parity with codegraph (the maintainer, 2026-10-13: "why not do what codegraph and other OSS do")
 
 Graph-derived answers that codegraph serves and we do not, all plain queries over the store, no model:
