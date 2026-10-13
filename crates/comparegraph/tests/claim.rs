@@ -467,3 +467,65 @@ fn batch_ignores_a_byte_order_mark_on_the_first_line() {
     assert_eq!(out[0]["ok"], true, "{out:?}");
     assert_eq!(out[1]["data"]["ok"], 1);
 }
+
+const PACK_SYN: &str = "---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight | synonyms |\n|---|---|---|---|---|---|---|---|\n\
+| routing.retry | routing | Retry with backoff | Failed calls are retried | a retry loop | basics | 2 | reattempt |\n\
+| memory.recall | memory | Recall | Past turns | a store read | extra | 1 |  |\n";
+
+#[test]
+fn a_declared_synonym_names_the_feature_in_searched_and_an_undeclared_word_does_not() {
+    let (ws, _a, _p) = setup();
+    let p2 = tempfile::tempdir().unwrap();
+    std::fs::write(p2.path().join("rows.md"), PACK_SYN).unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(p2.path()).assert().success();
+    // the synonym names the feature, the search finds nothing: recorded with the search in the note
+    let ok = json(claim(ws.path(), &["none", "--author", "me", "--searched", "reattempt"]).success());
+    let note = ok["data"]["note"].as_str().unwrap();
+    assert!(note.starts_with("searched (author-supplied): reattempt → 0 hits"), "{note}");
+    // an undeclared unrelated word is still refused
+    let bad = json(claim(ws.path(), &["none", "--author", "me", "--searched", "zzzundeclared"]).failure());
+    assert_eq!(bad["error"]["code"], "invalid_arguments", "{bad}");
+    assert!(bad["error"]["message"].as_str().unwrap().contains("do not name the feature"), "{bad}");
+    // the refusal lists the synonym among the words that do name it
+    assert!(bad["error"]["message"].as_str().unwrap().contains("reattempt"), "{bad}");
+}
+
+#[test]
+fn a_store_created_before_the_synonyms_column_opens_and_gains_it() {
+    let ws = tempfile::tempdir().unwrap();
+    let p = tempfile::tempdir().unwrap();
+    std::fs::write(p.path().join("rows.md"), PACK_SYN).unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(p.path()).assert().success();
+    let db_path = ws.path().join(".comparegraph/comparegraph.db");
+    {
+        let db = rusqlite::Connection::open(&db_path).unwrap();
+        db.execute_batch("ALTER TABLE feature DROP COLUMN synonyms").unwrap();
+        let cols: Vec<String> = db
+            .prepare("PRAGMA table_info(feature)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert!(!cols.iter().any(|c| c == "synonyms"), "{cols:?}");
+    }
+    // any verb opens it; the column is back, empty, and the pack can be added again to fill it
+    cc(ws.path()).args(["family", "show", "fam"]).assert().success();
+    let has = |db: &rusqlite::Connection| {
+        db.prepare("PRAGMA table_info(feature)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .map(Result::unwrap)
+            .any(|c| c == "synonyms")
+    };
+    let db = rusqlite::Connection::open(&db_path).unwrap();
+    assert!(has(&db));
+    let s: String = db.query_row("SELECT synonyms FROM feature WHERE slug = 'routing.retry'", [], |r| r.get(0)).unwrap();
+    assert_eq!(s, "");
+    let v: String = db.query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0)).unwrap();
+    assert_eq!(v, "1");
+    cc(ws.path()).args(["family", "add"]).arg(p.path()).assert().success();
+    let s: String = db.query_row("SELECT synonyms FROM feature WHERE slug = 'routing.retry'", [], |r| r.get(0)).unwrap();
+    assert_eq!(s, "reattempt");
+}

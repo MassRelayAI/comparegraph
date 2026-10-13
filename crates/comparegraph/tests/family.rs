@@ -232,3 +232,44 @@ fn two_groups_may_share_a_slug() {
     assert_eq!(s.groups.len(), 2);
     assert!(err_of(&[a, a]).contains("duplicate"));
 }
+
+const HEAD8: &str = "---\nfamily: agent-harness\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight | synonyms |\n|---|---|---|---|---|---|---|---|\n";
+
+#[test]
+fn the_synonyms_column_is_optional_and_stored() {
+    // seven columns: loads, no synonyms
+    let p = parse_pack(&format!("{HEAD}{R1}")).unwrap();
+    assert_eq!(p.rows[0].synonyms, "");
+    // eight columns: loads, the cell is kept (and may be empty)
+    let text = format!(
+        "{HEAD8}| routing.retry | routing | Retry | Failed calls are retried | a retry loop | basics | 2 | reattempt, backoff |\n\
+         | memory.recall | memory | Recall | Past turns | a store read | extra | 1 |  |\n"
+    );
+    let p = parse_pack(&text).unwrap();
+    assert_eq!(p.rows[0].synonyms, "reattempt, backoff");
+    assert_eq!(p.rows[1].synonyms, "");
+    // stored in the feature row
+    let ws = tempfile::tempdir().unwrap();
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("rows.md"), &text).unwrap();
+    add_family(ws.path(), d.path()).unwrap();
+    let db = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db")).unwrap();
+    let s: String = db
+        .query_row("SELECT synonyms FROM feature WHERE slug = 'routing.retry'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(s, "reattempt, backoff");
+    // a row of the wrong width under either header is refused naming the row
+    let e = parse_pack(&format!("{HEAD8}| routing.retry | routing | Retry | d | c | basics | 2 |\n")).unwrap_err().to_string();
+    assert!(e.contains("row 1") && e.contains("cells"), "{e}");
+}
+
+#[test]
+fn a_ninth_column_or_a_misnamed_eighth_fails() {
+    let nine = "---\nfamily: agent-harness\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight | synonyms | extra |\n|---|---|---|---|---|---|---|---|---|\n\
+                | routing.retry | routing | Retry | d | c | basics | 2 | s | x |\n";
+    let e = parse_pack(nine).unwrap_err().to_string();
+    assert!(e.contains("table header must be"), "{e}");
+    let wrong = HEAD8.replace("synonyms", "aliases");
+    let e = parse_pack(&format!("{wrong}| routing.retry | routing | Retry | d | c | basics | 2 | s |\n")).unwrap_err().to_string();
+    assert!(e.contains("table header must be"), "{e}");
+}

@@ -146,6 +146,20 @@ impl Store {
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
             .map_err(open_err)?;
         conn.execute_batch(SCHEMA).map_err(open_err)?;
+        // additive column (Plan 8 lane C): a store created before it gains it here; SCHEMA_VERSION stays 1
+        let has_synonyms = {
+            let mut st = conn.prepare("PRAGMA table_info(feature)").map_err(open_err)?;
+            let names = st
+                .query_map([], |r| r.get::<_, String>(1))
+                .map_err(open_err)?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(open_err)?;
+            names.iter().any(|n| n == "synonyms")
+        };
+        if !has_synonyms {
+            conn.execute_batch("ALTER TABLE feature ADD COLUMN synonyms TEXT NOT NULL DEFAULT ''")
+                .map_err(open_err)?;
+        }
         let existing: Option<String> = conn
             .query_row(
                 "SELECT value FROM meta WHERE key = 'schema_version'",
@@ -724,6 +738,8 @@ pub struct FeatureRow {
     pub counts_as_has: String,
     pub tier: String,
     pub weight: i64,
+    /// comma-separated words the pack author says also name the feature (empty when none)
+    pub synonyms: String,
 }
 impl FeatureRow {
     /// The pack id, `<group>.<slug>`.
@@ -740,6 +756,7 @@ pub struct FeatureInput<'a> {
     pub counts_as_has: &'a str,
     pub tier: &'a str,
     pub weight: i64,
+    pub synonyms: &'a str,
 }
 
 fn family_row(r: &rusqlite::Row) -> rusqlite::Result<FamilyRow> {
@@ -791,18 +808,18 @@ impl Store {
     /// Insert or update one feature by (family, full id); the feature id and so its claims' key survive an update.
     pub fn upsert_feature(&self, family_id: i64, f: &FeatureInput) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO feature(family_id, grp, slug, title, definition, counts_as_has, tier, weight) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+            "INSERT INTO feature(family_id, grp, slug, title, definition, counts_as_has, tier, weight, synonyms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
              ON CONFLICT(family_id, slug) DO UPDATE SET grp = excluded.grp, title = excluded.title, definition = excluded.definition, \
-             counts_as_has = excluded.counts_as_has, tier = excluded.tier, weight = excluded.weight",
-            params![family_id, f.grp, f.id, f.title, f.definition, f.counts_as_has, f.tier, f.weight],
+             counts_as_has = excluded.counts_as_has, tier = excluded.tier, weight = excluded.weight, synonyms = excluded.synonyms",
+            params![family_id, f.grp, f.id, f.title, f.definition, f.counts_as_has, f.tier, f.weight, f.synonyms],
         )?;
         Ok(())
     }
     /// All features of a family (retired included), sorted by group then id.
     pub fn features_of(&self, family: &str) -> Result<Vec<FeatureRow>> {
         let mut st = self.conn.prepare(
-            "SELECT f.id, fa.name, f.grp, f.slug, f.title, f.definition, f.counts_as_has, f.tier, f.weight \
+            "SELECT f.id, fa.name, f.grp, f.slug, f.title, f.definition, f.counts_as_has, f.tier, f.weight, f.synonyms \
              FROM feature f JOIN family fa ON fa.id = f.family_id WHERE fa.name = ?1 ORDER BY f.grp, f.slug",
         )?;
         let rows = st
@@ -817,6 +834,7 @@ impl Store {
                     counts_as_has: r.get(6)?,
                     tier: r.get(7)?,
                     weight: r.get(8)?,
+                    synonyms: r.get(9)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;

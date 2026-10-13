@@ -50,13 +50,14 @@ pub struct Related {
     pub basis: Vec<String>,
 }
 
-/// Tokens of the group, the slug and the title; deduped and sorted. The definition is not used.
+/// Tokens of the group, the slug, the title and the pack author's synonyms; deduped and sorted. The definition is not used.
 pub fn feature_terms(f: &FeatureRow) -> Vec<String> {
     let slug = f.slug.rsplit('.').next().unwrap_or(&f.slug);
     let set: BTreeSet<String> = tokens(&f.grp)
         .into_iter()
         .chain(tokens(slug))
         .chain(tokens(&f.title))
+        .chain(tokens(&f.synonyms))
         .collect();
     set.into_iter().collect()
 }
@@ -335,6 +336,7 @@ mod tests {
             counts_as_has: "".into(),
             tier: "core".into(),
             weight: 1,
+            synonyms: "".into(),
         }
     }
     /// eleven unrelated rows plus `extra`

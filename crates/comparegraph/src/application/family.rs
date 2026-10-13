@@ -15,6 +15,8 @@ const COLS: [&str; 7] = [
     "tier",
     "weight",
 ];
+/// The optional 8th column.
+const SYNONYMS_COL: &str = "synonyms";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PackRow {
@@ -26,6 +28,8 @@ pub struct PackRow {
     pub counts_as_has: String,
     pub tier: String,
     pub weight: i64,
+    /// comma-separated words that also name the feature (the optional 8th column; empty when absent)
+    pub synonyms: String,
 }
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Pack {
@@ -85,17 +89,22 @@ pub fn parse_pack(text: &str) -> Result<Pack> {
     if table.len() < 2 {
         return Err(bad("rows.md has no table".into()));
     }
-    if cells(table[0]) != COLS {
-        return Err(bad(format!("table header must be: {}", COLS.join(" | "))));
+    let head = cells(table[0]);
+    let ncols = head.len();
+    if !(ncols == COLS.len() || ncols == COLS.len() + 1) || head[..COLS.len().min(ncols)] != COLS[..COLS.len().min(ncols)] || (ncols > COLS.len() && head[COLS.len()] != SYNONYMS_COL) {
+        return Err(bad(format!(
+            "table header must be: {} (optionally followed by | {SYNONYMS_COL})",
+            COLS.join(" | ")
+        )));
     }
     let mut rows: Vec<PackRow> = Vec::new();
     for (i, line) in table.iter().skip(2).enumerate() {
         let n = i + 1;
         let c = cells(line);
-        if c.len() != COLS.len() {
+        if c.len() != ncols {
             return Err(bad(format!(
                 "row {n}: expected {} cells, found {}",
-                COLS.len(),
+                ncols,
                 c.len()
             )));
         }
@@ -147,6 +156,7 @@ pub fn parse_pack(text: &str) -> Result<Pack> {
             counts_as_has: c[4].clone(),
             tier: c[5].clone(),
             weight,
+            synonyms: c.get(7).cloned().unwrap_or_default(),
         });
     }
     if rows.is_empty() {
@@ -199,6 +209,7 @@ pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
                 counts_as_has: &r.counts_as_has,
                 tier: &r.tier,
                 weight: r.weight,
+                synonyms: &r.synonyms,
             },
         )?;
     }
