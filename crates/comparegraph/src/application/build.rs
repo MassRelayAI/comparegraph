@@ -121,6 +121,8 @@ pub fn build_repo(
             return Err(e.into());
         }
     };
+    let mut out = out;
+    out.limitations = collapse_limitations(std::mem::take(&mut out.limitations));
     if out.files_parsed == 0 {
         let msg = format!(
             "0 files parsed under {} ({} files seen, {} limitations)",
@@ -356,6 +358,49 @@ pub struct MultiBuildReport {
     pub limitation_items: Vec<Limitation>,
 }
 
+/// A limitation code that repeats more than this many times in one build is stored once, with its count.
+const COLLAPSE_ABOVE: usize = 20;
+/// Codes whose detail is parsed elsewhere (the Go module fingerprint, the incremental plan) or is a single verdict; never collapsed.
+const NEVER_COLLAPSED: &[&str] = &["go_modules", "incremental_fallback", "provider_unavailable", "provider_error", "store_error"];
+
+/// One place where a build's limitations are finalised (before `finish_run` and before the envelope): a code repeated more than
+/// 20 times becomes ONE limitation, `"<n> occurrences; first: <d1>, … <d5>, …"`, at the position of its first occurrence.
+pub fn collapse_limitations(items: Vec<Limitation>) -> Vec<Limitation> {
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for l in &items {
+        *counts.entry(l.code.as_str()).or_default() += 1;
+    }
+    let repeated: std::collections::HashSet<String> = counts
+        .into_iter()
+        .filter(|(c, n)| *n > COLLAPSE_ABOVE && !NEVER_COLLAPSED.contains(c) && !c.starts_with("agreement"))
+        .map(|(c, _)| c.to_string())
+        .collect();
+    if repeated.is_empty() {
+        return items;
+    }
+    let mut seen: std::collections::HashMap<String, (usize, Vec<String>)> = std::collections::HashMap::new();
+    for l in &items {
+        if repeated.contains(&l.code) {
+            let e = seen.entry(l.code.clone()).or_default();
+            e.0 += 1;
+            if e.1.len() < 5 {
+                e.1.push(l.detail.clone());
+            }
+        }
+    }
+    let mut done: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for l in items {
+        if !repeated.contains(&l.code) {
+            out.push(l);
+        } else if done.insert(l.code.clone()) {
+            let (n, first) = &seen[&l.code];
+            out.push(Limitation::new(&l.code, format!("{n} occurrences; first: {}, …", first.join(", "))));
+        }
+    }
+    out
+}
+
 pub fn build_many(root: &Path, repo_name: &str, providers: &[String], opts: &BuildOptions) -> Result<MultiBuildReport> {
     if providers.is_empty() {
         return Err(AppError::InvalidArguments("--providers needs at least one provider name".into()));
@@ -394,4 +439,23 @@ fn go_fp_of(run: &Run) -> String {
         .find(|l| l.code == crate::providers::reference::incr::GO_MODULES)
         .map(|l| l.detail.clone())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod collapse_tests {
+    use super::*;
+    #[test]
+    fn only_repeated_unprotected_codes_collapse() {
+        let mut v = vec![Limitation::new("go_modules", "fp"), Limitation::new("skipped_dir", "node_modules")];
+        v.extend((0..21).map(|i| Limitation::new("clamped_line_end", format!("f{i}.ts:x 2 → 1"))));
+        v.extend((0..30).map(|i| Limitation::new("go_modules", format!("m{i}"))));
+        v.extend((0..19).map(|i| Limitation::new("skipped_dir", format!("d{i}"))));
+        let c = collapse_limitations(v);
+        let cl: Vec<_> = c.iter().filter(|l| l.code == "clamped_line_end").collect();
+        assert_eq!(cl.len(), 1);
+        assert_eq!(cl[0].detail, "21 occurrences; first: f0.ts:x 2 → 1, f1.ts:x 2 → 1, f2.ts:x 2 → 1, f3.ts:x 2 → 1, f4.ts:x 2 → 1, …");
+        assert_eq!(c.iter().filter(|l| l.code == "go_modules").count(), 31);
+        assert_eq!(c.iter().filter(|l| l.code == "skipped_dir").count(), 20);
+        assert_eq!(c[0].detail, "fp");
+    }
 }

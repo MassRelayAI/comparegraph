@@ -473,3 +473,28 @@ fn a_cargo_toml_only_edit_is_a_real_run_that_equals_a_full_build() {
     let full = build_repo(fresh.path(), "r", "reference", &BuildOptions { full: true, ..BuildOptions::default() }).unwrap();
     assert_eq!(second.store_hash, full.store_hash);
 }
+
+/// A4: 50 toml files each overshoot by one line (`clamped_line_end`); the run keeps ONE limitation with the count and the first
+/// five paths, the envelope's limitations stay small, and the store hash does not depend on limitations.
+#[test]
+fn repeated_limitations_collapse_into_one_with_a_count() {
+    let files: Vec<(String, String)> = (0..50).map(|i| (format!("conf/f{i:02}.toml"), "[plugins]\na = 1\nb = 2\n".to_string())).collect();
+    let refs: Vec<(&str, &str)> = files.iter().map(|(p, c)| (p.as_str(), c.as_str())).collect();
+    let d = tree(&refs);
+    let w = ws(d.path());
+    let r = build_repo(w.path(), "r", "reference", &BuildOptions::default()).unwrap();
+    let clamped: Vec<_> = r.limitation_items.iter().filter(|l| l.code == "clamped_line_end").collect();
+    assert_eq!(clamped.len(), 1, "{:?}", r.limitation_items);
+    assert!(clamped[0].detail.starts_with("50 occurrences; first: "), "{}", clamped[0].detail);
+    assert_eq!(clamped[0].detail.matches(".toml").count(), 5, "{}", clamped[0].detail);
+    assert!(clamped[0].detail.ends_with(", …"), "{}", clamped[0].detail);
+    assert_eq!(r.limitations, r.limitation_items.len());
+    assert!(serde_json::to_string(&r.limitation_items).unwrap().len() < 8 * 1024);
+    // the stored run carries the collapsed list too
+    let store = comparegraph::store::Store::open(w.path()).unwrap();
+    let run = store.run(r.run).unwrap().unwrap();
+    assert_eq!(run.limitations.iter().filter(|l| l.code == "clamped_line_end").count(), 1);
+    // limitations are not part of store_hash
+    let full = build_repo(w.path(), "r", "reference", &BuildOptions { full: true, ..BuildOptions::default() }).unwrap();
+    assert_eq!(full.store_hash, r.store_hash);
+}
