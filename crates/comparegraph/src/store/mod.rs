@@ -143,7 +143,7 @@ impl Store {
             source,
         };
         let conn = Connection::open(&path).map_err(open_err)?;
-        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
+        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
             .map_err(open_err)?;
         conn.execute_batch(SCHEMA).map_err(open_err)?;
         let existing: Option<String> = conn

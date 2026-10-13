@@ -216,14 +216,14 @@ pub enum Cmd {
     },
     /// Record a claim (has|partial|none|unknown) about a feature in a clone, with citations that resolve now
     Claim {
-        #[arg(required_unless_present = "batch", default_value = "")]
-        repo: String,
-        #[arg(required_unless_present = "batch", default_value = "")]
-        feature: String,
-        #[arg(required_unless_present = "batch", default_value = "")]
-        verdict: String,
-        #[arg(long, required_unless_present = "batch", default_value = "")]
-        author: String,
+        #[arg(required_unless_present = "batch")]
+        repo: Option<String>,
+        #[arg(required_unless_present = "batch")]
+        feature: Option<String>,
+        #[arg(required_unless_present = "batch")]
+        verdict: Option<String>,
+        #[arg(long, required_unless_present = "batch")]
+        author: Option<String>,
         /// JSON lines, one claim per line (fields as the flags; `at` is an array), `-` for stdin; one store open, one
         /// transaction, one envelope line out per row in, then a summary line
         #[arg(long, value_name = "JSONL|-")]
@@ -250,14 +250,14 @@ pub enum Cmd {
     },
     /// Record a decision (adopt|reject|park) about a clone, or one feature of it; append-only
     Decide {
-        #[arg(required_unless_present = "batch", default_value = "")]
-        repo: String,
-        #[arg(required_unless_present = "batch", default_value = "")]
-        disposition: String,
-        #[arg(long, required_unless_present = "batch", default_value = "")]
-        why: String,
-        #[arg(long, required_unless_present = "batch", default_value = "")]
-        by: String,
+        #[arg(required_unless_present = "batch")]
+        repo: Option<String>,
+        #[arg(required_unless_present = "batch")]
+        disposition: Option<String>,
+        #[arg(long, required_unless_present = "batch")]
+        why: Option<String>,
+        #[arg(long, required_unless_present = "batch")]
+        by: Option<String>,
         /// JSON lines, one decision per line (fields as the flags), `-` for stdin; one store open, one transaction,
         /// one envelope line out per row in, then a summary line
         #[arg(long, value_name = "JSONL|-")]
@@ -402,18 +402,19 @@ fn print_line(v: &serde_json::Value, pretty: bool) {
     }
 }
 
-/// `claim --batch` / `decide --batch`: one envelope per input row in input order (with its `line`), then a summary
-/// envelope `{rows, ok, failed}`. Exit 0 only when every row is ok.
+/// `claim --batch` / `decide --batch`: one envelope per input row in input order (with its `line`), printed as each
+/// row is decided, then a summary envelope `{rows, ok, failed, committed}`; an error envelope as the last line means the
+/// transaction did not commit and no row landed. Exit 0 only when every row is ok.
 fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     use std::io::BufRead;
     let verb = verb_of(&cli.cmd);
     let stray = match &cli.cmd {
         Cmd::Claim { repo, feature, verdict, author, family, at, searched, note, .. } => {
-            !(repo.is_empty() && feature.is_empty() && verdict.is_empty() && author.is_empty()
+            !(repo.is_none() && feature.is_none() && verdict.is_none() && author.is_none()
                 && family.is_none() && at.is_empty() && searched.is_none() && note.is_none())
         }
         Cmd::Decide { repo, disposition, why, by, feature, family, .. } => {
-            !(repo.is_empty() && disposition.is_empty() && why.is_empty() && by.is_empty()
+            !(repo.is_none() && disposition.is_none() && why.is_none() && by.is_none()
                 && feature.is_none() && family.is_none())
         }
         _ => false,
@@ -436,38 +437,16 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
             Err(e) => return fail(AppError::Io(PathBuf::from(path), e)),
         }
     };
-    let rows: Result<Vec<BatchOut>, AppError> =
-        match &cli.cmd {
-            Cmd::Claim { .. } => crate::application::claim::claim_batch(&cli.root, reader).map(|rs| {
-                rs.into_iter()
-                    .map(|r| {
-                        let conf = match r.data.as_ref().map(|d| d.confidence.as_str()) {
-                            Some("derived") => "derived",
-                            Some("inferred") => "inferred",
-                            _ => "unknown",
-                        };
-                        (r.line, batch_value(r.data, r.error), conf)
-                    })
-                    .collect()
-            }),
-            _ => crate::application::decide::decide_batch(&cli.root, reader).map(|rs| {
-                rs.into_iter().map(|r| (r.line, batch_value(r.data, r.error), "observed")).collect()
-            }),
-        };
-    let rows = match rows {
-        Ok(r) => r,
-        Err(e) => return fail(e),
-    };
-    let (mut ok, mut failed) = (0usize, 0usize);
-    for (line, res, conf) in rows {
+    let pretty = cli.pretty;
+    let print_row = |line: usize, res: Result<serde_json::Value, (&'static str, String)>, conf: &'static str| {
         let env = match res {
-            Ok(v) => {
-                ok += 1;
-                Envelope::ok(verb, v, conf, vec![], None)
-            }
+            Ok(v) => Envelope::ok(verb, v, conf, vec![], None),
             Err((code, msg)) => {
-                failed += 1;
-                eprintln!("comparegraph: line {line}: {msg}");
+                if msg.starts_with("line ") {
+                    eprintln!("comparegraph: {msg}");
+                } else {
+                    eprintln!("comparegraph: line {line}: {msg}");
+                }
                 let mut e = Envelope::err(verb, &AppError::InvalidArguments(msg));
                 if let Some(b) = e.error.as_mut() {
                     b.code = code;
@@ -477,26 +456,41 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
         };
         let mut v: serde_json::Value = serde_json::from_str(&env.to_json()).unwrap();
         v["line"] = serde_json::json!(line);
-        print_line(&v, cli.pretty);
-    }
+        print_line(&v, pretty);
+    };
+    let summary = match &cli.cmd {
+        Cmd::Claim { .. } => crate::application::claim::claim_batch(&cli.root, reader, |r| {
+            let conf = match r.data.as_ref().map(|d| d.confidence.as_str()) {
+                Some("derived") => "derived",
+                Some("inferred") => "inferred",
+                _ => "unknown",
+            };
+            print_row(r.line, batch_value(r.data, r.error), conf)
+        }),
+        _ => crate::application::decide::decide_batch(&cli.root, reader, |r| {
+            print_row(r.line, batch_value(r.data, r.error), "observed")
+        }),
+    };
+    // the last line is the summary: rows are durable only when it says committed
+    let sum = match summary {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
     let mut summary = Envelope::ok(
         verb,
-        serde_json::json!({ "rows": ok + failed, "ok": ok, "failed": failed }),
+        serde_json::json!({ "rows": sum.rows, "ok": sum.ok, "failed": sum.failed, "committed": true }),
         "observed",
         vec![],
         None,
     );
-    summary.ok = failed == 0;
+    summary.ok = sum.failed == 0;
     print_line(&serde_json::from_str(&summary.to_json()).unwrap(), cli.pretty);
-    if failed == 0 {
+    if sum.failed == 0 {
         0
     } else {
         1
     }
 }
-
-/// (input line, the row's data or its (code, message), envelope confidence)
-type BatchOut = (usize, Result<serde_json::Value, (&'static str, String)>, &'static str);
 
 fn batch_value<T: serde::Serialize>(
     data: Option<T>,
@@ -810,11 +804,11 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         } => serde_json::to_value(crate::application::claim::claim(
             &cli.root,
             &crate::application::claim::ClaimInput {
-                repo,
-                feature,
+                repo: repo.as_deref().unwrap_or_default(),
+                feature: feature.as_deref().unwrap_or_default(),
                 family: family.as_deref(),
-                verdict,
-                author,
+                verdict: verdict.as_deref().unwrap_or_default(),
+                author: author.as_deref().unwrap_or_default(),
                 at,
                 searched: searched.as_deref(),
                 note: note.as_deref(),
@@ -847,10 +841,10 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             batch: _,
         } => serde_json::to_value(crate::application::decide::decide(
             &cli.root,
-            repo,
-            disposition,
-            why,
-            by,
+            repo.as_deref().unwrap_or_default(),
+            disposition.as_deref().unwrap_or_default(),
+            why.as_deref().unwrap_or_default(),
+            by.as_deref().unwrap_or_default(),
             feature.as_deref(),
             family.as_deref(),
         )?)

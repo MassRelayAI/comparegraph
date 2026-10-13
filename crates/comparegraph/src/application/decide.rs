@@ -1,6 +1,6 @@
 //! `decide` and `decisions`: adopt/reject/park, recorded from a person's instruction. Append-only; the latest of the same
 //! scope (repo, or repo+feature) wins and the new row points at it.
-use super::claim::{lookup_feature, run_batch, BatchRow};
+use super::claim::{lookup_feature, run_batch, BatchRow, BatchSummary};
 use super::{AppError, Result};
 use crate::store::{now_iso, Store};
 use rusqlite::params;
@@ -125,19 +125,29 @@ pub struct DecideLine {
     pub family: Option<String>,
 }
 
-/// `decide` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line.
-pub fn decide_batch(root: &Path, lines: impl std::io::BufRead) -> Result<Vec<BatchRow<DecisionOut>>> {
-    run_batch(root, lines, |store, l: DecideLine| {
-        decide_on(
-            store,
-            &l.repo,
-            &l.disposition,
-            &l.why,
-            &l.by,
-            l.feature.as_deref(),
-            l.family.as_deref(),
-        )
-    })
+/// `decide` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line, each handed to
+/// `on_row` as it is decided.
+pub fn decide_batch(
+    root: &Path,
+    lines: impl std::io::BufRead,
+    on_row: impl FnMut(BatchRow<DecisionOut>),
+) -> Result<BatchSummary> {
+    run_batch(
+        root,
+        lines,
+        |store, l: DecideLine| {
+            decide_on(
+                store,
+                &l.repo,
+                &l.disposition,
+                &l.why,
+                &l.by,
+                l.feature.as_deref(),
+                l.family.as_deref(),
+            )
+        },
+        on_row,
+    )
 }
 
 /// Latest per (repo, scope, feature) by default; every row when `history`.

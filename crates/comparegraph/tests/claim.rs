@@ -346,7 +346,7 @@ fn batch_of_four_writes_three_and_reports_the_failing_row_like_the_single_path()
     );
     assert!(out[..4].iter().all(|v| v["verb"] == "claim"));
     assert_eq!(out[0]["data"]["verdict"], "has");
-    assert_eq!(out[4]["data"], serde_json::json!({"rows":4,"ok":3,"failed":1}));
+    assert_eq!(out[4]["data"], serde_json::json!({"rows":4,"ok":3,"failed":1,"committed":true}));
     let single = json(
         claim(ws.path(), &["has", "--author", "me", "--at", "src/net/a.py:1-99"]).failure(),
     );
@@ -397,4 +397,73 @@ fn batch_reports_a_malformed_json_line_and_continues() {
     assert!(out[0]["error"]["message"].as_str().unwrap().contains("line 1"));
     assert_eq!(out[1]["ok"], true);
     assert_eq!(out[2]["data"]["failed"], 1);
+}
+
+#[test]
+fn batch_rolls_back_a_row_that_fails_mid_write_and_keeps_the_rest() {
+    let (ws, _a, _p) = setup();
+    // a trigger that aborts the second claim's location insert, after its claim row is already in: the savepoint must
+    // undo that claim row, and the rows around it must land
+    let db = ws.path().join(".comparegraph").join("comparegraph.db");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER forced_failure BEFORE INSERT ON location \
+         WHEN (SELECT COUNT(*) FROM claim) = 2 BEGIN SELECT RAISE(ABORT, 'forced mid-write failure'); END;",
+    )
+    .unwrap();
+    drop(conn);
+    let rows = concat!(
+        "{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/net/a.py:1-2\"]}\n",
+        "{\"repo\":\"a\",\"feature\":\"memory.recall\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/net/a.py:4\"]}\n",
+        "{\"repo\":\"a\",\"feature\":\"memory.recall\",\"verdict\":\"unknown\",\"author\":\"me\"}\n",
+    );
+    let path = ws.path().join("rows.jsonl");
+    std::fs::write(&path, rows).unwrap();
+    let a = cc(ws.path()).args(["claim", "--batch"]).arg(&path).assert().failure().code(1);
+    let out = lines(&a.get_output().stdout);
+    assert_eq!(out.len(), 4, "{out:?}");
+    assert_eq!(out.iter().map(|v| v["ok"].as_bool().unwrap()).collect::<Vec<_>>(), [true, false, true, false]);
+    assert!(out[1]["error"]["message"].as_str().unwrap().contains("forced mid-write failure"), "{out:?}");
+    assert_eq!(out[3]["data"], serde_json::json!({"rows":3,"ok":2,"failed":1,"committed":true}));
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let claims: i64 = conn.query_row("SELECT COUNT(*) FROM claim", [], |r| r.get(0)).unwrap();
+    let has_without_location: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM claim c WHERE c.verdict = 'has' AND NOT EXISTS (SELECT 1 FROM location l WHERE l.claim_id = c.id)",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!((claims, has_without_location), (2, 0));
+}
+
+#[test]
+fn batch_on_a_directory_ends_after_one_failed_row_instead_of_looping() {
+    let (ws, _a, _p) = setup();
+    let a = cc(ws.path())
+        .args(["claim", "--batch"])
+        .arg(ws.path())
+        .timeout(std::time::Duration::from_secs(20))
+        .assert()
+        .failure()
+        .code(1);
+    let out = lines(&a.get_output().stdout);
+    assert_eq!(out.len(), 2, "{out:?}");
+    assert_eq!(out[0]["error"]["code"], "io_error");
+    assert_eq!(out[1]["data"]["committed"], true);
+}
+
+#[test]
+fn batch_ignores_a_byte_order_mark_on_the_first_line() {
+    let (ws, _a, _p) = setup();
+    let path = ws.path().join("rows.jsonl");
+    std::fs::write(
+        &path,
+        "\u{feff}{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"unknown\",\"author\":\"me\"}\n",
+    )
+    .unwrap();
+    let a = cc(ws.path()).args(["claim", "--batch"]).arg(&path).assert().success();
+    let out = lines(&a.get_output().stdout);
+    assert_eq!(out[0]["ok"], true, "{out:?}");
+    assert_eq!(out[1]["data"]["ok"], 1);
 }

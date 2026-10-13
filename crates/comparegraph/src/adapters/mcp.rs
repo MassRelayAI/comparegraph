@@ -283,10 +283,10 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 return Err("a none claim over MCP needs `searched` terms; the graph-backed absence is recorded only from the CLI (`claim ... none` without --searched). Read comparegraph_absent_check first".into());
             }
             Cmd::Claim {
-                repo: req(a, "repo")?,
-                feature: req(a, "feature")?,
-                verdict: req(a, "verdict")?,
-                author,
+                repo: Some(req(a, "repo")?),
+                feature: Some(req(a, "feature")?),
+                verdict: Some(req(a, "verdict")?),
+                author: Some(author),
                 family: str_arg(a, "family")?,
                 at,
                 searched,

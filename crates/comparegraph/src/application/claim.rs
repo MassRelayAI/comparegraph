@@ -386,36 +386,62 @@ impl<T> BatchRow<T> {
     }
 }
 
-/// Run `each` over the non-blank lines of `lines` on one open store inside one transaction. A line that is not a JSON
-/// object of type `L`, or whose `each` fails, is a failed row and writes nothing; the rest proceed.
+/// What a batch did: rows seen (blank lines excluded), ok, failed. Rows are durable only once the transaction commits,
+/// which is when this value is returned.
+#[derive(Debug, Serialize, Clone, Copy, Default)]
+pub struct BatchSummary {
+    pub rows: usize,
+    pub ok: usize,
+    pub failed: usize,
+}
+
+/// Run `each` over the non-blank lines of `lines` on one open store inside one transaction, handing every row to
+/// `on_row` as soon as it is decided (so output streams). A line that is not a JSON object of type `L`, or whose `each`
+/// fails, is a failed row and writes nothing; the rest proceed. A line that is not UTF-8 is a failed row; any other read
+/// error (a directory, a closed pipe) ends the batch after its failed row, since `lines()` would return it forever.
+/// A UTF-8 byte-order mark on the first line is ignored.
 pub fn run_batch<L: serde::de::DeserializeOwned, T>(
     root: &Path,
     lines: impl std::io::BufRead,
     mut each: impl FnMut(&Store, L) -> Result<T>,
-) -> Result<Vec<BatchRow<T>>> {
+    mut on_row: impl FnMut(BatchRow<T>),
+) -> Result<BatchSummary> {
     let store = Store::open(root)?;
     store.conn().execute_batch("BEGIN IMMEDIATE")?;
-    let mut out = vec![];
+    let mut sum = BatchSummary::default();
     for (n, line) in lines.lines().enumerate() {
         let line_no = n + 1;
         let text = match line {
             Ok(t) => t,
             Err(e) => {
-                out.push(BatchRow::fail(line_no, "io_error", format!("reading line {line_no}: {e}")));
+                sum.rows += 1;
+                sum.failed += 1;
+                let persistent = e.kind() != std::io::ErrorKind::InvalidData;
+                on_row(BatchRow::fail(line_no, "io_error", format!("reading line {line_no}: {e}")));
+                if persistent {
+                    break;
+                }
                 continue;
             }
         };
+        let text = if line_no == 1 { text.trim_start_matches('\u{feff}') } else { text.as_str() };
         if text.trim().is_empty() {
             continue;
         }
-        let row = match serde_json::from_str::<L>(&text) {
+        let row = match serde_json::from_str::<L>(text) {
             Ok(l) => BatchRow::from_result(line_no, each(&store, l)),
             Err(e) => BatchRow::fail(line_no, "invalid_arguments", format!("line {line_no}: not a valid row: {e}")),
         };
-        out.push(row);
+        sum.rows += 1;
+        if row.ok {
+            sum.ok += 1;
+        } else {
+            sum.failed += 1;
+        }
+        on_row(row);
     }
     store.conn().execute_batch("COMMIT")?;
-    Ok(out)
+    Ok(sum)
 }
 
 #[derive(serde::Deserialize)]
@@ -435,8 +461,13 @@ pub struct ClaimLine {
     pub note: Option<String>,
 }
 
-/// `claim` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line.
-pub fn claim_batch(root: &Path, lines: impl std::io::BufRead) -> Result<Vec<BatchRow<ClaimOut>>> {
+/// `claim` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line, each handed to
+/// `on_row` as it is decided.
+pub fn claim_batch(
+    root: &Path,
+    lines: impl std::io::BufRead,
+    on_row: impl FnMut(BatchRow<ClaimOut>),
+) -> Result<BatchSummary> {
     run_batch(root, lines, |store, l: ClaimLine| {
         claim_on(
             store,
@@ -451,7 +482,7 @@ pub fn claim_batch(root: &Path, lines: impl std::io::BufRead) -> Result<Vec<Batc
                 note: l.note.as_deref(),
             },
         )
-    })
+    }, on_row)
 }
 
 /// Latest claim per (repo, feature) by default; every row with its supersede chain when `history`.
