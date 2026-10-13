@@ -13,7 +13,7 @@ entry skill, CSV export, a generated tool catalog, CI.
 ## Global Constraints
 - Lane A owns: `crates/comparegraph/src/providers/reference/**` (never `vendor/`), `application/{graph,build,communities}.rs`, `fixtures/**`, `tests/{graph,incremental,recall}.rs`, `scripts/compare-engines.sh`, the parity report. Lane B owns: `adapters/**`, `application/{export,setup,catalog}.rs`, `packages/**`, `.claude-plugin/**`, `skills/**`, `method/**`, `.github/**`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/catalog.json`. Neither touches `Cargo.lock` (no new deps without a ruling), `store/schema.sql`, or the other lane's files. A need to cross the line is reported, not done.
 - Precision invariants from Plan 4 stand: no name-only 1.0 edge; unknown-receiver calls bind nothing; builtin denylists first.
-- Determinism, envelope on every verb, vendored files byte-identical, clippy `-D warnings`, tests green, trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- Determinism, envelope on every verb, vendored files byte-identical, clippy `-D warnings`, tests green, the commit attribution trailer.
 - Lane B writes nothing outside the repo by default: `setup` prints its plan; `--apply` writes, additively, with a timestamped backup beside the file; a dry run is the default. Tests exercise `--apply` only against files under a temp HOME (`HOME`/`XDG_CONFIG_HOME` overridden).
 
 ## Review Focus

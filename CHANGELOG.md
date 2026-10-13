@@ -29,8 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 - A `kill -KILL -<pid>` shell-out in a test became `kill(-1)` on hosts with 7-digit pids (every process of the user);
-  signals now go through `libc::kill` and `tests/no_kill_shellout.rs` forbids any kill shell-out
-  (`docs/reports/2026-10-13-user-wide-kill-from-kill-tree.md`).
+  signals now go through `libc::kill` and `tests/no_kill_shellout.rs` forbids any kill shell-out.
 - A name-only call target no longer binds at 1.0 through a shadowed import, a class without the method, a type alias or
   interface, a benchmark or example copy, or another file's data binding.
 

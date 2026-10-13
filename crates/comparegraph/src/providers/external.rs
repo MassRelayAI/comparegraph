@@ -432,9 +432,8 @@ impl ExternalProvider {
 /// Kill the child and, on Unix, its whole process group (the child leads one, see `process_group(0)`), so grandchildren die with it.
 ///
 /// A direct `kill(2)` on the negated pid, never a shell-out: `/usr/bin/kill -KILL -1597919` (procps-ng) keeps only the first
-/// digit of a negative argument after a signal option and calls `kill(-1, SIGKILL)` — every process of the user. That spelling
-/// logged the whole desktop out five times on 2026-10-13 on a host whose pids exceed 1,000,000
-/// (docs/reports/2026-10-13-user-wide-kill-from-kill-tree.md). The pid guard keeps `-1` (everyone) and `0` (our own group) out.
+/// digit of a negative argument after a signal option and calls `kill(-1, SIGKILL)` — every process of the user, on any host
+/// whose pids exceed 1,000,000. The pid guard keeps `-1` (everyone) and `0` (our own group) out.
 fn kill_tree(child: &mut std::process::Child) {
     #[cfg(unix)]
     {

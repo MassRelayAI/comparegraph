@@ -1,5 +1,5 @@
 //! No source file may shell out to `kill`, `pkill` or `killall`: `/usr/bin/kill -KILL -<pid>` (procps) parses a 7-digit
-//! negative pid as `-1` and signals every process of the user (docs/reports/2026-10-13-user-wide-kill-from-kill-tree.md).
+//! negative pid as `-1` and signals every process of the user.
 //! Signals go through `libc::kill` on a pid the code computed, never through a shell argument.
 use std::path::Path;
 

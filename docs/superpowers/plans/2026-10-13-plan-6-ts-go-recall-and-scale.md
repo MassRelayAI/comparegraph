@@ -19,7 +19,7 @@ Go recall ≥ 0.60, pooled recall ≥ 0.72 with precision ≥ 0.96; openclaw ful
   A need to cross the line is reported, not done. Shared: nothing. `Cargo.lock` changes only by ruling.
 - Precision invariants stand (no name-only 1.0 edge; unknown receivers bind nothing; builtins first; a module-table reference binds only an imported or same-file function).
 - `scripts/gold-score.sh <project-copy> <engine>` (Lane A builds it first, from `scripts/compare-engines.sh`'s scorer) scores an engine's run against `fixtures/gold/<project>/calls.jsonl`; every Lane A task reports before→after gold P/R on hono and caddy, and the pooled number.
-- Determinism, the envelope, vendored files byte-identical, clippy `-D warnings`, tests green, trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- Determinism, the envelope, vendored files byte-identical, clippy `-D warnings`, tests green, the commit attribution trailer.
 
 ## Review Focus
 1. A TS call inside a `describe()` body or at module level attributed to a new `describe`/file-scope node must not rescue dead-code candidates in non-entry files (same rule as A1 of Plan 5) → A1.

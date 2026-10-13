@@ -14,7 +14,7 @@ to our structure?" — answered: metrics yes, prioritization no, interoperabilit
 - **Deterministic taxonomy baseline.** `family propose` already drafts families without a model; make the accepted rows carry
   their provenance (`drafted` / `edited`) so a taxonomy can be audited for where a person or an agent changed the draft.
 
-## From an integrating project's inbox (`docs/inbox/2026-10-13-from-the-integrating-project.md`)
+## From a downstream consumer (a project that scores feature cells from our graph records)
 
 1. `claim import <csv> --author <file>`: our-side claims fed from a tracker CSV.
 2. A graph-backed `absent` verdict: no node of the named kind in the clone, with the searched terms recorded.
