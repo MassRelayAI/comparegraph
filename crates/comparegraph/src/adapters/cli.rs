@@ -168,10 +168,13 @@ pub enum Cmd {
         /// compare registrations against this command instead of the running executable
         #[arg(long)]
         bin: Option<String>,
+        /// one or two plain-text lines for a session-start hook (the one output that is not an envelope; --pretty is ignored): nothing without a store, else the repo count and the server registration of each detected client
+        #[arg(long)]
+        brief: bool,
     },
     /// Register the MCP server with agent clients: a plan by default, `--apply` writes (additive, backed up)
     Setup {
-        /// claude, codex, cursor, gemini, opencode, hermes, or all (installed clients only)
+        /// claude, codex, cursor, gemini, opencode, hermes, windsurf, antigravity, kiro, copilot, copilot-cli, qwen, or all (installed clients only)
         #[arg(long, default_value = "all")]
         client: String,
         /// user (the client's own config) or project (the current directory)
@@ -185,6 +188,12 @@ pub enum Cmd {
         /// the command to register (default: this binary)
         #[arg(long)]
         bin: Option<String>,
+        /// do not write the CompareGraph block into the project's agent instruction file (CLAUDE.md, AGENTS.md, GEMINI.md, ...)
+        #[arg(long)]
+        no_rules: bool,
+        /// do not register Claude Code's SessionStart hook
+        #[arg(long)]
+        no_hook: bool,
     },
     /// Print the MCP tool catalog as JSON (redirect to docs/catalog.json); --check compares it with the committed file
     Catalog {
@@ -404,6 +413,10 @@ pub fn run() -> i32 {
     if let Cmd::Claim { batch: Some(b), .. } | Cmd::Decide { batch: Some(b), .. } = &cli.cmd {
         return run_batch_cli(&cli, b);
     }
+    if let Cmd::Doctor { bin, brief: true } = &cli.cmd {
+        print!("{}", doctor_brief(&cli.root, bin.as_deref()));
+        return 0;
+    }
     let env = envelope_for(&cli);
     if cli.pretty {
         let v: serde_json::Value = serde_json::from_str(&env.to_json()).unwrap();
@@ -416,6 +429,37 @@ pub fn run() -> i32 {
     } else {
         1
     }
+}
+
+/// `doctor --brief`: empty without a store; otherwise the repo count and the server registration of each detected client.
+fn doctor_brief(root: &std::path::Path, bin: Option<&str>) -> String {
+    if !root.join(".comparegraph").join("comparegraph.db").is_file() {
+        return String::new();
+    }
+    let Ok(store) = Store::open_existing(root) else { return String::new() };
+    let Ok(repos) = store.repos() else { return String::new() };
+    let ctx = setup::Ctx::from_env(root, bin);
+    let found = setup::detected_states(&ctx);
+    let stale: Vec<_> = found.iter().filter(|(_, s)| *s != setup::State::Aligned).collect();
+    let server = if found.is_empty() {
+        "no agent client detected".to_string()
+    } else if stale.is_empty() {
+        let names: Vec<_> = found.iter().map(|(c, _)| c.name()).collect();
+        format!("server aligned for {}", names.join(", "))
+    } else {
+        // "server <state> for <client>, <client> <state>, ..." as the brief specifies
+        let mut t = format!("server {} for {}", found[0].1.name(), found[0].0.name());
+        for (c, s) in &found[1..] {
+            t.push_str(&format!(", {} {}", c.name(), s.name()));
+        }
+        t
+    };
+    let mut out = format!("CompareGraph: {} repos, store {}; {server}\n", repos.len(), store.path().display());
+    if !stale.is_empty() {
+        let list: Vec<_> = stale.iter().map(|(c, s)| format!("{} {}", c.name(), s.name())).collect();
+        out.push_str(&format!("Run `comparegraph setup --apply` (state: {}).\n", list.join(", ")));
+    }
+    out
 }
 
 fn print_line(v: &serde_json::Value, pretty: bool) {
@@ -931,7 +975,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 }
             }
         }
-        Cmd::Doctor { bin } => {
+        Cmd::Doctor { bin, .. } => {
             let providers: Vec<_> = ["reference"].iter().map(|n| { let p = by_name(n).unwrap(); serde_json::json!({ "name": n, "status": p.detect(), "capabilities": p.capabilities() }) }).collect();
             let external = crate::providers::external::ExternalProvider::list(&cli.root);
             let ctx = setup::Ctx::from_env(&cli.root, bin.as_deref());
@@ -948,7 +992,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             let store = Store::open_existing(&cli.root)?;
             serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": store.repos()?.len(), "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations })
         }
-        Cmd::Setup { client, scope, apply, force, bin } => {
+        Cmd::Setup { client, scope, apply, force, bin, no_rules, no_hook } => {
             let scope = match scope.as_str() {
                 "user" => setup::Scope::User,
                 "project" => setup::Scope::Project,
@@ -959,7 +1003,10 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             } else {
                 match setup::Client::parse(client) {
                     Some(c) => (vec![c], false),
-                    None => return Err(AppError::InvalidArguments(format!("unknown client {client} (claude|codex|cursor|gemini|opencode|hermes|all)"))),
+                    None => {
+                        let names: Vec<_> = setup::ALL.iter().map(|c| c.name()).collect();
+                        return Err(AppError::InvalidArguments(format!("unknown client {client} ({}|all)", names.join("|"))));
+                    }
                 }
             };
             let ctx = setup::Ctx::from_env(&cli.root, bin.as_deref());
@@ -969,11 +1016,11 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             if ctx.home.is_none() {
                 return Err(AppError::InvalidArguments("HOME is not set".into()));
             }
-            let rows = setup::run(&ctx, &setup::Options { clients, detect, scope, apply: *apply, force: *force })?;
+            let rows = setup::run(&ctx, &setup::Options { clients, detect, scope, apply: *apply, force: *force, no_rules: *no_rules, no_hook: *no_hook })?;
             let limitations: Vec<_> = rows
                 .iter()
                 .filter(|r| matches!(r.state, setup::State::Conflict | setup::State::Stale) && !r.written)
-                .map(|r| serde_json::json!({ "code": r.state.name(), "detail": format!("{} ({}): {}", r.client.name(), r.path.display(), r.note.as_deref().unwrap_or("")) }))
+                .map(|r| serde_json::json!({ "code": r.state.name(), "detail": format!("{} {} ({}): {}", r.client, r.kind, r.path.display(), r.note.as_deref().unwrap_or("")) }))
                 .collect();
             serde_json::json!({
                 "apply": apply, "force": force, "scope": scope.name(), "bin": ctx.bin, "workspace": ctx.workspace,

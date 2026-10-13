@@ -170,7 +170,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             cursor: str_arg(a, "cursor")?,
         },
         "comparegraph_check" => Cmd::Check,
-        "comparegraph_doctor" => Cmd::Doctor { bin: None },
+        "comparegraph_doctor" => Cmd::Doctor { bin: None, brief: false },
         "comparegraph_search" => Cmd::Search {
             query: req(a, "query")?,
             repo: str_arg(a, "repo")?,

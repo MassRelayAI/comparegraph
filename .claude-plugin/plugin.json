@@ -17,6 +17,7 @@
     "skills",
     "repositories"
   ],
+  "hooks": "./hooks/hooks.json",
   "mcpServers": {
     "comparegraph": {
       "command": "comparegraph",

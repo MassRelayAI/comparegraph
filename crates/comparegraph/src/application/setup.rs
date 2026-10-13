@@ -13,6 +13,18 @@
 //! - Gemini CLI: `~/.gemini/settings.json` or `.gemini/settings.json`, `mcpServers.<name> = {command, args}`.
 //! - OpenCode: `~/.config/opencode/opencode.json` (or `$XDG_CONFIG_HOME`) or `opencode.json`, `mcp.<name> = {type:"local", command:[..]}`.
 //! - Hermes: `~/.hermes/config.yaml`, `mcp_servers.<name>` with `command` and `args` (no project scope).
+//!
+//! Shapes below were taken from code-review-graph's installer (MIT), read 2026-10-14:
+//! - Windsurf: `~/.codeium/windsurf/mcp_config.json`, `mcpServers.<name> = {command, args}` (no project scope).
+//! - Antigravity: `~/.gemini/antigravity/mcp_config.json`, `mcpServers.<name> = {command, args}` (no project scope).
+//! - Kiro: `.kiro/settings/mcp.json`, `mcpServers.<name> = {type:"stdio", command, args}` (no user scope).
+//! - Copilot (VS Code): `.vscode/mcp.json`, `servers.<name> = {type:"stdio", command, args}` (no user scope).
+//! - Copilot CLI: `~/.copilot/mcp-config.json`, `mcpServers.<name> = {type:"local", command, args, tools:["*"]}` (no project scope).
+//! - Qwen Code: `~/.qwen/settings.json`, `mcpServers.<name> = {type:"stdio", command, args}` (no project scope).
+//!
+//! Besides the server entry, `setup` plans two more kinds of row (`kind` in the output): `rules`, a marked block in the
+//! project's agent instruction file, and `hook`, Claude Code's SessionStart hook. Both follow the same states and the same
+//! backup-and-atomic-write path as the configs.
 use super::{AppError, Result};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -27,14 +39,26 @@ pub enum Client {
     Gemini,
     OpenCode,
     Hermes,
+    Windsurf,
+    Antigravity,
+    Kiro,
+    Copilot,
+    CopilotCli,
+    Qwen,
 }
-pub const ALL: [Client; 6] = [
+pub const ALL: [Client; 12] = [
     Client::Claude,
     Client::Codex,
     Client::Cursor,
     Client::Gemini,
     Client::OpenCode,
     Client::Hermes,
+    Client::Windsurf,
+    Client::Antigravity,
+    Client::Kiro,
+    Client::Copilot,
+    Client::CopilotCli,
+    Client::Qwen,
 ];
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Scope {
@@ -50,6 +74,12 @@ impl Client {
             Client::Gemini => "gemini",
             Client::OpenCode => "opencode",
             Client::Hermes => "hermes",
+            Client::Windsurf => "windsurf",
+            Client::Antigravity => "antigravity",
+            Client::Kiro => "kiro",
+            Client::Copilot => "copilot",
+            Client::CopilotCli => "copilot-cli",
+            Client::Qwen => "qwen",
         }
     }
     pub fn parse(s: &str) -> Option<Client> {
@@ -129,7 +159,18 @@ impl Ctx {
                 Some((self.project.join("opencode.json"), self.project.join("opencode.json")))
             }
             (Client::Hermes, Scope::User) => home.map(|h| (h.join(".hermes/config.yaml"), h.join(".hermes"))),
-            (Client::Hermes, Scope::Project) => None,
+            (Client::Windsurf, Scope::User) => {
+                home.map(|h| (h.join(".codeium/windsurf/mcp_config.json"), h.join(".codeium/windsurf")))
+            }
+            (Client::Antigravity, Scope::User) => {
+                home.map(|h| (h.join(".gemini/antigravity/mcp_config.json"), h.join(".gemini/antigravity")))
+            }
+            (Client::Kiro, Scope::Project) => Some((self.project.join(".kiro/settings/mcp.json"), self.project.join(".kiro"))),
+            (Client::Copilot, Scope::Project) => Some((self.project.join(".vscode/mcp.json"), self.project.join(".vscode"))),
+            (Client::CopilotCli, Scope::User) => home.map(|h| (h.join(".copilot/mcp-config.json"), h.join(".copilot"))),
+            (Client::Qwen, Scope::User) => home.map(|h| (h.join(".qwen/settings.json"), h.join(".qwen"))),
+            (Client::Hermes | Client::Windsurf | Client::Antigravity | Client::CopilotCli | Client::Qwen, Scope::Project)
+            | (Client::Kiro | Client::Copilot, Scope::User) => None,
         }
     }
 }
@@ -223,10 +264,10 @@ fn jarr(v: &[String]) -> String {
 // ---------- JSON ----------
 
 fn json_key(c: Client) -> &'static str {
-    if c == Client::OpenCode {
-        "mcp"
-    } else {
-        "mcpServers"
+    match c {
+        Client::OpenCode => "mcp",
+        Client::Copilot => "servers",
+        _ => "mcpServers",
     }
 }
 fn json_entry(c: Client, ctx: &Ctx) -> Value {
@@ -235,7 +276,11 @@ fn json_entry(c: Client, ctx: &Ctx) -> Value {
         cmd.extend(ctx.args());
         json!({ "type": "local", "command": cmd })
     } else {
-        json!({ "command": ctx.bin, "args": ctx.args() })
+        match c {
+            Client::Kiro | Client::Copilot | Client::Qwen => json!({ "type": "stdio", "command": ctx.bin, "args": ctx.args() }),
+            Client::CopilotCli => json!({ "type": "local", "command": ctx.bin, "args": ctx.args(), "tools": ["*"] }),
+            _ => json!({ "command": ctx.bin, "args": ctx.args() }),
+        }
     }
 }
 fn strings(v: &Value) -> Option<Vec<String>> {
@@ -251,6 +296,13 @@ fn json_cmp(c: Client, ctx: &Ctx, entry: &Value) -> Cmp {
             Some(v) if !v.is_empty() => classify(&ctx.bin, &args, Some(&v[0]), Some(&v[1..])),
             _ => Cmp::Other,
         };
+    }
+    // `type` and `tools` are ours where the client's shape has them: another value is someone else's entry
+    let want = json_entry(c, ctx);
+    for f in ["type", "tools"] {
+        if want.get(f).is_some() && want[f] != entry[f] {
+            return Cmp::Other;
+        }
     }
     let a = strings(&entry["args"]);
     classify(&ctx.bin, &args, entry["command"].as_str(), a.as_deref())
@@ -529,10 +581,156 @@ fn plan_for(c: Client, ctx: &Ctx, path: &Path) -> Plan {
     }
 }
 
+// ---------- rules block ----------
+
+const OPEN: &str = "<!-- comparegraph -->";
+const CLOSE: &str = "<!-- /comparegraph -->";
+/// The block `setup` writes into an agent's instruction file.
+const RULES_BLOCK: &str = "<!-- comparegraph -->
+## CompareGraph
+This directory is a CompareGraph workspace (`.comparegraph/`): cloned repositories compared against taxonomy packs; no model inside the engine.
+- Ask the graph before reading a clone: `comparegraph_map` says where a feature lives, `comparegraph_search` and `comparegraph_show` open the symbols, `comparegraph_impact` and `comparegraph_tests_for` give the blast radius. Then read the cited source; never change a claim from graph output alone.
+- A claim cites `path:line` inside the clone and is written with `comparegraph claim`; a graph-backed absence is `claim ... none` after `comparegraph absent-check`; a decision is `comparegraph decide`. The engine records nothing on its own.
+- Never run code inside a clone. If a tool is missing, run `comparegraph doctor`; `comparegraph setup --apply` registers the server.
+<!-- /comparegraph -->";
+/// Every block text ever shipped, the current one first. A block that equals an older entry is `stale` and is refreshed
+/// without `--force`. The last entry is the empty block, the form a user may leave to say "managed, fill me".
+pub const RULES_SHIPPED: &[&str] = &[RULES_BLOCK, "<!-- comparegraph -->\n<!-- /comparegraph -->"];
+
+/// The project instruction file an agent client reads.
+pub fn rules_file(c: Client) -> &'static str {
+    match c {
+        Client::Claude => "CLAUDE.md",
+        Client::Gemini | Client::Antigravity | Client::Qwen => "GEMINI.md",
+        Client::Copilot => ".github/instructions/comparegraph.instructions.md",
+        Client::Codex | Client::Cursor | Client::OpenCode | Client::Hermes | Client::Windsurf | Client::Kiro | Client::CopilotCli => {
+            "AGENTS.md"
+        }
+    }
+}
+
+fn plan_rules(path: &Path) -> Plan {
+    let exists = path.is_file();
+    let text = if exists {
+        match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) => return Plan::conflict(format!("cannot read: {e}"), None, true),
+        }
+    } else {
+        String::new()
+    };
+    let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let with_eol = |b: &str| if eol == "\n" { b.to_string() } else { b.replace('\n', eol) };
+    let Some(open) = text.find(OPEN) else {
+        let mut out = text.clone();
+        if !text.trim().is_empty() {
+            // exactly one blank line between the old content and the block
+            let trailing = text.chars().rev().take_while(|c| *c == '\n' || *c == '\r').filter(|c| *c == '\n').count();
+            for _ in trailing..2 {
+                out.push_str(eol);
+            }
+        } else {
+            out.clear();
+        }
+        out.push_str(&with_eol(RULES_BLOCK));
+        out.push_str(eol);
+        return Plan { state: State::Missing, note: None, new: Some(out), forced: None, file_exists: exists };
+    };
+    let Some(close_rel) = text[open..].find(CLOSE) else {
+        return Plan::conflict("a `<!-- comparegraph -->` marker without its closing marker; left untouched", None, exists);
+    };
+    let end = open + close_rel + CLOSE.len();
+    let span = text[open..end].replace("\r\n", "\n");
+    let replaced = format!("{}{}{}", &text[..open], with_eol(RULES_BLOCK), &text[end..]);
+    if span == RULES_BLOCK {
+        Plan { state: State::Aligned, note: None, new: None, forced: None, file_exists: exists }
+    } else if RULES_SHIPPED.contains(&span.as_str()) {
+        Plan { state: State::Stale, note: Some("an older CompareGraph block; refreshed".into()), new: None, forced: Some(replaced), file_exists: exists }
+    } else {
+        Plan::conflict("the CompareGraph block was edited", Some(replaced), exists)
+    }
+}
+
+// ---------- Claude Code SessionStart hook ----------
+
+/// The command both the plugin's `hooks/hooks.json` and `setup` register: silent unless a store exists.
+pub const HOOK_COMMAND: &str = "command -v comparegraph >/dev/null 2>&1 || exit 0; comparegraph doctor --brief";
+
+fn hook_entry() -> Value {
+    json!({ "hooks": [{ "type": "command", "command": HOOK_COMMAND, "timeout": 10 }] })
+}
+pub fn hook_file(ctx: &Ctx, s: Scope) -> Option<PathBuf> {
+    match s {
+        Scope::User => ctx.home.as_ref().map(|h| h.join(".claude/settings.json")),
+        Scope::Project => Some(ctx.project.join(".claude/settings.json")),
+    }
+}
+fn plan_hook(path: &Path) -> Plan {
+    let exists = path.is_file();
+    let mut root = if exists {
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) => return Plan::conflict(format!("cannot read: {e}"), None, true),
+        };
+        if text.trim().is_empty() {
+            json!({})
+        } else {
+            match serde_json::from_str::<Value>(&text) {
+                Ok(v) => v,
+                Err(e) => return Plan::conflict(format!("not valid JSON ({e}); left untouched"), None, true),
+            }
+        }
+    } else {
+        json!({})
+    };
+    if !root.is_object() {
+        return Plan::conflict("top level is not an object; left untouched", None, exists);
+    }
+    if root.get("hooks").is_some_and(|h| !h.is_object()) {
+        return Plan::conflict("`hooks` is not an object; left untouched", None, exists);
+    }
+    if root.get("hooks").and_then(|h| h.get("SessionStart")).is_some_and(|h| !h.is_array()) {
+        return Plan::conflict("`hooks.SessionStart` is not an array; left untouched", None, exists);
+    }
+    let mut stale: Option<(usize, usize)> = None;
+    if let Some(arr) = root.get("hooks").and_then(|h| h.get("SessionStart")).and_then(|a| a.as_array()) {
+        for (i, el) in arr.iter().enumerate() {
+            for (k, h) in el.get("hooks").and_then(|h| h.as_array()).into_iter().flatten().enumerate() {
+                match h.get("command").and_then(|c| c.as_str()) {
+                    Some(HOOK_COMMAND) => return Plan { state: State::Aligned, note: None, new: None, forced: None, file_exists: exists },
+                    Some(c) if c.contains("comparegraph doctor") && stale.is_none() => stale = Some((i, k)),
+                    _ => {}
+                }
+            }
+        }
+    }
+    if let Some((i, k)) = stale {
+        root["hooks"]["SessionStart"][i]["hooks"][k]["command"] = json!(HOOK_COMMAND);
+        return Plan {
+            state: State::Stale,
+            note: Some("a different `comparegraph doctor` hook command".into()),
+            new: None,
+            forced: Some(json_text(&root)),
+            file_exists: exists,
+        };
+    }
+    if root.get("hooks").is_none() {
+        root["hooks"] = json!({});
+    }
+    if root["hooks"].get("SessionStart").is_none() {
+        root["hooks"]["SessionStart"] = json!([]);
+    }
+    root["hooks"]["SessionStart"].as_array_mut().unwrap().push(hook_entry());
+    Plan { state: State::Missing, note: None, new: Some(json_text(&root)), forced: None, file_exists: exists }
+}
+
 // ---------- rows ----------
 
 pub struct Row {
-    pub client: Client,
+    /// the client name; for a `rules` row the names of every client that reads the file, comma-joined
+    pub client: String,
+    /// `config`, `rules` or `hook`
+    pub kind: &'static str,
     pub scope: Scope,
     pub path: PathBuf,
     pub state: State,
@@ -542,9 +740,12 @@ pub struct Row {
     pub note: Option<String>,
 }
 impl Row {
+    fn new(client: String, kind: &'static str, scope: Scope, path: PathBuf) -> Row {
+        Row { client, kind, scope, path, state: State::Missing, action: "skip", written: false, backup: None, note: None }
+    }
     pub fn to_json(&self, setup: bool) -> Value {
         let mut v = json!({
-            "client": self.client.name(), "scope": self.scope.name(),
+            "client": self.client, "kind": self.kind, "scope": self.scope.name(),
             "path": self.path.to_string_lossy(), "state": self.state.name(),
         });
         if setup {
@@ -571,15 +772,33 @@ pub fn registrations(ctx: &Ctx) -> Vec<Row> {
             if scope == Scope::Project && !path.exists() {
                 continue;
             }
+            let mut row = Row::new(c.name().to_string(), "config", scope, path.clone());
+            row.action = "none";
             if !c.verified(scope) {
-                rows.push(Row { client: c, scope, path, state: State::Unverified, action: "skip", written: false, backup: None, note: Some("config shape not verified".into()) });
-                continue;
+                row.state = State::Unverified;
+                row.action = "skip";
+                row.note = Some("config shape not verified".into());
+            } else {
+                let p = plan_for(c, ctx, &path);
+                row.state = p.state;
+                row.note = p.note;
             }
-            let p = plan_for(c, ctx, &path);
-            rows.push(Row { client: c, scope, path, state: p.state, action: "none", written: false, backup: None, note: p.note });
+            rows.push(row);
         }
     }
     rows
+}
+
+/// The user-scope server registration of every detected, verified client (what `doctor --brief` summarises).
+/// A client whose shape is unverified is left out: `setup` would not write it, so a hint to run it would be a lie.
+pub fn detected_states(ctx: &Ctx) -> Vec<(Client, State)> {
+    ALL.into_iter()
+        .filter(|c| c.verified(Scope::User))
+        .filter_map(|c| {
+            let (path, detect) = ctx.locate(c, Scope::User)?;
+            (path.exists() || detect.exists()).then(|| (c, plan_for(c, ctx, &path).state))
+        })
+        .collect()
 }
 
 pub struct Options {
@@ -589,6 +808,10 @@ pub struct Options {
     pub scope: Scope,
     pub apply: bool,
     pub force: bool,
+    /// skip the instruction-file rows
+    pub no_rules: bool,
+    /// skip Claude Code's SessionStart hook
+    pub no_hook: bool,
 }
 
 fn unix_seconds() -> u64 {
@@ -643,8 +866,43 @@ fn write_file(nominal: &Path, content: &str, backup: bool) -> Result<Option<Path
     Ok(bak)
 }
 
+/// Turn a plan into the row's action and, with `--apply`, write it. `stale_free`: a stale plan is applied without `--force`.
+fn settle(mut row: Row, plan: Plan, o: &Options, path: &Path, stale_free: bool) -> Result<Row> {
+    row.state = plan.state;
+    row.note = plan.note.clone();
+    let (content, action) = match plan.state {
+        State::Aligned => (None, "none"),
+        State::Missing => (plan.new, if plan.file_exists { "add" } else { "create" }),
+        State::Stale if o.force || stale_free => (plan.forced, "replace"),
+        State::Stale => {
+            row.note = Some(format!("{}; untouched (use --force to replace)", plan.note.as_deref().unwrap_or("stale")));
+            (None, "skip")
+        }
+        State::Conflict if o.force && plan.forced.is_some() => (plan.forced, "replace"),
+        State::Conflict => {
+            row.note = Some(format!(
+                "{}; untouched{}",
+                plan.note.as_deref().unwrap_or("conflict"),
+                if plan.forced.is_some() { " (use --force to replace)" } else { "" }
+            ));
+            (None, "skip")
+        }
+        State::Unverified => (None, "skip"),
+    };
+    row.action = action;
+    if o.apply {
+        if let Some(text) = content {
+            row.backup = write_file(path, &text, true)?;
+            row.written = true;
+        }
+    }
+    Ok(row)
+}
+
 pub fn run(ctx: &Ctx, o: &Options) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
+    // the clients this run covers: all that were named, or (`all`) those that look installed
+    let mut covered: Vec<Client> = Vec::new();
     for &c in &o.clients {
         let Some((path, detect)) = ctx.locate(c, o.scope) else {
             if !o.detect {
@@ -652,7 +910,11 @@ pub fn run(ctx: &Ctx, o: &Options) -> Result<Vec<Row>> {
             }
             continue;
         };
-        let mut row = Row { client: c, scope: o.scope, path: path.clone(), state: State::Missing, action: "skip", written: false, backup: None, note: None };
+        let mut row = Row::new(c.name().to_string(), "config", o.scope, path.clone());
+        let found = !o.detect || path.exists() || detect.exists();
+        if found {
+            covered.push(c);
+        }
         if !c.verified(o.scope) {
             row.state = State::Unverified;
             row.note = Some("config shape not verified; skipped".into());
@@ -660,40 +922,34 @@ pub fn run(ctx: &Ctx, o: &Options) -> Result<Vec<Row>> {
             continue;
         }
         let plan = plan_for(c, ctx, &path);
-        row.state = plan.state;
-        row.note = plan.note.clone();
-        if o.detect && !path.exists() && !detect.exists() {
+        if !found {
+            row.state = plan.state;
             row.note = Some("client not detected; skipped".into());
             rows.push(row);
             continue;
         }
-        let (content, action) = match plan.state {
-            State::Aligned => (None, "none"),
-            State::Missing => (plan.new, if plan.file_exists { "add" } else { "create" }),
-            State::Stale if o.force => (plan.forced, "replace"),
-            State::Stale => {
-                row.note = Some("same arguments, a different binary path; untouched (use --force to replace)".into());
-                (None, "skip")
-            }
-            State::Conflict if o.force && plan.forced.is_some() => (plan.forced, "replace"),
-            State::Conflict => {
-                row.note = Some(format!(
-                    "{}; untouched{}",
-                    plan.note.as_deref().unwrap_or("conflict"),
-                    if plan.forced.is_some() { " (use --force to replace)" } else { "" }
-                ));
-                (None, "skip")
-            }
-            State::Unverified => (None, "skip"),
-        };
-        row.action = action;
-        if o.apply {
-            if let Some(text) = content {
-                row.backup = write_file(&path, &text, true)?;
-                row.written = true;
+        rows.push(settle(row, plan, o, &path, false)?);
+    }
+    if !o.no_rules {
+        let mut files: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
+        for c in ALL.into_iter().filter(|c| covered.contains(c)) {
+            let f = rules_file(c);
+            match files.iter_mut().find(|(g, _)| *g == f) {
+                Some((_, names)) => names.push(c.name()),
+                None => files.push((f, vec![c.name()])),
             }
         }
-        rows.push(row);
+        for (f, names) in files {
+            let path = ctx.project.join(f);
+            let row = Row::new(names.join(","), "rules", Scope::Project, path.clone());
+            rows.push(settle(row, plan_rules(&path), o, &path, true)?);
+        }
+    }
+    if !o.no_hook && covered.contains(&Client::Claude) {
+        if let Some(path) = hook_file(ctx, o.scope) {
+            let row = Row::new(Client::Claude.name().to_string(), "hook", o.scope, path.clone());
+            rows.push(settle(row, plan_hook(&path), o, &path, false)?);
+        }
     }
     Ok(rows)
 }
