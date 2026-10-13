@@ -131,8 +131,8 @@ pub fn tok_match(a: &str, b: &str) -> bool {
     if short.chars().count() < 6 {
         let rest = |stem: &str| long.strip_prefix(stem);
         let plain = rest(short).is_some_and(|r| ["s", "es", "ed", "ing", "er", "ers", "or", "ors"].contains(&r));
-        let e_drop = short.strip_suffix('e').and_then(|st| rest(st)).is_some_and(|r| ["ed", "ing", "er", "ers"].contains(&r));
-        let y_drop = short.strip_suffix('y').and_then(|st| rest(st)).is_some_and(|r| ["ies", "ied", "ier"].contains(&r));
+        let e_drop = short.strip_suffix('e').and_then(rest).is_some_and(|r| ["ed", "ing", "er", "ers"].contains(&r));
+        let y_drop = short.strip_suffix('y').and_then(rest).is_some_and(|r| ["ies", "ied", "ier"].contains(&r));
         return plain || e_drop || y_drop;
     }
     let cp = a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count();
