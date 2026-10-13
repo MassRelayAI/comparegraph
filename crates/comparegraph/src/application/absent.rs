@@ -20,9 +20,10 @@
 //!
 //! Family words: a term that appears in the term set of at least half of the family's features, and of at least 4 of
 //! them (`agents` in a pack whose every row is `agents.*`, `graph` in `code-graph-tools`), names the family, not the
-//! feature. It is dropped from all four channels and listed in the note as `common=<terms>`; the verdict is decided by
-//! the rest. When every term is a family word the check refuses (a "pass --searched" error) and never records an
-//! absence. (A clone-frequency rule, "a term matching > max(200, 2%) nodes is common", was withdrawn: it dropped
+//! feature. It is dropped from all four channels and listed in the note as `common=<terms>`; a hit on a remaining term
+//! refuses as before, and zero hits with a family word set aside also refuses, naming the uncounted words: the graph then
+//! proves less, and the absence is the author's to record with `--searched`. When every term is a family word the check
+//! refuses (a "pass --searched" error). An absence is recorded from the graph only when no term was set aside. (A clone-frequency rule, "a term matching > max(200, 2%) nodes is common", was withdrawn: it dropped
 //! `cron` from `scheduling.cron-tasks` on a clone with 300 `cron_job_<n>` functions.)
 //!
 //! Coverage limit: names, paths, community terms and kinds only. Not strings, flags, config keys, abbreviations (`cfg`)
@@ -98,8 +99,18 @@ impl AbsentCheck {
         let c = &self.channels;
         c.symbols.count + c.paths.count + c.communities.count + c.kinds.count
     }
-    /// Why `claim none` is refused: counts per channel and the first hits.
+    /// Why `claim none` is refused: counts per channel and the first hits; or, with zero hits but a family word set
+    /// aside, the words that were not counted.
     pub fn refusal(&self) -> String {
+        if self.total() == 0 && !self.common.is_empty() {
+            return format!(
+                "no hit for {} in {}; the family word(s) {} were not counted, so the graph proves less: read the clone, \
+                 or pass --searched with the terms you checked",
+                self.terms.join(", "),
+                self.repo,
+                self.common.join(", ")
+            );
+        }
         let c = &self.channels;
         let mut sample: Vec<String> = vec![];
         for ch in [&c.symbols, &c.paths, &c.communities, &c.kinds] {
@@ -482,10 +493,13 @@ pub(crate) fn check_feature(
         communities: communities(store, run, &terms)?,
         kinds: kinds(c, run, &ks, mcp)?,
     };
+    // zero hits records an absence only when no family word was set aside: with one dropped, the graph proves less,
+    // and the check refuses with the uncounted words named (the author records the absence with --searched)
     let absent = channels.symbols.count == 0
         && channels.paths.count == 0
         && channels.communities.count == 0
-        && channels.kinds.count == 0;
+        && channels.kinds.count == 0
+        && common.is_empty();
     Ok(AbsentCheck {
         repo: repo.into(),
         family: f.family.clone(),

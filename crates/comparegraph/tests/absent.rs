@@ -350,14 +350,19 @@ const AGENTS: [(&str, &str); 7] = [
 
 // A family word is dropped and the rest decides; a mutation that never drops it goes red here.
 #[test]
-fn a_family_word_is_dropped_and_the_specific_term_decides() {
+fn a_family_word_is_set_aside_and_zero_hits_for_the_rest_refuses_naming_it() {
     let ws = ws_of(&pack_of(&AGENTS), &[("pkg/a.py", py_fns("agent_run", 30)), ("pkg/b.py", py_fns("agents_pool", 30))]);
     let v = check_r(ws.path(), "agents.x", true);
-    assert_eq!(v["data"]["absent"], true, "{v}");
+    // `agents` is set aside (it would hit every agent_* name); with zero hits for the rest the graph proves less, so the
+    // check refuses and names the uncounted word instead of recording an absence
+    assert_eq!(v["data"]["absent"], false, "{v}");
     assert_eq!(v["data"]["common"], serde_json::json!(["agents"]), "{v}");
-    let c = json(cc(ws.path()).args(["claim", "r", "agents.x", "none", "--author", "me"]).assert().success());
-    assert!(c["data"]["note"].as_str().unwrap().contains("; common=agents;"), "{c}");
-    assert_eq!(c["evidence"]["confidence"], "inferred", "{c}");
+    assert_eq!(v["data"]["channels"]["symbols"]["count"], 0, "{v}");
+    let c = json(cc(ws.path()).args(["claim", "r", "agents.x", "none", "--author", "me"]).assert().failure());
+    let msg = c["error"]["message"].as_str().unwrap();
+    assert!(msg.contains("family word(s) agents were not counted") && msg.contains("--searched"), "{c}");
+    let all = json(cc(ws.path()).args(["claims", "--history"]).assert().success());
+    assert_eq!(all["data"]["items"].as_array().unwrap().len(), 0, "{all}");
 }
 
 #[test]
