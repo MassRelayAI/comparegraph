@@ -40,7 +40,8 @@ fn nested_describe_prefixes_the_title_and_long_titles_are_cut() {
     assert!(o.nodes.iter().any(|n| n.qualified_name == "src/p.test.ts::it: outer > inner > works"), "{:?}", o.nodes.iter().map(|n| &n.qualified_name).collect::<Vec<_>>());
     let cut = o.nodes.iter().find(|n| n.name.starts_with("it: xxx")).expect("long case");
     assert_eq!(cut.name.chars().count(), 4 + 80);
-    assert!(!o.nodes.iter().any(|n| n.name.contains("describe")));
+    // Plan 6 A1 reverses the Plan 5 A3 decision: a describe block IS a node (`describe: <title>`)
+    assert!(o.nodes.iter().any(|n| n.qualified_name == "src/p.test.ts::describe: outer > inner" && n.kind == NodeKind::Function));
 }
 
 #[test]
@@ -135,7 +136,7 @@ fn playwright_test_members_are_not_cases() {
     let names: Vec<_> = o.nodes.iter().filter(|n| n.name.starts_with("it:")).map(|n| n.name.as_str()).collect();
     assert_eq!(names, vec!["it: grp > real", "it: grp > skipped"], "{names:?}");
     assert!(has(&o, EdgeKind::Tests, "src/p.test.ts::it: grp > real", "src/p.ts::parse"));
-    assert!(has(&o, EdgeKind::Tests, "src/p.test.ts", "src/p.ts::parse"), "hook call stays file-sourced");
+    assert!(has(&o, EdgeKind::Tests, "src/p.test.ts::describe: grp", "src/p.ts::parse"), "a hook in a describe body belongs to that describe (Plan 6 A1)");
 }
 
 #[test]
@@ -147,4 +148,153 @@ fn multibyte_titles_are_cut_on_a_char_boundary_and_repeated_describes_are_number
     assert_eq!(cut.name.chars().count(), 4 + 80);
     assert!(o.nodes.iter().any(|n| n.qualified_name == "src/p.test.ts::it: d > x"));
     assert!(o.nodes.iter().any(|n| n.qualified_name == "src/p.test.ts::it: d > x#2"));
+}
+
+const DESC: &str = "import { parse, other } from './p';\ndescribe('outer', () => {\n  parse(1);\n  describe('inner', () => {\n    other();\n    it('works', () => { parse(2); });\n  });\n});\ndescribe('outer', () => {});\nparse(3);\n";
+
+#[test]
+fn a_describe_block_is_a_node_and_owns_the_calls_in_its_body() {
+    let o = build(&[("src/p.ts", SRC), ("src/p.test.ts", DESC)]);
+    let outer = "src/p.test.ts::describe: outer";
+    let inner = "src/p.test.ts::describe: outer > inner";
+    let n = o.nodes.iter().find(|n| n.qualified_name == outer).expect("describe node");
+    assert_eq!((n.kind, n.name.as_str(), n.line_start, n.line_end), (NodeKind::Function, "describe: outer", 2, 8));
+    assert!(has(&o, EdgeKind::Calls, outer, "src/p.ts::parse"), "{:?}", o.edges_by_qn);
+    assert!(!has(&o, EdgeKind::Calls, outer, "src/p.ts::other"), "inner's call is inner's");
+    assert!(has(&o, EdgeKind::Calls, inner, "src/p.ts::other"));
+    assert!(has(&o, EdgeKind::Calls, "src/p.test.ts::it: outer > inner > works", "src/p.ts::parse"));
+    // module level still belongs to the file
+    assert!(has(&o, EdgeKind::Tests, "src/p.test.ts", "src/p.ts::parse"));
+    // containment: file > outer > inner > case; a repeated title is numbered
+    assert!(has(&o, EdgeKind::Contains, "src/p.test.ts", outer));
+    assert!(has(&o, EdgeKind::Contains, outer, inner));
+    assert!(has(&o, EdgeKind::Contains, inner, "src/p.test.ts::it: outer > inner > works"));
+    assert!(!has(&o, EdgeKind::Contains, "src/p.test.ts", inner));
+    assert!(has(&o, EdgeKind::Contains, "src/p.test.ts", "src/p.test.ts::describe: outer#2"), "{:?}", o.edges_by_qn);
+}
+
+#[test]
+fn suite_context_and_test_describe_are_describe_blocks_and_titles_are_cut_on_a_char_boundary() {
+    let long = "é".repeat(120);
+    let src = format!("import {{ parse }} from './p';\nsuite('s', () => {{ parse(1); }});\ncontext('c', () => {{ parse(1); }});\ntest.describe('t', () => {{ parse(1); }});\ndescribe('{long}', () => {{ parse(1); }});\n");
+    let o = build(&[("src/p.ts", SRC), ("src/p.test.ts", &src)]);
+    for n in ["s", "c", "t"] {
+        assert!(has(&o, EdgeKind::Calls, &format!("src/p.test.ts::describe: {n}"), "src/p.ts::parse"), "{n}");
+    }
+    let cut = o.nodes.iter().find(|n| n.name.starts_with("describe: éé")).expect("long describe");
+    assert_eq!(cut.name.chars().count(), "describe: ".len() + 80);
+}
+
+#[test]
+fn a_jsx_element_is_a_rendering_call_to_an_imported_or_same_file_component_only() {
+    let o = build(&[
+        ("src/Button.tsx", "export function Button() { return null; }\n"),
+        ("src/Other.tsx", "export function Stray() { return null; }\n"),
+        (
+            "src/App.tsx",
+            "import { Button } from './Button';\nfunction Local() { return null; }\nexport function App() {\n  return <div><Button /><Local>x</Local><Stray /><Ghost.Part /></div>;\n}\nexport const Page = () => <Button />;\n",
+        ),
+    ]);
+    let app = "src/App.tsx::App";
+    assert!(o.edges_by_qn.contains(&(EdgeKind::Calls, app.into(), "src/Button.tsx::Button".into(), 1.0)), "{:?}", o.edges_by_qn);
+    assert!(o.edges_by_qn.contains(&(EdgeKind::Calls, app.into(), "src/App.tsx::Local".into(), 1.0)));
+    assert!(o.edges_by_qn.iter().all(|e| !(e.1 == app && e.2.contains("Stray"))), "an unimported name binds nothing");
+    assert!(o.edges_by_qn.iter().all(|e| !(e.1 == app && e.2.ends_with("::div"))));
+    // an arrow bound to a const is no function node in the vendored extractor: its elements belong to the file
+    assert!(o.edges_by_qn.contains(&(EdgeKind::Calls, "src/App.tsx".into(), "src/Button.tsx::Button".into(), 1.0)), "{:?}", o.edges_by_qn);
+}
+
+#[test]
+fn a_hook_resolves_like_any_call() {
+    let o = build(&[
+        ("src/hooks.ts", "export function useThing() { return 1; }\n"),
+        ("src/C.tsx", "import { useThing } from './hooks';\nexport function C() { const t = useThing(); return t; }\n"),
+    ]);
+    assert!(o.edges_by_qn.contains(&(EdgeKind::Calls, "src/C.tsx::C".into(), "src/hooks.ts::useThing".into(), 1.0)));
+}
+
+#[test]
+fn a_class_field_arrow_is_a_method_and_an_imported_class_reaches_it_through_its_base() {
+    let o = build(&[
+        ("src/base.ts", "export class Core {\n  request = (p: string) => p;\n  other() {}\n}\n"),
+        ("src/app.ts", "import { Core } from './base';\nexport class App extends Core {}\n"),
+        ("src/decoy.ts", "export class App {\n  request() {}\n}\n"),
+        ("src/app.test.ts", "import { App } from './app';\nit('r', () => {\n  const app = new App();\n  app.request('/');\n});\n"),
+    ]);
+    let m = o.nodes.iter().find(|n| n.qualified_name == "src/base.ts::request").expect("field method");
+    assert_eq!(m.kind, NodeKind::Method);
+    // the import decides which `App` is meant; the same-named decoy class is not it
+    assert!(has(&o, EdgeKind::Calls, "src/app.test.ts::it: r", "src/base.ts::request"), "{:?}", o.edges_by_qn);
+    assert!(!has(&o, EdgeKind::Calls, "src/app.test.ts::it: r", "src/decoy.ts::request"));
+}
+
+#[test]
+fn a_local_that_hides_an_imported_class_binds_nothing() {
+    let o = build(&[
+        ("src/a.ts", "export class Base {\n  static go() {}\n}\n"),
+        (
+            "src/s.ts",
+            "import { Base } from './a';\nexport function viaConst() { const Base = make(); Base.go(); }\nexport function viaParam(Base: any) { Base.go(); }\nexport function viaCatch() { try { run(); } catch (Base) { Base.go(); } }\nexport function viaDestructure() { const { Base } = make(); Base.go(); }\nexport function real() { Base.go(); }\n",
+        ),
+    ]);
+    for f in ["viaConst", "viaParam", "viaCatch", "viaDestructure"] {
+        assert!(!o.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && e.1 == format!("src/s.ts::{f}") && e.2 == "src/a.ts::go"), "{f}: {:?}", o.edges_by_qn);
+    }
+    assert!(has(&o, EdgeKind::Calls, "src/s.ts::real", "src/a.ts::go"), "the unshadowed call still binds: {:?}", o.edges_by_qn);
+}
+
+#[test]
+fn a_resolved_class_without_the_method_binds_nothing_even_if_another_class_has_it() {
+    let o = build(&[
+        ("src/a.ts", "export class NoM {\n  other() {}\n}\n"),
+        ("src/c.ts", "export class NoM {\n  go() {}\n}\n"),
+        ("src/d.ts", "import { NoM } from './a';\nexport function f() { NoM.go(); }\n"),
+    ]);
+    assert!(!o.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && e.1 == "src/d.ts::f" && e.2.ends_with("::go")), "{:?}", o.edges_by_qn);
+}
+
+#[test]
+fn a_private_class_field_function_is_no_method_and_binds_nothing() {
+    let o = build(&[
+        ("src/f.ts", "export class Fld {\n  #p = () => 2;\n  q = () => 3;\n}\n"),
+        ("src/u.ts", "import { Fld } from './f';\nexport function f() { Fld.p(); Fld.q(); }\n"),
+    ]);
+    assert!(!o.nodes.iter().any(|n| n.qualified_name == "src/f.ts::p" || n.qualified_name == "src/f.ts::#p"));
+    assert!(!o.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && e.2.ends_with("::p")), "{:?}", o.edges_by_qn);
+    assert!(has(&o, EdgeKind::Calls, "src/u.ts::f", "src/f.ts::q"));
+}
+
+#[test]
+fn describe_each_makes_no_node() {
+    let o = build(&[
+        ("src/p.ts", SRC),
+        ("src/p.test.ts", "import { parse } from './p';\ndescribe.each([1, 2])('t %s', (n) => { parse(n); });\ndescribe.skip('s', () => { parse(1); });\n"),
+    ]);
+    let names: Vec<_> = o.nodes.iter().filter(|n| n.name.starts_with("describe")).map(|n| n.name.as_str()).collect();
+    assert_eq!(names, vec!["describe: s"], "{names:?}");
+}
+
+#[test]
+fn a_type_only_import_is_not_a_component() {
+    let o = build(&[
+        ("src/T.tsx", "export function Typed() { return null; }\nexport function Real() { return null; }\n"),
+        ("src/A.tsx", "import type { Typed } from './T';\nimport { type Typed as T2, Real } from './T';\nexport function A() { return <div><Typed /><T2 /><Real /></div>; }\n"),
+    ]);
+    assert!(has(&o, EdgeKind::Calls, "src/A.tsx::A", "src/T.tsx::Real"), "{:?}", o.edges_by_qn);
+    assert!(!has(&o, EdgeKind::Calls, "src/A.tsx::A", "src/T.tsx::Typed"), "{:?}", o.edges_by_qn);
+}
+
+#[test]
+fn loop_bindings_and_hoisted_var_hide_an_imported_class() {
+    let o = build(&[
+        ("src/a.ts", "export class Base {\n  static go() {}\n}\n"),
+        (
+            "src/s.ts",
+            "import { Base } from './a';\nexport function ofBlock(xs: any[]) { for (const Base of xs) { Base.go(); } }\nexport function ofBare(xs: any[]) { for (const Base of xs) Base.go(); }\nexport function inKey(o: any) { for (const Base in o) Base.go(); }\nexport function cFor() { for (let Base = make(); ok(); ) { Base.go(); } }\nexport function hoisted(x: boolean) { if (x) { var Base = make(); } Base.go(); }\nexport function real() { Base.go(); }\n",
+        ),
+    ]);
+    for f in ["ofBlock", "ofBare", "inKey", "cFor", "hoisted"] {
+        assert!(!o.edges_by_qn.iter().any(|e| e.0 == EdgeKind::Calls && e.1 == format!("src/s.ts::{f}") && e.2 == "src/a.ts::go"), "{f}: {:?}", o.edges_by_qn);
+    }
+    assert!(has(&o, EdgeKind::Calls, "src/s.ts::real", "src/a.ts::go"));
 }

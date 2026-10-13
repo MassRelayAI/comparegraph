@@ -495,6 +495,53 @@ fn static_class_method(files: &[ParsedFile], qns: &[Vec<String>], file_set: &Fil
     (hits.len() == 1).then(|| hits.remove(0))
 }
 
+/// `Foo.bar()` / `foo.bar()` with `foo: Foo`, where `Foo` is the class this file defines or imports (the import decides, so two
+/// classes called `Node` in different folders never collide): the method `callee` inside it, else inside its base classes
+/// (`extends` edges at 1.0, at most eight levels). `Some(None)`: the class is known and has no such method; `None`: not decided. `bases` maps a class qualified name to its base, computed on first use.
+fn imported_class_method(
+    files: &[ParsedFile],
+    qns: &[Vec<String>],
+    file_set: &FileSet,
+    fi: usize,
+    ty: &str,
+    callee: &str,
+    bases: &mut Option<HashMap<String, String>>,
+) -> Option<Option<String>> {
+    if !ty.chars().next().is_some_and(char::is_uppercase) || !ty.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let gi = declared_class_home(files, file_set, fi, ty)?;
+    let mut at = (gi, files[gi].symbols.iter().position(|s| s.name == ty && matches!(s.kind, SymbolKind::Class))?);
+    for _ in 0..8 {
+        let (g, ci) = at;
+        let class = &files[g].symbols[ci];
+        let hit: Vec<&String> = files[g]
+            .symbols
+            .iter()
+            .zip(&qns[g])
+            .filter(|(s, _)| s.name == callee && !matches!(s.kind, SymbolKind::Class) && class.line_start <= s.line_start && s.line_end <= class.line_end)
+            .map(|(_, q)| q)
+            .collect();
+        if let [only] = hit.as_slice() {
+            return Some(Some((*only).clone()));
+        }
+        if !hit.is_empty() {
+            return Some(None);
+        }
+        let map = bases.get_or_insert_with(|| {
+            super::inherit::inherit_edges(files).into_iter().filter(|e| e.0 == EdgeKind::Extends && e.3 == 1.0).map(|e| (e.1, e.2)).collect()
+        });
+        // a chain that breaks (no base resolved: none written, or an alias such as `export { A as B }`) decides nothing
+        let Some(base) = map.get(&qns[g][ci]) else {
+            // no `extends` written: the class is complete and lacks the method; a base that did not resolve decides nothing
+            let written = super::inherit::find(&files[g].language, &files[g].lines.join("\n")).iter().any(|r| r.kind == EdgeKind::Extends && r.sub == class.name);
+            return if written { None } else { Some(None) };
+        };
+        let next = files.iter().enumerate().find_map(|(h, hf)| qns[h].iter().position(|q| q == base).filter(|&j| matches!(hf.symbols[j].kind, SymbolKind::Class)).map(|j| (h, j)))?;
+        at = next;
+    }
+    Some(None)
+}
 
 struct PyCall<'a> {
     py: &'a [Option<PyInfo>],
@@ -959,8 +1006,12 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         for s in &f.symbols {
             *counts.entry(s.name.as_str()).or_insert(0) += 1;
         }
-        for (s, qn) in f.symbols.iter().zip(q) {
-            out.push((EdgeKind::Contains, f.rel_path.clone(), qn.clone(), 1.0));
+        for (i, (s, qn)) in f.symbols.iter().zip(q).enumerate() {
+            // a describe block contains the describes and cases written inside it (they follow it in symbol order); else the file does
+            let parent = (s.name.starts_with("it: ") || s.name.starts_with("describe: "))
+                .then(|| (0..i).rev().find(|&j| f.symbols[j].name.starts_with("describe: ") && f.symbols[j].line_start <= s.line_start && s.line_end <= f.symbols[j].line_end))
+                .flatten();
+            out.push((EdgeKind::Contains, parent.map_or_else(|| f.rel_path.clone(), |j| q[j].clone()), qn.clone(), 1.0));
             if !qn.contains('#') {
                 by_name
                     .entry(s.name.as_str())
@@ -1001,6 +1052,7 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         let case_calls = if super::is_test_path(&f.rel_path) { js_ctx::test_cases(&f.lines.join("\n"), &f.language).1 } else { vec![] };
         (case_calls, super::module_ctx::module_calls(&f.lines.join("\n"), &f.language))
     });
+    let mut bases: Option<HashMap<String, String>> = None; // class → base class, computed on first use
     for (fi, (f, q)) in files.iter().zip(&qns).enumerate() {
         super::mark_file(&f.rel_path);
         if let Some(info) = &rust[fi] {
@@ -1036,8 +1088,31 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
         // the calls in `it(...)` / `test(...)` bodies belong to no symbol: they are the test file's own (item: tests, not calls)
         let (case_calls, module_calls) = &per_file_calls[fi];
         let edges_before = out.len();
-        for c in f.call_sites.iter().chain(case_calls).chain(module_calls) {
-            let caller_qn: &String = if c.caller == js_ctx::CALLER_FILE {
+        let mut locals: Option<Vec<(String, u32, u32)>> = None; // names bound locally, computed on first use
+        // a JSX element `<Foo />` is a rendering call from the smallest function, case or describe holding it (else the file)
+        let mut jsx: Vec<(CallSite, Option<usize>)> = js_ctx::jsx_elements(&f.lines.join("\n"), &f.language)
+            .into_iter()
+            .map(|(name, line)| {
+                let owner = f
+                    .symbols
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| matches!(s.kind, SymbolKind::Function | SymbolKind::Method) && s.line_start <= line && line <= s.line_end)
+                    .min_by_key(|(i, s)| (s.line_end - s.line_start, std::cmp::Reverse(*i)))
+                    .map(|(i, _)| i);
+                (CallSite { caller: js_ctx::CALLER_FILE.into(), callee: name, receiver: None, line, kind: "render".into() }, owner)
+            })
+            .collect();
+        // a type-only import is no component
+        if !jsx.is_empty() {
+            let type_only = js_ctx::type_only_imports(&f.lines.join("\n"), &f.language);
+            jsx.retain(|(c, _)| !type_only.contains(&c.callee) || local.contains_key(c.callee.as_str()));
+        }
+        let sited = f.call_sites.iter().chain(case_calls).chain(module_calls).map(|c| (c, None)).chain(jsx.iter().map(|(c, o)| (c, *o)));
+        for (c, owner) in sited {
+            let caller_qn: &String = if let Some(i) = owner {
+                &q[i]
+            } else if c.caller == js_ctx::CALLER_FILE {
                 &f.rel_path
             } else if c.caller.starts_with(js_ctx::CASE_PREFIX) {
                 // a case is found by its own name and start line; no match, no edge
@@ -1175,6 +1250,19 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
             // A method call on a receiver of unknown type is never bound by name: `x.get()` and `other.search_symbols()` write
             // no edge. `self`/`this` were decided above, typed receivers and module aliases before this point.
             if let Some(r) = recv {
+                if f.language != "rust" {
+                    // a local, parameter or catch binding of this name hides the class: nothing binds
+                    if r.chars().next().is_some_and(char::is_uppercase) && locals.get_or_insert_with(|| js_ctx::local_bindings(&f.lines.join("\n"), &f.language)).iter().any(|b| b.0 == r && b.1 <= c.line && c.line <= b.2) {
+                        continue;
+                    }
+                    // the class is the one this file defines or imports: its method (or its base's), else nothing
+                    if let Some(found) = imported_class_method(files, &qns, &file_set, fi, r, &c.callee, &mut bases) {
+                        if let Some(t) = found {
+                            out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
+                        }
+                        continue;
+                    }
+                }
                 // `Foo.bar()`: a class named in the repo (same language), the method inside it
                 if let Some(t) = static_class_method(files, &qns, &file_set, f, r, &c.callee) {
                     out.push((EdgeKind::Calls, caller_qn.clone(), t, 1.0));
@@ -1189,6 +1277,10 @@ pub fn resolve_edges(files: &[ParsedFile]) -> Vec<(EdgeKind, String, String, f64
                     1.0
                 };
                 out.push((EdgeKind::Calls, caller_qn.clone(), (*t).clone(), conf));
+                continue;
+            }
+            // a rendering call binds only through an import or this file, never by a name guess
+            if c.kind == "render" {
                 continue;
             }
             // name-only guess: same language family only (a Python call never lands on a JS bundle's method)

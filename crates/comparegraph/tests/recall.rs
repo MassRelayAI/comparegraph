@@ -245,3 +245,24 @@ fn python_name_used_as_object_binds_a_class_or_instance_never_a_function() {
     let b = callees(ws.path(), "b.py::go");
     assert_eq!(b, vec![("n.py::since".to_string(), 1.0)], "{b:?}");
 }
+
+#[test]
+fn calls_from_describe_bodies_and_test_file_scope_do_not_rescue_dead_code_candidates() {
+    // methods, because an exported TypeScript function with no caller is an entry point, never a dead-code candidate
+    let (ws, _c) = ws_with(&[
+        ("src/lib.ts", "export class Svc {\n  inDescribe() {}\n  atFileScope() {}\n  inACase() {}\n  nobody() {}\n}\n"),
+        (
+            "src/lib.test.ts",
+            "import { Svc } from './lib';\nconst s = new Svc();\ndescribe('x', () => {\n  s.inDescribe();\n  it('y', () => { s.inACase(); });\n});\ns.atFileScope();\n",
+        ),
+    ]);
+    // the edges exist ...
+    let c = callees(ws.path(), "src/lib.test.ts::describe: x");
+    assert!(c.contains(&("src/lib.ts::inDescribe".to_string(), 1.0)), "{c:?}");
+    // ... but only an `it:` case makes code live: a describe body and test-file scope run at load time
+    let d = dead(ws.path());
+    assert!(d.contains(&"src/lib.ts::nobody".to_string()), "control: {d:?}");
+    assert!(d.contains(&"src/lib.ts::inDescribe".to_string()), "{d:?}");
+    assert!(d.contains(&"src/lib.ts::atFileScope".to_string()), "{d:?}");
+    assert!(!d.contains(&"src/lib.ts::inACase".to_string()), "{d:?}");
+}

@@ -279,6 +279,14 @@ impl GraphProvider for ReferenceProvider {
             match parsed_now {
                 Ok(r) => {
                     let mut symbols = dedupe_symbols(r.symbols);
+                    // methods written as class fields bound to a function, which the extractor does not report
+                    if matches!(f.language.as_str(), "typescript" | "tsx" | "javascript" | "jsx" | "mjs") {
+                        for (name, line_start, line_end) in js_ctx::class_field_functions(&source, &f.language) {
+                            if !symbols.iter().any(|s| s.name == name && s.line_start == line_start) {
+                                symbols.push(vendor::Symbol { name, kind: vendor::SymbolKind::Method, line_start, line_end, signature: None, doc: None });
+                            }
+                        }
+                    }
                     // one node per JS/TS test case, after the extractor's symbols (the resolver counts on that order)
                     if is_test_path(&f.rel_path) {
                         symbols.extend(js_ctx::test_cases(&source, &f.language).0.into_iter().map(|c| vendor::Symbol {

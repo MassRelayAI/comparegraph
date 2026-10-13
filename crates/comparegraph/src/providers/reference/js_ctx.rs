@@ -51,7 +51,9 @@ fn classify(call: Node, src: &str) -> Kind {
         (b, None) if HOOKS.contains(&b) => Kind::Hook,
         ("test", Some(m)) if HOOKS.contains(&m) => Kind::Hook,
         (b, _) if HOOKS.contains(&b) => Kind::Hook,
-        ("describe" | "suite" | "context", _) => Kind::Describe,
+        ("describe" | "suite" | "context", None) => Kind::Describe,
+        // `describe.each([…])('t', cb)` / `.for` are not blocks of ours: their body's calls stay unattributed (a known limit)
+        ("describe" | "suite" | "context", Some(m)) if ["skip", "only", "todo", "serial", "parallel", "concurrent", "sequential"].contains(&m) => Kind::Describe,
         ("test", Some("describe")) => Kind::Describe,
         _ => Kind::Other,
     }
@@ -195,6 +197,8 @@ fn collect(n: Node, src: &str, vars: &HashMap<String, String>, who: Who, acc: &m
                         }
                         acc.cases.push(Case { name: format!("it: {full}"), line_start: line, line_end: n.end_position().row as u32 + 1 });
                         Who::Case(acc.cases.len() - 1)
+                    } else if matches!(who, Who::Case(_)) {
+                        who // a hook in a describe body belongs to that describe
                     } else {
                         Who::File
                     };
@@ -211,12 +215,22 @@ fn collect(n: Node, src: &str, vars: &HashMap<String, String>, who: Who, acc: &m
                     collect(f, src, vars, who, acc);
                     return;
                 }
-                // `describe("title", () => { … })` prefixes the titles of the cases inside it
+                // `describe("title", () => { … })` is a node of its own, prefixes the titles of what is inside it, and owns the calls
+                // made in its body outside any case
                 if kind == Kind::Describe {
                     acc.titles.push(title_arg(n, src).unwrap_or_default());
+                    let mut full = acc.titles.join(" > ");
+                    if full.chars().count() > TITLE_MAX {
+                        full = full.chars().take(TITLE_MAX).collect::<String>().trim_end().to_string(); // by chars: UTF-8 safe
+                    }
+                    if full.trim_matches(|c: char| c == '>' || c.is_whitespace()).is_empty() {
+                        full = "describe".into();
+                    }
+                    acc.cases.push(Case { name: format!("describe: {full}"), line_start: line, line_end: n.end_position().row as u32 + 1 });
+                    let me = Who::Case(acc.cases.len() - 1);
                     let mut c = n.walk();
                     for ch in n.named_children(&mut c) {
-                        collect(ch, src, vars, who, acc);
+                        collect(ch, src, vars, me, acc);
                     }
                     acc.titles.pop();
                     return;
@@ -269,6 +283,194 @@ pub fn test_cases(src: &str, language: &str) -> (Vec<Case>, Vec<CallSite>) {
 /// Call sites inside the `it`/`test`/hook callbacks of a test file.
 pub fn test_case_calls(src: &str, language: &str) -> Vec<CallSite> {
     test_cases(src, language).1
+}
+
+/// JSX elements naming a component: `<Foo />` and `<Foo>` (an upper-case identifier; `<div>` and `<A.B>` are not), with the line.
+/// A JSX element is a rendering call; the resolver binds it only to an imported or same-file component.
+pub fn jsx_elements(src: &str, language: &str) -> Vec<(String, u32)> {
+    if !matches!(language, "tsx" | "jsx" | "javascript" | "mjs") {
+        return vec![];
+    }
+    let Some(tree) = parse_js(src, language) else { return vec![] };
+    let mut out = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(n) = stack.pop() {
+        if matches!(n.kind(), "jsx_self_closing_element" | "jsx_opening_element") {
+            if let Some(name) = n.child_by_field_name("name").filter(|x| x.kind() == "identifier") {
+                let t = text(name, src);
+                if t.chars().next().is_some_and(char::is_uppercase) {
+                    out.push((t.to_string(), n.start_position().row as u32 + 1));
+                }
+            }
+        }
+        let mut c = n.walk();
+        stack.extend(n.named_children(&mut c));
+    }
+    out.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+    out
+}
+
+/// Class fields bound to a function (`request = (…) => { … }`, `fetch: T = function () {}`): methods the vendored extractor does not
+/// see. Returns (name, first line, last line), 1-based, in source order.
+pub fn class_field_functions(src: &str, language: &str) -> Vec<(String, u32, u32)> {
+    let Some(tree) = parse_js(src, language) else { return vec![] };
+    let mut out = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(n) = stack.pop() {
+        if matches!(n.kind(), "public_field_definition" | "field_definition") && n.parent().is_some_and(|p| p.kind() == "class_body") {
+            let name = n.child_by_field_name("name").or_else(|| n.child_by_field_name("property")).filter(|x| x.kind() == "property_identifier"); // a `#private` field is never a method others can bind
+            let value = n.child_by_field_name("value").filter(|v| is_callback(*v));
+            if let (Some(name), Some(_)) = (name, value) {
+                out.push((text(name, src).to_string(), n.start_position().row as u32 + 1, n.end_position().row as u32 + 1));
+            }
+        }
+        let mut c = n.walk();
+        stack.extend(n.named_children(&mut c));
+    }
+    out.sort_by_key(|o| (o.1, o.0.clone()));
+    out
+}
+
+fn pattern_names(n: Node, src: &str, out: &mut Vec<String>) {
+    match n.kind() {
+        "identifier" | "shorthand_property_identifier_pattern" => out.push(text(n, src).to_string()),
+        "type_annotation" => {}
+        "pair_pattern" => {
+            if let Some(v) = n.child_by_field_name("value") {
+                pattern_names(v, src, out);
+            }
+        }
+        "assignment_pattern" | "object_assignment_pattern" => {
+            if let Some(l) = n.child_by_field_name("left") {
+                pattern_names(l, src, out);
+            }
+        }
+        _ => {
+            let mut c = n.walk();
+            for ch in n.named_children(&mut c) {
+                pattern_names(ch, src, out);
+            }
+        }
+    }
+}
+
+/// Names bound inside a function, block or catch clause (parameters, `const`/`let`/`var`, destructuring, catch bindings) with the
+/// first and last line of the scope they hide an outer name in. File-level bindings are left out (an import cannot share one).
+pub fn local_bindings(src: &str, language: &str) -> Vec<(String, u32, u32)> {
+    let Some(tree) = parse_js(src, language) else { return vec![] };
+    let mut out = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(n) = stack.pop() {
+        let mut names = Vec::new();
+        let mut scope = None;
+        match n.kind() {
+            k if FUNCTION_LIKE.contains(&k) => {
+                scope = Some(n);
+                if let Some(p) = n.child_by_field_name("parameters") {
+                    let mut c = p.walk();
+                    for prm in p.named_children(&mut c) {
+                        match prm.child_by_field_name("pattern") {
+                            Some(pt) => pattern_names(pt, src, &mut names),
+                            None => pattern_names(prm, src, &mut names),
+                        }
+                    }
+                } else if let Some(p) = n.child_by_field_name("parameter") {
+                    pattern_names(p, src, &mut names);
+                }
+            }
+            "catch_clause" => {
+                scope = Some(n);
+                if let Some(p) = n.child_by_field_name("parameter") {
+                    pattern_names(p, src, &mut names);
+                }
+            }
+            "variable_declarator" => {
+                // `var` is hoisted to the enclosing function (or the module: no scope); `let`/`const` stay in the nearest block or loop
+                let hoisted = n.parent().is_some_and(|d| d.kind() == "variable_declaration");
+                let mut up = n.parent();
+                while let Some(u) = up {
+                    let block = matches!(u.kind(), "statement_block" | "for_statement" | "for_in_statement" | "class_body");
+                    if (block && !hoisted) || FUNCTION_LIKE.contains(&u.kind()) {
+                        scope = Some(u);
+                        break;
+                    }
+                    if u.kind() == "program" {
+                        break;
+                    }
+                    up = u.parent();
+                }
+                if let Some(nm) = n.child_by_field_name("name") {
+                    pattern_names(nm, src, &mut names);
+                }
+            }
+            // `for (const x of xs)` / `for (let k in o)` bind `left` for the whole loop, a braceless body included (a bare
+            // `for (x of xs)` assigns: it has no declaration keyword); `var` is hoisted to the function
+            "for_in_statement" if n.child_by_field_name("kind").is_some() => {
+                let var = n.child_by_field_name("kind").is_some_and(|k| text(k, src) == "var");
+                if var {
+                    let mut up = n.parent();
+                    while let Some(u) = up {
+                        if FUNCTION_LIKE.contains(&u.kind()) {
+                            scope = Some(u);
+                            break;
+                        }
+                        up = u.parent();
+                    }
+                } else {
+                    scope = Some(n);
+                }
+                if let Some(l) = n.child_by_field_name("left") {
+                    pattern_names(l, src, &mut names);
+                }
+            }
+            _ => {}
+        }
+        if let Some(sc) = scope {
+            for nm in names {
+                out.push((nm, sc.start_position().row as u32 + 1, sc.end_position().row as u32 + 1));
+            }
+        }
+        let mut c = n.walk();
+        stack.extend(n.named_children(&mut c));
+    }
+    out
+}
+
+fn has_type_keyword(n: Node) -> bool {
+    let mut c = n.walk();
+    let r = n.children(&mut c).any(|ch| ch.kind() == "type");
+    r
+}
+
+/// Local names of imports that are type-only (`import type { A }`, `import { type A as B }`).
+pub fn type_only_imports(src: &str, language: &str) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    let Some(tree) = parse_js(src, language) else { return out };
+    let mut stack = vec![tree.root_node()];
+    while let Some(n) = stack.pop() {
+        if n.kind() == "import_statement" {
+            let whole = has_type_keyword(n);
+            let mut s2 = vec![n];
+            while let Some(m) = s2.pop() {
+                if m.kind() == "import_specifier" {
+                    let own = has_type_keyword(m);
+                    if whole || own {
+                        if let Some(nm) = m.child_by_field_name("alias").or_else(|| m.child_by_field_name("name")) {
+                            out.insert(text(nm, src).to_string());
+                        }
+                    }
+                } else if m.kind() == "identifier" && whole && m.parent().is_some_and(|p| p.kind() == "import_clause") {
+                    out.insert(text(m, src).to_string());
+                }
+                let mut c = m.walk();
+                s2.extend(m.named_children(&mut c));
+            }
+            continue;
+        }
+        let mut c = n.walk();
+        stack.extend(n.named_children(&mut c));
+    }
+    out
 }
 
 const FUNCTION_LIKE: &[&str] = &["function_declaration", "generator_function_declaration", "method_definition", "function_expression", "function", "generator_function", "arrow_function"];
@@ -364,6 +566,8 @@ mod tests {
             assert!(got.contains(&(want.0.to_string(), want.1.map(String::from))), "{got:?}");
         }
         assert!(c.iter().all(|s| s.caller == CALLER_FILE || s.caller.starts_with(CASE_PREFIX)));
-        assert!(!got.iter().any(|(n, _)| n == "helper" || n == "inner" || n == "expect" || n == "toBe"), "{got:?}");
+        // `helper()` in the describe body belongs to the describe (Plan 6 A1)
+        assert!(c.iter().any(|s| s.callee == "helper" && s.caller.contains("describe: x")), "{c:?}");
+        assert!(!got.iter().any(|(n, _)| n == "inner" || n == "expect" || n == "toBe"), "{got:?}");
     }
 }

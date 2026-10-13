@@ -230,7 +230,9 @@ if sdir != "-":
         # containing the line whose target name equals the callee's last segment
         gnodes, ospans, gcalls = G.load_ours(cg, rid)
         cspans = {}
-        for q, k, fp, ls_, le_ in crg.execute("select qualified_name,kind,file_path,line_start,line_end from nodes where kind in ('Function','Test')"):
+        # crg's module-level CALLS edges have the FILE as source (parser.py: `caller = enclosing function else file_path`) and its File node
+        # spans 1..EOF, so the File kind is a span too (largest, hence the fallback): same rule as G.load_ours for ours
+        for q, k, fp, ls_, le_ in crg.execute("select qualified_name,kind,file_path,line_start,line_end from nodes where kind in ('Function','Test','File')"):
             if ls_ is not None and le_ is not None: cspans.setdefault(rel(fp), []).append((le_ - ls_, ls_, le_, q))
         cedges = {}
         for s_, t_ in crg.execute("select source_qualified,target_qualified from edges where kind='CALLS'"):
