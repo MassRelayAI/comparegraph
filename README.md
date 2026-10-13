@@ -639,6 +639,7 @@ of these exist yet, and the maintainer decides the order.
 | [`docs/reports/2026-10-12-engine-parity.md`](docs/reports/2026-10-12-engine-parity.md) | The engine comparison: Jaccards, gold standard, codegraph head-to-head, scale |
 | [`docs/reports/2026-10-13-plan-6-recall-and-scale.md`](docs/reports/2026-10-13-plan-6-recall-and-scale.md) | Plan 6 targets against measured, per lane, with limits |
 | [`docs/reports/2026-10-13-proof-on-a-real-product.md`](docs/reports/2026-10-13-proof-on-a-real-product.md) | The pipeline on a private product monorepo with three comparators, and the mapping outputs read against the source |
+| [`docs/reports/2026-10-13-install-surfaces.md`](docs/reports/2026-10-13-install-surfaces.md) | How the study projects install, against ours, and the order of what is missing |
 | [`docs/reports/2026-10-12-plan-1-proof.md`](docs/reports/2026-10-12-plan-1-proof.md) | Three real clones through the pipeline |
 | [`docs/decisions.md`](docs/decisions.md) | Every provisional choice, the alternative, and what would change it |
 | [`docs/design.md`](docs/design.md) | The design |
