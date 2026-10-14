@@ -26,9 +26,9 @@ jobs:
       - name: Catalog check
         if: hashFiles('docs/catalog.json') != ''
         run: cargo run -q -p comparegraph -- catalog --check
-      - name: script tests (install script; README assets)
+      - name: script tests (install script; README assets; npm packages, which need the debug binary the Test step built)
         run: node --test scripts/test/*.test.mjs
-      - name: README cost illustration is current
+      - name: README illustrations are current
         run: node scripts/readme-assets.mjs --check
       - name: server.json version equals Cargo.toml
         run: |

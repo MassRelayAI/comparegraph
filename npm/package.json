@@ -1,0 +1,22 @@
+{
+  "name": "@massrelay-ai/comparegraph",
+  "version": "0.1.1",
+  "description": "CompareGraph: compare codebases with evidence. The prebuilt binary and its MCP server, for npx.",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/massrelay-ai/comparegraph.git" },
+  "homepage": "https://github.com/massrelay-ai/comparegraph#readme",
+  "bugs": { "url": "https://github.com/massrelay-ai/comparegraph/issues" },
+  "keywords": ["mcp", "model-context-protocol", "code-graph", "code-comparison", "comparegraph"],
+  "mcpName": "io.github.massrelay-ai/comparegraph",
+  "bin": { "comparegraph": "bin/comparegraph.js" },
+  "files": ["bin"],
+  "engines": { "node": ">=18" },
+  "optionalDependencies": {
+    "@massrelay-ai/comparegraph-linux-x64": "0.1.1",
+    "@massrelay-ai/comparegraph-linux-arm64": "0.1.1",
+    "@massrelay-ai/comparegraph-darwin-arm64": "0.1.1",
+    "@massrelay-ai/comparegraph-darwin-x64": "0.1.1",
+    "@massrelay-ai/comparegraph-win32-x64": "0.1.1"
+  },
+  "publishConfig": { "access": "public" }
+}
