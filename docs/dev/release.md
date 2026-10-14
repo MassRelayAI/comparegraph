@@ -31,7 +31,10 @@ git push origin vX.Y.Z
   binaries, the sums and generated notes.
 - `publish-npm`: runs only when the repository variable `NPM_PUBLISH` is `true`. Checks `npm/package.json` against the tag
   (exit 4), takes the released binaries from the same artifacts (checksums verified), builds six packages with
-  `npm/build.mjs`, publishes the five platform packages and then the wrapper through npm trusted publishing.
+  `npm/build.mjs`, publishes the five platform packages and then the wrapper. Authentication: the repository secret
+  `NPM_TOKEN` (a granular npm token with publish rights on the `@massrelay-ai` scope; npm caps its lifetime at 90 days, so it
+  is renewed by setting the secret again) while it is set; with the secret empty, npm trusted publishing through OIDC, once
+  the maintainer has registered this workflow on each of the six packages.
 - `publish-registry`: downloads a pinned `mcp-publisher` (checksum verified), checks that `server.json` carries the
   tag's version, validates it, authenticates through GitHub OIDC (the registry grants this repository's owner the
   `io.github.massrelay-ai/*` namespace) and publishes. The entry carries the repository, not a package: the install

@@ -110,6 +110,10 @@ jobs:
       - name: Build the six packages
         run: node npm/build.mjs "${GITHUB_REF_NAME#v}" --bins bins --out dist-npm
       - name: Publish the platform packages, then the wrapper
+        # NPM_TOKEN (a granular token, 90 days) authenticates while it is set; when the secret is empty npm falls back to
+        # trusted publishing through OIDC, once the maintainer has registered this workflow on each package (docs/dev/release.md).
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for dir in dist-npm/comparegraph-*; do
             (cd "$dir" && npm publish --access public --provenance)
