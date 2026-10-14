@@ -382,7 +382,8 @@ on the other three; the held-out column is the honest number for a repository th
 The target (held-out recall@5 at or above 0.50 at precision@5 0.30) is open: a gold location is among the first 200
 candidates for only a third of the held-out features, because the store holds symbol names, paths and community keywords
 and no doc text; the next lever is in the roadmap. `relate` bands are a known weak signal: repositories outside the family
-still score above 0.5 ([`docs/decisions.md`](docs/decisions.md), "Plan 7 IMP"). Sources:
+still score above 0.5 ([`docs/decisions.md`](docs/decisions.md), "Plan 7 IMP"); until `relate` has been run, the matrix
+reads `not run` for that clone and says so in `limitations[]` (`matrix --relate` scores the missing ones first). Sources:
 [`docs/reports/2026-10-14-mapping-gold-first-measurement.md`](docs/reports/2026-10-14-mapping-gold-first-measurement.md) and
 the parity report's "Feature-mapping baselines". Reproduce: `scripts/map-score.sh`, `scripts/map-baselines.sh`.
 
@@ -401,6 +402,8 @@ Reproduce: `scripts/answer-size.sh`, then `node scripts/readme-assets.mjs`.
 ## Languages
 
 29 languages are parsed. Five are resolved deeply. Four have a measured gold standard. Read the tiers, not the headline.
+Every grammar (32 ids: `tsx`, `jsx` and `mjs` count apart) has a fixture with a committed graph digest in
+[`fixtures/languages/`](fixtures/languages/), so a grammar bump that changes any graph fails CI and is re-golded on purpose.
 
 | Tier | Languages | What the engine extracts |
 |---|---|---|
@@ -491,6 +494,7 @@ Nothing below exists yet, and the maintainer decides the order. Full list with t
 | [`docs/dev/release.md`](docs/dev/release.md) | How a release is cut: the tag, the workflow, the registry entry, the tap, what to check after |
 | [`docs/dev/plugin-protocol.md`](docs/dev/plugin-protocol.md) | The JSON-lines protocol for external engines, limits, conformance, a 25-line example |
 | [`docs/dev/pid-namespaces.md`](docs/dev/pid-namespaces.md) | Why tests run in a PID namespace and how to enable it |
+| [`docs/dev/language-fixtures.md`](docs/dev/language-fixtures.md) | One fixture per grammar, the committed digests, how to re-gold after a grammar bump |
 | [`docs/usage.md`](docs/usage.md) | What you get, configuration, the vault, library usage |
 | [`docs/commands.md`](docs/commands.md) | The CLI reference |
 | [`docs/mcp-tools.md`](docs/mcp-tools.md) | The 18 MCP tools |
@@ -515,5 +519,6 @@ Security reports go to support@massrelay.ai or a private advisory ([`SECURITY.md
 same address ([`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)).
 
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) first. A bug fix starts with a failing test, extraction
-changes extend a conformance fixture, and no model or network call enters the engine. The vendored parser layer comes from
+changes extend a conformance fixture, and no model or network call enters the engine. CI runs clippy, the suites, the
+conformance and language digests, and `cargo-deny` (licences, advisories, sources; [`deny.toml`](deny.toml)). The vendored parser layer comes from
 graphmind (MIT); see [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md). Licence: Apache-2.0, see [`LICENSE`](LICENSE).
