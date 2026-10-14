@@ -9,6 +9,8 @@ pub struct CheckReport {
     pub runs_done: usize,
     pub stale_locations: usize,
     pub drifted_runs: usize,
+    /// Claims whose cited run has no row or is not a finished (`done`) build.
+    pub unbuilt_claim_runs: usize,
     /// Latest claims whose confidence shows as unknown because a cited location is stale (informational).
     pub downgraded_claims: usize,
     pub schema_ok: bool,
@@ -33,6 +35,20 @@ pub fn check(root: &Path) -> Result<CheckReport> {
     let repos = store.repos()?;
     rep.repos = repos.len();
     for r in &repos {
+        let mut st = store.conn().prepare(
+            "SELECT c.run_id, COUNT(*) FROM claim c LEFT JOIN run u ON u.id = c.run_id \
+             WHERE c.repo_id = ?1 AND (u.id IS NULL OR u.status != 'done') GROUP BY c.run_id ORDER BY c.run_id",
+        )?;
+        let bad: Vec<(i64, usize)> = st
+            .query_map(params![r.id.unwrap().0], |x| Ok((x.get(0)?, x.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        for (run_id, n) in bad {
+            rep.unbuilt_claim_runs += n;
+            rep.problems.push(format!(
+                "{}: {} claims cite run {} which was never built",
+                r.name, n, run_id
+            ));
+        }
         let Some(run) = store.latest_done_run(r.id.unwrap())? else {
             continue;
         };

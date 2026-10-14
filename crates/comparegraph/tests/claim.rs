@@ -626,3 +626,43 @@ fn a_single_claim_of_an_identical_row_still_writes() {
     assert_eq!(two["data"]["supersedes_id"], one["data"]["id"]);
     assert_eq!(history_len(ws.path()), 2);
 }
+
+fn db(ws: &std::path::Path) -> rusqlite::Connection {
+    rusqlite::Connection::open(ws.join(".comparegraph/comparegraph.db")).unwrap()
+}
+
+#[test]
+fn check_flags_claims_that_cite_a_run_that_was_never_built() {
+    let (ws, _a, _p) = setup();
+    claim(
+        ws.path(),
+        &["has", "--author", "me", "--at", "src/net/a.py:1-2"],
+    )
+    .success();
+    let ok = json(cc(ws.path()).arg("check").assert().success());
+    assert_eq!(ok["data"]["unbuilt_claim_runs"], 0, "{ok}");
+    // the claim's run is not a finished build: a failed run
+    db(ws.path())
+        .execute("UPDATE run SET status = 'failed'", [])
+        .unwrap();
+    let v = json(cc(ws.path()).arg("check").assert().failure());
+    assert_eq!(v["data"]["unbuilt_claim_runs"], 1, "{v}");
+    let p = v["data"]["problems"].to_string();
+    assert!(p.contains("a: 1 claims cite run"), "{p}");
+    assert!(p.contains("which was never built"), "{p}");
+}
+
+#[test]
+fn check_flags_claims_whose_run_row_is_gone() {
+    let (ws, _a, _p) = setup();
+    claim(
+        ws.path(),
+        &["has", "--author", "me", "--at", "src/net/a.py:1-2"],
+    )
+    .success();
+    let c = db(ws.path());
+    c.execute("PRAGMA foreign_keys = OFF", []).ok();
+    c.execute("DELETE FROM run", []).unwrap();
+    let v = json(cc(ws.path()).arg("check").assert().failure());
+    assert_eq!(v["data"]["unbuilt_claim_runs"], 1, "{v}");
+}
