@@ -18,3 +18,5 @@ arguments. They read the clone copies they are given and never execute code insi
 The floors in `fixtures/gold/FLOORS.json` and `fixtures/gold-map/FLOORS.json` are measured minus 0.01 and are only ever
 raised; `cargo test -p comparegraph` checks them when `COMPAREGRAPH_STUDY` points at a directory holding the clone copies
 named in the fixtures' READMEs, and says so on stderr when it does not.
+
+Per-language graph digests (one fixture for each language id, re-golded with `UPDATE_LANGUAGE_DIGESTS=1`) are described in [language-fixtures.md](language-fixtures.md).
