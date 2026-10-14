@@ -1,0 +1,59 @@
+# Merge a Dependabot patch or minor bump once ci is green on it; a major bump waits for the maintainer.
+#
+# Runs from the default branch after the `ci` workflow completes on a Dependabot branch, so it holds a write token
+# (a Dependabot `pull_request` run gets a read-only one) and needs no branch protection.
+#
+# The merge is made with GITHUB_TOKEN, and GitHub does not start workflows for events made by that token: `ci` does not
+# run again on the merge commit. That commit was already green on the PR's own run; the next push runs ci on main.
+#
+# The update type is read from the `updated-dependencies` block Dependabot writes in its commit message (what
+# dependabot/fetch-metadata reads too; that action cannot run under `workflow_run`, which carries no pull_request payload).
+name: dependabot-automerge
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: dependabot-automerge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+jobs:
+  automerge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'pull_request'
+      && startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+      && github.event.workflow_run.triggering_actor.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Find the open pull request for this branch and check the green run is for its current head
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --state open --json number,headRefOid,author --jq '.[0] // empty')
+          [ -n "$pr" ] || { echo "no open pull request for $BRANCH"; exit 1; }
+          [ "$(jq -r .author.login <<<"$pr")" = "app/dependabot" ] || { echo "pull request is not by Dependabot"; exit 1; }
+          [ "$(jq -r .headRefOid <<<"$pr")" = "$RUN_SHA" ] || { echo "ci was green on $RUN_SHA, not the current head; merging nothing"; exit 1; }
+          echo "PR=$(jq -r .number <<<"$pr")" >> "$GITHUB_ENV"
+      - name: Read the update types from Dependabot's commit message
+        run: |
+          first=$(gh api "repos/$GH_REPO/pulls/$PR/commits" --jq '.[0] | [.author.login, (.commit.verification.verified|tostring)] | join(" ")')
+          [ "$first" = "dependabot[bot] true" ] || { echo "first commit is not a verified Dependabot commit ($first)"; exit 1; }
+          gh api "repos/$GH_REPO/pulls/$PR/commits" --jq '.[0].commit.message' | grep -o 'update-type: .*' | sort -u > types.txt
+          [ -s types.txt ] || { echo "no update-type in the commit message"; exit 1; }
+          cat types.txt
+          if grep -qv '^update-type: version-update:semver-\(patch\|minor\)$' types.txt; then echo "WAIT=true" >> "$GITHUB_ENV"; fi
+      - name: Major bump, say once that it waits for the maintainer
+        if: env.WAIT == 'true'
+        run: |
+          msg="This bump is not a patch or minor update, so it waits for the maintainer to merge by hand."
+          if gh pr view "$PR" --json comments --jq '.comments[].body' | grep -qxF "$msg"; then echo "already commented"; else gh pr comment "$PR" --body "$msg"; fi
+      - name: Merge a patch or minor bump
+        if: env.WAIT != 'true'
+        run: gh pr merge "$PR" --rebase --delete-branch

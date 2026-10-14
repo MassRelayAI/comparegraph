@@ -37,6 +37,18 @@ git push origin vX.Y.Z
   `io.github.massrelay-ai/*` namespace) and publishes. The entry carries the repository, not a package: the install
   script is the distribution.
 
+## Dependency bumps
+
+`.github/workflows/dependabot-automerge.yml` runs after `ci` completes on a Dependabot branch.
+
+- A patch or minor bump merges itself (`--rebase --delete-branch`) once `ci` is green on the PR's current head. The update
+  type is read from the `updated-dependencies` block in Dependabot's verified commit message.
+- A major bump (or a group containing one) gets one comment and waits. Merge it by hand after reading it:
+  `gh pr merge <n> --rebase --delete-branch`.
+- A red or cancelled `ci` run merges nothing, and neither does a green run for a head that has since moved.
+- The merge is made with `GITHUB_TOKEN`, and GitHub starts no workflow for events that token makes, so `ci` does not run
+  on the merge commit. That commit was green on the PR's own run; the next push to `main` runs `ci` on it.
+
 ## npm
 
 `@massrelay-ai/comparegraph` is a launcher; the binary comes from one of five platform packages

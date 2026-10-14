@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- `dependabot-automerge.yml`: a Dependabot patch or minor bump merges itself once CI is green on it; majors wait for the maintainer.
 - `docs/assets/family.svg`: a family, its groups and features, six clones, 121 agreed cells from the mapping gold; `scripts/family-asset.mjs` derives its JSON.
 - `docs/assets/accuracy.svg` and `scale.svg` (gold precision/recall per engine; files → nodes, edges, seconds), rendered from committed JSON by `scripts/readme-assets.mjs`.
 - `scripts/answer-size.sh` and `docs/reports/2026-10-14-answer-size.md`: the size of what an agent reads (map answers for 30 features on six study copies) against the source it replaces; `docs/assets/cost.svg` rendered from `docs/assets/cost.json` by `scripts/readme-assets.mjs`, checked by a test.
