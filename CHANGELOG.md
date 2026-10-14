@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 - `scripts/answer-size.sh` and `docs/reports/2026-10-14-answer-size.md`: the size of what an agent reads (map answers for 30 features on six study copies) against the source it replaces; `docs/assets/cost.svg` rendered from `docs/assets/cost.json` by `scripts/readme-assets.mjs`, checked by a test.
+- npm packaging: `@massrelay-ai/comparegraph` wraps the release binaries (five platform packages); published by `release.yml` once `NPM_PUBLISH` is set; `mcpName` for the MCP Registry.
 - `setup`/`doctor` state `plugin`: with the Claude Code plugin enabled, `--client all` leaves Claude Code's server and hook to the plugin.
 - A bare `comparegraph` command that resolves on `PATH` to the registered binary reads as aligned.
 - `setup` writes a CompareGraph rules block (between `<!-- comparegraph -->` markers) into the workspace's agent instruction file (only once `.comparegraph/` exists; otherwise the row is listed and skipped): `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or `.github/instructions/comparegraph.instructions.md`, one row per file. An older block is refreshed; a hand-edited one is a `conflict` unless `--force`. `--no-rules` skips it.
