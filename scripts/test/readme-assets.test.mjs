@@ -1,4 +1,4 @@
-// scripts/readme-assets.mjs: deterministic render of three illustrations, and --check goes red when the data or the SVG drifts.
+// scripts/readme-assets.mjs: deterministic render of four illustrations, and --check goes red when the data or the SVG drifts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -18,6 +18,7 @@ const edits = {
   cost: (d) => { d.clones[0].map_bytes += 1_000_000; },
   accuracy: (d) => { d.rows[0].p[0] = 0.5; },
   scale: (d) => { d.trees[0].files += 5000; },
+  family: (d) => { d.cells[0].verdict = d.cells[0].verdict === 'none' ? 'has' : 'none'; },
 };
 
 for (const name of Object.keys(edits)) {
@@ -44,8 +45,22 @@ for (const name of Object.keys(edits)) {
   });
 }
 
-test('--check passes on all three committed SVGs', () => {
+test('--check passes on all four committed SVGs', () => {
   const r = run('--check');
   assert.equal(r.status, 0, r.stderr);
   for (const n of Object.keys(edits)) assert.match(r.stdout, new RegExp(`${n}.svg is current`));
+});
+
+test('family.json is derived from rows.md and the gold: 121 agreed cells, and --check goes red on a stale copy', () => {
+  const d = JSON.parse(readFileSync(json('family'), 'utf8'));
+  assert.equal(d.cells.length, 121);
+  assert.deepEqual([d.counts.has, d.counts.partial, d.counts.none], [93, 9, 19]);
+  assert.equal(d.groups.flatMap((g) => g.features).length, 30);
+  const gen = path.join(root, 'scripts/family-asset.mjs');
+  assert.equal(spawnSync('node', [gen, '--check'], { encoding: 'utf8' }).status, 0);
+  const dir = mkdtempSync(path.join(tmpdir(), 'cg-assets-'));
+  d.cells[0].verdict = 'none';
+  const stale = path.join(dir, 'family.json');
+  writeFileSync(stale, JSON.stringify(d, null, 1) + '\n');
+  assert.equal(spawnSync('node', [gen, '--check', '--out', stale], { encoding: 'utf8' }).status, 1);
 });

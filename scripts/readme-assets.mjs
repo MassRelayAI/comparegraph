@@ -1,5 +1,5 @@
-// Renders docs/assets/{cost,accuracy,scale}.svg from the JSON of the same name. Deterministic, no dependencies.
-// node scripts/readme-assets.mjs            write all three SVGs
+// Renders docs/assets/{cost,accuracy,scale,family}.svg from the JSON of the same name. Deterministic, no dependencies.
+// node scripts/readme-assets.mjs            write all four SVGs
 // node scripts/readme-assets.mjs --check    exit 1 if a committed SVG differs from what would be written
 // --asset <name> limits the run to one of them; with --in/--out (the test uses them) it defaults to cost.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -154,7 +154,89 @@ ${pills}
 `;
 }
 
-const assets = { cost: renderCost, accuracy: renderAccuracy, scale: renderScale };
+const VERDICT = { has: '#1a7f37', partial: '#bf8700', none: '#cf222e' };
+
+export function renderFamily(f) {
+  const cx = 525, cy = 395, rGroup = [78, 120], rFeat = 168, rClone = 312;
+  const feats = f.groups.flatMap((g) => g.features.map((id) => ({ id, group: g.id })));
+  const total = feats.length;
+  const rad = (deg) => (deg * Math.PI) / 180;
+  const at = (r, deg) => [cx + r * Math.cos(rad(deg)), cy + r * Math.sin(rad(deg))];
+  const pt = (p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
+  const featAngle = new Map(feats.map((x, i) => [x.id, -90 + ((i + 0.5) / total) * 360]));
+  const cloneAngle = new Map(f.clones.map((c, i) => [c, -90 + 30 + (i * 360) / f.clones.length]));
+  const featPos = new Map(feats.map((x) => [x.id, at(rFeat, featAngle.get(x.id))]));
+  const clonePos = new Map(f.clones.map((c) => [c, at(rClone, cloneAngle.get(c))]));
+  const groupAngle = (g) => g.features.reduce((a, id) => a + featAngle.get(id), 0) / g.features.length;
+  const groupPos = new Map(f.groups.map((g, i) => [g.id, at(rGroup[i % 2], groupAngle(g))]));
+  const halo = 'stroke="#ffffff" stroke-width="3" paint-order="stroke" stroke-linejoin="round"';
+
+  const spokes = f.groups.map((g) => {
+    const gp = groupPos.get(g.id);
+    return g.features.map((id) => `<line x1="${gp[0].toFixed(1)}" y1="${gp[1].toFixed(1)}" x2="${featPos.get(id)[0].toFixed(1)}" y2="${featPos.get(id)[1].toFixed(1)}" stroke="#57606a" stroke-width="1"/>`).join('\n');
+  }).join('\n');
+  const centreLines = f.groups.map((g) => {
+    const gp = groupPos.get(g.id);
+    return `<line x1="${cx}" y1="${cy}" x2="${gp[0].toFixed(1)}" y2="${gp[1].toFixed(1)}" stroke="#d0d7de" stroke-width="1"/>`;
+  }).join('\n');
+  const edges = f.cells.map((c) => {
+    const a = featPos.get(c.feature), b = clonePos.get(c.clone);
+    return `<line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}" stroke="${VERDICT[c.verdict]}" stroke-opacity="0.42" stroke-width="1"/>`;
+  }).join('\n');
+  const featNodes = feats.map((x) => {
+    const [px, py] = featPos.get(x.id);
+    const deg = featAngle.get(x.id);
+    const right = Math.cos(rad(deg)) >= 0;
+    const [lx, ly] = at(rFeat + 9, deg);
+    const rot = right ? deg : deg + 180;
+    const label = x.id.slice(x.group.length + 1);
+    return `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.5" fill="#ffffff" stroke="#57606a" stroke-width="1.2"/>
+<text transform="translate(${lx.toFixed(1)} ${ly.toFixed(1)}) rotate(${rot.toFixed(1)})" dy="3.5" font-size="10" text-anchor="${right ? 'start' : 'end'}" ${halo}>${esc(label)}</text>`;
+  }).join('\n');
+  const groupNodes = f.groups.map((g) => {
+    const [gx, gy] = groupPos.get(g.id);
+    const w = g.id.length * 6.6 + 14;
+    return `<rect x="${(gx - w / 2).toFixed(1)}" y="${(gy - 9).toFixed(1)}" width="${w.toFixed(1)}" height="18" rx="9" fill="#ddf4ff" stroke="#57606a" stroke-width="1"/>
+<text x="${gx.toFixed(1)}" y="${(gy + 4).toFixed(1)}" font-size="11" font-weight="700" text-anchor="middle">${esc(g.id)}</text>`;
+  }).join('\n');
+  const cloneNodes = f.clones.map((c) => {
+    const [px, py] = clonePos.get(c);
+    const deg = cloneAngle.get(c);
+    const right = Math.cos(rad(deg)) >= 0;
+    const [lx, ly] = at(rClone + 14, deg);
+    const n = f.cells.filter((x) => x.clone === c).length;
+    return `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="8" fill="#fff8c5" stroke="#57606a" stroke-width="1.4"/>
+<text x="${lx.toFixed(1)}" y="${(ly + (Math.sin(rad(deg)) < -0.5 ? -2 : Math.sin(rad(deg)) > 0.5 ? 12 : 4)).toFixed(1)}" font-size="13" font-weight="700" text-anchor="${right ? 'start' : 'end'}">${esc(c)}</text>
+<text x="${lx.toFixed(1)}" y="${(ly + (Math.sin(rad(deg)) < -0.5 ? -16 : Math.sin(rad(deg)) > 0.5 ? 26 : 18)).toFixed(1)}" font-size="11" fill="#57606a" text-anchor="${right ? 'start' : 'end'}">${n} agreed cells</text>`;
+  }).join('\n');
+  const k = f.counts;
+  const title = `A family in the graph: ${total} features, ${f.groups.length} groups, six clones, ${f.cells.length} agreed cells`;
+  const caption = 'Edges are the two readers’ agreed verdicts from the mapping gold, not engine output; `export vault` shows the same graph live in Obsidian.';
+  const legend = [['has', k.has], ['partial', k.partial], ['none', k.none]].map(([v, n], i) =>
+    `<line x1="30" y1="${70 + i * 20}" x2="58" y2="${70 + i * 20}" stroke="${VERDICT[v]}" stroke-width="2.5"/><text x="66" y="${74 + i * 20}" font-size="12">${v}: ${n}</text>`).join('\n');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 760" width="1050" role="img" aria-labelledby="t d">
+<title id="t">${esc(title)}</title><desc id="d">The family ${esc(f.family)}: ${total} features in ${f.groups.length} groups, mapped against ${f.clones.length} clones (${f.clones.map(esc).join(', ')}). ${f.cells.length} cells have a verdict both readers agreed on: ${k.has} has, ${k.partial} partial, ${k.none} none. ${esc(caption)}</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g ${FONT}>
+<text x="30" y="30" font-size="18" font-weight="700">${esc(title)}</text>
+${legend}
+<text x="30" y="${70 + 3 * 20 + 4}" font-size="12" fill="#57606a">no agreed verdict: ${k.unresolved} of ${k.has + k.partial + k.none + k.unresolved}</text>
+${edges}
+${centreLines}
+${spokes}
+${groupNodes}
+${featNodes}
+<circle cx="${cx}" cy="${cy}" r="30" fill="#ddf4ff" stroke="#57606a" stroke-width="1.4"/>
+<text x="${cx}" y="${cy - 2}" font-size="10" font-weight="700" text-anchor="middle">${esc(f.family.split('-').slice(0, 2).join('-'))}</text>
+<text x="${cx}" y="${cy + 10}" font-size="10" font-weight="700" text-anchor="middle">${esc(f.family.split('-').slice(2).join('-'))}</text>
+${cloneNodes}
+<text x="525" y="742" font-size="12" text-anchor="middle" fill="#57606a">${esc(caption)}</text>
+</g>
+</svg>
+`;
+}
+
+const assets = { cost: renderCost, accuracy: renderAccuracy, scale: renderScale, family: renderFamily };
 const custom = args.includes('--in') || args.includes('--out');
 const names = args.includes('--asset') ? [opt('--asset')] : custom ? ['cost'] : Object.keys(assets);
 let bad = false;

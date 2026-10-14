@@ -1,0 +1,707 @@
+{
+ "family": "code-graph-tools",
+ "source": "families/code-graph-tools/rows.md; fixtures/gold-map/*/features.jsonl (final = both readers agree)",
+ "groups": [
+  {
+   "id": "symbols",
+   "features": [
+    "symbols.extraction",
+    "symbols.multi-language",
+    "symbols.signatures",
+    "symbols.visibility",
+    "symbols.test-detection"
+   ]
+  },
+  {
+   "id": "graph",
+   "features": [
+    "graph.call-graph",
+    "graph.import-graph",
+    "graph.inheritance",
+    "graph.call-resolution",
+    "graph.communities",
+    "graph.type-info"
+   ]
+  },
+  {
+   "id": "search",
+   "features": [
+    "search.fulltext",
+    "search.embeddings",
+    "search.fuzzy-name",
+    "search.pattern"
+   ]
+  },
+  {
+   "id": "serving",
+   "features": [
+    "serving.mcp-server",
+    "serving.cli",
+    "serving.http-api",
+    "serving.editor-integration"
+   ]
+  },
+  {
+   "id": "registry",
+   "features": [
+    "registry.multi-repo"
+   ]
+  },
+  {
+   "id": "update",
+   "features": [
+    "update.incremental",
+    "update.watch",
+    "update.ignore-rules"
+   ]
+  },
+  {
+   "id": "export",
+   "features": [
+    "export.formats",
+    "export.visualisation"
+   ]
+  },
+  {
+   "id": "analysis",
+   "features": [
+    "analysis.impact",
+    "analysis.diff-review",
+    "analysis.dead-code"
+   ]
+  },
+  {
+   "id": "quality",
+   "features": [
+    "quality.complexity"
+   ]
+  },
+  {
+   "id": "ux",
+   "features": [
+    "ux.context-bundle"
+   ]
+  }
+ ],
+ "clones": [
+  "CodeGraph",
+  "codanna",
+  "code-review-graph",
+  "graphmind",
+  "ripwire",
+  "srclight"
+ ],
+ "cells": [
+  {
+   "feature": "symbols.extraction",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.extraction",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.extraction",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.extraction",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.multi-language",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.multi-language",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.multi-language",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.multi-language",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.multi-language",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.signatures",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.signatures",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.signatures",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.signatures",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.signatures",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.visibility",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.visibility",
+   "clone": "code-review-graph",
+   "verdict": "partial"
+  },
+  {
+   "feature": "symbols.visibility",
+   "clone": "graphmind",
+   "verdict": "none"
+  },
+  {
+   "feature": "symbols.visibility",
+   "clone": "ripwire",
+   "verdict": "partial"
+  },
+  {
+   "feature": "symbols.visibility",
+   "clone": "srclight",
+   "verdict": "none"
+  },
+  {
+   "feature": "symbols.test-detection",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "symbols.test-detection",
+   "clone": "codanna",
+   "verdict": "none"
+  },
+  {
+   "feature": "symbols.test-detection",
+   "clone": "graphmind",
+   "verdict": "none"
+  },
+  {
+   "feature": "symbols.test-detection",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.call-graph",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.call-graph",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.call-graph",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.call-graph",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.import-graph",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.import-graph",
+   "clone": "srclight",
+   "verdict": "partial"
+  },
+  {
+   "feature": "graph.inheritance",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.inheritance",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.inheritance",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.inheritance",
+   "clone": "graphmind",
+   "verdict": "none"
+  },
+  {
+   "feature": "graph.inheritance",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.inheritance",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.call-resolution",
+   "clone": "CodeGraph",
+   "verdict": "partial"
+  },
+  {
+   "feature": "graph.call-resolution",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.call-resolution",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.call-resolution",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.call-resolution",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.communities",
+   "clone": "CodeGraph",
+   "verdict": "partial"
+  },
+  {
+   "feature": "graph.communities",
+   "clone": "codanna",
+   "verdict": "none"
+  },
+  {
+   "feature": "graph.communities",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.communities",
+   "clone": "graphmind",
+   "verdict": "none"
+  },
+  {
+   "feature": "graph.communities",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.communities",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.type-info",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.type-info",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.type-info",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "graph.type-info",
+   "clone": "graphmind",
+   "verdict": "none"
+  },
+  {
+   "feature": "graph.type-info",
+   "clone": "srclight",
+   "verdict": "partial"
+  },
+  {
+   "feature": "search.fulltext",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.fulltext",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.fulltext",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.fulltext",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.fulltext",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.embeddings",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.embeddings",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.embeddings",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.embeddings",
+   "clone": "ripwire",
+   "verdict": "none"
+  },
+  {
+   "feature": "search.embeddings",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.fuzzy-name",
+   "clone": "CodeGraph",
+   "verdict": "partial"
+  },
+  {
+   "feature": "search.fuzzy-name",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.fuzzy-name",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.fuzzy-name",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.fuzzy-name",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "search.pattern",
+   "clone": "codanna",
+   "verdict": "none"
+  },
+  {
+   "feature": "search.pattern",
+   "clone": "code-review-graph",
+   "verdict": "none"
+  },
+  {
+   "feature": "search.pattern",
+   "clone": "graphmind",
+   "verdict": "none"
+  },
+  {
+   "feature": "search.pattern",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.mcp-server",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.mcp-server",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.cli",
+   "clone": "CodeGraph",
+   "verdict": "partial"
+  },
+  {
+   "feature": "serving.cli",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.cli",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.cli",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.http-api",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.http-api",
+   "clone": "graphmind",
+   "verdict": "none"
+  },
+  {
+   "feature": "serving.http-api",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.editor-integration",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.editor-integration",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "serving.editor-integration",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "registry.multi-repo",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "registry.multi-repo",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.incremental",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.incremental",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.incremental",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.watch",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.ignore-rules",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.ignore-rules",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.ignore-rules",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.ignore-rules",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "update.ignore-rules",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "export.formats",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "export.formats",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "export.formats",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "export.formats",
+   "clone": "srclight",
+   "verdict": "partial"
+  },
+  {
+   "feature": "export.visualisation",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "export.visualisation",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "export.visualisation",
+   "clone": "srclight",
+   "verdict": "none"
+  },
+  {
+   "feature": "analysis.impact",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.impact",
+   "clone": "codanna",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.impact",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.impact",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.impact",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.impact",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.diff-review",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.diff-review",
+   "clone": "codanna",
+   "verdict": "none"
+  },
+  {
+   "feature": "analysis.diff-review",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.diff-review",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.dead-code",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "analysis.dead-code",
+   "clone": "codanna",
+   "verdict": "none"
+  },
+  {
+   "feature": "analysis.dead-code",
+   "clone": "graphmind",
+   "verdict": "has"
+  },
+  {
+   "feature": "quality.complexity",
+   "clone": "codanna",
+   "verdict": "none"
+  },
+  {
+   "feature": "quality.complexity",
+   "clone": "graphmind",
+   "verdict": "none"
+  },
+  {
+   "feature": "quality.complexity",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "quality.complexity",
+   "clone": "srclight",
+   "verdict": "has"
+  },
+  {
+   "feature": "ux.context-bundle",
+   "clone": "CodeGraph",
+   "verdict": "has"
+  },
+  {
+   "feature": "ux.context-bundle",
+   "clone": "code-review-graph",
+   "verdict": "has"
+  },
+  {
+   "feature": "ux.context-bundle",
+   "clone": "ripwire",
+   "verdict": "has"
+  },
+  {
+   "feature": "ux.context-bundle",
+   "clone": "srclight",
+   "verdict": "none"
+  }
+ ],
+ "counts": {
+  "has": 93,
+  "partial": 9,
+  "none": 19,
+  "unresolved": 59
+ }
+}
