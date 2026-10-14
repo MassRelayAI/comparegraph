@@ -77,6 +77,45 @@ jobs:
           files: dist/*
           generate_release_notes: true
 
+  publish-npm:
+    # Set the repository variable NPM_PUBLISH=true once trusted publishing is configured on npmjs.com (docs/dev/release.md).
+    if: vars.NPM_PUBLISH == 'true'
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing authenticates this workflow through GitHub OIDC
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+      - name: npm with trusted publishing (needs 11.5.1 or later)
+        run: npm install -g npm@latest
+      - name: npm/package.json version must equal the tag (bump it in the tagged commit; exit 4)
+        run: |
+          v=$(jq -r .version npm/package.json)
+          [ "$v" = "${GITHUB_REF_NAME#v}" ] || { echo "npm/package.json $v != tag ${GITHUB_REF_NAME#v}"; exit 4; }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: bins
+          pattern: bin-*
+          merge-multiple: true
+      - name: The binaries are the released ones (same artifacts, checksums verified)
+        working-directory: bins
+        run: |
+          cat comparegraph-*.sha256 > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Build the six packages
+        run: node npm/build.mjs "${GITHUB_REF_NAME#v}" --bins bins --out dist-npm
+      - name: Publish the platform packages, then the wrapper
+        run: |
+          for dir in dist-npm/comparegraph-*; do
+            (cd "$dir" && npm publish --access public --provenance)
+          done
+          (cd dist-npm/comparegraph && npm publish --access public --provenance)
+
   publish-registry:
     needs: release
     runs-on: ubuntu-latest
