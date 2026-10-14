@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- `crossbeam-epoch` 0.9.20 in `Cargo.lock` (RUSTSEC-2026-0204; the only lock change), so `cargo-deny` runs with no advisory ignored but the unmaintained Perl grammar.
 - cargo-deny in CI (`deny.toml`): licence allowlist, advisories, bans and sources, run as the `deny` job on every push and pull request.
 - Build provenance attestations on the release binaries and `SHA256SUMS` (`actions/attest-build-provenance`); verify with `gh attestation verify`.
 - `dependabot-automerge.yml`: a Dependabot patch or minor bump merges itself once CI is green on it; majors wait for the maintainer.

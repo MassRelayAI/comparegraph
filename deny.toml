@@ -17,7 +17,6 @@ yanked = "warn"
 # version on purpose; never run `cargo update` blindly. A yanked crate only warns.
 ignore = [
   { id = "RUSTSEC-2026-0203", reason = "tree-sitter-perl-next is unmaintained, but it is the only Perl grammar that resolves here; revisit when a maintained fork (ts-parser-perl) can replace it" },
-  { id = "RUSTSEC-2026-0204", reason = "crossbeam-epoch 0.9.18 comes in through ignore -> crossbeam-deque; the flaw is in the Display impl of Atomic/Shared, which this tree never formats. Remove this entry when Cargo.lock moves to crossbeam-epoch >= 0.9.20" },
 ]
 
 [bans]
