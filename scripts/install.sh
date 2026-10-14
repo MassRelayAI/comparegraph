@@ -52,6 +52,6 @@ main() {
   cp "$tmp/$asset" "$dir/comparegraph.tmp" && chmod 755 "$dir/comparegraph.tmp" && mv "$dir/comparegraph.tmp" "$dir/comparegraph"
   echo "comparegraph: installed $dir/comparegraph ($("$dir/comparegraph" --version 2>/dev/null || echo "version unknown"))"
   case ":$PATH:" in *":$dir:"*) ;; *) echo "comparegraph: add $dir to your PATH" ;; esac
-  echo "comparegraph: next, register it with your agent: comparegraph setup --client claude --apply"
+  echo "comparegraph: next, wire your agents: comparegraph setup --apply   (then: comparegraph doctor)"
 }
 main "$@"

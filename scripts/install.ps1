@@ -33,7 +33,7 @@ try {
     [Environment]::SetEnvironmentVariable('Path', "$userPath;$dir", 'User')
     Write-Host "comparegraph: added $dir to your user PATH; open a new terminal"
   }
-  Write-Host "comparegraph: next, register it with your agent: comparegraph setup --client claude --apply"
+  Write-Host "comparegraph: next, wire your agents: comparegraph setup --apply   (then: comparegraph doctor)"
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }

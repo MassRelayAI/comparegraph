@@ -39,7 +39,7 @@ test('a matching checksum installs the binary and prints its version', { skip },
     assert.ok(existsSync(exe));
     assert.ok(statSync(exe).mode & 0o100, 'executable');
     assert.match(r.stdout, /installed .*comparegraph \(comparegraph 0\.0\.0-test\)/);
-    assert.match(r.stdout, /comparegraph setup --client claude --apply/);
+    assert.match(r.stdout, /comparegraph setup --apply {3}\(then: comparegraph doctor\)/);
   } finally { rmSync(a.dir, { recursive: true, force: true }); }
 });
 
