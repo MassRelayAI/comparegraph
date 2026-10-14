@@ -1,0 +1,30 @@
+# cargo-deny policy: licences, advisories, bans and sources for the dependency tree (CI job `deny`).
+[graph]
+all-features = true
+
+[licenses]
+confidence-threshold = 0.8
+allow = [
+  "Apache-2.0", # the project's own licence; most of the tree is dual MIT OR Apache-2.0
+  "MIT",        # clap, serde, rusqlite and the tree-sitter grammars
+  "Unicode-3.0", # unicode-ident (MIT OR Apache-2.0 AND Unicode-3.0): the Unicode data files
+]
+
+[advisories]
+version = 2
+yanked = "warn"
+# The Perl grammar's newest release on crates.io is yanked. Cargo.lock pins the working
+# version on purpose; never run `cargo update` blindly. A yanked crate only warns.
+ignore = [
+  { id = "RUSTSEC-2026-0203", reason = "tree-sitter-perl-next is unmaintained, but it is the only Perl grammar that resolves here; revisit when a maintained fork (ts-parser-perl) can replace it" },
+  { id = "RUSTSEC-2026-0204", reason = "crossbeam-epoch 0.9.18 comes in through ignore -> crossbeam-deque; the flaw is in the Display impl of Atomic/Shared, which this tree never formats. Remove this entry when Cargo.lock moves to crossbeam-epoch >= 0.9.20" },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
