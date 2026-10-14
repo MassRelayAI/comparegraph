@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- `docs/assets/accuracy.svg` and `scale.svg` (gold precision/recall per engine; files → nodes, edges, seconds), rendered from committed JSON by `scripts/readme-assets.mjs`.
 - `scripts/answer-size.sh` and `docs/reports/2026-10-14-answer-size.md`: the size of what an agent reads (map answers for 30 features on six study copies) against the source it replaces; `docs/assets/cost.svg` rendered from `docs/assets/cost.json` by `scripts/readme-assets.mjs`, checked by a test.
 - npm packaging: `@massrelay-ai/comparegraph` wraps the release binaries (five platform packages); published by `release.yml` once `NPM_PUBLISH` is set; `mcpName` for the MCP Registry.
 - `setup`/`doctor` state `plugin`: with the Claude Code plugin enabled, `--client all` leaves Claude Code's server and hook to the plugin.
@@ -18,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `hooks/hooks.json`: the plugin ships the same session-start hook.
 
 ### Changed
+- README front: centred header with platform and agent badges, Get started in four numbered steps with the other routes folded, Install merged into it; the cost illustration opens Why.
 - README: Get started (three commands) and the cost illustration before Why; alternative install routes folded; the workflow diagram moved to How it works.
 - README Install: A (recommended) / B / C per step; step 2 is `comparegraph setup --apply` for every agent found, the plugin, or the agent's own `mcp add` line.
 - The install scripts hint `setup --apply`.

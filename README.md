@@ -1,41 +1,56 @@
+<div align="center">
+
 # CompareGraph
 
-**Many cloned repositories, one taxonomy, evidence on every cell.**
+**Already installed?** Run `comparegraph doctor`.
+
+### Compare many repositories with Claude Code, Codex, Cursor, Gemini CLI, Windsurf, OpenCode and six more agents
+
+**One graph over many clones · a verdict with a citation on every cell · 29 languages · 100% local, no model calls**
+
+**One Rust binary**
 
 [![CI](https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/massrelay-ai/comparegraph?display_name=tag)](https://github.com/massrelay-ai/comparegraph/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Checksummed releases](https://img.shields.io/badge/releases-SHA256SUMS-brightgreen.svg)](#get-started)
 ![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
 ![MCP tools: 18](https://img.shields.io/badge/MCP%20tools-18-green.svg)
 ![Languages: 29](https://img.shields.io/badge/languages-29-blue.svg)
 ![Agents: 12](https://img.shields.io/badge/agents-12-purple.svg)
 ![100% local, no model calls](https://img.shields.io/badge/100%25-local%2C%20no%20model%20calls-brightgreen.svg)
 
-<!-- sources: Cargo.toml (licence, rust-version); docs/catalog.json (18 tools); walker.rs language_for (29 languages); application/setup.rs (12 clients); .github/workflows/ci.yml -->
+[![Linux x64](https://img.shields.io/badge/Linux_x64-supported-blue.svg)](#get-started)
+[![Linux arm64](https://img.shields.io/badge/Linux_arm64-supported-blue.svg)](#get-started)
+[![macOS arm64](https://img.shields.io/badge/macOS_arm64-supported-blue.svg)](#get-started)
+[![macOS x64](https://img.shields.io/badge/macOS_x64-supported-blue.svg)](#get-started)
+[![Windows x64](https://img.shields.io/badge/Windows_x64-supported-blue.svg)](#get-started)
+
+[![Claude Code](https://img.shields.io/badge/Claude_Code-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Codex](https://img.shields.io/badge/Codex-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Cursor](https://img.shields.io/badge/Cursor-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Gemini CLI](https://img.shields.io/badge/Gemini_CLI-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![OpenCode](https://img.shields.io/badge/OpenCode-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Hermes](https://img.shields.io/badge/Hermes-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Windsurf](https://img.shields.io/badge/Windsurf-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Antigravity](https://img.shields.io/badge/Antigravity-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Kiro](https://img.shields.io/badge/Kiro-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![GitHub Copilot](https://img.shields.io/badge/GitHub_Copilot-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-supported-blueviolet.svg)](#agents-platforms-uninstall)
+[![Qwen Code](https://img.shields.io/badge/Qwen_Code-supported-blueviolet.svg)](#agents-platforms-uninstall)
+
+<!-- sources: Cargo.toml (licence, rust-version); docs/catalog.json (18 tools); walker.rs language_for (29 languages); application/setup.rs (12 clients, the Agents table order); .github/workflows/ci.yml; release.yml (five platform builds, SHA256SUMS) -->
+
+</div>
 
 CompareGraph parses many cloned repositories into one SQLite graph. It scores each clone against a taxonomy (a "family"
 of features) and records, per clone and feature, a verdict with a citation to a file and line range. It is one Rust
 binary with a CLI and an MCP server. It reads clones and never runs them. It never calls a model.
 
-![Six projects hold 106.1 MB of source (about 26.5 M tokens, an estimate); the ranked candidates for 30 features on all six are 336 KB (about 84 k tokens) and the matrix is 6 KB; candidates are places to read, not verdicts.](docs/assets/cost.svg)
-
-Measured on six study copies and 30 features, binary 0.1.1: numbers in [`docs/assets/cost.json`](docs/assets/cost.json), method and caveats in the [answer-size report](docs/reports/2026-10-14-answer-size.md).
-
-## Get started
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh   # the binary, checksum-checked (Windows: see Install)
-comparegraph setup --apply        # every agent it finds: MCP entry, rules block, Claude Code hook
-comparegraph add ../some-clone --name some && comparegraph build some   # a clone in, one graph out
-```
-
-Then `family add`, `map`, `claim` and `matrix`: the [Quick start](#quick-start) walks the shipped sample through all of them.
-
 ## Contents
 
 - [Get started](#get-started)
 - [Why CompareGraph](#why-comparegraph)
-- [Install](#install)
 - [Quick start](#quick-start)
 - [How good is it](#how-good-is-it)
 - [Languages](#languages)
@@ -55,7 +70,101 @@ Then `family add`, `map`, `claim` and `matrix`: the [Quick start](#quick-start) 
 - [Documentation](#documentation)
 - [Contributing, licence, third-party code](#contributing-licence-third-party-code)
 
+## Get started
+
+There is no `pip` or `npm` step: the binary has no runtime.
+
+### 1. Install the binary
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
+
+# Windows x64 (PowerShell)
+irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex
+```
+
+<sub>Checked against the release's `SHA256SUMS` (linux-x64, linux-arm64, darwin-arm64, darwin-x64, win32-x64), then written to `~/.local/bin` (Windows: `%LOCALAPPDATA%\Programs\comparegraph`, added to your user `PATH`; open a new terminal there). `COMPAREGRAPH_VERSION=v0.1.1` pins a release; `COMPAREGRAPH_INSTALL_DIR` moves the binary.</sub>
+
+<details>
+<summary><b>Other routes: Homebrew, by hand, from source</b></summary>
+
+**Homebrew**, macOS and Linux: `brew install massrelay-ai/comparegraph/comparegraph`.
+
+**By hand:** `comparegraph-<platform>` and `SHA256SUMS` from the
+[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest). From source, anywhere Rust 1.85 or newer
+runs: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph` (`--locked` matters: the
+Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
+
+</details>
+
+### 2. Wire up your agents
+
+```bash
+comparegraph setup --apply      # omit --apply for the plan; --scope project for an entry you commit
+comparegraph doctor             # each client's state: aligned, stale, conflict, missing, plugin
+```
+
+<sub>Registers the MCP server with every agent it finds on the machine (twelve: Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf, Antigravity, Kiro, Copilot, Copilot CLI, Qwen Code), writes a short rules block into the workspace's instruction file, and for Claude Code a session-start hook. It only wires agents; it indexes nothing.</sub>
+
+<details>
+<summary><b>Claude Code as a plugin, or your agent's own command</b></summary>
+
+**Claude Code as a plugin:** the seven skills, the server and the hook in one install (Claude Code 2.1.275 or newer;
+`claude plugin install …` does the same from a shell):
+
+```text
+/plugin install comparegraph --marketplace massrelay-ai/comparegraph
+```
+
+With the plugin enabled, `setup --apply` leaves Claude Code's server and hook to the plugin (their rows read `plugin`)
+and still writes the rules block.
+
+**Your agent's own command**, run in the workspace; each writes the user-scope entry `setup` would (Claude Code's
+default scope, `local`, is one `doctor` does not read), so `doctor` reads it as aligned:
+
+| Agent | Command |
+|---|---|
+| Claude Code | `claude mcp add --scope user comparegraph -- comparegraph --root "$PWD" mcp` |
+| Codex | `codex mcp add comparegraph -- comparegraph --root "$PWD" mcp` |
+| Gemini CLI | `gemini mcp add -s user comparegraph comparegraph -- --root "$PWD" mcp` |
+
+The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`;
+the [table](#agents-platforms-uninstall) has every client's file.
+
+</details>
+
+### 3. Add and build clones
+
+```bash
+comparegraph add ../some-clone --name some
+comparegraph build some
+```
+
+<sub>A clone is read, never run. One store per workspace, under `.comparegraph/`. Rebuilds are incremental and hash-equal to `build --full`.</sub>
+
+### 4. Compare
+
+```bash
+comparegraph family add families/example-code-graph-tools   # the taxonomy
+comparegraph map some example-code-graph-tools              # ranked candidates per feature, writes nothing
+comparegraph claim some symbols.extraction has --author me --at <path>:<start>-<end>
+comparegraph matrix example-code-graph-tools                # features x clones, prevalence, gaps
+```
+
+<sub>The family pack ships in this repository, not in the binary, so run these inside a clone of it. The [Quick start](#quick-start) walks the shipped sample through all of these with real output.</sub>
+
+### Uninstall
+
+`comparegraph setup` has no uninstall verb: delete what it wrote, namely each client's entry (the "Remove on uninstall" column of the
+[table](#agents-platforms-uninstall)), the rules block between `<!-- comparegraph -->` and `<!-- /comparegraph -->`, and the Claude Code
+`SessionStart` hook whose command is `comparegraph doctor --brief`.
+
 ## Why CompareGraph
+
+![Six projects hold 106.1 MB of source (about 26.5 M tokens, an estimate); the ranked candidates for 30 features on all six are 336 KB (about 84 k tokens) and the matrix is 6 KB; candidates are places to read, not verdicts.](docs/assets/cost.svg)
+
+Measured on six study copies and 30 features, binary 0.1.1: numbers in [`docs/assets/cost.json`](docs/assets/cost.json), method and caveats in the [answer-size report](docs/reports/2026-10-14-answer-size.md).
 
 You have many repositories and one question: who has what? Reading each by hand does not scale, a summary without a line
 number cannot be checked, and notes go stale when the code moves. Five properties, each one you can test:
@@ -80,78 +189,12 @@ number cannot be checked, and notes go stale when the code moves. Five propertie
 | Show what changed after the code moved | no | `check` marks a moved citation stale; the matrix shows `unknown*` |
 | Keep a trail of who said what | no | claims and decisions are append-only |
 
+![Call edges, precision and recall per engine on a 750-site hand-labelled gold: CompareGraph 0.995 / 0.834 pooled, code-review-graph via adapter 0.956 / 0.736, codegraph 0.708 / 0.506.](docs/assets/accuracy.svg)
+
+The numbers are in [`docs/assets/accuracy.json`](docs/assets/accuracy.json); the caveats are in [How good is it](#call-edges-against-a-hand-labelled-gold-standard) and the [parity report](docs/reports/2026-10-12-engine-parity.md).
+
 For: teams comparing their product with the field, due diligence on a set of projects, a newcomer mapping a field
 (`family propose` drafts the taxonomy), and coding agents that need compact facts over MCP.
-
-## Install
-
-Two steps: the binary, then your agent. There is no `pip` or `npm` step: the binary has no runtime.
-
-**1. The binary**
-
-**A (recommended).** One line, into `~/.local/bin`, checked against the release's `SHA256SUMS` (linux-x64, linux-arm64,
-darwin-arm64, darwin-x64):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
-```
-
-Windows x64, in PowerShell (into `%LOCALAPPDATA%\Programs\comparegraph`, added to your user `PATH`):
-
-```powershell
-irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex
-```
-
-`COMPAREGRAPH_VERSION=v0.1.1` pins a release; `COMPAREGRAPH_INSTALL_DIR` moves the binary.
-
-**2. Your agent**
-
-**A (recommended).** One line registers the MCP server with every agent it finds on the machine (twelve: Claude Code,
-Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf, Antigravity, Kiro, Copilot, Copilot CLI, Qwen Code), writes a short
-rules block into the workspace's instruction file, and for Claude Code a session-start hook:
-
-```bash
-comparegraph setup --apply      # omit --apply for the plan; --scope project for an entry you commit
-comparegraph doctor             # each client's state: aligned, stale, conflict, missing, plugin
-```
-
-<details>
-<summary>Other routes: Homebrew, by hand, from source, the Claude Code plugin, your agent's own command</summary>
-
-**The binary**
-
-**B.** Homebrew, macOS and Linux: `brew install massrelay-ai/comparegraph/comparegraph`.
-
-**C.** By hand: `comparegraph-<platform>` and `SHA256SUMS` from the
-[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest). From source, anywhere Rust 1.85 or newer
-runs: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph` (`--locked` matters: the
-Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
-
-**Your agent**
-
-**B.** Claude Code as a plugin: the seven skills, the server and the hook in one install (Claude Code 2.1.275 or newer;
-`claude plugin install …` does the same from a shell):
-
-```text
-/plugin install comparegraph --marketplace massrelay-ai/comparegraph
-```
-
-With the plugin enabled, `setup --apply` leaves Claude Code's server and hook to the plugin (their rows read `plugin`)
-and still writes the rules block.
-
-**C.** Your agent's own command, run in the workspace; each writes the user-scope entry `setup` would (Claude Code's
-default scope, `local`, is one `doctor` does not read), so `doctor` reads it as aligned:
-
-| Agent | Command |
-|---|---|
-| Claude Code | `claude mcp add --scope user comparegraph -- comparegraph --root "$PWD" mcp` |
-| Codex | `codex mcp add comparegraph -- comparegraph --root "$PWD" mcp` |
-| Gemini CLI | `gemini mcp add -s user comparegraph comparegraph -- --root "$PWD" mcp` |
-
-</details>
-
-The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`;
-the [table](#agents-platforms-uninstall) has every client's file.
 
 ## Quick start
 
@@ -228,6 +271,10 @@ is an anonymous arrow function with no call edges; a lookup through the nearest 
 `fixtures/gold/FLOORS.json` are asserted by `crates/comparegraph/tests/gold.rs` and are only ever raised.
 
 ### Build and query time
+
+![Scale: files parsed against nodes, edges and build seconds on four trees, and query times on the 1.29M-edge openclaw graph.](docs/assets/scale.svg)
+
+The numbers are in [`docs/assets/scale.json`](docs/assets/scale.json), from the [proof report](docs/reports/2026-10-13-proof-on-a-real-product.md) (last section) and the [Plan 6 report](docs/reports/2026-10-13-plan-6-recall-and-scale.md); the table below has the full builds and the caveats.
 
 | Measure | Result | Source section |
 |---|---|---|
@@ -525,7 +572,7 @@ A family is a directory with a `rows.md`: front matter with `family:` and `descr
 
 The method is seven plain-markdown skills in [`skills/`](skills) that any agent can read. Each gives when to use the verb, the
 exact commands, what the engine refuses, and how to check. In Claude Code the skills and the MCP server arrive together as
-one plugin ([Install](#install)); other agents read the `skills/` directory from the clone.
+one plugin ([Get started](#get-started)); other agents read the `skills/` directory from the clone.
 
 | Skill | One line |
 |---|---|
