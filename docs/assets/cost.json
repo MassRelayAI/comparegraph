@@ -1,0 +1,47 @@
+{
+  "measured": "2026-10-14",
+  "binary": "comparegraph 0.1.1",
+  "family": "code-graph-tools",
+  "features": 30,
+  "method": "source bytes: files with a source extension outside .git, node_modules, vendor, third_party, target; answer bytes: the JSON envelope of each verb; tokens are bytes / 4, an estimate",
+  "clones": [
+    {
+      "name": "graphmind",
+      "source_bytes": 1554166,
+      "map_bytes": 57558,
+      "map_seconds": 0.76
+    },
+    {
+      "name": "srclight",
+      "source_bytes": 1379465,
+      "map_bytes": 47671,
+      "map_seconds": 0.64
+    },
+    {
+      "name": "code-review-graph",
+      "source_bytes": 6465145,
+      "map_bytes": 55441,
+      "map_seconds": 2.08
+    },
+    {
+      "name": "codanna",
+      "source_bytes": 7764215,
+      "map_bytes": 57483,
+      "map_seconds": 3.09
+    },
+    {
+      "name": "CodeGraph",
+      "source_bytes": 71696190,
+      "map_bytes": 64496,
+      "map_seconds": 3.73
+    },
+    {
+      "name": "ripwire",
+      "source_bytes": 17198784,
+      "map_bytes": 53106,
+      "map_seconds": 3.9
+    }
+  ],
+  "matrix_bytes": 5703,
+  "relate_bytes": 5789
+}
