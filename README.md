@@ -17,10 +17,23 @@ CompareGraph parses many cloned repositories into one SQLite graph. It scores ea
 of features) and records, per clone and feature, a verdict with a citation to a file and line range. It is one Rust
 binary with a CLI and an MCP server. It reads clones and never runs them. It never calls a model.
 
-![Workflow: clone repos, one graph, taxonomy, verdicts with citations, decisions, matrix](docs/assets/workflow.svg)
+![Six projects hold 106.1 MB of source (about 26.5 M tokens, an estimate); the ranked candidates for 30 features on all six are 336 KB (about 84 k tokens) and the matrix is 6 KB; candidates are places to read, not verdicts.](docs/assets/cost.svg)
+
+Measured on six study copies and 30 features, binary 0.1.1: numbers in [`docs/assets/cost.json`](docs/assets/cost.json), method and caveats in the [answer-size report](docs/reports/2026-10-14-answer-size.md).
+
+## Get started
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh   # the binary, checksum-checked (Windows: see Install)
+comparegraph setup --apply        # every agent it finds: MCP entry, rules block, Claude Code hook
+comparegraph add ../some-clone --name some && comparegraph build some   # a clone in, one graph out
+```
+
+Then `family add`, `map`, `claim` and `matrix`: the [Quick start](#quick-start) walks the shipped sample through all of them.
 
 ## Contents
 
+- [Get started](#get-started)
 - [Why CompareGraph](#why-comparegraph)
 - [Install](#install)
 - [Quick start](#quick-start)
@@ -91,13 +104,6 @@ irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/ins
 
 `COMPAREGRAPH_VERSION=v0.1.1` pins a release; `COMPAREGRAPH_INSTALL_DIR` moves the binary.
 
-**B.** Homebrew, macOS and Linux: `brew install massrelay-ai/comparegraph/comparegraph`.
-
-**C.** By hand: `comparegraph-<platform>` and `SHA256SUMS` from the
-[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest). From source, anywhere Rust 1.85 or newer
-runs: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph` (`--locked` matters: the
-Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
-
 **2. Your agent**
 
 **A (recommended).** One line registers the MCP server with every agent it finds on the machine (twelve: Claude Code,
@@ -108,6 +114,20 @@ rules block into the workspace's instruction file, and for Claude Code a session
 comparegraph setup --apply      # omit --apply for the plan; --scope project for an entry you commit
 comparegraph doctor             # each client's state: aligned, stale, conflict, missing, plugin
 ```
+
+<details>
+<summary>Other routes: Homebrew, by hand, from source, the Claude Code plugin, your agent's own command</summary>
+
+**The binary**
+
+**B.** Homebrew, macOS and Linux: `brew install massrelay-ai/comparegraph/comparegraph`.
+
+**C.** By hand: `comparegraph-<platform>` and `SHA256SUMS` from the
+[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest). From source, anywhere Rust 1.85 or newer
+runs: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph` (`--locked` matters: the
+Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
+
+**Your agent**
 
 **B.** Claude Code as a plugin: the seven skills, the server and the hook in one install (Claude Code 2.1.275 or newer;
 `claude plugin install …` does the same from a shell):
@@ -127,6 +147,8 @@ default scope, `local`, is one `doctor` does not read), so `doctor` reads it as 
 | Claude Code | `claude mcp add --scope user comparegraph -- comparegraph --root "$PWD" mcp` |
 | Codex | `codex mcp add comparegraph -- comparegraph --root "$PWD" mcp` |
 | Gemini CLI | `gemini mcp add -s user comparegraph comparegraph -- --root "$PWD" mcp` |
+
+</details>
 
 The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`;
 the [table](#agents-platforms-uninstall) has every client's file.
@@ -277,6 +299,13 @@ still score above 0.5 ([`docs/decisions.md`](docs/decisions.md), "Plan 7 IMP"). 
 [`docs/reports/2026-10-14-mapping-gold-first-measurement.md`](docs/reports/2026-10-14-mapping-gold-first-measurement.md) and
 the parity report's "Feature-mapping baselines". Reproduce: `scripts/map-score.sh`, `scripts/map-baselines.sh`.
 
+### Answer size
+
+For 30 features on six study copies, the `map` answers total 336 KB (about 84 k tokens, an estimate) against 106.1 MB of source
+(about 26.5 M tokens): 316 to 1. They are ranked places to read, not verdicts (held-out recall@5 0.149, above), so the reader
+still opens files. Method, per-clone numbers and the caveat: [`docs/reports/2026-10-14-answer-size.md`](docs/reports/2026-10-14-answer-size.md).
+Reproduce: `scripts/answer-size.sh`, then `node scripts/readme-assets.mjs`.
+
 ## Languages
 
 29 languages are parsed. Five are resolved deeply. Four have a measured gold standard. Read the tiers, not the headline.
@@ -296,6 +325,8 @@ method and its impl share one qualified name, and Go calls on a method result, r
 <!-- crates/comparegraph/src/providers/reference/walker.rs language_for (29 languages, 32 ids); resolve.rs (ts/js, python, rust, go contexts), module_ctx.rs and decl_types (java); inherit.rs -->
 
 ## How it works
+
+![Workflow: clone repos, one graph, taxonomy, verdicts with citations, decisions, matrix](docs/assets/workflow.svg)
 
 ```mermaid
 flowchart LR
@@ -683,6 +714,7 @@ of these exist yet, and the maintainer decides the order.
 | [`docs/dev/plugin-protocol.md`](docs/dev/plugin-protocol.md) | The JSON-lines protocol for external engines, limits, conformance, a 25-line example |
 | [`docs/dev/pid-namespaces.md`](docs/dev/pid-namespaces.md) | Why tests run in a PID namespace and how to enable it |
 | [`docs/catalog.json`](docs/catalog.json) | The 18 MCP tools and 9 error codes, generated and CI-checked |
+| [`docs/reports/2026-10-14-answer-size.md`](docs/reports/2026-10-14-answer-size.md) | The size of the `map` answers against the source they replace, and how to reproduce it |
 | [`docs/reports/2026-10-12-engine-parity.md`](docs/reports/2026-10-12-engine-parity.md) | The engine comparison: Jaccards, gold standard, codegraph head-to-head, scale |
 | [`docs/reports/2026-10-13-plan-6-recall-and-scale.md`](docs/reports/2026-10-13-plan-6-recall-and-scale.md) | Plan 6 targets against measured, per lane, with limits |
 | [`docs/reports/2026-10-13-proof-on-a-real-product.md`](docs/reports/2026-10-13-proof-on-a-real-product.md) | The pipeline on a private product monorepo with three comparators, and the mapping outputs read against the source |

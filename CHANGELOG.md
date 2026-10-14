@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- `scripts/answer-size.sh` and `docs/reports/2026-10-14-answer-size.md`: the size of what an agent reads (map answers for 30 features on six study copies) against the source it replaces; `docs/assets/cost.svg` rendered from `docs/assets/cost.json` by `scripts/readme-assets.mjs`, checked by a test.
 - `setup`/`doctor` state `plugin`: with the Claude Code plugin enabled, `--client all` leaves Claude Code's server and hook to the plugin.
 - A bare `comparegraph` command that resolves on `PATH` to the registered binary reads as aligned.
 - `setup` writes a CompareGraph rules block (between `<!-- comparegraph -->` markers) into the workspace's agent instruction file (only once `.comparegraph/` exists; otherwise the row is listed and skipped): `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or `.github/instructions/comparegraph.instructions.md`, one row per file. An older block is refreshed; a hand-edited one is a `conflict` unless `--force`. `--no-rules` skips it.
@@ -16,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `hooks/hooks.json`: the plugin ships the same session-start hook.
 
 ### Changed
+- README: Get started (three commands) and the cost illustration before Why; alternative install routes folded; the workflow diagram moved to How it works.
 - README Install: A (recommended) / B / C per step; step 2 is `comparegraph setup --apply` for every agent found, the plugin, or the agent's own `mcp add` line.
 - The install scripts hint `setup --apply`.
 - `claim --batch` skips a row equal to the live claim (same run, verdict, author, note and locations): it writes nothing, reports `skipped: true` with the existing claim, and the summary gains `skipped`. An interrupted batch can be re-run without doubling its rows. `decide --batch` summaries report `skipped: 0`.
