@@ -188,7 +188,7 @@ work is verified (the command and its expected output). The method is the discip
 | `init [--root-repo <path>]` / `root set <repo>` | creates the workspace; registers or promotes the root | a second root |
 | `map <repo> <family>` | for each feature, the ranked candidate communities and symbols (lexical, then vector); writes NOTHING | no build; no family |
 | `claim <repo> <feature> <verdict> --at path:line [--at …] --note …` | writes a claim with locations; confidence `derived` when every location resolves, else refused | `has`/`partial` with no resolving location; `none` without a named search |
-| `check` | citations, determinism, store schema; non-zero on any red | — |
+| `check` | citations, determinism, store schema, claims citing a run that was never built (`unbuilt_claim_runs`); non-zero on any red | — |
 | `export vault\|json\|csv [--out dir]` | regenerated from the store; the vault: `families/<f>.md` → `repos/<r>.md` → `communities/<r>/<c>.md` → `symbols/<r>/<slug>.md`, frontmatter + wikilinks | 0 claims |
 | `search <query> [--repo] [--family]` | ranked candidates over communities, symbols and claims; labelled `candidate` | no index |
 | `conform <provider>` | §7.1 | — |

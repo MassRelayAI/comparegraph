@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `crossbeam-epoch` 0.9.20 in `Cargo.lock` (RUSTSEC-2026-0204; the only lock change), so `cargo-deny` runs with no advisory ignored but the unmaintained Perl grammar.
 - cargo-deny in CI (`deny.toml`): licence allowlist, advisories, bans and sources, run as the `deny` job on every push and pull request.
 - Build provenance attestations on the release binaries and `SHA256SUMS` (`actions/attest-build-provenance`); verify with `gh attestation verify`.
+- `matrix --relate` (MCP `relate: true`) scores the comparators that have no relatedness band before building the matrix; a clone without a band shows `relatedness: "not run"` and the envelope carries a limitation naming how many.
+- `check` reports `unbuilt_claim_runs` and one problem per repo when claims cite a run that has no row or never finished building.
 - `dependabot-automerge.yml`: a Dependabot patch or minor bump merges itself once CI is green on it; majors wait for the maintainer.
 - `docs/assets/family.svg`: a family, its groups and features, six clones, 121 agreed cells from the mapping gold; `scripts/family-asset.mjs` derives its JSON.
 - `docs/assets/accuracy.svg` and `scale.svg` (gold precision/recall per engine; files → nodes, edges, seconds), rendered from committed JSON by `scripts/readme-assets.mjs`.

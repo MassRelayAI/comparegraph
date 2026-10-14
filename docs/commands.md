@@ -11,7 +11,7 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 |---|---|---|
 | `add <PATH>` | Register a clone. Read, never run. | `--name`, `--as-root` |
 | `build <REPO>` | Parse a clone into the graph (one run). | `--provider` (default `reference`), `--providers a,b` (several engines in turn, with an agreement table), `--max-file-bytes`, `--max-files`, `--full`, `--progress` (stderr lines every 500 files and per pass; also `COMPAREGRAPH_PROGRESS=1`; stdout stays one envelope) |
-| `check` | Verify schema, determinism and citation locations. | |
+| `check` | Verify schema, determinism and citation locations. Also counts `unbuilt_claim_runs`: claims whose cited run has no row or is not a finished build; each affected repo adds a problem line (`<repo>: <n> claims cite run <id> which was never built`) and the verb exits non-zero, like any other problem. | |
 | `repos` | Registered repos with their latest run. | `--limit` (50), `--cursor` |
 | `doctor` | Report the store, every provider and each agent client's registration. | `--bin`, `--brief` (plain text for a session-start hook: nothing without a store, else one or two lines; the one output that is not an envelope) |
 | `conform <PROVIDER>` | Run the golden fixtures against a provider. | `--fixtures` |
@@ -44,7 +44,7 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 | `claims` | Latest claim per clone and feature. | `--repo`, `--family`, `--feature`, `--history` |
 | `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family`, `--batch <jsonl\|->` (rows like `{"repo":"a","disposition":"park","why":"...","by":"me"}`; output as for `claim`) |
 | `decisions` | Latest decision per scope. | `--repo`, `--history` |
-| `matrix <FAMILY>` | Features against every clone: verdicts, prevalence, gaps, differentiators. | |
+| `matrix <FAMILY>` | Features against every clone: verdicts, prevalence, gaps, differentiators. A clone with no stored relatedness band shows `relatedness: "not run"`, and the envelope's `limitations` says how many comparators lack one. | `--relate` (score the comparators with no band first, then build the matrix; this writes relatedness rows) |
 
 ## Exports and agents
 
