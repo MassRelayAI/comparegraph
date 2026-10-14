@@ -119,14 +119,14 @@ comparegraph doctor             # each client's state: aligned, stale, conflict,
 With the plugin enabled, `setup --apply` leaves Claude Code's server and hook to the plugin (their rows read `plugin`)
 and still writes the rules block.
 
-**C.** Your agent's own command, run in the workspace; each writes the entry `setup` would, so `doctor` reads it as
-aligned:
+**C.** Your agent's own command, run in the workspace; each writes the user-scope entry `setup` would (Claude Code's
+default scope, `local`, is one `doctor` does not read), so `doctor` reads it as aligned:
 
 | Agent | Command |
 |---|---|
-| Claude Code | `claude mcp add comparegraph -- comparegraph --root "$PWD" mcp` |
+| Claude Code | `claude mcp add --scope user comparegraph -- comparegraph --root "$PWD" mcp` |
 | Codex | `codex mcp add comparegraph -- comparegraph --root "$PWD" mcp` |
-| Gemini CLI | `gemini mcp add comparegraph comparegraph -- --root "$PWD" mcp` |
+| Gemini CLI | `gemini mcp add -s user comparegraph comparegraph -- --root "$PWD" mcp` |
 
 The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`;
 the [table](#agents-platforms-uninstall) has every client's file.
