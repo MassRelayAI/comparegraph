@@ -441,7 +441,7 @@ fn doctor_brief(root: &std::path::Path, bin: Option<&str>) -> String {
     let Ok(repos) = store.repos() else { return String::new() };
     let ctx = setup::Ctx::from_env(root, bin);
     let found = setup::detected_states(&ctx);
-    let off: Vec<_> = found.iter().filter(|(_, s)| *s != setup::State::Aligned).collect();
+    let off: Vec<_> = found.iter().filter(|(_, s)| !matches!(s, setup::State::Aligned | setup::State::Plugin)).collect();
     let server = if found.is_empty() {
         "no agent client detected".to_string()
     } else if off.is_empty() {

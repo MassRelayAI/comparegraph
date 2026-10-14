@@ -9,6 +9,7 @@ struct Env {
     xdg: tempfile::TempDir,
     proj: tempfile::TempDir,
     ws: tempfile::TempDir,
+    bin_real: String,
 }
 impl Env {
     fn new() -> Env {
@@ -17,6 +18,7 @@ impl Env {
             xdg: tempfile::tempdir().unwrap(),
             proj: tempfile::tempdir().unwrap(),
             ws: tempfile::tempdir().unwrap(),
+            bin_real: String::new(),
         }
     }
     fn run(&self, bin: &str, args: &[&str]) -> Value {
@@ -766,4 +768,96 @@ fn doctor_brief_treats_an_empty_store_file_as_no_store_and_hints_force_for_stale
     assert_eq!(lines.len(), 2, "{out}");
     assert!(lines[0].ends_with("; server: claude aligned, codex conflict"), "{out}");
     assert_eq!(lines[1], "Run `comparegraph setup --apply --force` (state: codex conflict).");
+}
+
+// ---------- the Claude Code plugin ----------
+
+fn enable_plugin(e: &Env) {
+    std::fs::create_dir_all(e.user(".claude")).unwrap();
+    std::fs::write(e.user(".claude/settings.json"), r#"{"enabledPlugins":{"comparegraph@comparegraph":true}}"#).unwrap();
+}
+
+#[test]
+fn with_the_plugin_enabled_all_leaves_claudes_server_and_hook_to_it_but_writes_the_rules() {
+    let e = Env::new();
+    enable_plugin(&e);
+    let before = std::fs::read_to_string(e.user(".claude/settings.json")).unwrap();
+    std::fs::create_dir_all(e.ws.path().join(".comparegraph")).unwrap();
+    let v = e.setup(&["--apply", "--force"]);
+    let c = rowk(&v, "claude", "config");
+    assert_eq!((c["state"].as_str(), c["action"].as_str(), c["written"].as_bool()), (Some("plugin"), Some("skip"), Some(false)), "{v}");
+    assert!(c["note"].as_str().unwrap().contains("comparegraph@comparegraph"));
+    let h = rowk(&v, "claude", "hook");
+    assert_eq!((h["state"].as_str(), h["action"].as_str(), h["written"].as_bool()), (Some("plugin"), Some("skip"), Some(false)), "{v}");
+    assert!(!e.user(".claude.json").exists());
+    assert_eq!(std::fs::read_to_string(e.user(".claude/settings.json")).unwrap(), before);
+    let r = rowk(&v, "claude", "rules");
+    assert_eq!(r["written"], true, "{v}");
+    assert!(e.ws.path().join("CLAUDE.md").exists());
+    // doctor reads the same
+    let d = e.run(BIN, &["doctor"]);
+    assert_eq!(rowk(&d, "claude", "hook")["state"], "plugin");
+    let cu = d["data"]["clients"].as_array().unwrap().iter().find(|r| r["client"] == "claude" && r["kind"] == "config" && r["scope"] == "user").unwrap();
+    assert_eq!(cu["state"], "plugin");
+}
+
+#[test]
+fn naming_claude_writes_even_with_the_plugin_enabled() {
+    let e = Env::new();
+    enable_plugin(&e);
+    let v = e.setup(&["--client", "claude", "--apply"]);
+    assert_eq!(rowk(&v, "claude", "config")["written"], true, "{v}");
+    assert_eq!(read_json(&e.user(".claude.json"))["mcpServers"]["comparegraph"]["command"], BIN);
+    assert_eq!(rowk(&v, "claude", "hook")["written"], true, "{v}");
+}
+
+#[test]
+fn a_disabled_or_absent_plugin_changes_nothing() {
+    let e = Env::new();
+    std::fs::create_dir_all(e.user(".claude")).unwrap();
+    std::fs::write(e.user(".claude/settings.json"), r#"{"enabledPlugins":{"comparegraph@comparegraph":false}}"#).unwrap();
+    let v = e.setup(&["--apply"]);
+    assert_eq!(rowk(&v, "claude", "config")["written"], true, "{v}");
+    assert_eq!(rowk(&v, "claude", "hook")["written"], true, "{v}");
+}
+
+#[test]
+fn doctor_brief_counts_the_plugin_as_aligned() {
+    let e = Env::new();
+    enable_plugin(&e);
+    Command::cargo_bin("comparegraph").unwrap().current_dir(e.proj.path()).arg("--root").arg(e.ws.path()).args(["build", "x"]).assert().code(1);
+    let (out, _) = brief(&e);
+    assert_eq!(out.lines().count(), 1, "{out}");
+    assert!(out.trim_end().ends_with("; server aligned for claude"), "{out}");
+}
+
+// ---------- a bare command that resolves on PATH ----------
+
+fn doctor_with_path(e: &Env, path: &Path) -> Value {
+    let mut c = Command::cargo_bin("comparegraph").unwrap();
+    c.env("HOME", e.home.path()).env("XDG_CONFIG_HOME", e.xdg.path()).env("COMPAREGRAPH_BIN", &e.bin_real).env("PATH", path).current_dir(e.proj.path());
+    let out = c.arg("--root").arg(e.ws.path()).arg("doctor").output().unwrap();
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_bare_command_that_resolves_to_the_registered_binary_is_aligned() {
+    let mut e = Env::new();
+    let real = std::fs::canonicalize(assert_cmd::cargo::cargo_bin("comparegraph")).unwrap();
+    e.bin_real = real.to_string_lossy().into_owned();
+    let bin_dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(&real, bin_dir.path().join("comparegraph")).unwrap();
+    std::fs::create_dir_all(e.user(".gemini")).unwrap();
+    let entry = json!({"mcpServers": {"comparegraph": {"command": "comparegraph", "args": ["--root", e.ws_str(), "mcp"]}}});
+    std::fs::write(e.user(".gemini/settings.json"), entry.to_string()).unwrap();
+    let state = |v: &Value| v["data"]["clients"].as_array().unwrap().iter().find(|r| r["client"] == "gemini" && r["scope"] == "user").unwrap()["state"].clone();
+    assert_eq!(state(&doctor_with_path(&e, bin_dir.path())), "aligned");
+    // a bare name that resolves to another file, or to nothing, stays stale
+    let other = tempfile::tempdir().unwrap();
+    std::fs::write(other.path().join("comparegraph"), "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(other.path().join("comparegraph"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    assert_eq!(state(&doctor_with_path(&e, other.path())), "stale");
+    let empty = tempfile::tempdir().unwrap();
+    assert_eq!(state(&doctor_with_path(&e, empty.path())), "stale");
 }

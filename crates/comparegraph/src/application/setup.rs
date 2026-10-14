@@ -3,6 +3,8 @@
 //! Plan first: a dry run is the default and writes nothing. `--apply` writes additively, with a backup `<file>.bak-<unix-seconds>`
 //! beside any file it changes. JSON configs are parsed and re-serialised (2-space indent, every other key kept, key order kept). TOML and YAML are never parsed-and-rewritten: the entry is appended
 //! (or, for a stale command, one line is replaced) as text, and only when the `comparegraph` entry is absent or ours.
+//! With the Claude Code plugin enabled (`enabledPlugins` in `~/.claude/settings.json`), a `--client all` run leaves Claude Code's
+//! server and hook to the plugin (state `plugin`); naming `--client claude` writes anyway.
 //! A `comparegraph` entry that points elsewhere is a `conflict` and stays untouched unless `--force`.
 //!
 //! Verified config shapes (documentation read 2026-10-13):
@@ -110,6 +112,8 @@ pub struct Ctx {
     /// the running executable sits under a `target/` directory (a build tree)
     pub dev_build: bool,
     pub workspace: String,
+    /// the `PATH` a bare command is resolved against (tests inject one)
+    pub path_env: Option<String>,
 }
 impl Ctx {
     pub fn from_env(root: &Path, bin: Option<&str>) -> Ctx {
@@ -134,7 +138,11 @@ impl Ctx {
                 cwd.join(root)
             }
         });
-        Ctx { home, xdg, project: cwd, bin, explicit_bin, dev_build, workspace: ws.to_string_lossy().into_owned() }
+        Ctx {
+            home, xdg, project: cwd, bin, explicit_bin, dev_build,
+            workspace: ws.to_string_lossy().into_owned(),
+            path_env: std::env::var("PATH").ok(),
+        }
     }
     fn args(&self) -> Vec<String> {
         vec!["--root".into(), self.workspace.clone(), "mcp".into()]
@@ -207,6 +215,8 @@ pub enum State {
     Missing,
     Conflict,
     Unverified,
+    /// left to the Claude Code plugin
+    Plugin,
 }
 impl State {
     pub fn name(self) -> &'static str {
@@ -216,6 +226,7 @@ impl State {
             State::Missing => "missing",
             State::Conflict => "conflict",
             State::Unverified => "unverified",
+            State::Plugin => "plugin",
         }
     }
 }
@@ -241,16 +252,40 @@ impl Plan {
     }
 }
 
-fn classify(bin: &str, args: &[String], got_cmd: Option<&str>, got_args: Option<&[String]>) -> Cmp {
+/// A bare command (no path separator) that resolves on `path_env` to the same file as `bin`.
+fn resolves_to(cmd: &str, bin: &str, path_env: Option<&str>) -> bool {
+    if cmd.is_empty() || cmd.contains('/') || cmd.contains('\\') {
+        return false;
+    }
+    let Some(want) = std::fs::canonicalize(bin).ok() else { return false };
+    let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
+    for dir in std::env::split_paths(path_env.unwrap_or("")) {
+        for ext in exts {
+            let cand = dir.join(format!("{cmd}{ext}"));
+            if cand.is_file() && is_executable(&cand) {
+                return std::fs::canonicalize(&cand).is_ok_and(|c| c == want);
+            }
+        }
+    }
+    false
+}
+#[cfg(unix)]
+fn is_executable(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p).is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+#[cfg(not(unix))]
+fn is_executable(_: &Path) -> bool {
+    true
+}
+fn classify(ctx: &Ctx, args: &[String], got_cmd: Option<&str>, got_args: Option<&[String]>) -> Cmp {
     if got_args != Some(args) {
         return Cmp::Other;
     }
-    if got_cmd == Some(bin) {
-        Cmp::Equal
-    } else if got_cmd.is_some() {
-        Cmp::Stale
-    } else {
-        Cmp::Other
+    match got_cmd {
+        Some(c) if c == ctx.bin || resolves_to(c, &ctx.bin, ctx.path_env.as_deref()) => Cmp::Equal,
+        Some(_) => Cmp::Stale,
+        None => Cmp::Other,
     }
 }
 fn js(s: &str) -> String {
@@ -292,7 +327,7 @@ fn json_cmp(c: Client, ctx: &Ctx, entry: &Value) -> Cmp {
             return Cmp::Other;
         }
         return match strings(&entry["command"]) {
-            Some(v) if !v.is_empty() => classify(&ctx.bin, &args, Some(&v[0]), Some(&v[1..])),
+            Some(v) if !v.is_empty() => classify(ctx, &args, Some(&v[0]), Some(&v[1..])),
             _ => Cmp::Other,
         };
     }
@@ -304,7 +339,7 @@ fn json_cmp(c: Client, ctx: &Ctx, entry: &Value) -> Cmp {
         }
     }
     let a = strings(&entry["args"]);
-    classify(&ctx.bin, &args, entry["command"].as_str(), a.as_deref())
+    classify(ctx, &args, entry["command"].as_str(), a.as_deref())
 }
 fn json_text(v: &Value) -> String {
     let mut s = serde_json::to_string_pretty(v).unwrap();
@@ -422,7 +457,7 @@ fn text_cmp(ctx: &Ctx, section: &[String], sep: char) -> (Cmp, Option<usize>) {
     let args = field(section, "args", sep);
     let argv = args.as_ref().and_then(|(_, v)| strings(v));
     let cmd_s = cmd.as_ref().and_then(|(_, v)| v.as_str().map(str::to_string));
-    (classify(&ctx.bin, &ctx.args(), cmd_s.as_deref(), argv.as_deref()), cmd.map(|(i, _)| i))
+    (classify(ctx, &ctx.args(), cmd_s.as_deref(), argv.as_deref()), cmd.map(|(i, _)| i))
 }
 
 fn toml_block(ctx: &Ctx) -> Vec<String> {
@@ -661,6 +696,18 @@ pub const HOOK_COMMAND: &str = "command -v comparegraph >/dev/null 2>&1 || exit 
 fn hook_entry() -> Value {
     json!({ "hooks": [{ "type": "command", "command": HOOK_COMMAND, "timeout": 10 }] })
 }
+/// Claude Code's user settings list `comparegraph@comparegraph` as enabled: the plugin carries the server and the hook.
+pub fn plugin_enabled(ctx: &Ctx) -> bool {
+    let Some(path) = hook_file(ctx, Scope::User) else { return false };
+    let Ok(text) = std::fs::read_to_string(path) else { return false };
+    serde_json::from_str::<Value>(&text).is_ok_and(|v| v["enabledPlugins"]["comparegraph@comparegraph"] == true)
+}
+const PLUGIN_NOTE: &str = "left to the Claude Code plugin (comparegraph@comparegraph)";
+fn plugin_row(mut row: Row) -> Row {
+    row.state = State::Plugin;
+    row.note = Some(PLUGIN_NOTE.into());
+    row
+}
 pub fn hook_file(ctx: &Ctx, s: Scope) -> Option<PathBuf> {
     match s {
         Scope::User => ctx.home.as_ref().map(|h| h.join(".claude/settings.json")),
@@ -771,6 +818,7 @@ impl Row {
 /// project-scope file of each client that has one in this project.
 pub fn registrations(ctx: &Ctx) -> Vec<Row> {
     let mut rows = Vec::new();
+    let plugin = plugin_enabled(ctx);
     for scope in [Scope::User, Scope::Project] {
         for c in ALL {
             let Some((path, _)) = ctx.locate(c, scope) else { continue };
@@ -783,6 +831,8 @@ pub fn registrations(ctx: &Ctx) -> Vec<Row> {
                 row.state = State::Unverified;
                 row.action = "skip";
                 row.note = Some("config shape not verified".into());
+            } else if c == Client::Claude && plugin {
+                row = plugin_row(row);
             } else {
                 let p = plan_for(c, ctx, &path);
                 row.state = p.state;
@@ -817,10 +867,14 @@ pub fn extra_registrations(ctx: &Ctx) -> Vec<Row> {
         }
     }
     if let Some(path) = hook_file(ctx, Scope::User).filter(|_| detected(Client::Claude)) {
-        let p = plan_hook(&path);
-        let mut row = Row::new(Client::Claude.name().to_string(), "hook", Scope::User, path);
-        row.state = p.state;
-        row.note = p.note;
+        let mut row = Row::new(Client::Claude.name().to_string(), "hook", Scope::User, path.clone());
+        if plugin_enabled(ctx) {
+            row = plugin_row(row);
+        } else {
+            let p = plan_hook(&path);
+            row.state = p.state;
+            row.note = p.note;
+        }
         row.action = "none";
         rows.push(row);
     }
@@ -834,7 +888,9 @@ pub fn detected_states(ctx: &Ctx) -> Vec<(Client, State)> {
         .filter(|c| c.verified(Scope::User))
         .filter_map(|c| {
             let (path, detect) = ctx.locate(c, Scope::User)?;
-            (path.exists() || detect.exists()).then(|| (c, plan_for(c, ctx, &path).state))
+            (path.exists() || detect.exists()).then(|| {
+                (c, if c == Client::Claude && plugin_enabled(ctx) { State::Plugin } else { plan_for(c, ctx, &path).state })
+            })
         })
         .collect()
 }
@@ -925,7 +981,7 @@ fn settle(mut row: Row, plan: Plan, o: &Options, path: &Path, stale_free: bool) 
             ));
             (None, "skip")
         }
-        State::Unverified => (None, "skip"),
+        State::Unverified | State::Plugin => (None, "skip"),
     };
     row.action = action;
     if o.apply {
@@ -957,6 +1013,10 @@ pub fn run(ctx: &Ctx, o: &Options) -> Result<Vec<Row>> {
             row.state = State::Unverified;
             row.note = Some("config shape not verified; skipped".into());
             rows.push(row);
+            continue;
+        }
+        if found && o.detect && c == Client::Claude && plugin_enabled(ctx) {
+            rows.push(plugin_row(row));
             continue;
         }
         let plan = plan_for(c, ctx, &path);
@@ -993,6 +1053,10 @@ pub fn run(ctx: &Ctx, o: &Options) -> Result<Vec<Row>> {
     if !o.no_hook && covered.contains(&Client::Claude) {
         if let Some(path) = hook_file(ctx, o.scope) {
             let row = Row::new(Client::Claude.name().to_string(), "hook", o.scope, path.clone());
+            if o.detect && plugin_enabled(ctx) {
+                rows.push(plugin_row(row));
+                return Ok(rows);
+            }
             rows.push(settle(row, plan_hook(&path), o, &path, false)?);
         }
     }
