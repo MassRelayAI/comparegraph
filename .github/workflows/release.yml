@@ -61,6 +61,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write # the attestation is signed with this job's OIDC identity
+      attestations: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -76,6 +78,12 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+      - name: Attest the binaries and the checksums (build provenance)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/comparegraph-*
+            dist/SHA256SUMS
 
   publish-npm:
     # Set the repository variable NPM_PUBLISH=true once trusted publishing is configured on npmjs.com (docs/dev/release.md).

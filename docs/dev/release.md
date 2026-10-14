@@ -95,6 +95,24 @@ The install scripts (`scripts/install.sh`, `scripts/install.ps1`) read `releases
 version as soon as the release exists; nothing in them is versioned. The Homebrew tap (`massrelay-ai/homebrew-comparegraph`)
 updates its formula from the latest release on a schedule and on demand (its own workflow, no secret).
 
+## Attestations
+
+The `release` job signs a build-provenance attestation (`actions/attest-build-provenance`, Sigstore, this workflow's OIDC
+identity) over every file it uploads that matches `dist/comparegraph-*`: the five binaries and their per-file `.sha256`
+files, plus `SHA256SUMS`. The attestation lives in GitHub's attestation store, not as a release asset. To verify a download
+(needs the GitHub CLI, version 2.49 or later):
+
+```bash
+gh attestation verify comparegraph-linux-x64 -R massrelay-ai/comparegraph
+```
+
+The first attested release is v0.1.2; earlier releases carry checksums only.
+
+## CI audit
+
+`deny.toml` drives the `deny` job in `ci.yml` (`cargo deny --locked check`): licence allowlist, advisories, bans and
+sources. An `ignore` entry in `[advisories]` carries its reason and is removed when the lock moves past the flaw.
+
 ## After the release
 
 On a clean machine:

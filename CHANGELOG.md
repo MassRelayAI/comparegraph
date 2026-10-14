@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- cargo-deny in CI (`deny.toml`): licence allowlist, advisories, bans and sources, run as the `deny` job on every push and pull request.
+- Build provenance attestations on the release binaries and `SHA256SUMS` (`actions/attest-build-provenance`); verify with `gh attestation verify`.
 - `dependabot-automerge.yml`: a Dependabot patch or minor bump merges itself once CI is green on it; majors wait for the maintainer.
 - `docs/assets/family.svg`: a family, its groups and features, six clones, 121 agreed cells from the mapping gold; `scripts/family-asset.mjs` derives its JSON.
 - `docs/assets/accuracy.svg` and `scale.svg` (gold precision/recall per engine; files → nodes, edges, seconds), rendered from committed JSON by `scripts/readme-assets.mjs`.

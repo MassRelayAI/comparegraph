@@ -64,7 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scri
 irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex
 ```
 
-<sub>Checked against the release's `SHA256SUMS` (linux-x64, linux-arm64, darwin-arm64, darwin-x64, win32-x64), then written to `~/.local/bin` (Windows: `%LOCALAPPDATA%\Programs\comparegraph`, added to your user `PATH`; open a new terminal there). `COMPAREGRAPH_VERSION=v0.1.1` pins a release; `COMPAREGRAPH_INSTALL_DIR` moves the binary.</sub>
+<sub>Checked against the release's `SHA256SUMS` and, from v0.1.2, attested (`gh attestation verify <asset> -R massrelay-ai/comparegraph`) (linux-x64, linux-arm64, darwin-arm64, darwin-x64, win32-x64), then written to `~/.local/bin` (Windows: `%LOCALAPPDATA%\Programs\comparegraph`, added to your user `PATH`; open a new terminal there). `COMPAREGRAPH_VERSION=v0.1.1` pins a release; `COMPAREGRAPH_INSTALL_DIR` moves the binary.</sub>
 
 <details>
 <summary><b>Other routes: npm, Homebrew, by hand, from source</b></summary>
