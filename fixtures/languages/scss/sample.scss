@@ -1,0 +1,12 @@
+$gap: 8px;
+
+@mixin pad($n) {
+  padding: $n;
+}
+
+.card {
+  @include pad($gap);
+  .title {
+    font-weight: bold;
+  }
+}

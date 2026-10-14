@@ -1,0 +1,468 @@
+{
+  "bash": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 5,
+    "kinds": {
+      "file": 1,
+      "function": 3
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 3
+    },
+    "digest": "6a48bb4efc812c585f14c5b8cb4b411195ab8605ecdf6cef607740e811ea4820"
+  },
+  "c": {
+    "files": 1,
+    "nodes": 7,
+    "edges": 8,
+    "kinds": {
+      "file": 1,
+      "function": 3,
+      "type": 3
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 6
+    },
+    "digest": "7d3d4d66fa9a22949f6d5ea4fac796d20e83f8fec01e1e23de1e6a488024ccef"
+  },
+  "cpp": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 5,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 3
+    },
+    "edge_kinds": {
+      "calls": 1,
+      "contains": 4
+    },
+    "digest": "f8e3b8e1a4efa1b96aa6db9bff2d8db0deecd5a798c736ddee32b8248c5eb7fd"
+  },
+  "csharp": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 5,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "method": 3
+    },
+    "edge_kinds": {
+      "calls": 1,
+      "contains": 4
+    },
+    "digest": "e9d6e13f41a0cc45308e4fa3440e2d90415db6507df10f4ea539909ca6ce0928"
+  },
+  "css": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 4,
+    "kinds": {
+      "file": 1,
+      "type": 4
+    },
+    "edge_kinds": {
+      "contains": 4
+    },
+    "digest": "fd99ac54c1208a812679132015ba85c79aed3161daeeac2b57747a03429dc5a6"
+  },
+  "dart": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 3,
+    "kinds": {
+      "file": 1,
+      "function": 3
+    },
+    "edge_kinds": {
+      "contains": 3
+    },
+    "digest": "61ad1d7d455a800b96c18a0b203b8a74f15ebe040579cd9bbfb8e95a3af47f24"
+  },
+  "dockerfile": {
+    "files": 1,
+    "nodes": 2,
+    "edges": 1,
+    "kinds": {
+      "class": 1,
+      "file": 1
+    },
+    "edge_kinds": {
+      "contains": 1
+    },
+    "digest": "b1b1c1dad90ebf30fd555bf2b786ee28a0d1de2f086ebbe31252a399f41f74d8"
+  },
+  "go": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 6,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 1
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 4
+    },
+    "digest": "17996f0faed87f743ee29d2704eee6010c313fe420ea0a3ba9aea39af6e30fca"
+  },
+  "graphql": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 3,
+    "kinds": {
+      "file": 1,
+      "type": 3
+    },
+    "edge_kinds": {
+      "contains": 3
+    },
+    "digest": "77b4fb192aac963840ed72b887f054bd8f7a6a8d92b4a39aaeb7bfaddabe9f81"
+  },
+  "hcl": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 3,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "type": 2
+    },
+    "edge_kinds": {
+      "contains": 3
+    },
+    "digest": "3ab5aa92734c0c9d7a02dd7b0c5e78cd3f0d50a4947429a34e9b7cc538ebe4f7"
+  },
+  "html": {
+    "files": 1,
+    "nodes": 1,
+    "edges": 0,
+    "kinds": {
+      "file": 1
+    },
+    "edge_kinds": {},
+    "digest": "6870680e234fa5209b7c3c7c94bfb87b65530c38bac241c5b52656e713477192",
+    "note": "the extractor yields only the file node for this language (no symbols)"
+  },
+  "java": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 6,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "method": 3
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 4
+    },
+    "digest": "95b6a508d27db78964a7aafef50d72856b27defeb1971af135a18ef2b2132054"
+  },
+  "javascript": {
+    "files": 1,
+    "nodes": 6,
+    "edges": 9,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 2
+    },
+    "edge_kinds": {
+      "calls": 4,
+      "contains": 5
+    },
+    "digest": "15300d51511ff71e3dbc77ee358eabe0151c6859cae8bf607c40881688f17146"
+  },
+  "jsx": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 6,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 1
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 4
+    },
+    "digest": "5f1f935183c602d0614cdaf83663913f4acc48fdd80805e8de90c28edc7c4fbc"
+  },
+  "kotlin": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 6,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 3
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 4
+    },
+    "digest": "fc03f36f39c18b9e688054b363b6a736d8d45997d1cba519af861a31349d2db5"
+  },
+  "mjs": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 6,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 1
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 4
+    },
+    "digest": "6437afa0e5c90ef90141597aca01e52712c9b8d26af4be01d02ad2420990c4ad"
+  },
+  "objc": {
+    "files": 1,
+    "nodes": 7,
+    "edges": 7,
+    "kinds": {
+      "class": 2,
+      "file": 1,
+      "function": 2,
+      "method": 2
+    },
+    "edge_kinds": {
+      "calls": 1,
+      "contains": 6
+    },
+    "digest": "5d2fc2557b46b87c502f29ea1398d9731d5609c3f5dce47ce00ee871d1ef8fab"
+  },
+  "perl": {
+    "files": 1,
+    "nodes": 7,
+    "edges": 8,
+    "kinds": {
+      "class": 2,
+      "file": 1,
+      "function": 4
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 6
+    },
+    "digest": "375e1a2caacc2ab22f9aa3ce0a808bf7c1c28e341b88df7ecbee26a1306b3af0"
+  },
+  "php": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 5,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 1
+    },
+    "edge_kinds": {
+      "calls": 1,
+      "contains": 4
+    },
+    "digest": "bea15f3bf4e6b828290803f90062a3cb817963090d8e44c61e88b3a5a1b1f4d6"
+  },
+  "powershell": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 5,
+    "kinds": {
+      "file": 1,
+      "function": 3
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 3
+    },
+    "digest": "f6829effbe50b05f956ec3effdb773feb2fecebf3ca290f59bb565c17fc90b59"
+  },
+  "python": {
+    "files": 1,
+    "nodes": 6,
+    "edges": 8,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 2
+    },
+    "edge_kinds": {
+      "calls": 3,
+      "contains": 5
+    },
+    "digest": "2ebb3f54cda5d298f9af1eae689e2e17cdb0521572da05b46fb1e7273bfa8956"
+  },
+  "r": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 5,
+    "kinds": {
+      "file": 1,
+      "function": 3
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 3
+    },
+    "digest": "fde7f475856f67b1f4063005328d2028edb9cbe9767130ae9214dea60a3639d6"
+  },
+  "ruby": {
+    "files": 1,
+    "nodes": 6,
+    "edges": 6,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 4
+    },
+    "edge_kinds": {
+      "calls": 1,
+      "contains": 5
+    },
+    "digest": "a19bb54bfd0127c18a06ce65a5d926ca7a541254d2526210bd0f6ffe9b1b163c"
+  },
+  "rust": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 6,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 1
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 4
+    },
+    "digest": "af896482b57e85fffcebe9848df63c68063b6357218561e30896cf4e9c95098f"
+  },
+  "scala": {
+    "files": 1,
+    "nodes": 7,
+    "edges": 6,
+    "kinds": {
+      "class": 3,
+      "file": 1,
+      "function": 3
+    },
+    "edge_kinds": {
+      "contains": 6
+    },
+    "digest": "96bd322b6e8fea2431c4f0ac4bc56531d38c0632859a994c3a455a78fd08d6f1"
+  },
+  "scss": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 3,
+    "kinds": {
+      "file": 1,
+      "function": 1,
+      "type": 2
+    },
+    "edge_kinds": {
+      "contains": 3
+    },
+    "digest": "e103996ea2b38059b4f7383fc7f2903e95a82be806924a21a886acac58b6c891"
+  },
+  "sql": {
+    "files": 1,
+    "nodes": 1,
+    "edges": 0,
+    "kinds": {
+      "file": 1
+    },
+    "edge_kinds": {},
+    "digest": "0dcab76a1627392cba31e63c286ced51ae7df2bb0fd295fac71dd4662626db54",
+    "note": "the extractor yields only the file node for this language (no symbols)"
+  },
+  "swift": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 6,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 3
+    },
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 4
+    },
+    "digest": "6045148a0d51086aa1562f94c746de5306ed142ca9e886a5e76fb68b9181af2f"
+  },
+  "toml": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 3,
+    "kinds": {
+      "file": 1,
+      "type": 3
+    },
+    "edge_kinds": {
+      "contains": 3
+    },
+    "digest": "2e48754c45c63deb7755f7909dd32148bbe89ce5a487ae2e329a83bc8854f129"
+  },
+  "tsx": {
+    "files": 1,
+    "nodes": 5,
+    "edges": 5,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 1
+    },
+    "edge_kinds": {
+      "calls": 1,
+      "contains": 4
+    },
+    "digest": "a8e1a2e5e513d717d2d30720515b3da030616c57040b712e650c254b235936bf"
+  },
+  "typescript": {
+    "files": 1,
+    "nodes": 7,
+    "edges": 8,
+    "kinds": {
+      "class": 1,
+      "file": 1,
+      "function": 2,
+      "method": 2,
+      "type": 1
+    },
+    "edge_kinds": {
+      "calls": 1,
+      "contains": 6,
+      "implements": 1
+    },
+    "digest": "444aabf2f06e8d46adbb877a77b382bb0a2ef384e4f43443b8eca4d88078d424"
+  },
+  "yaml": {
+    "files": 1,
+    "nodes": 4,
+    "edges": 3,
+    "kinds": {
+      "file": 1,
+      "type": 3
+    },
+    "edge_kinds": {
+      "contains": 3
+    },
+    "digest": "2b176b0380c0ad1954bfe8dff7c40d5c50ffc4798fbb98bf58facc671bc47f8b"
+  }
+}

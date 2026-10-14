@@ -1,0 +1,9 @@
+name: demo
+version: 1
+services:
+  web:
+    image: nginx
+    ports:
+      - 80
+  db:
+    image: postgres
