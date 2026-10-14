@@ -1,0 +1,14 @@
+{
+  "source": "docs/reports/2026-10-12-engine-parity.md, sections \"After Plan 6\" and \"codegraph head-to-head\"; the same figures are the table \"Call edges against a hand-labelled gold standard\" in README.md",
+  "title": "Call edges: precision / recall on a hand-labelled gold",
+  "caption": "235 agreed sites of 750 labelled; per-project noise about 0.1; codegraph in graph-only mode, one get_callees per site",
+  "engines": ["CompareGraph", "code-review-graph via adapter", "codegraph"],
+  "rows": [
+    { "name": "pooled (235)", "p": [0.995, 0.956, 0.708], "r": [0.834, 0.736, 0.506] },
+    { "name": "graphmind (48)", "p": [0.973, 0.963, 0.650], "r": [0.750, 0.542, 0.813] },
+    { "name": "srclight (50)", "p": [1.000, 1.000, 1.000], "r": [0.780, 0.740, 0.320] },
+    { "name": "code-review-graph (53)", "p": [1.000, 1.000, 0.913], "r": [0.925, 1.000, 0.396] },
+    { "name": "hono (36)", "p": [1.000, 0.880, null], "r": [0.667, 0.611, 0.000] },
+    { "name": "caddy (48)", "p": [1.000, 0.897, 0.623], "r": [1.000, 0.729, 0.896] }
+  ]
+}

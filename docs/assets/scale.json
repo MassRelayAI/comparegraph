@@ -1,0 +1,20 @@
+{
+  "source": "docs/reports/2026-10-13-proof-on-a-real-product.md: seconds, nodes and edges from the section \"After Plan 7 lane 1\"; files parsed from section 3 (goose), \"After the crash fix\" (hermes-agent, openclaw) and section 1 (product). Edges the last section does not state are null. Query bounds and no-op rebuild: docs/reports/2026-10-13-plan-6-recall-and-scale.md, \"Targets vs measured\" and \"Per lane\" (B3)",
+  "title": "Scale: files → nodes, edges, seconds",
+  "caption": "one run each under host load; read the ratios, not the seconds; incremental rebuild equals --full by store hash",
+  "trees": [
+    { "name": "goose", "files": 1379, "nodes": 19657, "edges": null, "seconds": 25 },
+    { "name": "private product monorepo", "files": 4370, "nodes": 53145, "edges": 145071, "seconds": 211 },
+    { "name": "hermes-agent", "files": 10288, "nodes": 168725, "edges": null, "seconds": 81 },
+    { "name": "openclaw", "files": 38258, "nodes": 454166, "edges": 1290051, "seconds": 436 }
+  ],
+  "queries": {
+    "graph": "openclaw, 1,290,051 edges",
+    "items": [
+      { "name": "impact", "seconds": 2.5 },
+      { "name": "traverse", "seconds": 3.6 },
+      { "name": "dead-code", "seconds": 1.6 },
+      { "name": "no-op rebuild", "seconds": 7.5 }
+    ]
+  }
+}

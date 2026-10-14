@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 510" width="1050" role="img" aria-labelledby="t d">
+<title id="t">Call edges: precision / recall on a hand-labelled gold</title><desc id="d">Pooled over the gold, CompareGraph precision 0.995 and recall 0.834; code-review-graph via adapter 0.956 and 0.736; codegraph 0.708 and 0.506. Five per-project rows follow. 235 agreed sites of 750 labelled; per-project noise about 0.1; codegraph in graph-only mode, one get_callees per site.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="Helvetica, Arial, sans-serif" fill="#1f2328">
+<text x="30" y="30" font-size="18" font-weight="700">Call edges: precision / recall on a hand-labelled gold</text>
+<rect x="30" y="52" width="14" height="14" fill="#0550ae"/><text x="50" y="64" font-size="13">CompareGraph</text>
+<rect x="180" y="52" width="14" height="14" fill="#8c959f"/><text x="200" y="64" font-size="13">code-review-graph via adapter</text>
+<rect x="470" y="52" width="14" height="14" fill="#d4a72c"/><text x="490" y="64" font-size="13">codegraph</text>
+<text x="30" y="94" font-size="15" font-weight="700">Precision</text>
+<line x1="180" y1="106" x2="180" y2="440" stroke="#57606a" stroke-width="1.2"/>
+<rect x="22" y="106" width="498" height="54" rx="6" fill="#f6f8fa"/>
+<text x="170" y="136" font-size="12" text-anchor="end" font-weight="700">pooled (235)</text>
+<rect x="180" y="112" width="269" height="12" fill="#0550ae"/>
+<text x="455" y="122" font-size="11" fill="#57606a">0.995</text>
+<rect x="180" y="127" width="258" height="12" fill="#8c959f"/>
+<text x="444" y="137" font-size="11" fill="#57606a">0.956</text>
+<rect x="180" y="142" width="191" height="12" fill="#d4a72c"/>
+<text x="377" y="152" font-size="11" fill="#57606a">0.708</text>
+<text x="170" y="192" font-size="12" text-anchor="end">graphmind (48)</text>
+<rect x="180" y="168" width="263" height="12" fill="#0550ae"/>
+<text x="449" y="178" font-size="11" fill="#57606a">0.973</text>
+<rect x="180" y="183" width="260" height="12" fill="#8c959f"/>
+<text x="446" y="193" font-size="11" fill="#57606a">0.963</text>
+<rect x="180" y="198" width="176" height="12" fill="#d4a72c"/>
+<text x="362" y="208" font-size="11" fill="#57606a">0.650</text>
+<text x="170" y="248" font-size="12" text-anchor="end">srclight (50)</text>
+<rect x="180" y="224" width="270" height="12" fill="#0550ae"/>
+<text x="456" y="234" font-size="11" fill="#57606a">1.000</text>
+<rect x="180" y="239" width="270" height="12" fill="#8c959f"/>
+<text x="456" y="249" font-size="11" fill="#57606a">1.000</text>
+<rect x="180" y="254" width="270" height="12" fill="#d4a72c"/>
+<text x="456" y="264" font-size="11" fill="#57606a">1.000</text>
+<text x="170" y="304" font-size="12" text-anchor="end">code-review-graph (53)</text>
+<rect x="180" y="280" width="270" height="12" fill="#0550ae"/>
+<text x="456" y="290" font-size="11" fill="#57606a">1.000</text>
+<rect x="180" y="295" width="270" height="12" fill="#8c959f"/>
+<text x="456" y="305" font-size="11" fill="#57606a">1.000</text>
+<rect x="180" y="310" width="247" height="12" fill="#d4a72c"/>
+<text x="433" y="320" font-size="11" fill="#57606a">0.913</text>
+<text x="170" y="360" font-size="12" text-anchor="end">hono (36)</text>
+<rect x="180" y="336" width="270" height="12" fill="#0550ae"/>
+<text x="456" y="346" font-size="11" fill="#57606a">1.000</text>
+<rect x="180" y="351" width="238" height="12" fill="#8c959f"/>
+<text x="424" y="361" font-size="11" fill="#57606a">0.880</text>
+<text x="186" y="376" font-size="11" fill="#57606a">none answered</text>
+<text x="170" y="416" font-size="12" text-anchor="end">caddy (48)</text>
+<rect x="180" y="392" width="270" height="12" fill="#0550ae"/>
+<text x="456" y="402" font-size="11" fill="#57606a">1.000</text>
+<rect x="180" y="407" width="242" height="12" fill="#8c959f"/>
+<text x="428" y="417" font-size="11" fill="#57606a">0.897</text>
+<rect x="180" y="422" width="168" height="12" fill="#d4a72c"/>
+<text x="354" y="432" font-size="11" fill="#57606a">0.623</text>
+<text x="560" y="94" font-size="15" font-weight="700">Recall</text>
+<line x1="710" y1="106" x2="710" y2="440" stroke="#57606a" stroke-width="1.2"/>
+<rect x="552" y="106" width="498" height="54" rx="6" fill="#f6f8fa"/>
+<text x="700" y="136" font-size="12" text-anchor="end" font-weight="700">pooled (235)</text>
+<rect x="710" y="112" width="225" height="12" fill="#0550ae"/>
+<text x="941" y="122" font-size="11" fill="#57606a">0.834</text>
+<rect x="710" y="127" width="199" height="12" fill="#8c959f"/>
+<text x="915" y="137" font-size="11" fill="#57606a">0.736</text>
+<rect x="710" y="142" width="137" height="12" fill="#d4a72c"/>
+<text x="853" y="152" font-size="11" fill="#57606a">0.506</text>
+<text x="700" y="192" font-size="12" text-anchor="end">graphmind (48)</text>
+<rect x="710" y="168" width="203" height="12" fill="#0550ae"/>
+<text x="919" y="178" font-size="11" fill="#57606a">0.750</text>
+<rect x="710" y="183" width="146" height="12" fill="#8c959f"/>
+<text x="862" y="193" font-size="11" fill="#57606a">0.542</text>
+<rect x="710" y="198" width="220" height="12" fill="#d4a72c"/>
+<text x="936" y="208" font-size="11" fill="#57606a">0.813</text>
+<text x="700" y="248" font-size="12" text-anchor="end">srclight (50)</text>
+<rect x="710" y="224" width="211" height="12" fill="#0550ae"/>
+<text x="927" y="234" font-size="11" fill="#57606a">0.780</text>
+<rect x="710" y="239" width="200" height="12" fill="#8c959f"/>
+<text x="916" y="249" font-size="11" fill="#57606a">0.740</text>
+<rect x="710" y="254" width="86" height="12" fill="#d4a72c"/>
+<text x="802" y="264" font-size="11" fill="#57606a">0.320</text>
+<text x="700" y="304" font-size="12" text-anchor="end">code-review-graph (53)</text>
+<rect x="710" y="280" width="250" height="12" fill="#0550ae"/>
+<text x="966" y="290" font-size="11" fill="#57606a">0.925</text>
+<rect x="710" y="295" width="270" height="12" fill="#8c959f"/>
+<text x="986" y="305" font-size="11" fill="#57606a">1.000</text>
+<rect x="710" y="310" width="107" height="12" fill="#d4a72c"/>
+<text x="823" y="320" font-size="11" fill="#57606a">0.396</text>
+<text x="700" y="360" font-size="12" text-anchor="end">hono (36)</text>
+<rect x="710" y="336" width="180" height="12" fill="#0550ae"/>
+<text x="896" y="346" font-size="11" fill="#57606a">0.667</text>
+<rect x="710" y="351" width="165" height="12" fill="#8c959f"/>
+<text x="881" y="361" font-size="11" fill="#57606a">0.611</text>
+<rect x="710" y="366" width="1" height="12" fill="#d4a72c"/>
+<text x="717" y="376" font-size="11" fill="#57606a">0.000</text>
+<text x="700" y="416" font-size="12" text-anchor="end">caddy (48)</text>
+<rect x="710" y="392" width="270" height="12" fill="#0550ae"/>
+<text x="986" y="402" font-size="11" fill="#57606a">1.000</text>
+<rect x="710" y="407" width="197" height="12" fill="#8c959f"/>
+<text x="913" y="417" font-size="11" fill="#57606a">0.729</text>
+<rect x="710" y="422" width="242" height="12" fill="#d4a72c"/>
+<text x="958" y="432" font-size="11" fill="#57606a">0.896</text>
+<text x="525" y="488" font-size="12" text-anchor="middle" fill="#57606a">235 agreed sites of 750 labelled; per-project noise about 0.1; codegraph in graph-only mode, one get_callees per site</text>
+</g>
+</svg>
