@@ -8,5 +8,23 @@
     "url": "https://github.com/massrelay-ai/comparegraph",
     "source": "github"
   },
-  "version": "0.1.1"
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@massrelay-ai/comparegraph",
+      "version": "0.1.1",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
 }
