@@ -72,32 +72,64 @@ For: teams comparing their product with the field, due diligence on a set of pro
 
 ## Install
 
-Two steps: the binary, then your agent.
+Two steps: the binary, then your agent. There is no `pip` or `npm` step: the binary has no runtime.
 
-**1. The binary.** One line, into `~/.local/bin`, checked against the release's `SHA256SUMS` (linux-x64, linux-arm64,
+**1. The binary**
+
+**A (recommended).** One line, into `~/.local/bin`, checked against the release's `SHA256SUMS` (linux-x64, linux-arm64,
 darwin-arm64, darwin-x64):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
 ```
 
-Windows x64, in PowerShell: `irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex`.
-Homebrew: `brew install massrelay-ai/comparegraph/comparegraph`. By hand: `comparegraph-<platform>` and `SHA256SUMS`
-from the [latest release](https://github.com/massrelay-ai/comparegraph/releases/latest). Any other platform, with Rust
-1.85 or newer: `cargo install --locked --path crates/comparegraph` in the clone (`--locked` matters: the Perl grammar's
-newest release on crates.io is yanked, and only `Cargo.lock` resolves).
+Windows x64, in PowerShell (into `%LOCALAPPDATA%\Programs\comparegraph`, added to your user `PATH`):
 
-**2. Your agent.** Claude Code installs the seven skills and the MCP server as one plugin; it runs the `comparegraph`
-binary from your `PATH`:
+```powershell
+irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex
+```
+
+`COMPAREGRAPH_VERSION=v0.1.1` pins a release; `COMPAREGRAPH_INSTALL_DIR` moves the binary.
+
+**B.** Homebrew, macOS and Linux: `brew install massrelay-ai/comparegraph/comparegraph`.
+
+**C.** By hand: `comparegraph-<platform>` and `SHA256SUMS` from the
+[latest release](https://github.com/massrelay-ai/comparegraph/releases/latest). From source, anywhere Rust 1.85 or newer
+runs: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph` (`--locked` matters: the
+Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
+
+**2. Your agent**
+
+**A (recommended).** One line registers the MCP server with every agent it finds on the machine (twelve: Claude Code,
+Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf, Antigravity, Kiro, Copilot, Copilot CLI, Qwen Code), writes a short
+rules block into the workspace's instruction file, and for Claude Code a session-start hook:
+
+```bash
+comparegraph setup --apply      # omit --apply for the plan; --scope project for an entry you commit
+comparegraph doctor             # each client's state: aligned, stale, conflict, missing, plugin
+```
+
+**B.** Claude Code as a plugin: the seven skills, the server and the hook in one install (Claude Code 2.1.275 or newer;
+`claude plugin install …` does the same from a shell):
 
 ```text
 /plugin install comparegraph --marketplace massrelay-ai/comparegraph
 ```
 
-Any other agent (Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf, and more): `comparegraph setup --client <name> --apply`
-writes the entry (omit `--apply` for a dry run) and `comparegraph doctor` checks it ([table](#agents-platforms-uninstall)).
-`setup --apply` also writes a short rules block into the agent's instruction file in the workspace and, for Claude
-Code, a session-start hook; the plugin ships the same hook. The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`.
+With the plugin enabled, `setup --apply` leaves Claude Code's server and hook to the plugin (their rows read `plugin`)
+and still writes the rules block.
+
+**C.** Your agent's own command, run in the workspace; each writes the entry `setup` would, so `doctor` reads it as
+aligned:
+
+| Agent | Command |
+|---|---|
+| Claude Code | `claude mcp add comparegraph -- comparegraph --root "$PWD" mcp` |
+| Codex | `codex mcp add comparegraph -- comparegraph --root "$PWD" mcp` |
+| Gemini CLI | `gemini mcp add comparegraph comparegraph -- --root "$PWD" mcp` |
+
+The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`;
+the [table](#agents-platforms-uninstall) has every client's file.
 
 ## Quick start
 
@@ -512,7 +544,7 @@ large to open as one vault in a note tool.
 ## Agents, platforms, uninstall
 
 `comparegraph setup` writes the entry; `comparegraph doctor` reports each client's state (`aligned`, `stale`, `conflict`,
-`missing`, `unverified`). `--client all` acts only on clients that look installed. `setup --apply` is additive and leaves a
+`missing`, `unverified`, `plugin`). `--client all` acts only on clients that look installed. `plugin`: left to the Claude Code plugin when `comparegraph@comparegraph` is enabled and `--client all` is used; name `--client claude` to write anyway. A bare `comparegraph` command that resolves on `PATH` to the registered binary counts as aligned. `setup --apply` is additive and leaves a
 backup named `<file>.bak-<unix-seconds>`; a differing entry is left alone unless you pass `--force`.
 
 Besides the entry, `setup` writes a CompareGraph block, between `<!-- comparegraph -->` and `<!-- /comparegraph -->`, into

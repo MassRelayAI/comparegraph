@@ -124,6 +124,8 @@ tap, the Claude Code plugin (skills plus the MCP server over the installed binar
 `cargo install --locked` from source (`docs/dev/release.md`). Next:
 
 1. More clients (Zed, Continue) once their config shapes are verified.
+2. Copilot (VS Code): the VS Code MCP page now lists `.vscode/mcp.json` as deprecated for compatibility and prefers the portable `.mcp.json` (`mcpServers`, project) and `~/.copilot/mcp-config.json` (user); move the client once the read order is confirmed in a real VS Code.
+3. Parked: `cargo binstall` (needs a crates.io package or `--git` plus per-target asset overrides), a Cursor install deeplink (its config must carry an absolute `--root`, so it cannot be one static link), `code --add-mcp` (writes the user profile, which `doctor` does not read).
 
 Not taken: npm (dropped 2026-10-14), crates.io (nobody asked; the from-source line covers it), an MCPB bundle for the
 registry entry, Docker, a VS Code extension, a desktop app, a GitHub Action, Windows package managers.

@@ -11,9 +11,9 @@ model and never decides: you read the code, you write the claim, a person record
 In Claude Code, `/plugin install comparegraph --marketplace massrelay-ai/comparegraph` installs these skills and the MCP
 server together; the `comparegraph` binary must be on your `PATH`. Install it with the README's install line (`curl | sh`,
 Homebrew, a release asset, or `cargo install --locked --path crates/comparegraph` from a clone). For any other agent,
-register the server too:
+register the server too (every agent it finds):
 ```
-comparegraph setup --client claude --apply
+comparegraph setup --apply
 ```
 Without `--apply` it only prints its plan. It writes additively and leaves a timestamped backup. `--apply` also writes a
 short rules block into the agent's instruction file in the workspace (once it has a store) and, for Claude Code, a session-start hook.

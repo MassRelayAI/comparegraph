@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- `setup`/`doctor` state `plugin`: with the Claude Code plugin enabled, `--client all` leaves Claude Code's server and hook to the plugin.
+- A bare `comparegraph` command that resolves on `PATH` to the registered binary reads as aligned.
 - `setup` writes a CompareGraph rules block (between `<!-- comparegraph -->` markers) into the workspace's agent instruction file (only once `.comparegraph/` exists; otherwise the row is listed and skipped): `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or `.github/instructions/comparegraph.instructions.md`, one row per file. An older block is refreshed; a hand-edited one is a `conflict` unless `--force`. `--no-rules` skips it.
 - `setup` registers a Claude Code `SessionStart` hook (`.claude/settings.json`, or `~/.claude/settings.json` at user scope) that runs `comparegraph doctor --brief`. `--no-hook` skips it.
 - `doctor --brief`: plain text for the hook (nothing without a store; else the repo count and each detected client's registration, with a `--force` hint when one is stale or conflicting).
@@ -14,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `hooks/hooks.json`: the plugin ships the same session-start hook.
 
 ### Changed
+- README Install: A (recommended) / B / C per step; step 2 is `comparegraph setup --apply` for every agent found, the plugin, or the agent's own `mcp add` line.
+- The install scripts hint `setup --apply`.
 - `claim --batch` skips a row equal to the live claim (same run, verdict, author, note and locations): it writes nothing, reports `skipped: true` with the existing claim, and the summary gains `skipped`. An interrupted batch can be re-run without doubling its rows. `decide --batch` summaries report `skipped: 0`.
 - `setup` and `doctor` rows carry `kind` (`config`, `rules` or `hook`; `doctor` also reports the `rules` and `hook` rows of detected clients); a `rules` row's `client` lists the clients that read the file, comma-joined.
 - The `using-comparegraph` skill no longer points to npm for the binary.

@@ -193,7 +193,7 @@ work is verified (the command and its expected output). The method is the discip
 | `search <query> [--repo] [--family]` | ranked candidates over communities, symbols and claims; labelled `candidate` | no index |
 | `conform <provider>` | §7.1 | — |
 | `doctor` | §7.5 | — |
-| `setup` | registers the MCP with each agent client found, additively, plan shown first, backup kept | — |
+| `setup` | registers the MCP with each agent client found, additively, plan shown first, backup kept; leaves Claude Code's server and hook to the plugin when it is enabled | — |
 
 ## 9b. One envelope for every answer — usable by any tool, cheap in tokens (the maintainer: "any tools, robust standardised, save tokens")
 Every verb, on the CLI, over MCP and through the library, answers with the same envelope:
@@ -218,7 +218,7 @@ protocol and the package.
 ## 10. Agent surface
 `comparegraph setup` detects client config files (twelve clients: Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Hermes, Windsurf,
 Antigravity, Kiro, Copilot, Copilot CLI, Qwen Code), shows the planned change, writes additively and idempotently with a backup;
-`doctor` reports each as aligned / stale / missing. Each row carries a `kind`: `config` (the server entry), `rules` (a marked block
+`doctor` reports each as aligned / stale / missing; a bare `comparegraph` command that resolves on `PATH` to the registered binary is aligned, and with the Claude Code plugin enabled `--client all` leaves Claude Code's server and hook to it (`plugin`). Each row carries a `kind`: `config` (the server entry), `rules` (a marked block
 in the workspace's instruction file, once a store exists) and `hook` (Claude Code's SessionStart hook, which runs `doctor --brief`).
 The MCP server exposes the read verbs (`search`, `map`, `relate`, `export json`, `check`) and `claim` (a write, with the same
 refusals). `skills/` (with `method/` as its alias) ships in the repository, where the Claude Code plugin reads it.

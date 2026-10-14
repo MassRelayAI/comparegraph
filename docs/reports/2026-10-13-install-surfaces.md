@@ -59,3 +59,19 @@ The gaps that cost little and reach far, in order:
 
 Not taken: Docker (the engine reads local clones), a VS Code extension, a desktop app, a GitHub Action (a PR review is
 not our product), Windows package managers (after the tap, if asked).
+
+## Follow-up (2026-10-14): one line per step
+
+The twelve projects share one shape: one line for the binary, one line that wires every agent found, and the agent's own
+`mcp add` as the hand route; only two label a route "recommended". The README Install now has that shape: A (recommended),
+B, C per step.
+
+Two defects found in our copy and fixed:
+
+- The Claude Code plugin and `setup --apply` on the same machine registered the server twice (tools doubled, the hook
+  ran twice). `setup` and `doctor` now report `plugin` for Claude Code's server and hook when the plugin is enabled and
+  `--client all` is used; naming `--client claude` still writes.
+- `doctor` read a bare `comparegraph` command, as the agent's own `mcp add` writes it, as `stale`. A bare command that
+  resolves on `PATH` to the registered binary is now `aligned`.
+
+Parked (see `docs/roadmap.md`): `cargo binstall`, a Cursor install deeplink, `code --add-mcp`, and moving the Copilot entry.
