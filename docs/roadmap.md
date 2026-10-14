@@ -114,6 +114,11 @@ recall on that consumer's languages with precision ≥ 0.96 (the same bar as Pla
   `*.test-helpers.ts` or `*.test-support.ts` rank as implementers; the kind prior only sees `test` nodes and test paths.
 
 
+## From the README roadmap
+
+- **A resolver for C, C++ and C#.** They are parsed today, not resolved: calls bind by name only.
+- **A second signal for `relate`.** Repositories outside a family still score above 0.5 today; a second signal (beyond vocabulary overlap) would put them below it. See "Plan 7 IMP" in [`decisions.md`](decisions.md).
+
 ## Distribution
 
 Measured against the twelve study projects in `docs/reports/2026-10-13-install-surfaces.md`, and following the Rust

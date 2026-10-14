@@ -16,3 +16,5 @@ never silently kept.
 
 Reproduce a number: the scripts are described in [`../dev/scripts.md`](../dev/scripts.md); the labelled data is under
 `fixtures/gold/` (call edges) and `fixtures/gold-map/` (feature mapping), each with its own README and `FLOORS.json`.
+
+The reference pages that quote these reports: [usage](../usage.md), [commands](../commands.md), [MCP tools](../mcp-tools.md), [FAQ](../faq.md), [troubleshooting](../troubleshooting.md) and the [roadmap](../roadmap.md).

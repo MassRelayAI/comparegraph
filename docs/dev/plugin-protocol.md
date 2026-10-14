@@ -117,3 +117,16 @@ for dp, _, files in os.walk(root):
     print(json.dumps({"progress": {"files": len(nodes)}}), flush=True)
 print(json.dumps({"ok": True, "data": {"nodes": nodes, "edges": edges, "limitations": []}}))
 ```
+
+## The second engine: code-review-graph through the adapter
+
+[`providers/crg/`](../../providers/crg) is `comparegraph-provider-crg`, an adapter that runs
+code-review-graph 2.3.9 through the protocol (registered in the root `comparegraph.toml`; code-review-graph itself must be
+installed, else `doctor` shows it `unavailable`). `comparegraph build <repo> --providers reference,crg` builds both and
+prints an agreement table. On srclight: calls Jaccard 0.962, contains 0.981, imports 0.904, tests 0.594 (below the 0.8 mark),
+nodes 0.797 to 1.000 by kind ([parity report](../reports/2026-10-12-engine-parity.md), "Agreement between the engines").
+Adapter conformance: go, python and typescript pass; java (edge recall 0.77) and rust (nodes 0.86, edge recall 0.53) stay below
+the floors, so the gate refuses it on clones that contain them. Through the adapter, code-review-graph scores like its native
+self on three gold projects and slightly higher on hono and caddy (the [gold table](../../README.md#how-good-is-it)).
+
+To add your own engine, write a provider and pass `comparegraph conform <name>`; a provider below the floor is refused.

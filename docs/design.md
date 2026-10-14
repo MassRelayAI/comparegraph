@@ -249,3 +249,33 @@ through `map` and `search`; a claim names its author).
 The v0.1 proof on three clones fails one of: a location that does not resolve in the vault; adapters agreeing < 0.8 on nodes;
 a reader needing more than the community pages to write a claim (measured as tokens per clone against a plain tree read);
 a second person unable to add a clone and a family from `method/` alone. Any of these reopens §4–§7 before v0.2.
+
+## 16. Diagrams
+
+The workflow and the rings as diagrams (moved from the README).
+
+```mermaid
+flowchart LR
+    clones["cloned repos"] --> engines["engines: reference (tree-sitter), external plugins"]
+    engines --> store[("SQLite store, schema v1")]
+    store --> graph["communities, search, graph queries"]
+    store --> families["families: taxonomy packs"]
+    families --> relate["relate and map"]
+    relate --> claims["claims with citations"]
+    claims --> matrix["matrix: gaps, differentiators"]
+    graph --> out["exports and MCP"]
+    matrix --> out
+    claims --> out
+```
+
+The code is arranged in rings; dependencies point inward, and the folders under `crates/comparegraph/src/` carry the same
+names. Two engines sit in the providers ring: the built-in reference engine, and any external plugin that speaks the
+[plugin protocol](dev/plugin-protocol.md).
+
+```mermaid
+flowchart LR
+    adapters["adapters: CLI, MCP"] --> application["application: workflows"]
+    application --> providers["providers: reference tree-sitter engine, external plugins"]
+    providers --> store["store: SQLite"]
+    store --> domain["domain: graph, claim, evidence, run"]
+```
