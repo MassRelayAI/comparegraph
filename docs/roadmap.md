@@ -130,7 +130,7 @@ tap, the Claude Code plugin (skills plus the MCP server over the installed binar
 
 1. More clients (Zed, Continue) once their config shapes are verified.
 2. Copilot (VS Code): the VS Code MCP page now lists `.vscode/mcp.json` as deprecated for compatibility and prefers the portable `.mcp.json` (`mcpServers`, project) and `~/.copilot/mcp-config.json` (user); move the client once the read order is confirmed in a real VS Code.
-3. npm wrapper package (`@massrelay-ai/comparegraph`, five platform packages); publish gated on `NPM_PUBLISH`; `server.json` `packages` after the first publish.
+3. npm: shipped (`@massrelay-ai/comparegraph` and five platform packages on the registry; `server.json` lists the package; later releases publish from the tag). Still to do: register the release workflow as a trusted publisher on the six packages so the token can lapse.
 4. Parked: `cargo binstall` (needs a crates.io package or `--git` plus per-target asset overrides), a Cursor install deeplink (its config must carry an absolute `--root`, so it cannot be one static link), `code --add-mcp` (writes the user profile, which `doctor` does not read).
 
 Not taken: npm (dropped 2026-10-14), crates.io (nobody asked; the from-source line covers it), an MCPB bundle for the

@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml"><img src="https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a> <a href="https://github.com/massrelay-ai/comparegraph/releases/latest"><img src="https://img.shields.io/github/v/release/massrelay-ai/comparegraph?display_name=tag" alt="Release"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
+  <a href="https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml"><img src="https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a> <a href="https://github.com/massrelay-ai/comparegraph/releases/latest"><img src="https://img.shields.io/github/v/release/massrelay-ai/comparegraph?display_name=tag" alt="Release"></a> <a href="https://www.npmjs.com/package/@massrelay-ai/comparegraph"><img src="https://img.shields.io/npm/v/%40massrelay-ai%2Fcomparegraph?label=npm" alt="npm"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <a href="#get-started"><img src="https://img.shields.io/badge/releases-SHA256SUMS-brightgreen.svg" alt="Checksummed releases"></a> <img src="https://img.shields.io/badge/rust-1.85%2B-orange.svg" alt="Rust 1.85+"> <img src="https://img.shields.io/badge/MCP%20tools-18-green.svg" alt="MCP tools: 18">
   <img src="https://img.shields.io/badge/languages-29-blue.svg" alt="Languages: 29"> <img src="https://img.shields.io/badge/agents-12-purple.svg" alt="Agents: 12"> <img src="https://img.shields.io/badge/100%25-local%2C%20no%20model%20calls-brightgreen.svg" alt="100% local, no model calls">
 </p>
@@ -52,7 +52,7 @@ binary with a CLI and an MCP server. It reads clones and never runs them. It nev
 
 ## Get started
 
-There is no `pip` or `npm` step: the binary has no runtime.
+No runtime to install: one binary. Node users can run the same binary through `npx -y @massrelay-ai/comparegraph`.
 
 ### 1. Install the binary
 
@@ -67,7 +67,9 @@ irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/ins
 <sub>Checked against the release's `SHA256SUMS` (linux-x64, linux-arm64, darwin-arm64, darwin-x64, win32-x64), then written to `~/.local/bin` (Windows: `%LOCALAPPDATA%\Programs\comparegraph`, added to your user `PATH`; open a new terminal there). `COMPAREGRAPH_VERSION=v0.1.1` pins a release; `COMPAREGRAPH_INSTALL_DIR` moves the binary.</sub>
 
 <details>
-<summary><b>Other routes: Homebrew, by hand, from source</b></summary>
+<summary><b>Other routes: npm, Homebrew, by hand, from source</b></summary>
+
+**npm**, any of the five platforms with Node 18 or newer (the package wraps the same release binaries): `npx -y @massrelay-ai/comparegraph --version`, or `npm i -g @massrelay-ai/comparegraph`.
 
 **Homebrew**, macOS and Linux: `brew install massrelay-ai/comparegraph/comparegraph`.
 
