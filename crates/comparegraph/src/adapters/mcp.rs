@@ -52,8 +52,8 @@ pub fn tools() -> Vec<Value> {
             "repo": {"type":"string"}, "family": {"type":"string"} }), &[])),
         tool("comparegraph_claims", "Latest claim per (clone, feature) with its citations; history=true lists every row with its supersede chain.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string"}, "history": {"type":"boolean"} }), &[])),
-        tool("comparegraph_matrix", "Active features of a family against every clone: verdicts, prevalence, gaps and differentiators.", schema(json!({
-            "family": {"type":"string"} }), &["family"])),
+        tool("comparegraph_matrix", "Active features of a family against every clone: verdicts, prevalence, gaps and differentiators. A clone whose relatedness shows `not run` has no stored band; relate=true scores those first (writes bands).", schema(json!({
+            "family": {"type":"string"}, "relate": {"type":"boolean","description":"score comparators with no stored relatedness band before building the matrix, default false"} }), &["family"])),
         tool("comparegraph_claim", "WRITE: record a claim (has|partial|none|unknown) about a feature in a clone. author is required; has/partial need at least one citation in `at` (path:start-end) that resolves now; none needs `searched` terms that find nothing.", schema(json!({
             "repo": {"type":"string"}, "feature": {"type":"string"}, "family": {"type":"string","description":"disambiguates a feature id that exists in several families"},
             "verdict": {"type":"string","enum":["has","partial","none","unknown"]},
@@ -150,7 +150,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         "comparegraph_absent_check" => &["repo", "family", "feature"],
         "comparegraph_relate" => &["repo", "family"],
         "comparegraph_claims" => &["repo", "family", "feature", "history"],
-        "comparegraph_matrix" => &["family"],
+        "comparegraph_matrix" => &["family", "relate"],
         "comparegraph_claim" => &[
             "repo", "feature", "family", "verdict", "author", "at", "searched", "note",
         ],
@@ -273,6 +273,11 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         },
         "comparegraph_matrix" => Cmd::Matrix {
             family: req(a, "family")?,
+            relate: match a.get("relate") {
+                None | Some(Value::Null) => false,
+                Some(Value::Bool(b)) => *b,
+                Some(_) => return Err("relate must be a boolean".into()),
+            },
         },
         "comparegraph_claim" => {
             let author = req(a, "author")?;

@@ -315,13 +315,17 @@
     },
     {
       "name": "comparegraph_matrix",
-      "description": "Active features of a family against every clone: verdicts, prevalence, gaps and differentiators.",
+      "description": "Active features of a family against every clone: verdicts, prevalence, gaps and differentiators. A clone whose relatedness shows `not run` has no stored band; relate=true scores those first (writes bands).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "family": {
             "type": "string"
+          },
+          "relate": {
+            "type": "boolean",
+            "description": "score comparators with no stored relatedness band before building the matrix, default false"
           }
         },
         "required": [

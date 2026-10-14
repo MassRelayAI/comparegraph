@@ -13,7 +13,8 @@ use std::path::Path;
 pub struct Column {
     pub repo: String,
     pub role: String,
-    pub relatedness: Option<String>,
+    /// the stored band, or `not run` when `relate` has not scored this clone against the family
+    pub relatedness: String,
     pub decision: Option<String>,
 }
 #[derive(Debug, Serialize)]
@@ -33,6 +34,9 @@ pub struct Matrix {
     pub comparators: usize,
     pub columns: Vec<Column>,
     pub rows: Vec<Row>,
+    /// comparators with no stored band (not in the data; the CLI lifts it into a limitation)
+    #[serde(skip)]
+    pub not_run: usize,
 }
 
 fn present(c: &str) -> bool {
@@ -40,6 +44,11 @@ fn present(c: &str) -> bool {
 }
 
 pub fn matrix(root: &Path, family: &str) -> Result<Matrix> {
+    matrix_with(root, family, false)
+}
+
+/// As `matrix`; with `relate`, first scores the family's built comparators that have no stored band.
+pub fn matrix_with(root: &Path, family: &str, relate: bool) -> Result<Matrix> {
     let store = Store::open_existing(root)?;
     let c = store.conn();
     let fam_id: i64 = c
@@ -72,15 +81,37 @@ pub fn matrix(root: &Path, family: &str) -> Result<Matrix> {
         }
     }
     let mut columns = vec![];
+    let mut not_run = 0;
     for (_, name, role) in &repos {
-        let band: Option<String> = super::map::latest_relatedness(root, Some(name), Some(family))?
-            .into_iter()
-            .next()
-            .map(|r| r.band);
+        let stored = |name: &str| -> Result<Option<String>> {
+            Ok(
+                super::map::latest_relatedness(root, Some(name), Some(family))?
+                    .into_iter()
+                    .next()
+                    .map(|r| r.band),
+            )
+        };
+        let mut band = stored(name)?;
+        if band.is_none() && relate && role != "root" {
+            let built = {
+                let store = Store::open_existing(root)?;
+                let id = store.repos()?.into_iter().find(|r| &r.name == name).and_then(|r| r.id);
+                id.is_some_and(|id| store.latest_done_run(id).ok().flatten().is_some())
+            };
+            if built {
+                band = super::map::relate(root, Some(name), Some(family))?
+                    .into_iter()
+                    .next()
+                    .map(|r| r.band);
+            }
+        }
+        if band.is_none() && role != "root" {
+            not_run += 1;
+        }
         columns.push(Column {
             repo: name.clone(),
             role: role.clone(),
-            relatedness: band,
+            relatedness: band.unwrap_or_else(|| "not run".into()),
             decision: dec.get(name).cloned(),
         });
     }
@@ -135,5 +166,6 @@ pub fn matrix(root: &Path, family: &str) -> Result<Matrix> {
         comparators,
         columns,
         rows,
+        not_run,
     })
 }

@@ -168,3 +168,37 @@ fn relate_rescores_when_the_pack_changes_without_a_rebuild() {
     );
     assert_eq!(stored["data"]["items"][0]["score"].as_f64().unwrap(), s2);
 }
+
+#[test]
+fn matrix_says_not_run_and_names_the_limitation_until_relate_has_run() {
+    let (ws, _k, _p) = setup();
+    let v = json(cc(ws.path()).args(["matrix", "fam"]).assert().success());
+    for c in v["data"]["columns"].as_array().unwrap() {
+        assert_eq!(c["relatedness"], "not run", "{v}");
+    }
+    let l = v["evidence"]["limitations"].to_string();
+    assert!(
+        l.contains("relate has not been run for 2 of 2 comparators"),
+        "{v}"
+    );
+}
+
+#[test]
+fn matrix_relate_flag_runs_relate_first_and_drops_the_limitation() {
+    let (ws, _k, _p) = setup();
+    let v = json(
+        cc(ws.path())
+            .args(["matrix", "fam", "--relate"])
+            .assert()
+            .success(),
+    );
+    let bands: Vec<_> = v["data"]["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["relatedness"].as_str().unwrap().to_string())
+        .collect();
+    assert!(bands.contains(&"related".to_string()), "{v}");
+    assert!(!bands.contains(&"not run".to_string()), "{v}");
+    assert!(v["evidence"]["limitations"].as_array().unwrap().is_empty(), "{v}");
+}

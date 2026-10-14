@@ -309,7 +309,12 @@ pub enum Cmd {
         history: bool,
     },
     /// Active features of a family against every clone: verdicts, prevalence, gaps and differentiators
-    Matrix { family: String },
+    Matrix {
+        family: String,
+        /// score the family's comparators that have no stored relatedness band first
+        #[arg(long)]
+        relate: bool,
+    },
     /// Taxonomy packs: add, list, show
     Family {
         #[command(subcommand)]
@@ -940,8 +945,19 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             let total = items.len();
             serde_json::json!({ "items": items, "page": { "next": null, "total": total } })
         }
-        Cmd::Matrix { family } => {
-            serde_json::to_value(crate::application::matrix::matrix(&cli.root, family)?).unwrap()
+        Cmd::Matrix { family, relate } => {
+            let m = crate::application::matrix::matrix_with(&cli.root, family, *relate)?;
+            let mut v = serde_json::to_value(&m).unwrap();
+            if m.not_run > 0 {
+                v["limitation_items"] = serde_json::json!([{
+                    "code": "relate_not_run",
+                    "detail": format!(
+                        "relate has not been run for {} of {} comparators; run `comparegraph relate` (or `matrix --relate`)",
+                        m.not_run, m.comparators
+                    ),
+                }]);
+            }
+            v
         }
         Cmd::Family { what } => {
             use crate::application::family as fam;
