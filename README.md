@@ -364,7 +364,7 @@ feature.
 
 A second gold standard scores `map` (feature to code) and the graph-backed absent check: 30 features of
 [`families/code-graph-tools/rows.md`](families/code-graph-tools/rows.md) against six study copies of code-graph tools, 180
-pairs read by two independent readers, 121 agreed, 13 unresolved, disagreements left out of the scores (method and kappa:
+pairs read by two independent readers, 121 agreed and 59 disagreements left out of the scores (13 agreed locations have no node in the engine graph) (method and kappa:
 [`fixtures/gold-map/README.md`](fixtures/gold-map/README.md)). The ranking was tuned on three of the clones and measured once
 on the other three; the held-out column is the honest number for a repository the tool has never seen.
 
