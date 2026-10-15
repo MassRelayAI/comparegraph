@@ -160,8 +160,9 @@ number cannot be checked, and notes go stale when the code moves. Five propertie
    `limitations[]` list of what the engine cannot see.
 3. **A claim needs a citation that resolves now.** `has` and `partial` need `--at path:start-end` matching a stored node;
    otherwise the engine refuses. A moved citation shows as `unknown*` after `check`.
-4. **`none` needs proof of absence.** Either `--searched` terms that find nothing, or the graph check: four channels
-   (symbols, paths, community terms, node kinds) all empty. Any hit refuses the claim and lists the candidates.
+4. **`none` needs proof of absence.** Either `--searched` terms that find nothing, the same terms with every hit named in
+   `--read-hits` as opened and rejected, or the graph check: four channels (symbols, paths, community terms, node kinds)
+   all empty. Any unread hit refuses the claim and lists the candidates.
 5. **No model in the engine.** Scores, bands, descriptions and candidates are computed from stored facts. An agent may do
    the reading; the engine only stores, checks and refuses.
 
