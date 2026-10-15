@@ -74,6 +74,9 @@ pub struct AbsentCheck {
     pub kinds_named: Vec<String>,
     pub channels: Channels,
     pub absent: bool,
+    /// Why `absent` has its value: `hits` (some channel found something), `family words set aside: <words>` (every
+    /// channel is at zero but the family-word rule dropped terms, so absence is not concluded), or `absent`.
+    pub reason: String,
     /// `inferred` when absent (the graph cannot see strings, flags or abbreviations), `observed` when there are hits
     pub evidence_confidence: &'static str,
 }
@@ -528,6 +531,14 @@ pub(crate) fn check_feature(
         && channels.communities.count == 0
         && channels.kinds.count == 0
         && common.is_empty();
+    let hits = channels.symbols.count + channels.paths.count + channels.communities.count + channels.kinds.count;
+    let reason = if hits > 0 {
+        "hits".to_string()
+    } else if !common.is_empty() {
+        format!("family words set aside: {}", common.join(", "))
+    } else {
+        "absent".to_string()
+    };
     Ok(AbsentCheck {
         repo: repo.into(),
         family: f.family.clone(),
@@ -539,6 +550,7 @@ pub(crate) fn check_feature(
         stems: stem_pairs.into_iter().map(|s| s.0).collect(),
         path_forms: forms,
         kinds_named: names,
+        reason,
         channels,
         absent,
         evidence_confidence: if absent { "inferred" } else { "observed" },

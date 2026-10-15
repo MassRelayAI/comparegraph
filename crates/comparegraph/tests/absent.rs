@@ -388,3 +388,64 @@ fn a_word_in_three_features_is_not_a_family_word() {
     assert_eq!(v["data"]["common"], serde_json::json!([]), "{v}");
     assert_eq!(v["data"]["absent"], false, "{v}");
 }
+
+// ---- the naming guard reads the definition; absent-check says why ----
+
+const NAMING_PACK: &str = "---\nfamily: nm\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n\
+| warp.beam | warp | Beam | Moves a payload through an entanglement channel | a wormhole relay | basics | 1 |\n";
+
+#[test]
+fn guard_one_accepts_a_word_from_the_definition_or_counts_as_has_but_not_a_stop_word() {
+    let (ws, _c, _p) = setup();
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(pack.path().join("rows.md"), NAMING_PACK).unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
+    // `entanglement` is only in the definition, `wormhole` only in counts_as_has: neither is in the id, title or synonyms
+    for w in ["entanglement", "wormhole"] {
+        let c = json(claim_none(ws.path(), "warp.beam", &["--searched", w]).success());
+        assert!(c["data"]["note"].as_str().unwrap().starts_with(&format!("searched (author-supplied): {w} → 0 hits")), "{c}");
+    }
+    // a stop word of the prose names nothing
+    let r = json(claim_none(ws.path(), "warp.beam", &["--searched", "through"]).failure());
+    assert!(r["error"]["message"].as_str().unwrap().contains("searched terms do not name the feature"), "{r}");
+}
+
+#[test]
+fn guard_one_error_lists_at_most_fifteen_words() {
+    let (ws, _c, _p) = setup();
+    let pack = tempfile::tempdir().unwrap();
+    let long = (0..30).map(|i| format!("word{i:02}x")).collect::<Vec<_>>().join(" ");
+    std::fs::write(
+        pack.path().join("rows.md"),
+        format!("---\nfamily: lg\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n| big.thing | big | Thing | {long} | x | basics | 1 |\n"),
+    )
+    .unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
+    let r = json(claim_none(ws.path(), "big.thing", &["--searched", "zzzq"]).failure());
+    let m = r["error"]["message"].as_str().unwrap();
+    assert!(m.ends_with(", …"), "{m}");
+    let listed = m.split(" has none of ").nth(1).unwrap().trim_end_matches(", …").split(", ").count();
+    assert_eq!(listed, 15, "{m}");
+}
+
+#[test]
+fn absent_check_reason_is_hits_absent_or_the_family_words_set_aside() {
+    let (ws, _c, _p) = setup();
+    assert_eq!(check(ws.path(), "quantum.teleport")["data"]["reason"], "absent");
+    assert_eq!(check(ws.path(), "math.counter")["data"]["reason"], "hits");
+    // a family whose features all carry `engine`: the word is set aside, the rest finds nothing
+    let pack = tempfile::tempdir().unwrap();
+    let rows: String = (0..4)
+        .map(|i| format!("| eng.zzq{i} | eng | Engine zzq{i}ful | x | x | basics | 1 |\n"))
+        .collect();
+    std::fs::write(
+        pack.path().join("rows.md"),
+        format!("---\nfamily: eg\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n{rows}"),
+    )
+    .unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
+    let v = json(cc(ws.path()).args(["absent-check", "ts", "eg", "eng.zzq0"]).assert().success());
+    assert_eq!(v["data"]["absent"], false, "{v}");
+    let reason = v["data"]["reason"].as_str().unwrap();
+    assert!(reason.starts_with("family words set aside: ") && reason.contains("eng"), "{v}");
+}

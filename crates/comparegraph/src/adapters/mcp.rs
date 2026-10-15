@@ -46,7 +46,7 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_map", "Candidate symbols and communities per feature of a family in one clone. Candidates are never verdicts; writes nothing.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"},
             "limit": {"type":"integer","minimum":1,"maximum":50,"description":"symbols per feature, default 5"} }), &["repo", "family"])),
-        tool("comparegraph_absent_check", "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits. Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).", schema(json!({
+        tool("comparegraph_absent_check", "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits, and `reason` says why (`hits`, `family words set aside: <words>`, or `absent`). Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"} }), &["repo", "family", "feature"])),
         tool("comparegraph_relate", "Latest stored relatedness band per (clone, family). Reads only: it does not compute; run `comparegraph relate` to refresh.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"} }), &[])),

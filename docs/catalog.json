@@ -4,7 +4,7 @@
   "tools": [
     {
       "name": "comparegraph_absent_check",
-      "description": "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits. Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).",
+      "description": "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits, and `reason` says why (`hits`, `family words set aside: <words>`, or `absent`). Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -41,7 +41,7 @@
     },
     {
       "name": "comparegraph_claim",
-      "description": "WRITE: record a claim (has|partial|none|unknown) about a feature in a clone. author is required; has/partial need at least one citation in `at` (path:start-end) that resolves now; none needs `searched` terms that find nothing.",
+      "description": "WRITE: record a claim (has|partial|none|unknown) about a feature in a clone. author is required; has/partial need at least one citation in `at` (path:start-end) that resolves now; none needs `searched` terms that name the feature and find nothing, or find hits that you list in `read_hits` after reading each.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -79,6 +79,13 @@
           "searched": {
             "type": "string",
             "description": "terms the absence was checked with (none)"
+          },
+          "read_hits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "with searched on a none whose search finds hits: the qualified name of EVERY hit, after you opened each and found it is not this feature; every hit named (and no name the search does not find) records the none as observed"
           },
           "note": {
             "type": "string"
