@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - `add <path> --name <existing> --replace` re-points a registered repo at another checkout (claims and runs stay); the envelope reports `old_path`, `new_path` and the new `head`.
 - `check` reports `stale_locations_superseded`: stale locations of superseded claims, counted apart and mentioned in `notes`.
-- `claim ... none --searched <terms> --read-hits <qualified_name,…>` (batch `hits_read`, MCP `read_hits`): a none whose search finds hits is accepted, as `observed`, when every hit is named as read; unread hits, names the search does not find, a search at the 1000-hit cap and `--read-hits` without `--searched` are refused.
+- `claim ... none --searched <terms> --read-hits <qualified_name,…>` (batch `hits_read`, MCP `read_hits`): a none with candidates is accepted, as `observed`, when the top 10 ranked candidates that `absent-check --searched` returns (`read_set`) are named as read; candidates beyond the cap are recorded as a `read_capped` limitation; unread top candidates, names the search does not find and `--read-hits` without `--searched` are refused.
 - `absent-check` returns `reason`: `hits`, `family words set aside: <words>` or `absent`.
 - `crossbeam-epoch` 0.9.20 in `Cargo.lock` (RUSTSEC-2026-0204; the only lock change), so `cargo-deny` runs with no advisory ignored but the unmaintained Perl grammar.
 - cargo-deny in CI (`deny.toml`): licence allowlist, advisories, bans and sources, run as the `deny` job on every push and pull request.
@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `hooks/hooks.json`: the plugin ships the same session-start hook.
 
 ### Changed
+- `absent-check` returns `read_set` (ranked, capped at 10, `--searched` optional) and `claim none --read-hits` is judged on that set; the 1000-hit refusal is gone.
 - `build` prints the clone `path` it read and the `head` it found (and as its first `--progress` line).
 - `check` counts stale locations of live claims only; those of superseded claims no longer make problems.
 - The naming guard of `claim none --searched` also accepts the words of the feature's definition and counts-as-has text (minus stop words and family words); its refusal lists at most 15 words. The graph absent check keeps its term set.

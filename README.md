@@ -162,7 +162,9 @@ number cannot be checked, and notes go stale when the code moves. Five propertie
    otherwise the engine refuses. A moved citation shows as `unknown*` after `check`.
 4. **`none` needs proof of absence.** Either `--searched` terms that find nothing, the same terms with every hit named in
    `--read-hits` as opened and rejected, or the graph check: four channels (symbols, paths, community terms, node kinds)
-   all empty. Any unread hit refuses the claim and lists the candidates.
+   all empty. A `none` with `--searched` must name as read the top 10 ranked candidates that
+   `absent-check --searched` returns (`read_set`); candidates beyond the cap are recorded as a `read_capped` limitation.
+   An unread candidate in the top 10 refuses the claim and names it.
 5. **No model in the engine.** Scores, bands, descriptions and candidates are computed from stored facts. An agent may do
    the reading; the engine only stores, checks and refuses.
 
