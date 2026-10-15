@@ -1,4 +1,4 @@
-use comparegraph::application::{add::add_repo, build::build_repo, check::check, export::export_json};
+use comparegraph::application::{add::{add_repo, replace_repo}, build::build_repo, check::check, export::export_json};
 use comparegraph::providers::BuildOptions;
 use std::process::Command;
 
@@ -664,4 +664,72 @@ fn show_records_truncated_callers_with_the_total_and_honours_max_callers() {
     assert_eq!(show_with(ws.path(), "r", &qn, false, 0).unwrap_err().code(), show_with(ws.path(), "r", &qn, false, MAX_CALLERS_LIMIT + 1).unwrap_err().code());
     // a plain `show` keeps the default cap
     assert_eq!(comparegraph::application::show::show(ws.path(), "r", &qn, false).unwrap().callers.len(), 50);
+}
+
+#[test]
+fn replace_re_points_a_registered_repo_and_refuses_the_edge_cases() {
+    let ws = tempfile::tempdir().unwrap();
+    let old = clone_with(&[("src/a.py", "def f():\n    pass\n")]);
+    let new = clone_with(&[("src/b.py", "def g():\n    pass\n")]);
+    add_repo(ws.path(), old.path(), Some("alpha"), true).unwrap();
+    let rep = replace_repo(ws.path(), new.path(), "alpha", false).unwrap();
+    let old_c = old.path().canonicalize().unwrap().to_string_lossy().to_string();
+    let new_c = new.path().canonicalize().unwrap().to_string_lossy().to_string();
+    assert_eq!(rep.old_path, old_c);
+    assert_eq!(rep.new_path, new_c);
+    assert_eq!(rep.head.as_deref().map(str::len), Some(7));
+    assert_eq!(rep.limitation_items.len(), 1);
+    assert!(rep.limitation_items[0].detail.contains(&old_c));
+    assert!(rep.limitation_items[0].detail.contains("comparegraph build alpha"));
+    let store = comparegraph::store::Store::open(ws.path()).unwrap();
+    let row = store.repo_by_name("alpha").unwrap().unwrap();
+    assert_eq!(row.path, new_c);
+    assert_eq!(row.role, "root", "the root flag is kept");
+    drop(store);
+    let same = replace_repo(ws.path(), new.path(), "alpha", false).unwrap_err().to_string();
+    assert!(same.contains("already at"), "{same}");
+    let none = replace_repo(ws.path(), new.path(), "nope", false).unwrap_err().to_string();
+    assert!(none.contains("nothing to replace; drop --replace"), "{none}");
+}
+
+#[test]
+fn build_names_the_path_and_head_it_read() {
+    let ws = tempfile::tempdir().unwrap();
+    let c = clone_with(&[("src/a.py", "def f():\n    pass\n")]);
+    add_repo(ws.path(), c.path(), Some("alpha"), false).unwrap();
+    let canon = c.path().canonicalize().unwrap().to_string_lossy().to_string();
+    let r = build_repo(ws.path(), "alpha", "reference", &BuildOptions::default()).unwrap();
+    assert_eq!(r.path, canon);
+    assert_eq!(r.head.as_deref().map(str::len), Some(7));
+    let again = build_repo(ws.path(), "alpha", "reference", &BuildOptions::default()).unwrap();
+    assert!(again.reused);
+    assert_eq!(again.path, canon);
+    assert_eq!(again.head, r.head);
+}
+
+#[test]
+fn check_counts_stale_locations_of_live_claims_only() {
+    let ws = tempfile::tempdir().unwrap();
+    let c = clone_with(&[("src/a.py", "def f():\n    return 1\n")]);
+    add_repo(ws.path(), c.path(), Some("alpha"), false).unwrap();
+    build_repo(ws.path(), "alpha", "reference", &BuildOptions::default()).unwrap();
+    let store = comparegraph::store::Store::open(ws.path()).unwrap();
+    let repo = store.repo_by_name("alpha").unwrap().unwrap();
+    let run = store.latest_done_run(repo.id.unwrap()).unwrap().unwrap();
+    let f = store.nodes_of_run(run.id.unwrap()).unwrap().into_iter().find(|n| n.qualified_name == "src/a.py::f").unwrap();
+    store.conn().execute("INSERT INTO family(name, definition_path) VALUES ('t','t.md')", []).unwrap();
+    store.conn().execute("INSERT INTO feature(family_id, grp, slug, definition, counts_as_has, tier) VALUES (1,'g','x','d','c','basics')", []).unwrap();
+    for _ in 0..2 {
+        store.conn().execute("INSERT INTO claim(repo_id, feature_id, run_id, verdict, confidence, author, created_at) VALUES (?1,1,?2,'has','derived','test','2026-10-12T00:00:00Z')", rusqlite::params![repo.id.unwrap().0, run.id.unwrap().0]).unwrap();
+    }
+    // claim 1 cites a file that no longer exists (superseded by claim 2, which cites the live file)
+    store.conn().execute("INSERT INTO location(claim_id, node_id, path, line_start, line_end, content_hash, resolved_at) VALUES (1, ?1, 'src/gone.py', 1, 2, 'x', '2026-10-12T00:00:00Z')", rusqlite::params![f.id.unwrap().0]).unwrap();
+    store.conn().execute("INSERT INTO location(claim_id, node_id, path, line_start, line_end, content_hash, resolved_at) VALUES (2, ?1, ?2, ?3, ?4, ?5, '2026-10-12T00:00:00Z')",
+        rusqlite::params![f.id.unwrap().0, f.path, f.line_start, f.line_end, f.content_hash]).unwrap();
+    drop(store);
+    let rep = check(ws.path()).unwrap();
+    assert_eq!(rep.stale_locations, 0);
+    assert_eq!(rep.stale_locations_superseded, 1);
+    assert!(rep.ok(), "{:?}", rep.problems);
+    assert!(rep.notes.iter().any(|n| n.contains("superseded")), "{:?}", rep.notes);
 }
