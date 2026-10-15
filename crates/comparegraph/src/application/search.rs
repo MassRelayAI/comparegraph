@@ -71,8 +71,7 @@ pub fn search_any_in_repo(
     };
     let sql = format!(
         "SELECT r.name, n.qualified_name, n.kind, n.path, n.line_start, n.line_end, \
-         (SELECT cm.label FROM community_member x JOIN community cm ON cm.id = x.community_id \
-           WHERE x.node_id = n.id AND cm.run_id = n.run_id LIMIT 1), -bm25(node_fts) AS score \
+         {LABEL_SUBQUERY}, -bm25(node_fts) AS score \
          {WHERE} ORDER BY score DESC, n.qualified_name ASC, n.id ASC LIMIT ?4"
     );
     let mut st = store.conn().prepare(&sql)?;
@@ -95,6 +94,10 @@ pub fn search_any_in_repo(
     Ok(hits)
 }
 
+/// The label of a node's community, looked up by node id; `idx_cm_node` keeps it a point lookup.
+pub(crate) const LABEL_SUBQUERY: &str = "(SELECT cm.label FROM community_member x JOIN community cm ON cm.id = x.community_id \
+ WHERE x.node_id = n.id AND cm.run_id = n.run_id LIMIT 1)";
+
 pub(crate) const WHERE: &str = "FROM node_fts CROSS JOIN node n ON n.id = node_fts.rowid JOIN repo r ON r.id = n.repo_id \
  WHERE node_fts MATCH ?1 AND n.run_id = (SELECT MAX(id) FROM run WHERE repo_id = n.repo_id AND status = 'done') \
  AND (?2 IS NULL OR r.name = ?2) AND (?3 IS NULL OR n.kind = ?3)";
@@ -111,8 +114,7 @@ pub fn search(root: &Path, q: &SearchQuery) -> Result<SearchPage> {
     )?;
     let sql = format!(
         "SELECT r.name, n.qualified_name, n.kind, n.path, n.line_start, n.line_end, \
-         (SELECT cm.label FROM community_member x JOIN community cm ON cm.id = x.community_id \
-           WHERE x.node_id = n.id AND cm.run_id = n.run_id LIMIT 1), -bm25(node_fts) AS score \
+         {LABEL_SUBQUERY}, -bm25(node_fts) AS score \
          {WHERE} ORDER BY score DESC, n.qualified_name ASC, n.id ASC LIMIT ?4 OFFSET ?5"
     );
     let mut st = c.prepare(&sql)?;
@@ -170,6 +172,20 @@ mod fts_plan {
         let none: Option<String> = None;
         let b = first_step(c, &sql, &[&m, &none, &none]);
         assert!(b.starts_with("SCAN node_fts"), "search: first step is {b:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// The community-label subquery runs once per matched node: a table scan there made one `claim none` cost
+    /// seconds on a 56k-node repo and minutes on larger ones. It must be a point lookup by node id.
+    #[test]
+    fn community_label_lookup_uses_the_node_index() {
+        let dir = std::env::temp_dir().join(format!("comparegraph-label-plan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir).unwrap();
+        let sql = format!("SELECT {} FROM node n WHERE n.id = 1", super::LABEL_SUBQUERY);
+        let mut st = store.conn().prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+        let rows: Vec<String> = st.query_map([], |r| r.get::<_, String>(3)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert!(rows.iter().any(|r| r.contains("idx_cm_node")), "label lookup plan: {rows:?}");
+        assert!(!rows.iter().any(|r| r.starts_with("SCAN x")), "label lookup scans community_member: {rows:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

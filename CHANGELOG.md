@@ -46,6 +46,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `setup` and `doctor` rows carry `kind` (`config`, `rules` or `hook`; `doctor` also reports the `rules` and `hook` rows of detected clients); a `rules` row's `client` lists the clients that read the file, comma-joined.
 - The `using-comparegraph` skill no longer points to npm for the binary.
 
+### Fixed
+- `search`, `absent-check --searched` and `claim none` looked up each matched node's community label by scanning the whole membership table (1.2 s for 455 matches on a 56k-node repo, minutes per row on larger clones); the index `community_member(node_id)` makes that a point lookup (3 ms), created on open for existing stores and pinned by a query-plan test.
+
 ## [0.1.1] - 2026-10-14
 
 ### Added

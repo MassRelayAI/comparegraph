@@ -658,11 +658,10 @@ fn build_read_set(store: &Store, run: i64, p: &Prep, searched: Option<&str>) -> 
             forms.push(t.clone());
         }
     }
-    let mut st = c.prepare(
-        "SELECT n.name, n.qualified_name, n.kind, n.path, n.line_start, \
-         (SELECT cm.label FROM community_member x JOIN community cm ON cm.id = x.community_id \
-           WHERE x.node_id = n.id AND cm.run_id = n.run_id LIMIT 1) FROM node n WHERE n.id = ?1",
-    )?;
+    let mut st = c.prepare(&format!(
+        "SELECT n.name, n.qualified_name, n.kind, n.path, n.line_start, {} FROM node n WHERE n.id = ?1",
+        super::search::LABEL_SUBQUERY
+    ))?;
     let mut scored: Vec<(u32, f64, Candidate, i64)> = vec![];
     for id in &ids {
         let (name, qn, kind, path, line, label) = st.query_row(params![id], |r| {
@@ -712,7 +711,7 @@ fn build_read_set(store: &Store, run: i64, p: &Prep, searched: Option<&str>) -> 
             why.extend(path_hits.iter().map(|t| format!("path~{t}")));
             for t in &qn_hits {
                 if !path_hits.contains(t) {
-                    why.push(format!("path~{t}"));
+                    why.push(format!("qn~{t}"));
                 }
             }
         }
