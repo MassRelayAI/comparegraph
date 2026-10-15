@@ -7,7 +7,10 @@ use std::path::Path;
 pub struct CheckReport {
     pub repos: usize,
     pub runs_done: usize,
+    /// Stale locations of live claims (the latest claim per repo and feature).
     pub stale_locations: usize,
+    /// Stale locations that belong to superseded claims: append-only history, informational.
+    pub stale_locations_superseded: usize,
     pub drifted_runs: usize,
     /// Claims whose cited run has no row or is not a finished (`done`) build.
     pub unbuilt_claim_runs: usize,
@@ -15,6 +18,8 @@ pub struct CheckReport {
     pub downgraded_claims: usize,
     pub schema_ok: bool,
     pub problems: Vec<String>,
+    /// informational lines, never problems
+    pub notes: Vec<String>,
 }
 impl CheckReport {
     pub fn ok(&self) -> bool {
@@ -85,13 +90,13 @@ pub fn check(root: &Path) -> Result<CheckReport> {
             ));
         }
         // locations: path exists, lines within file, content hash matches
-        let mut st = store.conn().prepare("SELECT l.id, l.path, l.line_start, l.line_end, l.content_hash FROM location l JOIN claim c ON c.id = l.claim_id WHERE c.repo_id = ?1")?;
-        let rows: Vec<(i64, String, u32, u32, String)> = st
+        let mut st = store.conn().prepare("SELECT l.id, l.path, l.line_start, l.line_end, l.content_hash, c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id) FROM location l JOIN claim c ON c.id = l.claim_id WHERE c.repo_id = ?1")?;
+        let rows: Vec<(i64, String, u32, u32, String, bool)> = st
             .query_map(params![r.id.unwrap().0], |x| {
-                Ok((x.get(0)?, x.get(1)?, x.get(2)?, x.get(3)?, x.get(4)?))
+                Ok((x.get(0)?, x.get(1)?, x.get(2)?, x.get(3)?, x.get(4)?, x.get(5)?))
             })?
             .collect::<std::result::Result<_, _>>()?;
-        for (id, path, ls, le, h) in rows {
+        for (id, path, ls, le, h, live) in rows {
             let full = Path::new(&r.path).join(&path);
             let stale = match std::fs::read_to_string(&full) {
                 Ok(src) => {
@@ -101,16 +106,26 @@ pub fn check(root: &Path) -> Result<CheckReport> {
                 Err(_) => true,
             };
             if stale {
-                rep.stale_locations += 1;
                 store
                     .conn()
                     .execute("UPDATE location SET stale = 1 WHERE id = ?1", params![id])?; // the one permitted flag flip (spec §7.4)
-                rep.problems.push(format!(
-                    "{}: location {} {}:{}-{} is stale",
-                    r.name, id, path, ls, le
-                ));
+                if live {
+                    rep.stale_locations += 1;
+                    rep.problems.push(format!(
+                        "{}: location {} {}:{}-{} is stale",
+                        r.name, id, path, ls, le
+                    ));
+                } else {
+                    rep.stale_locations_superseded += 1;
+                }
             }
         }
+    }
+    if rep.stale_locations_superseded > 0 {
+        rep.notes.push(format!(
+            "{} stale location(s) belong to superseded claims (history, not problems)",
+            rep.stale_locations_superseded
+        ));
     }
     rep.downgraded_claims = store.conn().query_row(
         "SELECT COUNT(*) FROM claim c WHERE c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id) \
