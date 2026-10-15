@@ -213,6 +213,11 @@ impl Store {
     pub fn repo_by_name(&self, name: &str) -> Result<Option<RepoRow>> {
         Ok(self.conn.query_row("SELECT id,name,path,remote,head,licence,lane,role,category,stars,added_at FROM repo WHERE name=?1", params![name], row_to_repo).optional()?)
     }
+    /// Re-point a registered repo at another checkout (path and head only; claims, runs and the rest of the row stay).
+    pub fn set_repo_path(&self, id: RepoId, path: &str, head: Option<&str>, role: Option<&str>) -> Result<()> {
+        self.conn.execute("UPDATE repo SET path=?2, head=?3, role=COALESCE(?4, role) WHERE id=?1", params![id.0, path, head, role])?;
+        Ok(())
+    }
     pub fn repos(&self) -> Result<Vec<RepoRow>> {
         let mut st = self.conn.prepare("SELECT id,name,path,remote,head,licence,lane,role,category,stars,added_at FROM repo ORDER BY name")?;
         let rows = st

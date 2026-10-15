@@ -42,6 +42,9 @@ pub enum Cmd {
         /// register this clone as the workspace's root (spec §2b product/baseline modes)
         #[arg(long)]
         as_root: bool,
+        /// re-point the registered repo `--name` at this path (claims and runs stay)
+        #[arg(long, requires = "name")]
+        replace: bool,
     },
     /// Parse a registered clone into the graph (one run)
     Build {
@@ -655,6 +658,13 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             path,
             name,
             as_root,
+            replace,
+        } if *replace => serde_json::to_value(crate::application::add::replace_repo(&cli.root, path, name.as_deref().unwrap_or_default(), *as_root)?).unwrap(),
+        Cmd::Add {
+            path,
+            name,
+            as_root,
+            ..
         } => serde_json::to_value(add_repo(&cli.root, path, name.as_deref(), *as_root)?).unwrap(),
         Cmd::Build {
             repo,
