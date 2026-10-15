@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS community (
   id INTEGER PRIMARY KEY, repo_id INTEGER NOT NULL REFERENCES repo(id), run_id INTEGER NOT NULL REFERENCES run(id),
   label TEXT NOT NULL, keywords_json TEXT NOT NULL DEFAULT '[]', cohesion REAL, size INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS community_member (community_id INTEGER NOT NULL REFERENCES community(id), node_id INTEGER NOT NULL REFERENCES node(id), PRIMARY KEY (community_id, node_id));
-CREATE TABLE IF NOT EXISTS family (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition_path TEXT NOT NULL, description TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS family (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition_path TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', definition_hash TEXT NOT NULL DEFAULT '', source_path TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS feature (
   id INTEGER PRIMARY KEY, family_id INTEGER NOT NULL REFERENCES family(id), grp TEXT NOT NULL, slug TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
   definition TEXT NOT NULL, counts_as_has TEXT NOT NULL, tier TEXT NOT NULL, weight INTEGER NOT NULL DEFAULT 1, synonyms TEXT NOT NULL DEFAULT '', UNIQUE(family_id, slug));

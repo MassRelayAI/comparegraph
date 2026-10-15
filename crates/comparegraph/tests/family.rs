@@ -168,13 +168,10 @@ fn list_and_show_envelopes() {
     let v: serde_json::Value = serde_json::from_slice(&a.get_output().stdout).unwrap();
     assert_eq!(v["verb"], "family");
     assert_eq!(v["data"]["features"], 3);
-    let canon = p
-        .path()
-        .canonicalize()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
-    assert_eq!(v["data"]["definition_path"], canon);
+    assert_eq!(
+        v["data"]["definition_path"],
+        ".comparegraph/families/agent-harness/rows.md"
+    );
     let l = cc(ws.path()).args(["family", "list"]).assert().success();
     let v: serde_json::Value = serde_json::from_slice(&l.get_output().stdout).unwrap();
     assert_eq!(v["data"]["items"][0]["name"], "agent-harness");
@@ -272,4 +269,121 @@ fn a_ninth_column_or_a_misnamed_eighth_fails() {
     let wrong = HEAD8.replace("synonyms", "aliases");
     let e = parse_pack(&format!("{wrong}| routing.retry | routing | Retry | d | c | basics | 2 | s |\n")).unwrap_err().to_string();
     assert!(e.contains("table header must be"), "{e}");
+}
+
+const SNAP: &str = ".comparegraph/families/agent-harness/rows.md";
+fn jv(a: &assert_cmd::assert::Assert) -> serde_json::Value {
+    serde_json::from_slice(&a.get_output().stdout).unwrap()
+}
+fn sha256_hex(b: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
+}
+
+#[test]
+fn add_snapshots_the_pack_and_records_hash_and_source() {
+    let ws = tempfile::tempdir().unwrap();
+    let p = pack(&[R1, R2]);
+    let a = cc(ws.path()).args(["family", "add"]).arg(p.path()).assert().success();
+    let v = jv(&a);
+    let snap = ws.path().join(SNAP);
+    let text = std::fs::read_to_string(&snap).unwrap();
+    assert_eq!(text, std::fs::read_to_string(p.path().join("rows.md")).unwrap());
+    assert_eq!(v["data"]["definition_path"], SNAP);
+    let h = v["data"]["definition_hash"].as_str().unwrap();
+    assert_eq!(h.len(), 64);
+    assert!(h.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    assert_eq!(h, sha256_hex(text.as_bytes()));
+    let src = p.path().canonicalize().unwrap().to_string_lossy().to_string();
+    assert_eq!(v["data"]["source_path"], src);
+    let s = jv(&cc(ws.path()).args(["family", "show", "agent-harness"]).assert().success());
+    assert_eq!(s["data"]["definition_hash"], h);
+    assert_eq!(s["data"]["source_path"], src);
+    assert_eq!(s["data"]["snapshot_present"], true);
+    let l = jv(&cc(ws.path()).args(["family", "list"]).assert().success());
+    assert_eq!(l["data"]["items"][0]["snapshot_present"], true);
+    assert_eq!(l["data"]["items"][0]["definition_hash"], h);
+}
+
+#[test]
+fn re_import_overwrites_the_snapshot_and_changes_the_hash() {
+    let ws = tempfile::tempdir().unwrap();
+    let p = pack(&[R1]);
+    let h1 = jv(&cc(ws.path()).args(["family", "add"]).arg(p.path()).assert().success())["data"]["definition_hash"].clone();
+    let p2 = pack(&[R1, R2]);
+    let h2 = jv(&cc(ws.path()).args(["family", "add"]).arg(p2.path()).assert().success())["data"]["definition_hash"].clone();
+    assert_ne!(h1, h2);
+    let text = std::fs::read_to_string(ws.path().join(SNAP)).unwrap();
+    assert!(text.contains("routing.fallback"));
+    assert_eq!(h2.as_str().unwrap(), sha256_hex(text.as_bytes()));
+}
+
+#[test]
+fn a_missing_snapshot_shows_in_show_and_check_and_an_edited_one_adds_a_note() {
+    let ws = tempfile::tempdir().unwrap();
+    let p = pack(&[R1]);
+    cc(ws.path()).args(["family", "add"]).arg(p.path()).assert().success();
+    let ok = jv(&cc(ws.path()).args(["check"]).assert().success());
+    assert_eq!(ok["data"]["family_snapshots_missing"], 0);
+    // edited after import: a note, not a problem
+    let snap = ws.path().join(SNAP);
+    let mut t = std::fs::read_to_string(&snap).unwrap();
+    t.push_str("\nedited\n");
+    std::fs::write(&snap, t).unwrap();
+    let ed = jv(&cc(ws.path()).args(["check"]).assert().success());
+    assert!(ed["data"]["notes"].to_string().contains("family agent-harness: the pack snapshot was edited after import"), "{ed}");
+    // removed: a problem
+    std::fs::rename(&snap, ws.path().join("moved.md")).unwrap();
+    let s = jv(&cc(ws.path()).args(["family", "show", "agent-harness"]).assert().success());
+    assert_eq!(s["data"]["snapshot_present"], false);
+    let c = jv(&cc(ws.path()).args(["check"]).assert().code(1));
+    assert_eq!(c["data"]["family_snapshots_missing"], 1);
+    assert!(c["data"]["problems"].to_string().contains(&format!(
+        "family agent-harness: the pack snapshot {SNAP} is missing; re-run family add <dir>"
+    )), "{c}");
+}
+
+#[test]
+fn a_store_created_before_the_snapshot_columns_opens_and_gains_them() {
+    let ws = tempfile::tempdir().unwrap();
+    let p = pack(&[R1]);
+    cc(ws.path()).args(["family", "add"]).arg(p.path()).assert().success();
+    let db_path = ws.path().join(".comparegraph/comparegraph.db");
+    let cols = |db: &rusqlite::Connection| -> Vec<String> {
+        db.prepare("PRAGMA table_info(family)").unwrap()
+            .query_map([], |r| r.get::<_, String>(1)).unwrap()
+            .map(Result::unwrap).collect()
+    };
+    {
+        let db = rusqlite::Connection::open(&db_path).unwrap();
+        db.execute_batch("ALTER TABLE family DROP COLUMN definition_hash; ALTER TABLE family DROP COLUMN source_path;").unwrap();
+        db.execute("UPDATE family SET definition_path = '/old/abs/dir'", []).unwrap();
+        let c = cols(&db);
+        assert!(!c.iter().any(|x| x == "definition_hash" || x == "source_path"), "{c:?}");
+    }
+    let s = jv(&cc(ws.path()).args(["family", "show", "agent-harness"]).assert().success());
+    assert_eq!(s["data"]["definition_hash"], "");
+    assert_eq!(s["data"]["source_path"], "");
+    assert_eq!(s["data"]["snapshot_present"], false);
+    let db = rusqlite::Connection::open(&db_path).unwrap();
+    let c = cols(&db);
+    assert!(c.iter().any(|x| x == "definition_hash") && c.iter().any(|x| x == "source_path"), "{c:?}");
+    cc(ws.path()).args(["family", "add"]).arg(p.path()).assert().success();
+    let s = jv(&cc(ws.path()).args(["family", "show", "agent-harness"]).assert().success());
+    assert_eq!(s["data"]["snapshot_present"], true);
+    assert_eq!(s["data"]["definition_hash"].as_str().unwrap().len(), 64);
+}
+
+#[test]
+fn a_bad_pack_writes_no_snapshot() {
+    let ws = tempfile::tempdir().unwrap();
+    let good = pack(&[R1]);
+    cc(ws.path()).args(["family", "add"]).arg(good.path()).assert().success();
+    let before = std::fs::read_to_string(ws.path().join(SNAP)).unwrap();
+    let bad = pack(&[R2, R2]);
+    cc(ws.path()).args(["family", "add"]).arg(bad.path()).assert().code(1);
+    assert_eq!(std::fs::read_to_string(ws.path().join(SNAP)).unwrap(), before);
+    let ws2 = tempfile::tempdir().unwrap();
+    cc(ws2.path()).args(["family", "add"]).arg(bad.path()).assert().code(1);
+    assert!(!ws2.path().join(".comparegraph").exists());
 }

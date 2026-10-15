@@ -34,8 +34,8 @@ external provider with no manifest). `comparegraph <verb> --help` prints every f
 
 | Command | What it does | Flags that matter |
 |---|---|---|
-| `family add <DIR>` | Load a pack (`rows.md`). Features it no longer lists become retired. | |
-| `family list` / `family show` | Registered families; one family by group. | |
+| `family add <DIR>` | Load a pack (`rows.md`) and snapshot it to `.comparegraph/families/<name>/rows.md`; `definition_path` is workspace-relative, `definition_hash` is its sha256, `source_path` the directory it came from. Features it no longer lists become retired. Re-run it on a store imported before snapshots to create one. | |
+| `family list` / `family show` | Registered families; one family by group. Each reports `definition_path`, `definition_hash`, `source_path` and `snapshot_present`. `check` reports `family_snapshots_missing`. | |
 | `family propose <NAME>` | Draft `rows.draft.md` from terms the given repos share. No model. | `--repos a,b,c`, `--min-repos`, `--max`, `--out` |
 | `relate` | Score each clone against each family and record the band. | `--repo`, `--family`, `--stored` |
 | `map <REPO> <FAMILY>` | Candidate symbols and communities per feature. Writes nothing. | `--feature`, `--limit` (5) |

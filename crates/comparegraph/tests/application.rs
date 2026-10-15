@@ -719,6 +719,7 @@ fn check_counts_stale_locations_of_live_claims_only() {
     let run = store.latest_done_run(repo.id.unwrap()).unwrap().unwrap();
     let f = store.nodes_of_run(run.id.unwrap()).unwrap().into_iter().find(|n| n.qualified_name == "src/a.py::f").unwrap();
     store.conn().execute("INSERT INTO family(name, definition_path) VALUES ('t','t.md')", []).unwrap();
+    std::fs::write(ws.path().join("t.md"), "x").unwrap(); // the raw family row's snapshot, so check has no missing-snapshot problem
     store.conn().execute("INSERT INTO feature(family_id, grp, slug, definition, counts_as_has, tier) VALUES (1,'g','x','d','c','basics')", []).unwrap();
     for _ in 0..2 {
         store.conn().execute("INSERT INTO claim(repo_id, feature_id, run_id, verdict, confidence, author, created_at) VALUES (?1,1,?2,'has','derived','test','2026-10-12T00:00:00Z')", rusqlite::params![repo.id.unwrap().0, run.id.unwrap().0]).unwrap();

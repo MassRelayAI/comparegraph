@@ -173,9 +173,20 @@ pub fn parse_pack(text: &str) -> Result<Pack> {
 pub struct FamilyAdded {
     pub family: String,
     pub definition_path: String,
+    pub definition_hash: String,
+    pub source_path: String,
     pub features: usize,
     pub added: Vec<String>,
     pub retired: Vec<String>,
+}
+
+/// The workspace-relative snapshot path of a family's pack (forward slashes).
+pub fn snapshot_rel(family: &str) -> String {
+    format!(".comparegraph/families/{family}/rows.md")
+}
+/// Is the recorded snapshot a file under the workspace root? (An old absolute `definition_path` is never counted.)
+pub fn snapshot_present(root: &Path, definition_path: &str) -> bool {
+    !Path::new(definition_path).is_absolute() && root.join(definition_path).is_file()
 }
 
 pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
@@ -196,8 +207,10 @@ pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
         .conn()
         .unchecked_transaction()
         .map_err(AppError::from)?;
-    let path = dir.to_string_lossy().to_string();
-    let fid = store.upsert_family(&pack.family, &path, &pack.description)?;
+    let rel = snapshot_rel(&pack.family);
+    let hash = crate::providers::reference::hex_sha256(text.as_bytes());
+    let source = dir.to_string_lossy().to_string();
+    let fid = store.upsert_family(&pack.family, &rel, &pack.description, &hash, &source)?;
     for r in &pack.rows {
         store.upsert_feature(
             fid,
@@ -215,6 +228,12 @@ pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
     }
     let keep: Vec<String> = pack.rows.iter().map(|r| r.id.clone()).collect();
     let retired = store.retire_missing(&pack.family, &keep)?;
+    // the snapshot is written last; if it cannot be written the transaction is dropped, not committed
+    let snap = root.join(&rel);
+    if let Some(parent) = snap.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| AppError::Io(parent.to_path_buf(), e))?;
+    }
+    std::fs::write(&snap, &text).map_err(|e| AppError::Io(snap.clone(), e))?;
     tx.commit().map_err(AppError::from)?;
     let added = keep
         .iter()
@@ -223,7 +242,9 @@ pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
         .collect();
     Ok(FamilyAdded {
         family: pack.family,
-        definition_path: path,
+        definition_path: rel,
+        definition_hash: hash,
+        source_path: source,
         features: keep.len(),
         added,
         retired,
@@ -234,6 +255,9 @@ pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
 pub struct FamilySummary {
     pub name: String,
     pub definition_path: String,
+    pub definition_hash: String,
+    pub source_path: String,
+    pub snapshot_present: bool,
     pub description: String,
     pub active: usize,
     pub retired: usize,
@@ -253,7 +277,10 @@ pub fn list_families(root: &Path) -> Result<Vec<FamilySummary>> {
         groups.dedup();
         out.push(FamilySummary {
             name: f.name,
+            snapshot_present: snapshot_present(root, &f.definition_path),
             definition_path: f.definition_path,
+            definition_hash: f.definition_hash,
+            source_path: f.source_path,
             description: f.description,
             active: feats.len() - retired,
             retired,
@@ -267,6 +294,9 @@ pub fn list_families(root: &Path) -> Result<Vec<FamilySummary>> {
 pub struct FamilyShown {
     pub name: String,
     pub definition_path: String,
+    pub definition_hash: String,
+    pub source_path: String,
+    pub snapshot_present: bool,
     pub description: String,
     pub groups: Vec<GroupShown>,
 }
@@ -292,7 +322,10 @@ pub fn show_family(root: &Path, name: &str) -> Result<FamilyShown> {
     }
     Ok(FamilyShown {
         name: fam.name,
+        snapshot_present: snapshot_present(root, &fam.definition_path),
         definition_path: fam.definition_path,
+        definition_hash: fam.definition_hash,
+        source_path: fam.source_path,
         description: fam.description,
         groups,
     })

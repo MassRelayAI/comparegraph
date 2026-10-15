@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 - `absent-check` returns `read_set` (ranked, capped at 10, `--searched` optional) and `claim none --read-hits` is judged on that set; the 1000-hit refusal is gone.
+- `family add` snapshots the pack under `.comparegraph/families/<name>/rows.md`, records its sha256 and source directory, and `definition_path` is workspace-relative; `check` reports `family_snapshots_missing`. A store imported earlier shows `snapshot_present: false` until `family add` is re-run.
 - `build` prints the clone `path` it read and the `head` it found (and as its first `--progress` line).
 - `check` counts stale locations of live claims only; those of superseded claims no longer make problems.
 - The naming guard of `claim none --searched` also accepts the words of the feature's definition and counts-as-has text (minus stop words and family words); its refusal lists at most 15 words. The graph absent check keeps its term set.

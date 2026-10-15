@@ -160,6 +160,22 @@ impl Store {
             conn.execute_batch("ALTER TABLE feature ADD COLUMN synonyms TEXT NOT NULL DEFAULT ''")
                 .map_err(open_err)?;
         }
+        // additive columns (family snapshot): same pattern; older stores keep their rows and gain empty values
+        for col in ["definition_hash", "source_path"] {
+            let has = {
+                let mut st = conn.prepare("PRAGMA table_info(family)").map_err(open_err)?;
+                let names = st
+                    .query_map([], |r| r.get::<_, String>(1))
+                    .map_err(open_err)?
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(open_err)?;
+                names.iter().any(|n| n == col)
+            };
+            if !has {
+                conn.execute_batch(&format!("ALTER TABLE family ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"))
+                    .map_err(open_err)?;
+            }
+        }
         let existing: Option<String> = conn
             .query_row(
                 "SELECT value FROM meta WHERE key = 'schema_version'",
@@ -730,6 +746,10 @@ pub struct FamilyRow {
     pub name: String,
     pub definition_path: String,
     pub description: String,
+    /// lowercase hex sha256 of the imported `rows.md` text (empty for a store imported before snapshots)
+    pub definition_hash: String,
+    /// the directory the pack was imported from (informational)
+    pub source_path: String,
 }
 /// A feature row; `slug` holds the full pack id `<group>.<slug>`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -770,6 +790,8 @@ fn family_row(r: &rusqlite::Row) -> rusqlite::Result<FamilyRow> {
         name: r.get(1)?,
         definition_path: r.get(2)?,
         description: r.get(3)?,
+        definition_hash: r.get(4)?,
+        source_path: r.get(5)?,
     })
 }
 
@@ -779,11 +801,14 @@ impl Store {
         name: &str,
         definition_path: &str,
         description: &str,
+        definition_hash: &str,
+        source_path: &str,
     ) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO family(name, definition_path, description) VALUES (?1, ?2, ?3) \
-             ON CONFLICT(name) DO UPDATE SET definition_path = excluded.definition_path, description = excluded.description",
-            params![name, definition_path, description],
+            "INSERT INTO family(name, definition_path, description, definition_hash, source_path) VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(name) DO UPDATE SET definition_path = excluded.definition_path, description = excluded.description, \
+             definition_hash = excluded.definition_hash, source_path = excluded.source_path",
+            params![name, definition_path, description, definition_hash, source_path],
         )?;
         Ok(self.conn.query_row(
             "SELECT id FROM family WHERE name = ?1",
@@ -795,7 +820,7 @@ impl Store {
         Ok(self
             .conn
             .query_row(
-                "SELECT id, name, definition_path, description FROM family WHERE name = ?1",
+                "SELECT id, name, definition_path, description, definition_hash, source_path FROM family WHERE name = ?1",
                 params![name],
                 family_row,
             )
@@ -804,7 +829,7 @@ impl Store {
     pub fn families(&self) -> Result<Vec<FamilyRow>> {
         let mut st = self
             .conn
-            .prepare("SELECT id, name, definition_path, description FROM family ORDER BY name")?;
+            .prepare("SELECT id, name, definition_path, description, definition_hash, source_path FROM family ORDER BY name")?;
         let rows = st
             .query_map([], family_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;

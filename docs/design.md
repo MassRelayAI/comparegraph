@@ -96,7 +96,7 @@ One SQLite file per workspace, `.comparegraph/comparegraph.db` (rusqlite, bundle
 | `edge` | id, repo_id, run_id, kind (contains/imports/calls/implements/tests/routes_to), source_node_id, target_node_id, confidence | a relation |
 | `community` | id, repo_id, run_id, label, keywords_json, cohesion, size | a cluster of related nodes (the STRUCTURE level) |
 | `community_member` | community_id, node_id | — |
-| `family` | id, name, definition_path | the taxonomy root (`families/<name>/rows.md`) |
+| `family` | id, name, definition_path, definition_hash, source_path | the taxonomy root: `family add` snapshots the pack to `.comparegraph/families/<name>/rows.md` (`definition_path`, workspace-relative), with its sha256 and the directory it came from |
 | `feature` | id, family_id, group, slug, definition, counts_as_has, tier (basics/common/ours-only), weight | one row of the taxonomy |
 | `relatedness` | repo_id, family_id, run_id, score, band (related/adjacent/unrelated), basis_json | the clone ↔ family score |
 | `claim` | id, repo_id, feature_id, run_id, verdict (has/partial/none/unknown), confidence (observed/derived/inferred/unknown), author, note, limitations_json, created_at, supersedes_id | the JUDGEMENT; append-only — a re-confirmation or a change is a new row naming the one it supersedes (a batch skips a row equal to the live claim), so every cell has a trail (who, when, on what evidence, what changed) |

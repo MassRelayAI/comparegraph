@@ -16,6 +16,8 @@ pub struct CheckReport {
     pub unbuilt_claim_runs: usize,
     /// Latest claims whose confidence shows as unknown because a cited location is stale (informational).
     pub downgraded_claims: usize,
+    /// Families whose pack snapshot file is absent from the workspace.
+    pub family_snapshots_missing: usize,
     pub schema_ok: bool,
     pub problems: Vec<String>,
     /// informational lines, never problems
@@ -126,6 +128,25 @@ pub fn check(root: &Path) -> Result<CheckReport> {
             "{} stale location(s) belong to superseded claims (history, not problems)",
             rep.stale_locations_superseded
         ));
+    }
+    for f in store.families()? {
+        if !super::family::snapshot_present(root, &f.definition_path) {
+            rep.family_snapshots_missing += 1;
+            rep.problems.push(format!(
+                "family {}: the pack snapshot {} is missing; re-run family add <dir>",
+                f.name, f.definition_path
+            ));
+        } else if !f.definition_hash.is_empty() {
+            let edited = std::fs::read(root.join(&f.definition_path))
+                .map(|b| crate::providers::reference::hex_sha256(&b) != f.definition_hash)
+                .unwrap_or(false);
+            if edited {
+                rep.notes.push(format!(
+                    "family {}: the pack snapshot was edited after import",
+                    f.name
+                ));
+            }
+        }
     }
     rep.downgraded_claims = store.conn().query_row(
         "SELECT COUNT(*) FROM claim c WHERE c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id) \
