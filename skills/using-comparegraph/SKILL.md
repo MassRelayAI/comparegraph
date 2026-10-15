@@ -40,4 +40,4 @@ short rules block into the agent's instruction file in the workspace (once it ha
 - Run `comparegraph check` before trusting a verdict; stale locations show as `unknown*` in the matrix.
 - Compact answers carry ids and `file:line` only. Read a body with `show <repo> "<qualified_name>" --detail full`.
 - Read every answer's `limitations`: dynamic dispatch, config-driven wiring and unsupported languages are invisible.
-- A `none` needs a `--searched` stem; try several. Clones are read, never run.
+- A `none` needs a `--searched` stem; try several. If the search finds hits, read them and name every one in `--read-hits`. Clones are read, never run.

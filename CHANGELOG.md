@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - `add <path> --name <existing> --replace` re-points a registered repo at another checkout (claims and runs stay); the envelope reports `old_path`, `new_path` and the new `head`.
 - `check` reports `stale_locations_superseded`: stale locations of superseded claims, counted apart and mentioned in `notes`.
+- `claim ... none --searched <terms> --read-hits <qualified_name,…>` (batch `hits_read`, MCP `read_hits`): a none whose search finds hits is accepted, as `observed`, when every hit is named as read; unread hits, names the search does not find, a search at the 1000-hit cap and `--read-hits` without `--searched` are refused.
+- `absent-check` returns `reason`: `hits`, `family words set aside: <words>` or `absent`.
 - `crossbeam-epoch` 0.9.20 in `Cargo.lock` (RUSTSEC-2026-0204; the only lock change), so `cargo-deny` runs with no advisory ignored but the unmaintained Perl grammar.
 - cargo-deny in CI (`deny.toml`): licence allowlist, advisories, bans and sources, run as the `deny` job on every push and pull request.
 - Build provenance attestations on the release binaries and `SHA256SUMS` (`actions/attest-build-provenance`); verify with `gh attestation verify`.
@@ -32,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 - `build` prints the clone `path` it read and the `head` it found (and as its first `--progress` line).
 - `check` counts stale locations of live claims only; those of superseded claims no longer make problems.
+- The naming guard of `claim none --searched` also accepts the words of the feature's definition and counts-as-has text (minus stop words and family words); its refusal lists at most 15 words. The graph absent check keeps its term set.
 - README in the inline style: centred HTML header with a doc-links row, rules between parts, a picture per part, numbers folded in details; CLI reference, MCP tools, configuration, vault, library usage, FAQ and troubleshooting moved to pages under `docs/` (`usage.md`, `commands.md`, `mcp-tools.md`, `faq.md`, `troubleshooting.md`).
 - README front: centred header with platform and agent badges, Get started in four numbered steps with the other routes folded, Install merged into it; the cost illustration opens Why.
 - README: Get started (three commands) and the cost illustration before Why; alternative install routes folded; the workflow diagram moved to How it works.

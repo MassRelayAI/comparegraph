@@ -104,7 +104,7 @@ One SQLite file per workspace, `.comparegraph/comparegraph.db` (rusqlite, bundle
 | `embedding` | owner_id, owner_kind, model, vector (blob) | optional; ranking only |
 Rules: a `claim` with verdict `has` or `partial` needs ≥ 1 `location` that resolves, or `check` refuses it. A `none` needs a search
 named in `note` (the terms and the count), else it is written as `unknown`. Nothing is ever UPDATEd in `node`, `edge`, `community`
-once a run is complete; a new build is a new run; the latest run wins; older runs are history.
+once a run is complete; a new build is a new run; the latest run wins; older runs are history. A `none` whose search finds hits is accepted, as `observed`, only when the author names every hit as read (`--read-hits`).
 
 ## 5. Evidence — every answer says how it knows
 `confidence` on every claim and on every tool answer: `observed` (an engine measured it) · `derived` (a citation resolved to a line

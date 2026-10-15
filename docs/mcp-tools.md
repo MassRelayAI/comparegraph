@@ -19,7 +19,7 @@ envelope as the CLI. Eighteen tools: seventeen read-only, one write (`comparegra
 | `comparegraph_relate` | Stored relatedness band per clone and family (reads, does not compute) | `repo`, `family` |
 | `comparegraph_claims` | Latest claim per clone and feature, with citations | `repo`, `family`, `feature`, `history` |
 | `comparegraph_matrix` | Features against clones, prevalence, gaps, differentiators; `relatedness` is `not run` until relate has scored the clone | `family`; optional `relate` (bool, default false: score unscored comparators first) |
-| `comparegraph_claim` | **Write.** Record a claim | `repo`, `feature`, `family`, `verdict`, `author`, `at[]`, `searched`, `note` |
+| `comparegraph_claim` | **Write.** Record a claim | `repo`, `feature`, `family`, `verdict`, `author`, `at[]`, `searched`, `read_hits[]`, `note` |
 | `comparegraph_traverse` | Reachable nodes, summary first, then one page by path confidence | `repo`, `qualified_name`, `direction`, `depth` (max 10), `max_nodes` (max 2000), `kinds`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_impact` | Blast radius: summary (`by_hop`, `by_kind`, `tests_total`), then one page, plus the tests that reach it (capped at `limit`) | `repo`, `qualified_name` or `files[]`, `depth`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_tests_for` | Tests linked to a symbol, summary first, then one page | `repo`, `qualified_name`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
