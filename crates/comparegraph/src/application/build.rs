@@ -9,6 +9,12 @@ use std::time::Instant;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BuildReport {
     pub run: RunId,
+    /// the clone path this build read
+    #[serde(default)]
+    pub path: String,
+    /// the git head (short) of that path when the build ran
+    #[serde(default)]
+    pub head: Option<String>,
     pub nodes: usize,
     pub edges: usize,
     pub files_parsed: usize,
@@ -104,6 +110,9 @@ pub fn build_repo(
     if !opts.full && opts.cache.is_none() {
         opts.cache = Some(std::rc::Rc::new(StoreCache(Store::open(root)?)));
     }
+    if opts.progress {
+        eprintln!("[progress] reading {} head={}", repo.path, super::git(Path::new(&repo.path), &["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "none".into()));
+    }
     let out = match provider.build(Path::new(&repo.path), &opts) {
         Ok(o) => o,
         Err(e @ crate::providers::ProviderError::Unavailable(..)) => {
@@ -198,6 +207,8 @@ pub fn build_repo(
     };
     Ok(BuildReport {
         run,
+        path: repo.path.clone(),
+        head: super::git(Path::new(&repo.path), &["rev-parse", "--short=7", "HEAD"]),
         nodes: n_nodes,
         edges: n_edges,
         files_parsed: out.files_parsed,
@@ -332,6 +343,8 @@ fn try_reuse(
     let communities = store.communities_of_run(last_id)?.len();
     Ok(Some(BuildReport {
         run: last_id,
+        path: repo_path.to_string(),
+        head: super::git(root, &["rev-parse", "--short=7", "HEAD"]),
         nodes: nodes.len(),
         edges,
         files_parsed: seen,
