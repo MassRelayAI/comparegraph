@@ -4,7 +4,7 @@
   "tools": [
     {
       "name": "comparegraph_absent_check",
-      "description": "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits, and `reason` says why (`hits`, `family words set aside: <words>`, or `absent`). Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).",
+      "description": "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits, and `reason` says why (`hits`, `family words set aside: <words>`, or `absent`). It also returns `read_set`, the top 10 ranked candidates (with `total`, `score` and `why`) that a `none` must read; pass `searched` (the terms you would record) to include the hits of that search. Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -18,6 +18,10 @@
           "feature": {
             "type": "string",
             "description": "one feature id"
+          },
+          "searched": {
+            "type": "string",
+            "description": "optional: the terms a none would be recorded with; their search hits join the read_set and make absent false when found"
           }
         },
         "required": [
@@ -85,7 +89,7 @@
             "items": {
               "type": "string"
             },
-            "description": "with searched on a none whose search finds hits: the qualified name of EVERY hit, after you opened each and found it is not this feature; every hit named (and no name the search does not find) records the none as observed"
+            "description": "the qualified names of the `read_set.candidates` that `comparegraph_absent_check` (with the same `searched`) returns, after you opened each; the top 10 ranked candidates, not every hit"
           },
           "note": {
             "type": "string"

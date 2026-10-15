@@ -234,11 +234,15 @@ pub enum Cmd {
         #[arg(long, default_value_t = 5)]
         limit: usize,
     },
-    /// Is a feature absent from a clone's graph? Four channels (symbols, paths, communities, kinds); reads, writes nothing
+    /// Is a feature absent from a clone's graph? Four channels (symbols, paths, communities, kinds) plus the ranked
+    /// `read_set` a `none` must read; reads, writes nothing
     AbsentCheck {
         repo: String,
         family: String,
         feature: String,
+        /// also search these terms (the ones a `claim none --searched` would carry); they join the read set
+        #[arg(long)]
+        searched: Option<String>,
     },
     /// Score each clone against each family (related|adjacent|unrelated) and record the band
     Relate {
@@ -892,8 +896,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             repo,
             family,
             feature,
+            searched,
         } => serde_json::to_value(crate::application::absent::absent_check(
-            &cli.root, repo, family, feature,
+            &cli.root, repo, family, feature, searched.as_deref(),
         )?)
         .unwrap(),
         Cmd::Claim {

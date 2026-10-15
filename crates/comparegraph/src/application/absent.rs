@@ -59,6 +59,32 @@ pub struct Channels {
     pub communities: Channel,
     pub kinds: Channel,
 }
+/// One node a `none` must be read against: why it is a candidate and how it ranks.
+#[derive(Debug, Serialize, Clone)]
+pub struct Candidate {
+    pub qualified_name: String,
+    pub kind: String,
+    pub path: String,
+    pub line_start: i64,
+    pub score: u32,
+    pub why: Vec<String>,
+}
+/// The ranked candidates of a feature (its channels, plus the author's search when given): `total` is the union size,
+/// `candidates` the top `cap` of it.
+#[derive(Debug, Serialize, Clone)]
+pub struct ReadSet {
+    pub cap: usize,
+    pub total: usize,
+    pub candidates: Vec<Candidate>,
+    /// every qualified name of the union, at any rank (the claim's stranger check)
+    #[serde(skip)]
+    pub(crate) names: BTreeSet<String>,
+}
+/// How many ranked candidates a `none` must name as read.
+pub(crate) const READ_CAP: usize = 10;
+/// The most FTS hits of the author's search that enter the read set.
+const FTS_FETCH: usize = 1000;
+
 #[derive(Debug, Serialize, Clone)]
 pub struct AbsentCheck {
     pub repo: String,
@@ -74,7 +100,12 @@ pub struct AbsentCheck {
     pub kinds_named: Vec<String>,
     pub channels: Channels,
     pub absent: bool,
-    /// Why `absent` has its value: `hits` (some channel found something), `family words set aside: <words>` (every
+    /// the `--searched` terms the read set and `absent` were also computed over
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub searched: Option<String>,
+    /// the ranked, capped candidates a `none` must read (see `ReadSet`)
+    pub read_set: ReadSet,
+    /// Why `absent` has its value: `hits` (some channel, or the `--searched` search, found something), `family words set aside: <words>` (every
     /// channel is at zero but the family-word rule dropped terms, so absence is not concluded), or `absent`.
     pub reason: String,
     /// `inferred` when absent (the graph cannot see strings, flags or abbreviations), `observed` when there are hits
@@ -242,11 +273,11 @@ fn matched_terms(toks: &[String], terms: &[String], stems: &[(String, String)]) 
     out.into_iter().collect()
 }
 
-fn top(c: &Connection, ids: BTreeSet<i64>, matched: impl Fn(&AbsentHit) -> Vec<String>) -> Result<Channel> {
+fn top(c: &Connection, ids: &BTreeSet<i64>, matched: impl Fn(&AbsentHit) -> Vec<String>) -> Result<Channel> {
     let count = ids.len();
     let mut rows = vec![];
     let mut st = c.prepare("SELECT qualified_name, kind, path, line_start FROM node WHERE id = ?1")?;
-    for id in &ids {
+    for id in ids {
         rows.push(st.query_row(params![id], |r| hit_row(r, vec![]))?);
     }
     rows.sort_by(|a, b| (&a.name, &a.path, a.line_start).cmp(&(&b.name, &b.path, b.line_start)));
@@ -332,10 +363,16 @@ pub(crate) fn family_words(store: &Store, f: &FeatureRow, terms: &[String]) -> R
         .collect())
 }
 
-fn symbols(c: &Connection, run: i64, rows: &[NameRow], terms: &[String], stems: &[(String, String)]) -> Result<Channel> {
+fn symbols(
+    c: &Connection,
+    run: i64,
+    rows: &[NameRow],
+    terms: &[String],
+    stems: &[(String, String)],
+) -> Result<(Channel, BTreeSet<i64>)> {
     let ids = symbol_ids(c, run, rows, terms, stems)?;
     let (terms, stems) = (terms.to_vec(), stems.to_vec());
-    top(c, ids, |h| {
+    let ch = top(c, &ids, |h| {
         let mut toks = hit_tokens(h);
         toks.push(h.name.to_lowercase());
         let mut m = matched_terms(&toks, &terms, &stems);
@@ -347,14 +384,21 @@ fn symbols(c: &Connection, run: i64, rows: &[NameRow], terms: &[String], stems: 
         }
         m.sort();
         m
-    })
+    })?;
+    Ok((ch, ids))
 }
 
 fn like_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
 }
 
-fn paths(c: &Connection, run: i64, forms: &[String], terms: &[String], stems: &[(String, String)]) -> Result<Channel> {
+fn paths(
+    c: &Connection,
+    run: i64,
+    forms: &[String],
+    terms: &[String],
+    stems: &[(String, String)],
+) -> Result<(Channel, BTreeSet<i64>)> {
     let mut ids: BTreeSet<i64> = BTreeSet::new();
     let mut st = c.prepare("SELECT id FROM node WHERE run_id = ?1 AND lower(path) LIKE ?2 ESCAPE '\\'")?;
     for t in forms {
@@ -378,17 +422,18 @@ fn paths(c: &Connection, run: i64, forms: &[String], terms: &[String], stems: &[
         }
     }
     let (forms, terms, stems) = (forms.to_vec(), terms.to_vec(), stems.to_vec());
-    top(c, ids, |h| {
+    let ch = top(c, &ids, |h| {
         let low = h.path.to_lowercase();
         let mut m: BTreeSet<String> = matched_terms(&tokens(&h.path), &terms, &stems).into_iter().collect();
         for f in forms.iter().filter(|f| low.contains(f.as_str())) {
             m.insert(f.clone());
         }
         m.into_iter().collect()
-    })
+    })?;
+    Ok((ch, ids))
 }
 
-fn kinds(c: &Connection, run: i64, kinds: &[&str], mcp: bool) -> Result<Channel> {
+fn kinds(c: &Connection, run: i64, kinds: &[&str], mcp: bool) -> Result<(Channel, BTreeSet<i64>)> {
     let mut ids: BTreeSet<i64> = BTreeSet::new();
     let mut st = c.prepare("SELECT id FROM node WHERE run_id = ?1 AND kind = ?2")?;
     for k in kinds {
@@ -406,13 +451,14 @@ fn kinds(c: &Connection, run: i64, kinds: &[&str], mcp: bool) -> Result<Channel>
         }
     }
     let labels: Vec<String> = kinds.iter().map(|k| k.to_string()).collect();
-    top(c, ids, |h| {
+    let ch = top(c, &ids, |h| {
         if labels.contains(&h.kind) {
             vec![h.kind.clone()]
         } else {
             vec!["mcp-tool".to_string()]
         }
-    })
+    })?;
+    Ok((ch, ids))
 }
 
 fn communities(store: &Store, run: i64, terms: &[String]) -> Result<Channel> {
@@ -488,16 +534,24 @@ pub(crate) fn feature_naming_words(store: &Store, f: &FeatureRow) -> Result<Vec<
     Ok(out)
 }
 
-/// The check on an open store for a feature row and a run; shared by `claim` and the verb.
-pub(crate) fn check_feature(
-    store: &Store,
-    repo: &str,
-    run: i64,
-    provider: &str,
-    f: &FeatureRow,
-) -> Result<AbsentCheck> {
+/// Everything the channels computed for one feature: the terms, the per-channel hit lists and the node id sets.
+struct Prep {
+    terms: Vec<String>,
+    common: Vec<String>,
+    stem_pairs: Vec<(String, String)>,
+    forms: Vec<String>,
+    names: Vec<String>,
+    channels: Channels,
+    sym_ids: BTreeSet<i64>,
+    path_ids: BTreeSet<i64>,
+    kind_ids: BTreeSet<i64>,
+}
+
+/// `strict`: refuse a feature with no usable term (the check). Not strict (the read set of a manual `none`): such a
+/// feature has empty channels and the author's search stands alone.
+fn prepare(store: &Store, run: i64, f: &FeatureRow, strict: bool) -> Result<Prep> {
     let all_terms = feature_terms(f);
-    if all_terms.is_empty() {
+    if all_terms.is_empty() && strict {
         return Err(AppError::InvalidArguments(format!(
             "feature {} has no searchable term; an absence of nothing proves nothing",
             f.slug
@@ -505,10 +559,9 @@ pub(crate) fn check_feature(
     }
     let (names, ks, mcp) = kinds_named(f);
     let c = store.conn();
-    let rows = name_rows(c, run)?;
     let common = family_words(store, f, &all_terms)?;
     let terms: Vec<String> = all_terms.iter().filter(|t| !common.contains(t)).cloned().collect();
-    if terms.is_empty() {
+    if terms.is_empty() && strict {
         return Err(AppError::InvalidArguments(format!(
             "every term of {} is a family word in {} ({}); pass --searched with specific terms",
             f.slug,
@@ -516,23 +569,227 @@ pub(crate) fn check_feature(
             common.join(", ")
         )));
     }
+    let empty = || (Channel::default(), BTreeSet::new());
     let stem_pairs = stems_of(&terms);
     let forms = path_forms(f, &terms);
-    let channels = Channels {
-        symbols: symbols(c, run, &rows, &terms, &stem_pairs)?,
-        paths: paths(c, run, &forms, &terms, &stem_pairs)?,
-        communities: communities(store, run, &terms)?,
-        kinds: kinds(c, run, &ks, mcp)?,
+    let (symbols_ch, sym_ids, paths_ch, path_ids, communities_ch) = if terms.is_empty() {
+        let (a, b) = empty();
+        let (c2, d) = empty();
+        (a, b, c2, d, Channel::default())
+    } else {
+        let rows = name_rows(c, run)?;
+        let (a, b) = symbols(c, run, &rows, &terms, &stem_pairs)?;
+        let (c2, d) = paths(c, run, &forms, &terms, &stem_pairs)?;
+        (a, b, c2, d, communities(store, run, &terms)?)
     };
+    let (kinds_ch, kind_ids) = kinds(c, run, &ks, mcp)?;
+    Ok(Prep {
+        terms,
+        common,
+        stem_pairs,
+        forms,
+        names,
+        channels: Channels { symbols: symbols_ch, paths: paths_ch, communities: communities_ch, kinds: kinds_ch },
+        sym_ids,
+        path_ids,
+        kind_ids,
+    })
+}
+
+/// The terms of an author's `--searched` text, lowercased, split as the claim splits them.
+fn searched_terms(text: &str) -> Vec<String> {
+    text.split(|c: char| c.is_whitespace() || c == ',')
+        .filter(|t| !t.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// The same guard `claim none --searched` applies: the terms must name the feature.
+pub(crate) fn guard_searched(store: &Store, f: &FeatureRow, terms_text: &str) -> Result<()> {
+    if super::search::fts_query_or(terms_text).is_none() {
+        return Err(AppError::InvalidArguments("--searched has no searchable term".into()));
+    }
+    let words = feature_naming_words(store, f)?;
+    let named = tokens(terms_text).iter().any(|t| words.iter().any(|w| w == t));
+    if !named {
+        return Err(AppError::InvalidArguments(format!(
+            "searched terms do not name the feature: \"{terms_text}\" has none of {}",
+            words.iter().take(15).cloned().collect::<Vec<_>>().join(", ") + if words.len() > 15 { ", …" } else { "" }
+        )));
+    }
+    Ok(())
+}
+
+/// Union the channel ids with the author's search, score and rank them.
+fn build_read_set(store: &Store, run: i64, p: &Prep, searched: Option<&str>) -> Result<ReadSet> {
+    let c = store.conn();
+    // the author's search: ids with their bm25 score, best first
+    let mut fts: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+    let mut extra_terms: Vec<String> = vec![];
+    if let Some(text) = searched {
+        extra_terms = searched_terms(text);
+        if let Some(m) = super::search::fts_query_or(&extra_terms.join(" ")) {
+            let mut st = c.prepare(
+                "SELECT n.id, -bm25(node_fts) AS score FROM node_fts CROSS JOIN node n ON n.id = node_fts.rowid \
+                 WHERE node_fts MATCH ?1 AND n.run_id = ?2 ORDER BY score DESC, n.id ASC LIMIT ?3",
+            )?;
+            for r in st.query_map(params![m, run, FTS_FETCH as i64], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))? {
+                let (id, sc) = r?;
+                fts.insert(id, sc);
+            }
+        }
+    }
+    let mut ids: BTreeSet<i64> = BTreeSet::new();
+    ids.extend(&p.sym_ids);
+    ids.extend(&p.path_ids);
+    ids.extend(&p.kind_ids);
+    ids.extend(fts.keys());
+
+    let mut terms: Vec<String> = p.terms.clone();
+    for t in &extra_terms {
+        if !terms.contains(t) {
+            terms.push(t.clone());
+        }
+    }
+    let stems = stems_of(&terms);
+    let mut forms = p.forms.clone();
+    for t in &extra_terms {
+        if !forms.contains(t) {
+            forms.push(t.clone());
+        }
+    }
+    let mut st = c.prepare(
+        "SELECT n.name, n.qualified_name, n.kind, n.path, n.line_start, \
+         (SELECT cm.label FROM community_member x JOIN community cm ON cm.id = x.community_id \
+           WHERE x.node_id = n.id AND cm.run_id = n.run_id LIMIT 1) FROM node n WHERE n.id = ?1",
+    )?;
+    let mut scored: Vec<(u32, f64, Candidate, i64)> = vec![];
+    for id in &ids {
+        let (name, qn, kind, path, line, label) = st.query_row(params![id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, Option<String>>(5)?,
+            ))
+        })?;
+        let lname = name.to_lowercase();
+        let ltoks = tokens(&name);
+        let lpath = path.to_lowercase();
+        let lqn = qn.to_lowercase();
+        let mut why: Vec<String> = vec![];
+        let exact: Vec<&String> = terms.iter().filter(|t| **t == lname).collect();
+        let mut tok_hits: Vec<String> = vec![];
+        for t in &terms {
+            if ltoks.iter().any(|k| stem_match(t, k)) {
+                tok_hits.push(t.clone());
+            }
+        }
+        for (st_, t) in &stems {
+            if ltoks.iter().any(|k| stem_match(st_, k)) && !tok_hits.contains(t) {
+                tok_hits.push(t.clone());
+            }
+        }
+        let path_hits: Vec<&String> = forms.iter().filter(|f| lpath.contains(f.as_str())).collect();
+        let qn_hits: Vec<&String> = terms.iter().filter(|t| lqn.contains(t.as_str())).collect();
+        let mut score = 0u32;
+        if !exact.is_empty() {
+            score = 8;
+            why.extend(exact.iter().map(|t| format!("name={t}")));
+        }
+        if !tok_hits.is_empty() {
+            if score == 0 {
+                score = 4;
+            }
+            why.extend(tok_hits.iter().map(|t| format!("token~{t}")));
+        }
+        if !path_hits.is_empty() || !qn_hits.is_empty() {
+            if score == 0 {
+                score = 2;
+            }
+            why.extend(path_hits.iter().map(|t| format!("path~{t}")));
+            for t in &qn_hits {
+                if !path_hits.contains(t) {
+                    why.push(format!("path~{t}"));
+                }
+            }
+        }
+        if p.kind_ids.contains(id) {
+            if score == 0 {
+                score = 1;
+            }
+            why.push(format!("kind={kind}"));
+        }
+        let bm = fts.get(id).copied();
+        if bm.is_some() {
+            if score == 0 {
+                score = 1;
+            }
+            why.push("fts".into());
+        }
+        if let Some(l) = &label {
+            let lt = tokens(l);
+            if let Some(t) = terms.iter().find(|t| lt.contains(t)) {
+                score += 1;
+                why.push(format!("community~{t}"));
+            }
+        }
+        scored.push((
+            score,
+            bm.unwrap_or(0.0),
+            Candidate { qualified_name: qn, kind, path, line_start: line, score, why },
+            *id,
+        ));
+    }
+    scored.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then(b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal))
+            .then(a.2.qualified_name.cmp(&b.2.qualified_name))
+            .then(a.3.cmp(&b.3))
+    });
+    let total = scored.len();
+    let names: BTreeSet<String> = scored.iter().map(|x| x.2.qualified_name.clone()).collect();
+    let candidates = scored.into_iter().take(READ_CAP).map(|x| x.2).collect();
+    Ok(ReadSet { cap: READ_CAP, total, candidates, names })
+}
+
+/// The ranked candidates a `none` over `searched` must read: the feature's channel hits plus the author's search,
+/// scored and capped at `READ_CAP`. `total` counts the union before the cap.
+pub(crate) fn read_set(
+    store: &Store,
+    _repo: &str,
+    run: i64,
+    _provider: &str,
+    f: &FeatureRow,
+    searched: Option<&str>,
+) -> Result<ReadSet> {
+    let p = prepare(store, run, f, false)?;
+    build_read_set(store, run, &p, searched)
+}
+
+/// The check on an open store for a feature row and a run; shared by `claim` and the verb.
+pub(crate) fn check_feature(
+    store: &Store,
+    repo: &str,
+    run: i64,
+    provider: &str,
+    f: &FeatureRow,
+    searched: Option<&str>,
+) -> Result<AbsentCheck> {
+    if let Some(t) = searched {
+        guard_searched(store, f, t)?;
+    }
+    let p = prepare(store, run, f, true)?;
+    let rs = build_read_set(store, run, &p, searched)?;
+    let Prep { terms, common, stem_pairs, forms, names, channels, .. } = p;
     // zero hits records an absence only when no family word was set aside: with one dropped, the graph proves less,
     // and the check refuses with the uncounted words named (the author records the absence with --searched)
-    let absent = channels.symbols.count == 0
-        && channels.paths.count == 0
-        && channels.communities.count == 0
-        && channels.kinds.count == 0
-        && common.is_empty();
     let hits = channels.symbols.count + channels.paths.count + channels.communities.count + channels.kinds.count;
-    let reason = if hits > 0 {
+    let searched_hits = searched.is_some() && rs.total > 0;
+    let absent = hits == 0 && !searched_hits && common.is_empty();
+    let reason = if hits > 0 || searched_hits {
         "hits".to_string()
     } else if !common.is_empty() {
         format!("family words set aside: {}", common.join(", "))
@@ -553,11 +810,19 @@ pub(crate) fn check_feature(
         reason,
         channels,
         absent,
+        searched: searched.map(String::from),
+        read_set: rs,
         evidence_confidence: if absent { "inferred" } else { "observed" },
     })
 }
 
-pub fn absent_check(root: &Path, repo: &str, family: &str, feature: &str) -> Result<AbsentCheck> {
+pub fn absent_check(
+    root: &Path,
+    repo: &str,
+    family: &str,
+    feature: &str,
+    searched: Option<&str>,
+) -> Result<AbsentCheck> {
     let store = Store::open_existing(root)?;
     store
         .family_by_name(family)?
@@ -571,5 +836,5 @@ pub fn absent_check(root: &Path, repo: &str, family: &str, feature: &str) -> Res
     if f.tier == "retired" {
         return Err(AppError::InvalidArguments(format!("feature {feature} is retired")));
     }
-    check_feature(&store, repo, run, &provider, &f)
+    check_feature(&store, repo, run, &provider, &f, searched)
 }

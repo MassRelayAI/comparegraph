@@ -126,6 +126,8 @@ fn analysed() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
             "me",
             "--searched",
             "memory zzzqqq",
+            "--read-hits",
+            "src/net/a.py::recall_turns",
         ])
         .assert()
         .success();

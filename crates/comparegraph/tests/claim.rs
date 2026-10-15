@@ -155,15 +155,18 @@ fn none_needs_searched_terms_that_miss() {
                 "me",
                 "--searched",
                 "routing zzzunknown qqqmissing",
+                "--read-hits",
+                "src/net/a.py::retry_with_backoff",
             ],
         )
         .success(),
     );
+    // the feature's own channels name retry_with_backoff, so it is a candidate to read even though the search misses
     assert!(
         ok["data"]["note"]
             .as_str()
             .unwrap()
-            .starts_with("searched (author-supplied): routing zzzunknown qqqmissing → 0 hits"),
+            .starts_with("searched: routing zzzunknown qqqmissing → 1 candidates, top 1 read and rejected: "),
         "{ok}"
     );
 }
@@ -479,9 +482,12 @@ fn a_declared_synonym_names_the_feature_in_searched_and_an_undeclared_word_does_
     std::fs::write(p2.path().join("rows.md"), PACK_SYN).unwrap();
     cc(ws.path()).args(["family", "add"]).arg(p2.path()).assert().success();
     // the synonym names the feature, the search finds nothing: recorded with the search in the note
-    let ok = json(claim(ws.path(), &["none", "--author", "me", "--searched", "reattempt"]).success());
+    let ok = json(
+        claim(ws.path(), &["none", "--author", "me", "--searched", "reattempt", "--read-hits", "src/net/a.py::retry_with_backoff"])
+            .success(),
+    );
     let note = ok["data"]["note"].as_str().unwrap();
-    assert!(note.starts_with("searched (author-supplied): reattempt → 0 hits"), "{note}");
+    assert!(note.starts_with("searched: reattempt → 1 candidates, top 1 read and rejected: "), "{note}");
     // an undeclared unrelated word is still refused
     let bad = json(claim(ws.path(), &["none", "--author", "me", "--searched", "zzzundeclared"]).failure());
     assert_eq!(bad["error"]["code"], "invalid_arguments", "{bad}");
@@ -704,7 +710,7 @@ fn read_hits_covering_every_hit_records_an_observed_none_with_the_names() {
     assert_eq!(v["data"]["confidence"], "observed", "{v}");
     assert_eq!(v["evidence"]["confidence"], "observed", "{v}");
     let note = v["data"]["note"].as_str().unwrap();
-    assert!(note.starts_with("searched: retry → 2 hits, read and rejected: "), "{note}");
+    assert!(note.starts_with("searched: retry → 2 candidates, top 2 read and rejected: "), "{note}");
     assert!(note.contains(RH_A) && note.contains(RH_B), "{note}");
     assert!(note.ends_with(" — other thing"), "{note}");
 }
@@ -721,9 +727,9 @@ fn read_hits_partial_coverage_names_the_unread() {
     let v = json(none_read(ws.path(), RH_A).failure());
     assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
     let m = v["error"]["message"].as_str().unwrap();
-    assert!(m.starts_with("not none: 1 of 2 hits were not read: "), "{m}");
+    assert!(m.starts_with("not none: 1 of the top 2 candidates were not read: "), "{m}");
     assert!(m.contains(RH_B) && !m.contains(&format!("read: {RH_A}")), "{m}");
-    assert!(m.ends_with("pass --read-hits with every hit, or claim has/partial"), "{m}");
+    assert!(m.ends_with("or claim has/partial"), "{m}");
 }
 
 #[test]
@@ -745,10 +751,35 @@ fn read_hits_without_searched_or_on_another_verdict_is_invalid() {
 }
 
 #[test]
-fn read_hits_with_no_hits_accepts_as_before_and_says_nothing_was_read() {
+fn read_hits_naming_only_part_of_the_feature_candidates_is_refused_even_when_the_search_misses() {
     let (ws, _a, _p) = rh_setup();
+    // the search finds nothing, but the feature's own channels offer two candidates; one named is not enough
     let v = json(
-        claim(ws.path(), &["none", "--author", "me", "--searched", "routing zzzunknown", "--read-hits", RH_A]).success(),
+        claim(ws.path(), &["none", "--author", "me", "--searched", "routing zzzunknown", "--read-hits", RH_A]).failure(),
+    );
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(m.starts_with("not none: 1 of the top 2 candidates were not read: "), "{m}");
+}
+
+#[test]
+fn read_hits_with_no_candidate_at_all_accepts_as_before_and_says_nothing_was_read() {
+    let ws = tempfile::tempdir().unwrap();
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(
+        pack.path().join("rows.md"),
+        "---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n\
+| zebra.quagga | zebra | Quagga | x | a quagga | basics | 1 |\n",
+    )
+    .unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
+    let a = clone_with(&[("src/net/a.py", "def other():\n    return 1\n")]);
+    add_repo(ws.path(), a.path(), Some("a"), false).unwrap();
+    build_repo(ws.path(), "a", "reference", &BuildOptions::default()).unwrap();
+    let v = json(
+        cc(ws.path())
+            .args(["claim", "a", "zebra.quagga", "none", "--author", "me", "--searched", "quagga", "--read-hits", "src/net/a.py::other"])
+            .assert()
+            .success(),
     );
     assert_eq!(v["data"]["confidence"], "derived", "{v}");
     let note = v["data"]["note"].as_str().unwrap();
@@ -772,7 +803,7 @@ fn read_hits_batch_rows_use_hits_read_one_accepted_one_refused() {
     assert_eq!(out[0]["ok"], true, "{out:?}");
     assert_eq!(out[0]["data"]["confidence"], "observed", "{out:?}");
     assert_eq!(out[1]["ok"], false, "{out:?}");
-    assert!(out[1]["error"]["message"].as_str().unwrap().starts_with("not none: 1 of 2 hits were not read: "), "{out:?}");
+    assert!(out[1]["error"]["message"].as_str().unwrap().starts_with("not none: 1 of the top 2 candidates were not read: "), "{out:?}");
     assert_eq!(out[2]["data"], serde_json::json!({"rows":2,"ok":1,"skipped":0,"failed":1,"committed":true}));
 }
 
@@ -784,4 +815,151 @@ fn read_hits_over_mcp_takes_an_array() {
     let out = cc(ws.path()).arg("mcp").write_stdin(req.to_string()).assert().success().get_output().stdout.clone();
     let text = String::from_utf8(out).unwrap();
     assert!(text.contains("read and rejected"), "{text}");
+}
+
+// ---- the read set: a ranked, capped list a none is judged on ----
+
+const PACK_ADMIN: &str = "---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n\
+| access.admin | access | Admin | Operators manage accounts | an admin panel | basics | 1 |\n";
+
+/// 14 `admin_<n>` functions, one function named `admin`, one `AdminPanel` class: 16 nodes the search `admin` finds.
+fn ra_setup() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
+    let ws = tempfile::tempdir().unwrap();
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(pack.path().join("rows.md"), PACK_ADMIN).unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
+    let mut src = String::from("def admin():\n    return 0\n\nclass AdminPanel:\n    pass\n\n");
+    for n in 1..=14 {
+        src.push_str(&format!("def admin_{n:02}():\n    return {n}\n\n"));
+    }
+    let a = clone_with(&[("src/svc/panel.py", &src)]);
+    add_repo(ws.path(), a.path(), Some("a"), false).unwrap();
+    build_repo(ws.path(), "a", "reference", &BuildOptions::default()).unwrap();
+    (ws, a, pack)
+}
+fn ra_check(ws: &std::path::Path) -> serde_json::Value {
+    json(cc(ws).args(["absent-check", "a", "fam", "access.admin", "--searched", "admin"]).assert().success())
+}
+fn ra_names(v: &serde_json::Value) -> Vec<String> {
+    v["data"]["read_set"]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["qualified_name"].as_str().unwrap().to_string())
+        .collect()
+}
+fn ra_none(ws: &std::path::Path, read: &str) -> assert_cmd::assert::Assert {
+    cc(ws)
+        .args(["claim", "a", "access.admin", "none", "--author", "me", "--searched", "admin", "--read-hits", read])
+        .assert()
+}
+
+#[test]
+fn read_set_ranks_and_caps_a_search_with_more_than_ten_hits() {
+    let (ws, _a, _p) = ra_setup();
+    let v = ra_check(ws.path());
+    let rs = &v["data"]["read_set"];
+    assert_eq!(rs["total"], 16, "{v}");
+    assert_eq!(rs["cap"], 10, "{v}");
+    assert_eq!(rs["candidates"].as_array().unwrap().len(), 10, "{v}");
+    let first = &rs["candidates"][0];
+    assert_eq!(first["qualified_name"], "src/svc/panel.py::admin", "{v}");
+    assert!(first["why"].as_array().unwrap().iter().any(|w| w == "name=admin"), "{v}");
+    assert_eq!(v["data"]["absent"], false, "{v}");
+    assert_eq!(v["data"]["reason"], "hits", "{v}");
+    // scores never rise down the list
+    let sc: Vec<u64> = rs["candidates"].as_array().unwrap().iter().map(|c| c["score"].as_u64().unwrap()).collect();
+    assert!(sc.windows(2).all(|w| w[0] >= w[1]), "{sc:?}");
+}
+
+#[test]
+fn read_set_top_ten_named_records_an_observed_none_and_says_the_rest_is_not_demanded() {
+    let (ws, _a, _p) = ra_setup();
+    let names = ra_names(&ra_check(ws.path()));
+    let v = json(ra_none(ws.path(), &names.join(",")).success());
+    assert_eq!(v["data"]["confidence"], "observed", "{v}");
+    let note = v["data"]["note"].as_str().unwrap();
+    assert!(note.starts_with("searched: admin → 16 candidates, top 10 read and rejected: "), "{note}");
+    assert!(note.contains("6 lower-ranked candidates not demanded"), "{note}");
+    let codes: Vec<&str> = v["evidence"]["limitations"].as_array().unwrap().iter().map(|l| l["code"].as_str().unwrap()).collect();
+    assert!(codes.contains(&"read_capped"), "{v}");
+}
+
+#[test]
+fn read_set_nine_of_ten_names_the_missing_one() {
+    let (ws, _a, _p) = ra_setup();
+    let names = ra_names(&ra_check(ws.path()));
+    let v = json(ra_none(ws.path(), &names[..9].join(",")).failure());
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(m.starts_with("not none: 1 of the top 10 candidates were not read: "), "{m}");
+    assert!(m.contains(&names[9]), "{m}");
+}
+
+#[test]
+fn read_set_a_stranger_name_is_refused_but_a_lower_ranked_real_hit_is_not() {
+    let (ws, _a, _p) = ra_setup();
+    let names = ra_names(&ra_check(ws.path()));
+    let all = names.join(",");
+    let v = json(ra_none(ws.path(), &format!("{all},src/svc/panel.py::nothing_like_it")).failure());
+    assert_eq!(
+        v["error"]["message"],
+        "--read-hits names symbols the search does not find: src/svc/panel.py::nothing_like_it",
+        "{v}"
+    );
+    // a real hit below the cap is not a stranger
+    let lower = (1..=14).map(|n| format!("src/svc/panel.py::admin_{n:02}")).find(|n| !names.contains(n)).unwrap();
+    json(ra_none(ws.path(), &format!("{all},{lower}")).success());
+}
+
+#[test]
+fn read_set_without_the_list_refuses_with_the_candidate_count() {
+    let (ws, _a, _p) = ra_setup();
+    let v = json(cc(ws.path()).args(["claim", "a", "access.admin", "none", "--author", "me", "--searched", "admin"]).assert().failure());
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(m.starts_with("not none: the search for \"admin\" finds 16 candidate(s) in a (e.g. "), "{m}");
+    assert!(m.ends_with("read them (absent-check --searched) and pass --read-hits"), "{m}");
+}
+
+#[test]
+fn read_set_batch_rows_use_hits_read_against_the_top_ten() {
+    let (ws, _a, _p) = ra_setup();
+    let names = ra_names(&ra_check(ws.path()));
+    let row = |read: &[String]| {
+        serde_json::json!({"repo":"a","feature":"access.admin","verdict":"none","author":"me","searched":"admin","hits_read":read}).to_string()
+    };
+    let path = ws.path().join("ra.jsonl");
+    std::fs::write(&path, format!("{}\n{}\n", row(&names), row(&names[..9]))).unwrap();
+    let a = cc(ws.path()).args(["claim", "--batch"]).arg(&path).assert().failure().code(1);
+    let out = lines(&a.get_output().stdout);
+    assert_eq!(out[0]["ok"], true, "{out:?}");
+    assert_eq!(out[0]["data"]["confidence"], "observed", "{out:?}");
+    assert_eq!(out[1]["ok"], false, "{out:?}");
+    assert!(out[1]["error"]["message"].as_str().unwrap().starts_with("not none: 1 of the top 10 candidates"), "{out:?}");
+}
+
+#[test]
+fn absent_check_without_searched_carries_a_read_set_from_the_channels() {
+    let (ws, _a, _p) = ra_setup();
+    let v = json(cc(ws.path()).args(["absent-check", "a", "fam", "access.admin"]).assert().success());
+    let rs = &v["data"]["read_set"];
+    assert_eq!(rs["total"], 16, "{v}");
+    assert_eq!(rs["candidates"].as_array().unwrap().len(), 10, "{v}");
+    assert!(v["data"].get("searched").is_none(), "{v}");
+}
+
+#[test]
+fn absent_check_refuses_searched_terms_that_do_not_name_the_feature() {
+    let (ws, _a, _p) = ra_setup();
+    let v = json(cc(ws.path()).args(["absent-check", "a", "fam", "access.admin", "--searched", "zzzunknown"]).assert().failure());
+    assert!(v["error"]["message"].as_str().unwrap().starts_with("searched terms do not name the feature"), "{v}");
+}
+
+#[test]
+fn read_set_over_mcp_absent_check_takes_searched() {
+    let (ws, _a, _p) = ra_setup();
+    let req = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"comparegraph_absent_check","arguments":{
+        "repo":"a","family":"fam","feature":"access.admin","searched":"admin"}}});
+    let out = cc(ws.path()).arg("mcp").write_stdin(req.to_string()).assert().success().get_output().stdout.clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("read_set") && text.contains("name=admin"), "{text}");
 }

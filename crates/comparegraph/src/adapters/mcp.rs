@@ -46,8 +46,9 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_map", "Candidate symbols and communities per feature of a family in one clone. Candidates are never verdicts; writes nothing.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"},
             "limit": {"type":"integer","minimum":1,"maximum":50,"description":"symbols per feature, default 5"} }), &["repo", "family"])),
-        tool("comparegraph_absent_check", "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits, and `reason` says why (`hits`, `family words set aside: <words>`, or `absent`). Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).", schema(json!({
-            "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"} }), &["repo", "family", "feature"])),
+        tool("comparegraph_absent_check", "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits, and `reason` says why (`hits`, `family words set aside: <words>`, or `absent`). It also returns `read_set`, the top 10 ranked candidates (with `total`, `score` and `why`) that a `none` must read; pass `searched` (the terms you would record) to include the hits of that search. Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).", schema(json!({
+            "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"},
+            "searched": {"type":"string","description":"optional: the terms a none would be recorded with; their search hits join the read_set and make absent false when found"} }), &["repo", "family", "feature"])),
         tool("comparegraph_relate", "Latest stored relatedness band per (clone, family). Reads only: it does not compute; run `comparegraph relate` to refresh.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"} }), &[])),
         tool("comparegraph_claims", "Latest claim per (clone, feature) with its citations; history=true lists every row with its supersede chain.", schema(json!({
@@ -60,7 +61,7 @@ pub fn tools() -> Vec<Value> {
             "author": {"type":"string","description":"who makes the claim; required"},
             "at": {"type":"array","items":{"type":"string"},"description":"citations, path:start-end or path:line, relative to the clone"},
             "searched": {"type":"string","description":"terms the absence was checked with (none)"},
-            "read_hits": {"type":"array","items":{"type":"string"},"description":"with searched on a none whose search finds hits: the qualified name of EVERY hit, after you opened each and found it is not this feature; every hit named (and no name the search does not find) records the none as observed"},
+            "read_hits": {"type":"array","items":{"type":"string"},"description":"the qualified names of the `read_set.candidates` that `comparegraph_absent_check` (with the same `searched`) returns, after you opened each; the top 10 ranked candidates, not every hit"},
             "note": {"type":"string"} }), &["repo", "feature", "verdict", "author"])),
         tool("comparegraph_traverse", "Nodes reachable from a symbol over calls/extends/implements (kinds), with hop distance, path_confidence and the path to each. Summary first (total, by_hop, by_kind), then items paged by limit/cursor, best path_confidence first. Bounded: depth<=10, max_nodes<=2000; truncation is recorded in evidence.limitations.", schema(json!({
             "repo": {"type":"string"}, "qualified_name": {"type":"string"},
@@ -148,7 +149,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         }
         "comparegraph_families" => &[],
         "comparegraph_map" => &["repo", "family", "feature", "limit"],
-        "comparegraph_absent_check" => &["repo", "family", "feature"],
+        "comparegraph_absent_check" => &["repo", "family", "feature", "searched"],
         "comparegraph_relate" => &["repo", "family"],
         "comparegraph_claims" => &["repo", "family", "feature", "history"],
         "comparegraph_matrix" => &["family", "relate"],
@@ -256,6 +257,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             repo: req(a, "repo")?,
             family: req(a, "family")?,
             feature: req(a, "feature")?,
+            searched: str_arg(a, "searched")?,
         },
         "comparegraph_relate" => Cmd::Relate {
             repo: str_arg(a, "repo")?,

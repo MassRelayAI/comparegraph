@@ -1,7 +1,7 @@
 //! `claim` and `claims`: the engine's evidence record. A claim is written only with an explicit author and, for
 //! has/partial, with locations that resolve now. Append-only: a new claim for the same (repo, feature) supersedes.
-use super::search::search_any_in_repo;
 use super::{AppError, Result};
+use crate::domain::Limitation;
 use crate::store::{now_iso, Store};
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
@@ -34,6 +34,9 @@ pub struct ClaimOut {
     /// True when a batch row equalled the live claim and nothing was written; `id` is the existing claim.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub skipped: bool,
+    /// carried to the envelope's evidence.limitations by the CLI (`read_capped`)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub limitation_items: Vec<Limitation>,
 }
 
 pub struct ClaimInput<'a> {
@@ -50,9 +53,6 @@ pub struct ClaimInput<'a> {
     /// Write nothing when the live claim for the feature already equals this one (a batch resumed after an interruption).
     pub skip_equal: bool,
 }
-
-/// The search limit of a manual `none`: a search that reaches it cannot be read in full.
-const HIT_CAP: usize = 1000;
 
 /// `a, b, …` up to `n` items, then `+k more` (`…` for a word list).
 fn capped<S: AsRef<str>>(xs: &[S], n: usize) -> String {
@@ -210,35 +210,20 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
     let mut note = String::new();
     let mut graph_absent = false;
     let mut read_confirmed = false;
+    let mut limitation_items: Vec<Limitation> = vec![];
     if i.verdict == "none" {
         if i.searched.is_some_and(|s| s.trim().is_empty()) {
             return invalid("--searched has no searchable term");
         }
         if let Some(terms_text) = i.searched {
-            if super::search::fts_query_or(terms_text).is_none() {
-                return invalid("--searched has no searchable term");
-            }
             let f = store
                 .features_of(&fam)?
                 .into_iter()
                 .find(|f| f.id == fid)
                 .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
-            let words = super::absent::feature_naming_words(store, &f)?;
-            let named = super::communities::tokens(terms_text)
-                .iter()
-                .any(|t| words.iter().any(|w| w == t));
-            if !named {
-                return invalid(format!(
-                    "searched terms do not name the feature: \"{terms_text}\" has none of {}",
-                    words.iter().take(15).cloned().collect::<Vec<_>>().join(", ") + if words.len() > 15 { ", …" } else { "" }
-                ));
-            }
-            let terms: Vec<String> = terms_text
-                .split(|c: char| c.is_whitespace() || c == ',')
-                .filter(|t| !t.is_empty())
-                .map(String::from)
-                .collect();
-            let hits = search_any_in_repo(store, i.repo, &terms, HIT_CAP)?;
+            super::absent::guard_searched(store, &f, terms_text)?;
+            let pin = super::absent::pinned_run(store, i.repo)?;
+            let rs = super::absent::read_set(store, i.repo, pin.0, &pin.1, &f, Some(terms_text))?;
             let read: Vec<String> = i
                 .read_hits
                 .iter()
@@ -246,60 +231,54 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
                 .filter(|r| !r.is_empty())
                 .map(String::from)
                 .collect();
-            if hits.is_empty() {
+            if rs.total == 0 {
                 note = format!("searched (author-supplied): {terms_text} → 0 hits");
                 if !read.is_empty() {
                     note.push_str("; no hits were found, so nothing was read");
                 }
             } else if read.is_empty() {
-                let sample: Vec<&str> = hits
-                    .iter()
-                    .take(5)
-                    .map(|h| h.qualified_name.as_str())
-                    .collect();
+                let sample: Vec<&str> = rs.candidates.iter().take(5).map(|h| h.qualified_name.as_str()).collect();
                 return invalid(format!(
-                    "not none: the search for \"{terms_text}\" finds {} hit(s) in {} (e.g. {})",
-                    hits.len(),
+                    "not none: the search for \"{terms_text}\" finds {} candidate(s) in {} (e.g. {}); read them (absent-check --searched) and pass --read-hits",
+                    rs.total,
                     i.repo,
                     sample.join(", ")
                 ));
-            } else if hits.len() >= HIT_CAP {
-                return invalid(format!(
-                    "not none: the search for \"{terms_text}\" reaches the {HIT_CAP}-hit cap in {}; narrow the terms so every hit can be read",
-                    i.repo
-                ));
             } else {
-                let mut seen = std::collections::BTreeSet::new();
-                let hit_names: Vec<&str> = hits
-                    .iter()
-                    .map(|h| h.qualified_name.as_str())
-                    .filter(|n| seen.insert(*n))
-                    .collect();
-                let unread: Vec<&str> = hit_names.iter().copied().filter(|n| !read.iter().any(|r| r == n)).collect();
+                let top: Vec<&str> = rs.candidates.iter().map(|h| h.qualified_name.as_str()).collect();
+                let unread: Vec<&str> = top.iter().copied().filter(|n| !read.iter().any(|r| r == n)).collect();
                 if !unread.is_empty() {
                     return invalid(format!(
-                        "not none: {} of {} hits were not read: {}; pass --read-hits with every hit, or claim has/partial",
+                        "not none: {} of the top {} candidates were not read: {}; run absent-check --searched \"{terms_text}\" for the list, or claim has/partial",
                         unread.len(),
-                        hit_names.len(),
-                        unread.iter().take(5).copied().collect::<Vec<_>>().join(", ")
+                        top.len(),
+                        unread.join(", ")
                     ));
                 }
-                let strangers: Vec<&str> = read
-                    .iter()
-                    .map(String::as_str)
-                    .filter(|r| !hit_names.contains(r))
-                    .collect();
+                let strangers: Vec<&str> =
+                    read.iter().map(String::as_str).filter(|r| !top.contains(r)).collect();
                 if !strangers.is_empty() {
-                    return invalid(format!(
-                        "--read-hits names symbols the search does not find: {}",
-                        strangers.join(", ")
-                    ));
+                    let strangers: Vec<&str> = strangers.into_iter().filter(|r| !rs.names.contains(*r)).collect();
+                    if !strangers.is_empty() {
+                        return invalid(format!(
+                            "--read-hits names symbols the search does not find: {}",
+                            strangers.join(", ")
+                        ));
+                    }
                 }
                 note = format!(
-                    "searched: {terms_text} → {} hits, read and rejected: {}",
-                    hit_names.len(),
-                    capped(&hit_names, 20)
+                    "searched: {terms_text} → {} candidates, top {} read and rejected: {}",
+                    rs.total,
+                    top.len(),
+                    capped(&top, 20)
                 );
+                if rs.total > rs.cap {
+                    note.push_str(&format!("; {} lower-ranked candidates not demanded", rs.total - top.len()));
+                    limitation_items.push(Limitation::new(
+                        "read_capped",
+                        format!("{} candidates, the top {} were read; the rest are not demanded", rs.total, top.len()),
+                    ));
+                }
                 read_confirmed = true;
             }
         } else {
@@ -310,7 +289,7 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
                 .find(|f| f.id == fid)
                 .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
             let pin = super::absent::pinned_run(store, i.repo)?;
-            let chk = super::absent::check_feature(store, i.repo, pin.0, &pin.1, &f)?;
+            let chk = super::absent::check_feature(store, i.repo, pin.0, &pin.1, &f, None)?;
             if !chk.absent {
                 return invalid(chk.refusal());
             }
@@ -440,6 +419,7 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
         note,
         locations,
         skipped: false,
+        limitation_items,
     })
 }
 
@@ -526,6 +506,7 @@ fn equal_live_claim(
         note: lnote,
         locations,
         skipped: true,
+        limitation_items: vec![],
     }))
 }
 
@@ -697,6 +678,7 @@ pub fn claims(
                 note: r.get(10)?,
                 locations: vec![],
                 skipped: false,
+                limitation_items: vec![],
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
