@@ -457,6 +457,34 @@ pub(crate) fn feature_search_words(f: &FeatureRow) -> Vec<String> {
     terms.into_iter().chain(stems.into_iter().map(|s| s.0)).collect()
 }
 
+/// Words of definition prose that name nothing.
+const PROSE_STOP: &[&str] = &[
+    "the", "and", "for", "with", "that", "this", "from", "into", "when", "where", "which", "what", "are", "not", "any",
+    "can", "has", "have", "its", "per", "via", "each", "one", "all", "use", "used", "uses", "using", "such", "than",
+    "then", "they", "their", "them", "also", "only", "more", "most", "other", "over", "under", "between", "without",
+    "within", "was", "were", "been", "being", "will", "would", "should", "could", "may", "might", "must", "does", "did",
+    "out", "but", "yet", "too", "very", "both", "through", "about", "after", "before", "while", "during", "against", "upon", "onto", "these", "those", "there", "here", "some", "many", "same", "own", "nor", "off", "via", "etc",
+];
+
+/// The words `claim none --searched` accepts as naming the feature (guard 1): `feature_search_words` first, then the
+/// tokens of the `definition` and `counts_as_has` text, minus stop words and the family words (a word the whole family
+/// shares names the family, not this feature). Separate from `feature_search_words`, which the graph check keeps: the
+/// definition prose is a naming vocabulary for an author's terms, never a channel term.
+pub(crate) fn feature_naming_words(store: &Store, f: &FeatureRow) -> Result<Vec<String>> {
+    let mut out = feature_search_words(f);
+    let extra: Vec<String> = tokens(&f.definition)
+        .into_iter()
+        .chain(tokens(&f.counts_as_has))
+        .filter(|t| !PROSE_STOP.contains(&t.as_str()))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|t| !out.contains(t))
+        .collect();
+    let common = family_words(store, f, &extra)?;
+    out.extend(extra.into_iter().filter(|t| !common.contains(t)));
+    Ok(out)
+}
+
 /// The check on an open store for a feature row and a run; shared by `claim` and the verb.
 pub(crate) fn check_feature(
     store: &Store,

@@ -44,9 +44,24 @@ pub struct ClaimInput<'a> {
     pub author: &'a str,
     pub at: &'a [String],
     pub searched: Option<&'a str>,
+    /// Qualified names of the search hits a reader opened and rejected (`none --searched` only); see `claim_on`.
+    pub read_hits: &'a [String],
     pub note: Option<&'a str>,
     /// Write nothing when the live claim for the feature already equals this one (a batch resumed after an interruption).
     pub skip_equal: bool,
+}
+
+/// The search limit of a manual `none`: a search that reaches it cannot be read in full.
+const HIT_CAP: usize = 1000;
+
+/// `a, b, …` up to `n` items, then `+k more` (`…` for a word list).
+fn capped<S: AsRef<str>>(xs: &[S], n: usize) -> String {
+    let shown: Vec<&str> = xs.iter().take(n).map(AsRef::as_ref).collect();
+    let mut out = shown.join(", ");
+    if xs.len() > n {
+        out.push_str(&format!(", +{} more", xs.len() - n));
+    }
+    out
 }
 
 fn invalid<T>(m: impl Into<String>) -> Result<T> {
@@ -156,6 +171,9 @@ fn check_input(i: &ClaimInput) -> Result<()> {
     if i.author.trim().is_empty() {
         return invalid("--author is required");
     }
+    if !i.read_hits.is_empty() && !(i.verdict == "none" && i.searched.is_some()) {
+        return invalid("--read-hits needs --searched and a none verdict: it names the hits of that search that were read");
+    }
     if matches!(i.verdict, "has" | "partial") && i.at.is_empty() {
         return invalid(format!(
             "a {} claim needs at least one --at <path>:<start>-<end>",
@@ -191,6 +209,7 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
 
     let mut note = String::new();
     let mut graph_absent = false;
+    let mut read_confirmed = false;
     if i.verdict == "none" {
         if i.searched.is_some_and(|s| s.trim().is_empty()) {
             return invalid("--searched has no searchable term");
@@ -204,14 +223,14 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
                 .into_iter()
                 .find(|f| f.id == fid)
                 .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
-            let words = super::absent::feature_search_words(&f);
+            let words = super::absent::feature_naming_words(store, &f)?;
             let named = super::communities::tokens(terms_text)
                 .iter()
                 .any(|t| words.iter().any(|w| w == t));
             if !named {
                 return invalid(format!(
                     "searched terms do not name the feature: \"{terms_text}\" has none of {}",
-                    words.join(", ")
+                    words.iter().take(15).cloned().collect::<Vec<_>>().join(", ") + if words.len() > 15 { ", …" } else { "" }
                 ));
             }
             let terms: Vec<String> = terms_text
@@ -219,8 +238,20 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
                 .filter(|t| !t.is_empty())
                 .map(String::from)
                 .collect();
-            let hits = search_any_in_repo(store, i.repo, &terms, 1000)?;
-            if !hits.is_empty() {
+            let hits = search_any_in_repo(store, i.repo, &terms, HIT_CAP)?;
+            let read: Vec<String> = i
+                .read_hits
+                .iter()
+                .flat_map(|r| r.split(|c: char| c.is_whitespace() || c == ','))
+                .filter(|r| !r.is_empty())
+                .map(String::from)
+                .collect();
+            if hits.is_empty() {
+                note = format!("searched (author-supplied): {terms_text} → 0 hits");
+                if !read.is_empty() {
+                    note.push_str("; no hits were found, so nothing was read");
+                }
+            } else if read.is_empty() {
                 let sample: Vec<&str> = hits
                     .iter()
                     .take(5)
@@ -232,8 +263,45 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
                     i.repo,
                     sample.join(", ")
                 ));
+            } else if hits.len() >= HIT_CAP {
+                return invalid(format!(
+                    "not none: the search for \"{terms_text}\" reaches the {HIT_CAP}-hit cap in {}; narrow the terms so every hit can be read",
+                    i.repo
+                ));
+            } else {
+                let mut seen = std::collections::BTreeSet::new();
+                let hit_names: Vec<&str> = hits
+                    .iter()
+                    .map(|h| h.qualified_name.as_str())
+                    .filter(|n| seen.insert(*n))
+                    .collect();
+                let unread: Vec<&str> = hit_names.iter().copied().filter(|n| !read.iter().any(|r| r == n)).collect();
+                if !unread.is_empty() {
+                    return invalid(format!(
+                        "not none: {} of {} hits were not read: {}; pass --read-hits with every hit, or claim has/partial",
+                        unread.len(),
+                        hit_names.len(),
+                        unread.iter().take(5).copied().collect::<Vec<_>>().join(", ")
+                    ));
+                }
+                let strangers: Vec<&str> = read
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|r| !hit_names.contains(r))
+                    .collect();
+                if !strangers.is_empty() {
+                    return invalid(format!(
+                        "--read-hits names symbols the search does not find: {}",
+                        strangers.join(", ")
+                    ));
+                }
+                note = format!(
+                    "searched: {terms_text} → {} hits, read and rejected: {}",
+                    hit_names.len(),
+                    capped(&hit_names, 20)
+                );
+                read_confirmed = true;
             }
-            note = format!("searched (author-supplied): {terms_text} → 0 hits");
         } else {
             // no manual terms: the graph decides (four channels); a hit anywhere refuses, zero everywhere is `derived`
             let f = store
@@ -303,6 +371,8 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
 
     let confidence = if i.verdict == "unknown" {
         "unknown"
+    } else if read_confirmed {
+        "observed"
     } else if graph_absent {
         "inferred"
     } else {
@@ -563,6 +633,8 @@ pub struct ClaimLine {
     #[serde(default)]
     pub searched: Option<String>,
     #[serde(default)]
+    pub hits_read: Vec<String>,
+    #[serde(default)]
     pub note: Option<String>,
 }
 
@@ -584,6 +656,7 @@ pub fn claim_batch(
                 author: &l.author,
                 at: &l.at,
                 searched: l.searched.as_deref(),
+                read_hits: &l.hits_read,
                 note: l.note.as_deref(),
                 skip_equal: true,
             },

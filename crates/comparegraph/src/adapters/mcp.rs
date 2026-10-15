@@ -54,12 +54,13 @@ pub fn tools() -> Vec<Value> {
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string"}, "history": {"type":"boolean"} }), &[])),
         tool("comparegraph_matrix", "Active features of a family against every clone: verdicts, prevalence, gaps and differentiators. A clone whose relatedness shows `not run` has no stored band; relate=true scores those first (writes bands).", schema(json!({
             "family": {"type":"string"}, "relate": {"type":"boolean","description":"score comparators with no stored relatedness band before building the matrix, default false"} }), &["family"])),
-        tool("comparegraph_claim", "WRITE: record a claim (has|partial|none|unknown) about a feature in a clone. author is required; has/partial need at least one citation in `at` (path:start-end) that resolves now; none needs `searched` terms that find nothing.", schema(json!({
+        tool("comparegraph_claim", "WRITE: record a claim (has|partial|none|unknown) about a feature in a clone. author is required; has/partial need at least one citation in `at` (path:start-end) that resolves now; none needs `searched` terms that name the feature and find nothing, or find hits that you list in `read_hits` after reading each.", schema(json!({
             "repo": {"type":"string"}, "feature": {"type":"string"}, "family": {"type":"string","description":"disambiguates a feature id that exists in several families"},
             "verdict": {"type":"string","enum":["has","partial","none","unknown"]},
             "author": {"type":"string","description":"who makes the claim; required"},
             "at": {"type":"array","items":{"type":"string"},"description":"citations, path:start-end or path:line, relative to the clone"},
             "searched": {"type":"string","description":"terms the absence was checked with (none)"},
+            "read_hits": {"type":"array","items":{"type":"string"},"description":"with searched on a none whose search finds hits: the qualified name of EVERY hit, after you opened each and found it is not this feature; every hit named (and no name the search does not find) records the none as observed"},
             "note": {"type":"string"} }), &["repo", "feature", "verdict", "author"])),
         tool("comparegraph_traverse", "Nodes reachable from a symbol over calls/extends/implements (kinds), with hop distance, path_confidence and the path to each. Summary first (total, by_hop, by_kind), then items paged by limit/cursor, best path_confidence first. Bounded: depth<=10, max_nodes<=2000; truncation is recorded in evidence.limitations.", schema(json!({
             "repo": {"type":"string"}, "qualified_name": {"type":"string"},
@@ -152,7 +153,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         "comparegraph_claims" => &["repo", "family", "feature", "history"],
         "comparegraph_matrix" => &["family", "relate"],
         "comparegraph_claim" => &[
-            "repo", "feature", "family", "verdict", "author", "at", "searched", "note",
+            "repo", "feature", "family", "verdict", "author", "at", "searched", "read_hits", "note",
         ],
         _ => return Err(format!("unknown tool {name}")),
     };
@@ -296,6 +297,18 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                     .collect::<Result<Vec<_>, _>>()?,
                 Some(_) => return Err("at must be an array of strings".into()),
             };
+            let read_hits = match a.get("read_hits") {
+                None | Some(Value::Null) => vec![],
+                Some(Value::Array(v)) => v
+                    .iter()
+                    .map(|x| {
+                        x.as_str()
+                            .map(String::from)
+                            .ok_or_else(|| "read_hits must be an array of strings".to_string())
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                Some(_) => return Err("read_hits must be an array of strings".into()),
+            };
             let searched = str_arg(a, "searched")?;
             if req(a, "verdict")? == "none" && searched.as_deref().is_none_or(|s| s.trim().is_empty()) {
                 return Err("a none claim over MCP needs `searched` terms; the graph-backed absence is recorded only from the CLI (`claim ... none` without --searched). Read comparegraph_absent_check first".into());
@@ -308,6 +321,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 family: str_arg(a, "family")?,
                 at,
                 searched,
+                read_hits,
                 note: str_arg(a, "note")?,
                 batch: None,
             }

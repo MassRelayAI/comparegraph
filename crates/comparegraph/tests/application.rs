@@ -570,6 +570,7 @@ mod vault_tests {
                     author: "me",
                     at: &at,
                     searched: None,
+                    read_hits: &[],
                     note: None,
                     skip_equal: false,
                 },

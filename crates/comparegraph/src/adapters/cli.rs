@@ -270,6 +270,10 @@ pub enum Cmd {
         at: Vec<String>,
         #[arg(long)]
         searched: Option<String>,
+        /// with --searched on a none: the qualified names of every search hit a reader opened and rejected (comma or
+        /// space separated); a none whose hits are all named is recorded `observed`
+        #[arg(long = "read-hits", value_delimiter = ',')]
+        read_hits: Vec<String>,
         #[arg(long)]
         note: Option<String>,
     },
@@ -484,9 +488,9 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     use std::io::BufRead;
     let verb = verb_of(&cli.cmd);
     let stray = match &cli.cmd {
-        Cmd::Claim { repo, feature, verdict, author, family, at, searched, note, .. } => {
+        Cmd::Claim { repo, feature, verdict, author, family, at, searched, read_hits, note, .. } => {
             !(repo.is_none() && feature.is_none() && verdict.is_none() && author.is_none()
-                && family.is_none() && at.is_empty() && searched.is_none() && note.is_none())
+                && family.is_none() && at.is_empty() && searched.is_none() && read_hits.is_empty() && note.is_none())
         }
         Cmd::Decide { repo, disposition, why, by, feature, family, .. } => {
             !(repo.is_none() && disposition.is_none() && why.is_none() && by.is_none()
@@ -536,6 +540,7 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     let summary = match &cli.cmd {
         Cmd::Claim { .. } => crate::application::claim::claim_batch(&cli.root, reader, |r| {
             let conf = match r.data.as_ref().map(|d| d.confidence.as_str()) {
+                Some("observed") => "observed",
                 Some("derived") => "derived",
                 Some("inferred") => "inferred",
                 _ => "unknown",
@@ -590,6 +595,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
                 "derived"
             } else if matches!(cli.cmd, Cmd::Claim { .. }) {
                 match v["confidence"].as_str() {
+                    Some("observed") => "observed",
                     Some("derived") => "derived",
                     Some("inferred") => "inferred",
                     _ => "unknown",
@@ -898,6 +904,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             family,
             at,
             searched,
+            read_hits,
             note,
             batch: _,
         } => serde_json::to_value(crate::application::claim::claim(
@@ -910,6 +917,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 author: author.as_deref().unwrap_or_default(),
                 at,
                 searched: searched.as_deref(),
+                read_hits,
                 note: note.as_deref(),
                 skip_equal: false,
             },

@@ -666,3 +666,122 @@ fn check_flags_claims_whose_run_row_is_gone() {
     let v = json(cc(ws.path()).arg("check").assert().failure());
     assert_eq!(v["data"]["unbuilt_claim_runs"], 1, "{v}");
 }
+
+// ---- --read-hits: a none whose hits were opened and rejected ----
+
+const RH_A: &str = "src/net/a.py::retry_with_backoff";
+const RH_B: &str = "src/net/a.py::retry_policy";
+
+fn rh_setup() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
+    let ws = tempfile::tempdir().unwrap();
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(pack.path().join("rows.md"), PACK).unwrap();
+    cc(ws.path()).args(["family", "add"]).arg(pack.path()).assert().success();
+    let a = clone_with(&[(
+        "src/net/a.py",
+        "def retry_with_backoff():\n    return 1\n\ndef retry_policy():\n    return 3\n\ndef recall_turns():\n    return 2\n",
+    )]);
+    add_repo(ws.path(), a.path(), Some("a"), false).unwrap();
+    build_repo(ws.path(), "a", "reference", &BuildOptions::default()).unwrap();
+    (ws, a, pack)
+}
+fn none_read(ws: &std::path::Path, read: &str) -> assert_cmd::assert::Assert {
+    claim(ws, &["none", "--author", "me", "--searched", "retry", "--read-hits", read, "--note", "other thing"])
+}
+
+#[test]
+fn read_hits_a_hit_without_the_list_still_refuses() {
+    let (ws, _a, _p) = rh_setup();
+    let v = json(claim(ws.path(), &["none", "--author", "me", "--searched", "retry"]).failure());
+    assert!(v["error"]["message"].as_str().unwrap().starts_with("not none: the search for"), "{v}");
+}
+
+#[test]
+fn read_hits_covering_every_hit_records_an_observed_none_with_the_names() {
+    let (ws, _a, _p) = rh_setup();
+    let v = json(none_read(ws.path(), &format!("{RH_A},{RH_B}")).success());
+    assert_eq!(v["data"]["verdict"], "none", "{v}");
+    assert_eq!(v["data"]["confidence"], "observed", "{v}");
+    assert_eq!(v["evidence"]["confidence"], "observed", "{v}");
+    let note = v["data"]["note"].as_str().unwrap();
+    assert!(note.starts_with("searched: retry → 2 hits, read and rejected: "), "{note}");
+    assert!(note.contains(RH_A) && note.contains(RH_B), "{note}");
+    assert!(note.ends_with(" — other thing"), "{note}");
+}
+
+#[test]
+fn read_hits_whitespace_separated_also_works() {
+    let (ws, _a, _p) = rh_setup();
+    json(none_read(ws.path(), &format!("{RH_A} {RH_B}")).success());
+}
+
+#[test]
+fn read_hits_partial_coverage_names_the_unread() {
+    let (ws, _a, _p) = rh_setup();
+    let v = json(none_read(ws.path(), RH_A).failure());
+    assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(m.starts_with("not none: 1 of 2 hits were not read: "), "{m}");
+    assert!(m.contains(RH_B) && !m.contains(&format!("read: {RH_A}")), "{m}");
+    assert!(m.ends_with("pass --read-hits with every hit, or claim has/partial"), "{m}");
+}
+
+#[test]
+fn read_hits_a_name_the_search_does_not_find_is_refused() {
+    let (ws, _a, _p) = rh_setup();
+    let v = json(none_read(ws.path(), &format!("{RH_A},{RH_B},src/net/a.py::recall_turns")).failure());
+    let m = v["error"]["message"].as_str().unwrap();
+    assert_eq!(m, "--read-hits names symbols the search does not find: src/net/a.py::recall_turns", "{m}");
+}
+
+#[test]
+fn read_hits_without_searched_or_on_another_verdict_is_invalid() {
+    let (ws, _a, _p) = rh_setup();
+    let v = json(claim(ws.path(), &["none", "--author", "me", "--read-hits", RH_A]).failure());
+    assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("--read-hits needs --searched"), "{v}");
+    let v = json(claim(ws.path(), &["unknown", "--author", "me", "--searched", "retry", "--read-hits", RH_A]).failure());
+    assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
+}
+
+#[test]
+fn read_hits_with_no_hits_accepts_as_before_and_says_nothing_was_read() {
+    let (ws, _a, _p) = rh_setup();
+    let v = json(
+        claim(ws.path(), &["none", "--author", "me", "--searched", "routing zzzunknown", "--read-hits", RH_A]).success(),
+    );
+    assert_eq!(v["data"]["confidence"], "derived", "{v}");
+    let note = v["data"]["note"].as_str().unwrap();
+    assert!(note.contains("→ 0 hits") && note.contains("no hits were found, so nothing was read"), "{note}");
+}
+
+#[test]
+fn read_hits_batch_rows_use_hits_read_one_accepted_one_refused() {
+    let (ws, _a, _p) = rh_setup();
+    let path = ws.path().join("rh.jsonl");
+    let ok = format!(
+        "{{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"none\",\"author\":\"me\",\"searched\":\"retry\",\"hits_read\":[\"{RH_A}\",\"{RH_B}\"]}}\n"
+    );
+    let bad = format!(
+        "{{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"none\",\"author\":\"me\",\"searched\":\"retry\",\"hits_read\":[\"{RH_A}\"]}}\n"
+    );
+    std::fs::write(&path, format!("{ok}{bad}")).unwrap();
+    let a = cc(ws.path()).args(["claim", "--batch"]).arg(&path).assert().failure().code(1);
+    let out = lines(&a.get_output().stdout);
+    assert_eq!(out.len(), 3, "{out:?}");
+    assert_eq!(out[0]["ok"], true, "{out:?}");
+    assert_eq!(out[0]["data"]["confidence"], "observed", "{out:?}");
+    assert_eq!(out[1]["ok"], false, "{out:?}");
+    assert!(out[1]["error"]["message"].as_str().unwrap().starts_with("not none: 1 of 2 hits were not read: "), "{out:?}");
+    assert_eq!(out[2]["data"], serde_json::json!({"rows":2,"ok":1,"skipped":0,"failed":1,"committed":true}));
+}
+
+#[test]
+fn read_hits_over_mcp_takes_an_array() {
+    let (ws, _a, _p) = rh_setup();
+    let req = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"comparegraph_claim","arguments":{
+        "repo":"a","feature":"routing.retry","verdict":"none","author":"me","searched":"retry","read_hits":[RH_A,RH_B]}}});
+    let out = cc(ws.path()).arg("mcp").write_stdin(req.to_string()).assert().success().get_output().stdout.clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("read and rejected"), "{text}");
+}
