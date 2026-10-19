@@ -43,7 +43,7 @@ tree-sitter-css = "0.23"
 tree-sitter-html = "0.23"
 tree-sitter-swift = "0.7"
 tree-sitter-toml-ng = "0.6"
-tree-sitter-containerfile = "0.8"
+tree-sitter-containerfile = "0.9"
 # 0.1.x is yanked upstream; resolves only through the committed Cargo.lock — never run cargo update blindly
 tree-sitter-perl-next = "0.1"
 tree-sitter-objc = "3"
