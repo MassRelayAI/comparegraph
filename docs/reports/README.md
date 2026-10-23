@@ -6,6 +6,7 @@ never silently kept.
 
 | date | report | verdict in one line | status |
 |---|---|---|---|
+| 2026-10-24 | [The README, judged by a persona jury](2026-10-24-readme-jury.md) | seven composite personas, three lenses, two rounds: 22 findings (16 fixed in the docs, 4 issues, 2 dismissed); critical blockers 15 → 6, compare blockers 6 → 0, all three deltas landed; the forced pick went from 4 of 7 to 7 of 7 | decided |
 | 2026-10-24 | [Time to a first result](2026-10-24-first-result-time.md) | the README's sample walk takes under 0.3 s of tool time; on real clones the build dominates, 0.82 s (85 files) to 6.20 s (797 files), and a three-feature `map` answers in under 0.1 s; `family propose` drafts shared words, not features | measured |
 | 2026-10-14 | [Answer size on six study copies](2026-10-14-answer-size.md) | for 30 features on six code-graph tools the `map` answers total 335,755 bytes (about 84 k tokens, an estimate) against 106,057,965 bytes of source, 316 to 1; ranked places to read, not verdicts | measured |
 | 2026-10-14 | [Mapping gold, first measurement](2026-10-14-mapping-gold-first-measurement.md) | `map` started at the level of plain full-text search (pooled precision@5 0.046, recall@5 0.141); the improvement task raised it to 0.109 / 0.378 pooled, but on the three held-out clones only 0.038 / 0.149 against the target 0.30 / 0.50; the absent check scores precision 1.00 on one call and recall 1 of 19; Plan 8 lane C (synonyms, family words, the short-token rule) left the held-out numbers and the absent recall where they were | measured, target open |
