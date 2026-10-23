@@ -5,11 +5,13 @@ The quick start on the shipped sample, what you get from the graph, family packs
 ## Quick start on the shipped sample
 
 The example family pack (`families/`) and the sample repositories (`fixtures/`) ship in the repository, not in the binary,
-so clone it once even if you installed the binary another way; the commands below start inside that clone. The sample is
-`fixtures/typescript` (three files) against the ten-feature example pack:
+so the first command downloads a copy of it, even if you installed the binary another way. Run the commands in any folder;
+they make two folders side by side, `comparegraph` (the copy) and `cg-try` (your workspace, where the store lives). The
+sample is `fixtures/typescript` (three files) against the ten-feature example pack:
 
 ```bash
-mkdir ../ws && cd ../ws
+git clone --depth 1 https://github.com/massrelay-ai/comparegraph
+mkdir cg-try && cd cg-try
 comparegraph add ../comparegraph/fixtures/typescript --name tsfix   # register a clone (read, never run)
 comparegraph build tsfix                                   # parse it: one run, one store hash
 comparegraph family add ../comparegraph/families/example-code-graph-tools

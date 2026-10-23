@@ -13,6 +13,8 @@ Maintainers only. A release is a tag; the workflow in `.github/workflows/release
    the two link lines at the bottom.
 3. `cargo test -p comparegraph` and `cargo clippy -p comparegraph --tests -- -D warnings` green; the `ci` workflow green on
    `main` for that commit.
+4. Move the README's read-first install block to the new tag: the script URL (`.../comparegraph/vX.Y.Z/scripts/install.sh`)
+   and `COMPAREGRAPH_VERSION=vX.Y.Z`.
 
 ## The tag
 
