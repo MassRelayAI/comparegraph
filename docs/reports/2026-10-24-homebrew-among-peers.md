@@ -10,11 +10,11 @@ status: decided
 # Homebrew among the code-graph tools we compare with
 
 ## The question
-The maintainer asked whether `massrelay-ai/homebrew-comparegraph` can be removed, why the formula does not live in the main
+The question was whether `massrelay-ai/homebrew-comparegraph` can be removed, why the formula does not live in the main
 repository, and whether other code-graph tools ship Homebrew at all.
 
 ## Method
-For each of the 14 repositories cloned under `comparegraph-study/` (their `origin` remotes), `gh api` on 2026-10-24 checked:
+For each of the 14 repositories in our local comparison clones (their `origin` remotes), `gh api` on 2026-10-24 checked:
 a tap repository (`homebrew-<name>`, `homebrew-tap`, `homebrew-<owner>`, `homebrew-formulae`), a `Formula/` or
 `HomebrewFormula/` directory in the repository, a formula at `Homebrew/homebrew-core/Formula/<letter>/<name>.rb`, and the
 first `brew install|tap` line of the current README. Star counts are from the same call.
@@ -57,7 +57,7 @@ shared tap, 1 in-repo formula, 1 tap plus homebrew-core); not offered by 5, incl
 ## Recommendation
 D: rename to `massrelay-ai/homebrew-tap` and change the install line to `brew install massrelay-ai/tap/comparegraph`; add a
 PersonaJury formula only when someone asks for brew (ship then learn). Revisit homebrew-core when CompareGraph is notable
-enough for it. Decided 2026-10-24 by the maintainer ("ok, sure can - seems like better practice"); renamed the same day. The tap's
+enough for it. Decided 2026-10-24 by the maintainer, who judged it the better practice; renamed the same day. The tap's
 update workflow reads only CompareGraph's releases, so it needed no change; the old name redirects.
 
 ## Detector
