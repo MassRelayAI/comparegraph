@@ -4,7 +4,7 @@ date: 2026-10-24
 valid_until: 2027-01-24
 lane: distribution
 verdict: "Homebrew is common but not universal: 6 of 11 code-intelligence peers offer it (4 through their own tap, 1 through a formula in the main repo, 1 in homebrew-core); the two largest, colbymchenry/codegraph (75,167 stars) and tirth8205/code-review-graph (32,363), do not, and codegraph created an empty tap repository and ships an install script instead. Where a project offers brew, a separate tap is the norm (5 of 6); a formula inside the main repository appears once. Recommendation: keep Homebrew as one shared tap for all our tools (rename massrelay-ai/homebrew-comparegraph to massrelay-ai/homebrew-tap), not a formula in the main repository."
-status: open
+status: decided
 ---
 
 # Homebrew among the code-graph tools we compare with
@@ -57,7 +57,8 @@ shared tap, 1 in-repo formula, 1 tap plus homebrew-core); not offered by 5, incl
 ## Recommendation
 D: rename to `massrelay-ai/homebrew-tap` and change the install line to `brew install massrelay-ai/tap/comparegraph`; add a
 PersonaJury formula only when someone asks for brew (ship then learn). Revisit homebrew-core when CompareGraph is notable
-enough for it. The rename is the maintainer's.
+enough for it. Decided 2026-10-24 by the maintainer ("ok, sure can - seems like better practice"); renamed the same day. The tap's
+update workflow reads only CompareGraph's releases, so it needed no change; the old name redirects.
 
 ## Detector
 After the rename, `brew install massrelay-ai/tap/comparegraph` on a clean macOS runner, and the old

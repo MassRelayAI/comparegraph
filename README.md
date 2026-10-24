@@ -54,7 +54,7 @@ irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/ins
 <details>
 <summary><b>No pipe to a shell: Homebrew, npm, by hand, from source</b></summary>
 
-**Homebrew**, macOS and Linux: `brew install massrelay-ai/comparegraph/comparegraph`.
+**Homebrew**, macOS and Linux: `brew install massrelay-ai/tap/comparegraph`.
 
 **npm**, any of the five platforms with Node 18 or newer (the package wraps the same release binaries): `npx -y @massrelay-ai/comparegraph --version`, or `npm i -g @massrelay-ai/comparegraph`.
 

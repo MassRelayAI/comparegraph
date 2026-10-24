@@ -94,7 +94,7 @@ After the first successful npm publish, add this entry to `server.json` (not bef
 The `version` there is the released one, so it moves with every release like the other version files.
 
 The install scripts (`scripts/install.sh`, `scripts/install.ps1`) read `releases/latest/download/`, so they serve the new
-version as soon as the release exists; nothing in them is versioned. The Homebrew tap (`massrelay-ai/homebrew-comparegraph`)
+version as soon as the release exists; nothing in them is versioned. The shared Homebrew tap (`massrelay-ai/homebrew-tap`)
 updates its formula from the latest release on a schedule and on demand (its own workflow, no secret).
 
 ## Attestations
@@ -125,6 +125,6 @@ comparegraph --version
 ```
 
 In Claude Code: `/plugin install comparegraph --marketplace massrelay-ai/comparegraph`, then `comparegraph doctor` in a
-workspace from the agent. Run the tap's update workflow and `brew install massrelay-ai/comparegraph/comparegraph`. Look for
+workspace from the agent. Run the tap's update workflow and `brew install massrelay-ai/tap/comparegraph`. Look for
 `io.github.massrelay-ai/comparegraph` at https://registry.modelcontextprotocol.io/v0/servers?search=comparegraph. Then move
 the changelog on: a new empty `## [Unreleased]` is already there.
