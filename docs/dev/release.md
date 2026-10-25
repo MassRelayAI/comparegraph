@@ -39,7 +39,7 @@ git push origin vX.Y.Z
   the maintainer has registered this workflow on each of the six packages.
 - `publish-registry`: downloads a pinned `mcp-publisher` (checksum verified), checks that `server.json` carries the
   tag's version, validates it, authenticates through GitHub OIDC (the registry grants this repository's owner the
-  `io.github.massrelay-ai/*` namespace) and publishes. The entry carries the repository, not a package: the install
+  `io.github.MassRelayAI/*` namespace) and publishes. The entry carries the repository, not a package: the install
   script is the distribution.
 
 ## Dependency bumps
@@ -126,5 +126,5 @@ comparegraph --version
 
 In Claude Code: `/plugin install comparegraph --marketplace MassRelayAI/comparegraph`, then `comparegraph doctor` in a
 workspace from the agent. Run the tap's update workflow and `brew install massrelayai/tap/comparegraph`. Look for
-`io.github.massrelay-ai/comparegraph` at https://registry.modelcontextprotocol.io/v0/servers?search=comparegraph. Then move
+`io.github.MassRelayAI/comparegraph` at https://registry.modelcontextprotocol.io/v0/servers?search=comparegraph. Then move
 the changelog on: a new empty `## [Unreleased]` is already there.

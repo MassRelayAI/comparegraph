@@ -7,7 +7,7 @@
   "homepage": "https://github.com/MassRelayAI/comparegraph#readme",
   "bugs": { "url": "https://github.com/MassRelayAI/comparegraph/issues" },
   "keywords": ["mcp", "model-context-protocol", "code-graph", "code-comparison", "comparegraph"],
-  "mcpName": "io.github.massrelay-ai/comparegraph",
+  "mcpName": "io.github.MassRelayAI/comparegraph",
   "bin": { "comparegraph": "bin/comparegraph.js" },
   "files": ["bin"],
   "engines": { "node": ">=18" },

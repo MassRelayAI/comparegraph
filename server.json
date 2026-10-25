@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.massrelay-ai/comparegraph",
+  "name": "io.github.MassRelayAI/comparegraph",
   "title": "CompareGraph",
   "description": "Compare cloned repositories against taxonomy packs: one code graph, cited claims, a matrix. Local.",
   "websiteUrl": "https://github.com/MassRelayAI/comparegraph",
