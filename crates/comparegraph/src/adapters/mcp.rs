@@ -356,6 +356,7 @@ fn call(root: &Path, params: &Value) -> Value {
                 root: PathBuf::from(root),
                 pretty: false,
                 allow_unverified: false,
+                root_map: vec![],
                 cmd,
             });
             (env.to_json(), !env.ok)

@@ -3,7 +3,8 @@
 Every command, with the flags that matter.
 
 Global options on every command, before or after the verb: `--root <ROOT>` (the workspace, default `.`), `--pretty`, `--allow-unverified` (use an
-external provider with no manifest). `comparegraph <verb> --help` prints every flag.
+external provider with no manifest), `--root-map FROM=TO` (repeatable: re-root the clone paths a store copied from another machine holds; `doctor` lists the
+registered clones missing here under `unmapped_roots`). `comparegraph <verb> --help` prints every flag.
 
 ## Build and inspect
 

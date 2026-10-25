@@ -473,11 +473,34 @@ impl Store {
     }
 }
 
+/// Re-root a stored clone path with `FROM=TO` pairs separated by `;` (`--root-map`, env `COMPAREGRAPH_ROOT_MAP`). A pair
+/// applies only at a path boundary (`/a/b` maps `/a/b/c`, not `/a/bc`); the first pair that fits wins; the store is not written.
+pub fn map_root(path: &str, map: &str) -> String {
+    for pair in map.split(';').filter(|p| !p.is_empty()) {
+        let Some((from, to)) = pair.split_once('=') else { continue };
+        let from = from.trim_end_matches(['/', '\\']);
+        if from.is_empty() {
+            continue;
+        }
+        if let Some(rest) = path.strip_prefix(from) {
+            if rest.is_empty() || rest.starts_with(['/', '\\']) {
+                return format!("{}{rest}", to.trim_end_matches(['/', '\\']));
+            }
+        }
+    }
+    path.to_string()
+}
+
 fn row_to_repo(r: &rusqlite::Row<'_>) -> rusqlite::Result<RepoRow> {
+    let path: String = r.get(2)?;
+    let path = match std::env::var("COMPAREGRAPH_ROOT_MAP") {
+        Ok(m) if !m.is_empty() => map_root(&path, &m),
+        _ => path,
+    };
     Ok(RepoRow {
         id: Some(RepoId(r.get(0)?)),
         name: r.get(1)?,
-        path: r.get(2)?,
+        path,
         remote: r.get(3)?,
         head: r.get(4)?,
         licence: r.get(5)?,

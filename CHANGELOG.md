@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- The npm package tests skip with a reason when no binary is built, instead of failing.
+
 ### Added
+- `--root-map FROM=TO` (and `COMPAREGRAPH_ROOT_MAP`) re-roots the clone paths of a store copied to another machine; `doctor` lists registered clones missing on this machine as `unmapped_roots`. The stored rows are not changed.
 - `add <path> --name <existing> --replace` re-points a registered repo at another checkout (claims and runs stay); the envelope reports `old_path`, `new_path` and the new `head`.
 - `check` reports `stale_locations_superseded`: stale locations of superseded claims, counted apart and mentioned in `notes`.
 - `claim ... none --searched <terms> --read-hits <qualified_name,…>` (batch `hits_read`, MCP `read_hits`): a none with candidates is accepted, as `observed`, when the top 10 ranked candidates that `absent-check --searched` returns (`read_set`) are named as read; candidates beyond the cap are recorded as a `read_capped` limitation; unread top candidates, names the search does not find and `--read-hits` without `--searched` are refused.

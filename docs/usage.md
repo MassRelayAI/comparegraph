@@ -109,6 +109,7 @@ large to open as one vault in a note tool.
 | `COMPAREGRAPH_PLUGIN_CAPS_TIMEOUT` | environment | the deadline of a `capabilities` probe in whole seconds (default 10) |
 | `COMPAREGRAPH_PLUGIN_OUTPUT_CAP` | environment | the plugin stdout cap (default 256 MiB) |
 | `COMPAREGRAPH_ALLOW_UNVERIFIED` | environment | `1` is the same as `--allow-unverified` |
+| `COMPAREGRAPH_ROOT_MAP` | environment | the same as `--root-map`: `FROM=TO` pairs separated by `;`, applied at a path boundary on read; the store is not written |
 | `COMPAREGRAPH_BIN` | environment | the command `setup` registers, when `--bin` is not given |
 | `COMPAREGRAPH_NO_PIDNS` | environment | `1` skips the PID-namespace test runner, for contributors ([`docs/dev/pid-namespaces.md`](dev/pid-namespaces.md)) |
 | `COMPAREGRAPH_NOW` | environment | a fixed clock for tests; do not set it in real use |

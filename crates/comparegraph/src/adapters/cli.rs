@@ -29,6 +29,9 @@ pub struct Cli {
     /// use an external provider that has no comparegraph-plugin.toml beside it
     #[arg(long, global = true)]
     pub allow_unverified: bool,
+    /// re-root the clone paths a copied store holds, as `FROM=TO` (repeatable): `--root-map /data/repos=D:/repos`
+    #[arg(long, global = true, value_name = "FROM=TO")]
+    pub root_map: Vec<String>,
     #[command(subcommand)]
     pub cmd: Cmd,
 }
@@ -417,6 +420,9 @@ pub fn run() -> i32 {
     let cli = Cli::parse();
     if cli.allow_unverified {
         std::env::set_var("COMPAREGRAPH_ALLOW_UNVERIFIED", "1");
+    }
+    if !cli.root_map.is_empty() {
+        std::env::set_var("COMPAREGRAPH_ROOT_MAP", cli.root_map.join(";"));
     }
     if matches!(cli.cmd, Cmd::Mcp) {
         crate::adapters::mcp::serve(&cli.root, std::io::stdin().lock(), std::io::stdout().lock());
@@ -1024,11 +1030,17 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             let clients: Vec<_> = setup::registrations(&ctx).iter().chain(setup::extra_registrations(&ctx).iter()).map(|r| r.to_json(false)).collect();
             if !cli.root.join(".comparegraph").join("comparegraph.db").is_file() {
                 return Ok(Ok(
-                    serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations }),
+                    serde_json::json!({ "store": null, "schema_version": null, "repos": 0, "unmapped_roots": [], "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations }),
                 ));
             }
             let store = Store::open_existing(&cli.root)?;
-            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": store.repos()?.len(), "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations })
+            let repos = store.repos()?;
+            // a registered clone that is not on this machine (a store copied from another one): `--root-map` re-roots it
+            let unmapped: Vec<_> = repos.iter().filter(|r| !std::path::Path::new(&r.path).is_dir()).map(|r| serde_json::json!({ "name": r.name, "path": r.path })).collect();
+            if !unmapped.is_empty() {
+                limitations.push(serde_json::json!({ "code": "unmapped_roots", "detail": format!("{} registered clone path(s) do not exist here; pass --root-map FROM=TO", unmapped.len()) }));
+            }
+            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": repos.len(), "unmapped_roots": unmapped, "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations })
         }
         Cmd::Setup { client, scope, apply, force, bin, no_rules, no_hook } => {
             let scope = match scope.as_str() {
