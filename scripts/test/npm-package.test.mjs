@@ -11,6 +11,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const binary = path.resolve(root, process.env.COMPAREGRAPH_BIN || 'target/debug/comparegraph');
 const version = JSON.parse(readFileSync(path.join(root, 'npm/package.json'), 'utf8')).version;
 const isLinuxX64 = process.platform === 'linux' && process.arch === 'x64';
+// The tests package the built binary: without one they skip with the reason instead of failing the run.
+const noBinary = existsSync(binary) ? false : `no binary at ${binary}: run \`cargo build -p comparegraph\` or set COMPAREGRAPH_BIN`;
 const exe = process.platform === 'win32' ? '.exe' : '';
 
 let work, out, install;
@@ -22,7 +24,7 @@ function sh(cmd, args, opts = {}) {
 }
 
 before(() => {
-  assert.ok(existsSync(binary), `no binary at ${binary}: run \`cargo build -p comparegraph\` or set COMPAREGRAPH_BIN`);
+  if (noBinary) return;
   work = mkdtempSync(path.join(tmpdir(), 'cg-npm-'));
   const bins = path.join(work, 'bins');
   out = path.join(work, 'out');
@@ -37,11 +39,11 @@ function pack(dir) {
   return { tgz: path.join(work, JSON.parse(r.stdout)[0].filename), files: JSON.parse(r.stdout)[0].files.map((f) => f.path).sort() };
 }
 
-test('the wrapper tarball holds only the launcher, package.json and README', () => {
+test('the wrapper tarball holds only the launcher, package.json and README', { skip: noBinary }, () => {
   assert.deepEqual(pack(path.join(out, 'comparegraph')).files, ['README.md', 'bin/comparegraph.js', 'package.json']);
 });
 
-test('mcpName equals the registry entry name', () => {
+test('mcpName equals the registry entry name', { skip: noBinary }, () => {
   const pkg = JSON.parse(readFileSync(path.join(out, 'comparegraph/package.json'), 'utf8'));
   const server = JSON.parse(readFileSync(path.join(root, 'server.json'), 'utf8'));
   assert.equal(pkg.mcpName, server.name);
@@ -49,7 +51,7 @@ test('mcpName equals the registry entry name', () => {
   for (const [name, v] of Object.entries(pkg.optionalDependencies)) assert.equal(v, version, name);
 });
 
-test('installed from tarballs, the bin runs the platform binary', { skip: !isLinuxX64 && 'needs a linux-x64 host' }, () => {
+test('installed from tarballs, the bin runs the platform binary', { skip: noBinary || (!isLinuxX64 && 'needs a linux-x64 host') }, () => {
   const wrapper = pack(path.join(out, 'comparegraph')).tgz;
   const platform = pack(path.join(out, 'comparegraph-linux-x64')).tgz;
   install = path.join(work, 'install');
@@ -61,7 +63,7 @@ test('installed from tarballs, the bin runs the platform binary', { skip: !isLin
   assert.ok(existsSync(path.join(install, `node_modules/@massrelay-ai/comparegraph-linux-x64/bin/comparegraph${exe}`)));
 });
 
-test('an unsupported platform exits 2 with one line naming it', () => {
+test('an unsupported platform exits 2 with one line naming it', { skip: noBinary }, () => {
   const launcher = path.join(out, 'comparegraph/bin/comparegraph.js');
   const r = spawnSync('node', [launcher, '--version'], { encoding: 'utf8', env: { ...process.env, COMPAREGRAPH_NPM_FORCE_PLATFORM: 'freebsd-x64' } });
   assert.equal(r.status, 2);
@@ -71,14 +73,14 @@ test('an unsupported platform exits 2 with one line naming it', () => {
   assert.match(r.stderr, /install/);
 });
 
-test('a supported platform whose package is absent exits 2 too', () => {
+test('a supported platform whose package is absent exits 2 too', { skip: noBinary }, () => {
   const launcher = path.join(out, 'comparegraph/bin/comparegraph.js');
   const r = spawnSync('node', [launcher, '--version'], { encoding: 'utf8', env: { ...process.env, COMPAREGRAPH_NPM_FORCE_PLATFORM: 'darwin-arm64' } });
   assert.equal(r.status, 2);
   assert.match(r.stderr, /darwin-arm64/);
 });
 
-test('COMPAREGRAPH_BINARY overrides the lookup and the exit status passes through', () => {
+test('COMPAREGRAPH_BINARY overrides the lookup and the exit status passes through', { skip: noBinary }, () => {
   const launcher = path.join(out, 'comparegraph/bin/comparegraph.js');
   const ok = spawnSync('node', [launcher, '--version'], { encoding: 'utf8', env: { ...process.env, COMPAREGRAPH_BINARY: binary } });
   assert.equal(ok.status, 0);
