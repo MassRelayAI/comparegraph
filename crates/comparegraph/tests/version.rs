@@ -24,5 +24,5 @@ fn manifests_repeat_the_crate_version() {
     }
     let changelog = repo("CHANGELOG.md");
     assert!(changelog.contains(&format!("\n## [{v}] - ")), "CHANGELOG.md has no dated section for {v}");
-    assert!(changelog.contains(&format!("[{v}]: https://github.com/massrelay-ai/comparegraph/releases/tag/v{v}")), "CHANGELOG.md link for {v}");
+    assert!(changelog.contains(&format!("[{v}]: https://github.com/MassRelayAI/comparegraph/releases/tag/v{v}")), "CHANGELOG.md link for {v}");
 }

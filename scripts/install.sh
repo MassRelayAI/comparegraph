@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs the comparegraph release binary for this platform and checks it against the release's SHA256SUMS.
-#   curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/MassRelayAI/comparegraph/main/scripts/install.sh | sh
 # Environment:
 #   COMPAREGRAPH_VERSION      a tag such as v0.1.0 (default: the latest release)
 #   COMPAREGRAPH_INSTALL_DIR  where the binary goes (default: ~/.local/bin)
@@ -9,7 +9,7 @@
 # The whole script is one function called on the last line, so a download cut short runs nothing.
 main() {
   set -eu
-  repo="massrelay-ai/comparegraph"
+  repo="MassRelayAI/comparegraph"
   version="${COMPAREGRAPH_VERSION:-latest}"
   dir="${COMPAREGRAPH_INSTALL_DIR:-$HOME/.local/bin}"
 

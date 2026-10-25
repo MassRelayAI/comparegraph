@@ -40,7 +40,7 @@ Queries take `--min-confidence 1.0` to drop them.
 ## Is it free? Who supports it?
 
 Yes: Apache-2.0, with no paid tier and no account. Questions and bugs go to
-[GitHub issues](https://github.com/massrelay-ai/comparegraph/issues); there is no support contract. Security reports go to
+[GitHub issues](https://github.com/MassRelayAI/comparegraph/issues); there is no support contract. Security reports go to
 support@massrelay.ai or a private advisory, acknowledged within seven days ([`SECURITY.md`](../SECURITY.md)).
 
 ## Is my code sent anywhere?

@@ -21,7 +21,7 @@ The jurors judged files, never a live page.
 - **secondary (approves it):** an engineering manager and a security reviewer;
 - **bystander (passes by):** a newsletter curator who reads the first screen only.
 
-**How.** The run used [PersonaJury](https://github.com/massrelay-ai/personajury) v0.2:
+**How.** The run used [PersonaJury](https://github.com/MassRelayAI/personajury) v0.2:
 - one rule: the public surface, the panel above, three lenses, compact briefs;
 - 21 briefs per round, about 315,000 tokens by the tool's own estimate of 15,000 per brief;
 - one Sonnet subagent per persona, each in a private folder;

@@ -1,9 +1,9 @@
 # Installs the comparegraph release binary for Windows x64 and checks it against the release's SHA256SUMS.
-#   irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/MassRelayAI/comparegraph/main/scripts/install.ps1 | iex
 # Environment: COMPAREGRAPH_VERSION (a tag; default latest), COMPAREGRAPH_INSTALL_DIR (default %LOCALAPPDATA%\Programs\comparegraph),
 # COMPAREGRAPH_BASE_URL (where the assets are read from; default the GitHub release).
 $ErrorActionPreference = 'Stop'
-$repo = 'massrelay-ai/comparegraph'
+$repo = 'MassRelayAI/comparegraph'
 if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'X64') {
   Write-Error "comparegraph: no prebuilt binary for this architecture; build from source: cargo install --locked --git https://github.com/$repo comparegraph"
 }

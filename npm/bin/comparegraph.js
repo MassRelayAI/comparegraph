@@ -19,7 +19,7 @@ function binaryPath() {
   }
   process.stderr.write(
     `comparegraph: no prebuilt binary for ${key} (supported: ${PLATFORMS.join(', ')}; was the install run with --no-optional?). ` +
-      'Use the install script in the README: https://github.com/massrelay-ai/comparegraph#install\n',
+      'Use the install script in the README: https://github.com/MassRelayAI/comparegraph#install\n',
   );
   process.exit(2);
 }

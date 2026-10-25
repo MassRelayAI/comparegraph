@@ -10,7 +10,7 @@ they make two folders side by side, `comparegraph` (the copy) and `cg-try` (your
 sample is `fixtures/typescript` (three files) against the ten-feature example pack:
 
 ```bash
-git clone --depth 1 https://github.com/massrelay-ai/comparegraph
+git clone --depth 1 https://github.com/MassRelayAI/comparegraph
 mkdir cg-try && cd cg-try
 comparegraph add ../comparegraph/fixtures/typescript --name tsfix   # register a clone (read, never run)
 comparegraph build tsfix                                   # parse it: one run, one store hash

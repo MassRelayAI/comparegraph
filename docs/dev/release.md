@@ -67,7 +67,7 @@ One-time steps for the maintainer:
    publisher on it, so either publish the six packages by hand once (`node npm/build.mjs <version> --bins <dir> --out
    dist-npm`, then `npm publish --access public` in each directory, platform packages first), or use whatever npmjs.com offers
    for configuring a publisher on a name not yet published. Then, for each of the six packages, add a trusted publisher:
-   GitHub Actions, repository `massrelay-ai/comparegraph`, workflow filename `release.yml`.
+   GitHub Actions, repository `MassRelayAI/comparegraph`, workflow filename `release.yml`.
 3. In the repository settings (Actions, Variables) set `NPM_PUBLISH` to `true`. Until then the `publish-npm` job is skipped
    and a release is unaffected.
 
@@ -105,7 +105,7 @@ files, plus `SHA256SUMS`. The attestation lives in GitHub's attestation store, n
 (needs the GitHub CLI, version 2.49 or later):
 
 ```bash
-gh attestation verify comparegraph-linux-x64 -R massrelay-ai/comparegraph
+gh attestation verify comparegraph-linux-x64 -R MassRelayAI/comparegraph
 ```
 
 The first attested release is v0.1.2; earlier releases carry checksums only.
@@ -120,11 +120,11 @@ sources. An `ignore` entry in `[advisories]` carries its reason and is removed w
 On a clean machine:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/MassRelayAI/comparegraph/main/scripts/install.sh | sh
 comparegraph --version
 ```
 
-In Claude Code: `/plugin install comparegraph --marketplace massrelay-ai/comparegraph`, then `comparegraph doctor` in a
+In Claude Code: `/plugin install comparegraph --marketplace MassRelayAI/comparegraph`, then `comparegraph doctor` in a
 workspace from the agent. Run the tap's update workflow and `brew install massrelay-ai/tap/comparegraph`. Look for
 `io.github.massrelay-ai/comparegraph` at https://registry.modelcontextprotocol.io/v0/servers?search=comparegraph. Then move
 the changelog on: a new empty `## [Unreleased]` is already there.

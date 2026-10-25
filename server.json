@@ -3,9 +3,9 @@
   "name": "io.github.massrelay-ai/comparegraph",
   "title": "CompareGraph",
   "description": "Compare cloned repositories against taxonomy packs: one code graph, cited claims, a matrix. Local.",
-  "websiteUrl": "https://github.com/massrelay-ai/comparegraph",
+  "websiteUrl": "https://github.com/MassRelayAI/comparegraph",
   "repository": {
-    "url": "https://github.com/massrelay-ai/comparegraph",
+    "url": "https://github.com/MassRelayAI/comparegraph",
     "source": "github"
   },
   "version": "0.1.1",

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml"><img src="https://github.com/massrelay-ai/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a> <a href="https://github.com/massrelay-ai/comparegraph/releases/latest"><img src="https://img.shields.io/github/v/release/massrelay-ai/comparegraph?display_name=tag" alt="Release"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%2C%20free-blue.svg" alt="License: Apache-2.0, free"></a>
+  <a href="https://github.com/MassRelayAI/comparegraph/actions/workflows/ci.yml"><img src="https://github.com/MassRelayAI/comparegraph/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a> <a href="https://github.com/MassRelayAI/comparegraph/releases/latest"><img src="https://img.shields.io/github/v/release/MassRelayAI/comparegraph?display_name=tag" alt="Release"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%2C%20free-blue.svg" alt="License: Apache-2.0, free"></a>
 </p>
 
 <p align="center">
@@ -38,27 +38,27 @@ The install script downloads one file, the `comparegraph` binary for your platfo
 
 ```bash
 # macOS / Linux: fetch the script from the v0.1.1 tag, read it, then run it
-curl -fsSLO https://raw.githubusercontent.com/massrelay-ai/comparegraph/v0.1.1/scripts/install.sh
+curl -fsSLO https://raw.githubusercontent.com/MassRelayAI/comparegraph/v0.1.1/scripts/install.sh
 less install.sh
 COMPAREGRAPH_VERSION=v0.1.1 sh install.sh
 
 # the same in one line, script from main, latest release
-curl -fsSL https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/MassRelayAI/comparegraph/main/scripts/install.sh | sh
 
 # Windows x64 (PowerShell)
-irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/MassRelayAI/comparegraph/main/scripts/install.ps1 | iex
 ```
 
-<sub>Windows: written to `%LOCALAPPDATA%\Programs\comparegraph` and added to your user `PATH`; open a new terminal. `COMPAREGRAPH_INSTALL_DIR` moves the binary. The scripts check the checksum only. Releases from v0.1.2 also carry a build-provenance attestation, which the scripts do not check; check it yourself with `gh attestation verify <asset> -R massrelay-ai/comparegraph` ([release notes](docs/dev/release.md#attestations)).</sub>
+<sub>Windows: written to `%LOCALAPPDATA%\Programs\comparegraph` and added to your user `PATH`; open a new terminal. `COMPAREGRAPH_INSTALL_DIR` moves the binary. The scripts check the checksum only. Releases from v0.1.2 also carry a build-provenance attestation, which the scripts do not check; check it yourself with `gh attestation verify <asset> -R MassRelayAI/comparegraph` ([release notes](docs/dev/release.md#attestations)).</sub>
 
 <details>
 <summary><b>No pipe to a shell: Homebrew, npm, by hand, from source</b></summary>
 
 **Homebrew**, macOS and Linux: `brew install massrelay-ai/tap/comparegraph`.
 
-**npm**, any of the five platforms with Node 18 or newer (the package wraps the same release binaries): `npx -y @massrelay-ai/comparegraph --version`, or `npm i -g @massrelay-ai/comparegraph`.
+**npm**, any of the five platforms with Node 18 or newer (the package wraps the same release binaries): `npx -y @MassRelayAI/comparegraph --version`, or `npm i -g @MassRelayAI/comparegraph`.
 
-**By hand:** `comparegraph-<platform>` and `SHA256SUMS` from the [latest release](https://github.com/massrelay-ai/comparegraph/releases/latest); check with `sha256sum -c --ignore-missing SHA256SUMS`. From source, anywhere Rust 1.85 or newer runs: `cargo install --locked --git https://github.com/massrelay-ai/comparegraph comparegraph` (`--locked` matters: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
+**By hand:** `comparegraph-<platform>` and `SHA256SUMS` from the [latest release](https://github.com/MassRelayAI/comparegraph/releases/latest); check with `sha256sum -c --ignore-missing SHA256SUMS`. From source, anywhere Rust 1.85 or newer runs: `cargo install --locked --git https://github.com/MassRelayAI/comparegraph comparegraph` (`--locked` matters: the Perl grammar's newest release on crates.io is yanked, and only `Cargo.lock` resolves).
 
 </details>
 
@@ -67,7 +67,7 @@ irm https://raw.githubusercontent.com/massrelay-ai/comparegraph/main/scripts/ins
 The sample repository and the example list of features live in this repository, not in the binary, so the first command downloads a copy of it. Run these in any folder; they make two folders side by side, `comparegraph` and `cg-try`.
 
 ```bash
-git clone --depth 1 https://github.com/massrelay-ai/comparegraph   # the sample lives here
+git clone --depth 1 https://github.com/MassRelayAI/comparegraph   # the sample lives here
 mkdir cg-try && cd cg-try                                           # your workspace
 comparegraph add ../comparegraph/fixtures/typescript --name tsfix   # read, never run
 comparegraph build tsfix                                            # parse it
@@ -121,7 +121,7 @@ comparegraph doctor             # each client's state: aligned, stale, conflict,
 **Claude Code as a plugin:** the seven skills, the server and the hook in one install (Claude Code 2.1.275 or newer; `claude plugin install …` does the same from a shell):
 
 ```text
-/plugin install comparegraph --marketplace massrelay-ai/comparegraph
+/plugin install comparegraph --marketplace MassRelayAI/comparegraph
 ```
 
 With the plugin enabled, `setup --apply` leaves Claude Code's server and hook to the plugin (their rows read `plugin`) and still writes the rules block.
@@ -134,11 +134,11 @@ With the plugin enabled, `setup --apply` leaves Claude Code's server and hook to
 | Codex | `codex mcp add comparegraph -- comparegraph --root "$PWD" mcp` |
 | Gemini CLI | `gemini mcp add -s user comparegraph comparegraph -- --root "$PWD" mcp` |
 
-The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.massrelay-ai/comparegraph`; the [table](#agents-platforms-uninstall) has every client's file.
+The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.MassRelayAI/comparegraph`; the [table](#agents-platforms-uninstall) has every client's file.
 
 </details>
 
-To uninstall, see [Agents, platforms, uninstall](#agents-platforms-uninstall). Free and open source, with no paid tier; questions and bugs go to [GitHub issues](https://github.com/massrelay-ai/comparegraph/issues), security reports to [`SECURITY.md`](SECURITY.md).
+To uninstall, see [Agents, platforms, uninstall](#agents-platforms-uninstall). Free and open source, with no paid tier; questions and bugs go to [GitHub issues](https://github.com/MassRelayAI/comparegraph/issues), security reports to [`SECURITY.md`](SECURITY.md).
 
 ---
 
