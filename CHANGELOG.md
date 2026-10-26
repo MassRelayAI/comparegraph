@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-27
+
 ### Fixed
 - The npm package tests skip with a reason when no binary is built, instead of failing.
 
@@ -128,6 +130,7 @@ The first public release.
 - A name-only call target no longer binds at 1.0 through a shadowed import, a class without the method, a type alias or
   interface, a benchmark or example copy, or another file's data binding.
 
-[Unreleased]: https://github.com/MassRelayAI/comparegraph/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/MassRelayAI/comparegraph/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/MassRelayAI/comparegraph/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.1
 [0.1.0]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.0

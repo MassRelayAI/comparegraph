@@ -37,10 +37,10 @@ One binary, no runtime. Linux x64 and arm64, macOS arm64 and x64, Windows x64; a
 The install script downloads one file, the `comparegraph` binary for your platform, checks it against the release's `SHA256SUMS`, and copies it to `~/.local/bin`. It does not use `sudo` and changes nothing else. Read it first if you like:
 
 ```bash
-# macOS / Linux: fetch the script from the v0.1.1 tag, read it, then run it
-curl -fsSLO https://raw.githubusercontent.com/MassRelayAI/comparegraph/v0.1.1/scripts/install.sh
+# macOS / Linux: fetch the script from the v0.1.2 tag, read it, then run it
+curl -fsSLO https://raw.githubusercontent.com/MassRelayAI/comparegraph/v0.1.2/scripts/install.sh
 less install.sh
-COMPAREGRAPH_VERSION=v0.1.1 sh install.sh
+COMPAREGRAPH_VERSION=v0.1.2 sh install.sh
 
 # the same in one line, script from main, latest release
 curl -fsSL https://raw.githubusercontent.com/MassRelayAI/comparegraph/main/scripts/install.sh | sh
