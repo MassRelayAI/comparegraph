@@ -131,6 +131,6 @@ The first public release.
   interface, a benchmark or example copy, or another file's data binding.
 
 [Unreleased]: https://github.com/MassRelayAI/comparegraph/compare/v0.1.2...HEAD
-[0.1.2]: https://github.com/MassRelayAI/comparegraph/compare/v0.1.1...v0.1.2
+[0.1.2]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.2
 [0.1.1]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.1
 [0.1.0]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.0
