@@ -1109,12 +1109,12 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-toml-ng"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "695d20cd83acf16c02c773f03e76d7b43b19883d4e2ce3652a8f06b5e0da7455"
+checksum = "e9adc2c898ae49730e857d75be403da3f92bb81d8e37a2f918a08dd10de5ebb1"
 dependencies = [
  "cc",
- "tree-sitter",
+ "tree-sitter-language",
 ]
 
 [[package]]
