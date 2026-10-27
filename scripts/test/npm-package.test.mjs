@@ -31,7 +31,7 @@ before(() => {
   mkdirSync(bins);
   copyFileSync(binary, path.join(bins, 'comparegraph-linux-x64'));
   const r = sh('node', [path.join(root, 'npm/build.mjs'), version, '--bins', bins, '--out', out]);
-  assert.equal(r.stdout.trim(), '@massrelay-ai/comparegraph-linux-x64\n@massrelay-ai/comparegraph');
+  assert.equal(r.stdout.trim(), '@massrelayai/comparegraph-linux-x64\n@massrelayai/comparegraph');
 });
 
 function pack(dir) {
@@ -60,7 +60,7 @@ test('installed from tarballs, the bin runs the platform binary', { skip: noBina
   sh('npm', ['install', '--prefix', install, '--offline', '--no-audit', '--no-fund', '--ignore-scripts', wrapper, platform]);
   const r = sh(path.join(install, 'node_modules/.bin/comparegraph'), ['--version']);
   assert.equal(r.stdout.trim(), `comparegraph ${version}`);
-  assert.ok(existsSync(path.join(install, `node_modules/@massrelay-ai/comparegraph-linux-x64/bin/comparegraph${exe}`)));
+  assert.ok(existsSync(path.join(install, `node_modules/@massrelayai/comparegraph-linux-x64/bin/comparegraph${exe}`)));
 });
 
 test('an unsupported platform exits 2 with one line naming it', { skip: noBinary }, () => {

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-27
+### Changed
+- The npm scope is now `@massrelayai` (the wrapper `@massrelayai/comparegraph` and the five `@massrelayai/comparegraph-<platform>` packages), to match the GitHub organisation and the Homebrew tap. The earlier `@massrelay-ai/*` packages were removed from npm.
+
 ## [0.1.2] - 2026-10-27
 
 ### Fixed
@@ -130,7 +134,8 @@ The first public release.
 - A name-only call target no longer binds at 1.0 through a shadowed import, a class without the method, a type alias or
   interface, a benchmark or example copy, or another file's data binding.
 
-[Unreleased]: https://github.com/MassRelayAI/comparegraph/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/MassRelayAI/comparegraph/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.3
 [0.1.2]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.2
 [0.1.1]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.1
 [0.1.0]: https://github.com/MassRelayAI/comparegraph/releases/tag/v0.1.0

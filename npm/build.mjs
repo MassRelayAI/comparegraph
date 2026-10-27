@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SCOPE = '@massrelay-ai';
+const SCOPE = '@massrelayai';
 const PLATFORMS = {
   'linux-x64': { os: 'linux', cpu: 'x64' },
   'linux-arm64': { os: 'linux', cpu: 'arm64' },

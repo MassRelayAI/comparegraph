@@ -12,7 +12,7 @@ function binaryPath() {
   const exe = key.startsWith('win32') ? 'comparegraph.exe' : 'comparegraph';
   if (PLATFORMS.includes(key)) {
     try {
-      return require.resolve(`@massrelay-ai/comparegraph-${key}/bin/${exe}`);
+      return require.resolve(`@massrelayai/comparegraph-${key}/bin/${exe}`);
     } catch (_) {
       /* not installed: fall through */
     }

@@ -34,7 +34,7 @@ git push origin vX.Y.Z
 - `publish-npm`: runs only when the repository variable `NPM_PUBLISH` is `true`. Checks `npm/package.json` against the tag
   (exit 4), takes the released binaries from the same artifacts (checksums verified), builds six packages with
   `npm/build.mjs`, publishes the five platform packages and then the wrapper. Authentication: the repository secret
-  `NPM_TOKEN` (a granular npm token with publish rights on the `@massrelay-ai` scope; npm caps its lifetime at 90 days, so it
+  `NPM_TOKEN` (a granular npm token with publish rights on the `@massrelayai` scope; npm caps its lifetime at 90 days, so it
   is renewed by setting the secret again) while it is set; with the secret empty, npm trusted publishing through OIDC, once
   the maintainer has registered this workflow on each of the six packages.
 - `publish-registry`: downloads a pinned `mcp-publisher` (checksum verified), checks that `server.json` carries the
@@ -56,13 +56,13 @@ git push origin vX.Y.Z
 
 ## npm
 
-`@massrelay-ai/comparegraph` is a launcher; the binary comes from one of five platform packages
-(`@massrelay-ai/comparegraph-<platform>`) that npm installs as optional dependencies. `npm/build.mjs <version> --bins <dir>
+`@massrelayai/comparegraph` is a launcher; the binary comes from one of five platform packages
+(`@massrelayai/comparegraph-<platform>`) that npm installs as optional dependencies. `npm/build.mjs <version> --bins <dir>
 --out <dir>` builds them from the release binaries; `scripts/test/npm-package.test.mjs` builds, packs, installs and runs them.
 
 One-time steps for the maintainer:
 
-1. Create the `massrelay-ai` organisation on npmjs.com.
+1. Create the `massrelayai` organisation on npmjs.com.
 2. Make the six package names exist and trust this repository. A package must exist before npm lets you configure a trusted
    publisher on it, so either publish the six packages by hand once (`node npm/build.mjs <version> --bins <dir> --out
    dist-npm`, then `npm publish --access public` in each directory, platform packages first), or use whatever npmjs.com offers
@@ -82,7 +82,7 @@ After the first successful npm publish, add this entry to `server.json` (not bef
   {
     "registryType": "npm",
     "registryBaseUrl": "https://registry.npmjs.org",
-    "identifier": "@massrelay-ai/comparegraph",
+    "identifier": "@massrelayai/comparegraph",
     "version": "<version>",
     "runtimeHint": "npx",
     "transport": { "type": "stdio" },
