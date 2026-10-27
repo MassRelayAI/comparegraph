@@ -149,6 +149,18 @@ jobs:
         run: |
           v=$(jq -r .version server.json)
           [ "$v" = "${GITHUB_REF_NAME#v}" ] || { echo "server.json $v != tag ${GITHUB_REF_NAME#v}"; exit 4; }
+      - name: wait until npm serves the version server.json names (publish-npm runs in parallel and the registry checks npm)
+        if: vars.NPM_PUBLISH == 'true'
+        run: |
+          v=$(jq -r .version server.json)
+          for id in $(jq -r '.packages[] | select(.registryType == "npm") | .identifier' server.json); do
+            url="https://registry.npmjs.org/${id/\//%2f}/$v"
+            for i in $(seq 1 90); do
+              curl -fsS "$url" > /dev/null 2>&1 && { echo "$id@$v is served"; break; }
+              [ "$i" = 90 ] && { echo "npm does not serve $id@$v after 15 minutes"; exit 1; }
+              sleep 10
+            done
+          done
       - name: Validate, authenticate, publish
         run: |
           ./mcp-publisher validate

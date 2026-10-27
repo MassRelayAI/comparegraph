@@ -39,7 +39,8 @@ git push origin vX.Y.Z
   the maintainer has registered this workflow on each of the six packages.
 - `publish-registry`: downloads a pinned `mcp-publisher` (checksum verified), checks that `server.json` carries the
   tag's version, validates it, authenticates through GitHub OIDC (the registry grants this repository's owner the
-  `io.github.MassRelayAI/*` namespace) and publishes. The entry carries the repository, not a package: the install
+  `io.github.MassRelayAI/*` namespace) and publishes. It first waits (up to 15 minutes) until npm serves the version
+  `server.json` names, because `publish-npm` runs in parallel and the registry checks npm. The entry carries the repository, not a package: the install
   script is the distribution.
 
 ## Dependency bumps

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- The release workflow's MCP registry job waits until npm serves the version `server.json` names, instead of failing when it runs ahead of `publish-npm`.
+
 ## [0.1.3] - 2026-10-27
 ### Changed
 - The npm scope is now `@massrelayai` (the wrapper `@massrelayai/comparegraph` and the five `@massrelayai/comparegraph-<platform>` packages), to match the GitHub organisation and the Homebrew tap. The earlier `@massrelay-ai/*` packages were removed from npm.
