@@ -15,14 +15,14 @@ name = "comparegraph"
 path = "src/lib.rs"
 
 [build-dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 ignore = "0.4"
 thiserror = "1"
