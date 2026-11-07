@@ -94,6 +94,10 @@ The 3 `unknown` rows are not judgements: they are rows the engine refused to acc
 12. **The feature id is truncated in output** (`agents-rk-byo-model-pi`, `agents-rk-secrets-never-in-tr`). Readers looked up
     the full id in JSON.
 
+    *Checked 2026-11-07:* no truncation site found in the engine; the cut ids (`agents-rk-secrets-never-in-tr`) appear nowhere on disk
+    and most likely came from the readers' own tables. `tests/untruncated_ids.rs` now proves every verb and export carries the whole id.
+    `export vault` still caps note file names and link slugs at 80 characters and `description:` at 160.
+
 ## Not asked for
 A score, a weight or a model in the engine. The consumer keeps its prioritisation in its own process, as the roadmap's
 2026-10-13 ruling says.
