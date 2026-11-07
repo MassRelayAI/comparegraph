@@ -97,3 +97,11 @@ The 3 `unknown` rows are not judgements: they are rows the engine refused to acc
 ## Not asked for
 A score, a weight or a model in the engine. The consumer keeps its prioritisation in its own process, as the roadmap's
 2026-10-13 ruling says.
+
+## Added after the integration pass (same day: activepieces, pipedream, dify, servers, family `integration`)
+13. **`add` on a partial export records `licence: null, lane: study`.** The exported subset has no LICENSE file, so an MIT
+    project shows as study. *Ask:* `add --licence/--lane`, or read them from the source clone named on the command.
+14. **`claim` accepts a bare `path:1`.** Any line of an existing file resolves; only a missing file is refused. This is the
+    same root as item 11. *Ask:* refuse a line that is blank, a comment or a docstring unless `--allow-comment` is given.
+15. **No way to say "present upstream, absent from the exported tree".** The evidence was in test files the export dropped.
+    *Ask:* an `out_of_subset` verdict qualifier carrying the upstream path.
