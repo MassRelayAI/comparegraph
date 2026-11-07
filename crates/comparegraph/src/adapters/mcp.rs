@@ -357,6 +357,7 @@ fn call(root: &Path, params: &Value) -> Value {
                 pretty: false,
                 allow_unverified: false,
                 root_map: vec![],
+                wait: None,
                 cmd,
             });
             (env.to_json(), !env.ok)

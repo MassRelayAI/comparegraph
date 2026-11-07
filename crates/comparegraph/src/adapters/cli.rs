@@ -2,7 +2,6 @@
 use crate::adapters::envelope::Envelope;
 use crate::application::graph as g;
 use crate::application::{
-    add::add_repo,
     build::build_repo,
     check::check,
     export::{export_csv, export_json},
@@ -32,6 +31,9 @@ pub struct Cli {
     /// re-root the clone paths a copied store holds, as `FROM=TO` (repeatable): `--root-map /data/repos=D:/repos`
     #[arg(long, global = true, value_name = "FROM=TO")]
     pub root_map: Vec<String>,
+    /// seconds a writer waits for another writer's store lock before failing (default 30; env COMPAREGRAPH_WAIT)
+    #[arg(long, global = true, value_name = "SECS")]
+    pub wait: Option<u64>,
     #[command(subcommand)]
     pub cmd: Cmd,
 }
@@ -48,6 +50,15 @@ pub enum Cmd {
         /// re-point the registered repo `--name` at this path (claims and runs stay)
         #[arg(long, requires = "name")]
         replace: bool,
+        /// record this SPDX licence instead of reading the clone's LICENSE file (a partial export has none)
+        #[arg(long, value_name = "SPDX", conflicts_with = "licence_from")]
+        licence: Option<String>,
+        /// record this lane (take or study) instead of the one the licence gives
+        #[arg(long)]
+        lane: Option<String>,
+        /// read the licence from another clone (the full source of a partial export)
+        #[arg(long, value_name = "SOURCE_CLONE")]
+        licence_from: Option<PathBuf>,
     },
     /// Parse a registered clone into the graph (one run)
     Build {
@@ -424,6 +435,11 @@ pub fn run() -> i32 {
     if !cli.root_map.is_empty() {
         std::env::set_var("COMPAREGRAPH_ROOT_MAP", cli.root_map.join(";"));
     }
+    if let Some(w) = cli.wait {
+        std::env::set_var("COMPAREGRAPH_WAIT", w.to_string());
+    }
+    // the store's holder note names this verb when another writer times out on the lock
+    std::env::set_var("COMPAREGRAPH_VERB", verb_of(&cli.cmd));
     if matches!(cli.cmd, Cmd::Mcp) {
         crate::adapters::mcp::serve(&cli.root, std::io::stdin().lock(), std::io::stdout().lock());
         return 0;
@@ -675,13 +691,18 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             name,
             as_root,
             replace,
-        } if *replace => serde_json::to_value(crate::application::add::replace_repo(&cli.root, path, name.as_deref().unwrap_or_default(), *as_root)?).unwrap(),
-        Cmd::Add {
-            path,
-            name,
-            as_root,
-            ..
-        } => serde_json::to_value(add_repo(&cli.root, path, name.as_deref(), *as_root)?).unwrap(),
+            licence,
+            lane,
+            licence_from,
+        } => {
+            use crate::application::add::{add_repo_with, replace_repo_with, LicenceOverride};
+            let over = LicenceOverride { licence: licence.clone(), lane: lane.clone(), licence_from: licence_from.clone() };
+            if *replace {
+                serde_json::to_value(replace_repo_with(&cli.root, path, name.as_deref().unwrap_or_default(), *as_root, &over)?).unwrap()
+            } else {
+                serde_json::to_value(add_repo_with(&cli.root, path, name.as_deref(), *as_root, &over)?).unwrap()
+            }
+        }
         Cmd::Build {
             repo,
             provider,

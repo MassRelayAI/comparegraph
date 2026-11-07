@@ -135,3 +135,22 @@ tap, the Claude Code plugin (skills plus the MCP server over the installed binar
 
 Not taken: npm (dropped 2026-10-14), crates.io (nobody asked; the from-source line covers it), an MCPB bundle for the
 registry entry, Docker, a VS Code extension, a desktop app, a GitHub Action, Windows package managers.
+
+## From a user's run (2026-11-07: one standard and twelve agent harnesses, five readers in parallel)
+
+The measured asks, most costly first, are in [`reports/2026-11-07-twelve-harness-field-run.md`](reports/2026-11-07-twelve-harness-field-run.md). In short (numbers match the report; 13 to 15 came from the same-day integration pass):
+1. structural ranking in `map`;
+2. `none` filing that survives odd symbol names;
+3. a store busy timeout;
+4. structured refusals;
+5. an optional reachability field on a claim;
+6. core-subset builds and a "core lives elsewhere" note;
+7. a source commit on claims;
+8. anchor-to-line resolution;
+9. `family propose --from-claims` drafting missing feature ids from a standard repo;
+10. re-export shims;
+11. citation relevance checks;
+12. untruncated ids;
+13. `add --licence/--lane`, or read them from the source clone;
+14. refuse a blank, comment or docstring line unless `--allow-comment`;
+15. an `out_of_subset` verdict qualifier carrying the upstream path.

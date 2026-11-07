@@ -22,13 +22,92 @@ pub enum StoreError {
         source: rusqlite::Error,
     },
     #[error("sqlite: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    Sqlite(rusqlite::Error),
+    /// SQLite's busy timeout (`--wait` / `COMPAREGRAPH_WAIT`) ran out while another connection held the write lock.
+    #[error("timed out after {waited_secs} s waiting for the store lock ({holders}); retry, or raise --wait / COMPAREGRAPH_WAIT")]
+    Locked { waited_secs: u64, holders: String },
     #[error("schema: {0}")]
     Schema(String),
     #[error("{0}")]
     NotFound(String),
 }
 pub type Result<T> = std::result::Result<T, StoreError>;
+impl From<rusqlite::Error> for StoreError {
+    fn from(e: rusqlite::Error) -> Self {
+        if is_busy(&e) {
+            locked()
+        } else {
+            StoreError::Sqlite(e)
+        }
+    }
+}
+
+/// The busy timeout when neither `--wait` (which sets the env) nor `COMPAREGRAPH_WAIT` is given. Long enough for a
+/// concurrent claim batch or build to commit; the old fixed 5 s made writers fail under 3-5 concurrent agents.
+pub const DEFAULT_WAIT_SECS: u64 = 30;
+/// Seconds a writer waits for the store lock: `COMPAREGRAPH_WAIT` (set by `--wait`), else [`DEFAULT_WAIT_SECS`].
+pub fn wait_secs() -> u64 {
+    std::env::var("COMPAREGRAPH_WAIT")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(DEFAULT_WAIT_SECS)
+}
+fn is_busy(e: &rusqlite::Error) -> bool {
+    matches!(
+        e.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+    )
+}
+/// The `.comparegraph` dir of the store this process opened last: the lock error names who else has it open.
+static LAST_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+static OPEN_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn locked() -> StoreError {
+    let dir = LAST_DIR.lock().ok().and_then(|d| d.clone());
+    StoreError::Locked {
+        waited_secs: wait_secs(),
+        holders: dir.map_or_else(|| "holder unknown".into(), |d| describe_holders(&d)),
+    }
+}
+/// The other comparegraph processes that have this store open, from their `holders/` notes; a dead pid's note is
+/// removed. SQLite does not record which connection holds the write lock, so this lists candidates, never a guess.
+fn describe_holders(dir: &Path) -> String {
+    let me = std::process::id();
+    let mut found: Vec<String> = std::fs::read_dir(dir.join("holders"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let pid: u32 = e.file_name().to_string_lossy().split('-').next()?.parse().ok()?;
+            if pid == me {
+                return None;
+            }
+            if !pid_alive(pid) {
+                let _ = std::fs::remove_file(e.path());
+                return None;
+            }
+            let verb = std::fs::read_to_string(e.path()).ok()?;
+            Some(format!("{} (pid {pid})", verb.trim()))
+        })
+        .collect();
+    found.sort();
+    found.dedup();
+    if found.is_empty() {
+        "holder unknown: no other comparegraph process has the store open, so another program holds it".into()
+    } else {
+        format!("store open in: {}; sqlite does not say which of them holds the lock", found.join(", "))
+    }
+}
+#[cfg(unix)]
+fn pid_alive(pid: u32) -> bool {
+    // signal 0 probes existence only; EPERM still means the process exists
+    // SAFETY: kill with signal 0 sends nothing and touches no memory
+    let r = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+#[cfg(not(unix))]
+fn pid_alive(_pid: u32) -> bool {
+    true
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommunityRow {
     /// 0 until stored
@@ -96,6 +175,15 @@ pub fn now_iso() -> String {
 pub struct Store {
     conn: Connection,
     path: PathBuf,
+    /// this open's note in `.comparegraph/holders/` (`<pid>-<seq>`, content = the verb); removed on drop
+    holder: Option<PathBuf>,
+}
+impl Drop for Store {
+    fn drop(&mut self) {
+        if let Some(h) = &self.holder {
+            let _ = std::fs::remove_file(h);
+        }
+    }
 }
 
 impl Store {
@@ -138,12 +226,24 @@ impl Store {
             source: e,
         })?;
         let path = dir.join("comparegraph.db");
-        let open_err = |source| StoreError::Open {
-            path: path.clone(),
-            source,
+        if let Ok(mut d) = LAST_DIR.lock() {
+            *d = Some(dir.clone());
+        }
+        let open_err = |source: rusqlite::Error| {
+            if is_busy(&source) {
+                locked()
+            } else {
+                StoreError::Open {
+                    path: path.clone(),
+                    source,
+                }
+            }
         };
         let conn = Connection::open(&path).map_err(open_err)?;
-        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
+        // the busy timeout first, so every statement below (and every write after) waits for a held lock
+        conn.busy_timeout(std::time::Duration::from_secs(wait_secs()))
+            .map_err(open_err)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
             .map_err(open_err)?;
         conn.execute_batch(SCHEMA).map_err(open_err)?;
         // additive column (Plan 8 lane C): a store created before it gains it here; SCHEMA_VERSION stays 1
@@ -200,7 +300,14 @@ impl Store {
                 )))
             }
         }
-        Ok(Store { conn, path })
+        // a note naming this process and verb, so a writer that times out can say who has the store open
+        let holder = {
+            let verb = std::env::var("COMPAREGRAPH_VERB").unwrap_or_else(|_| "comparegraph".into());
+            let seq = OPEN_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let h = dir.join("holders").join(format!("{}-{seq}", std::process::id()));
+            (std::fs::create_dir_all(h.parent().unwrap()).is_ok() && std::fs::write(&h, verb).is_ok()).then_some(h)
+        };
+        Ok(Store { conn, path, holder })
     }
     pub fn path(&self) -> &Path {
         &self.path
@@ -232,6 +339,11 @@ impl Store {
     /// Re-point a registered repo at another checkout (path and head only; claims, runs and the rest of the row stay).
     pub fn set_repo_path(&self, id: RepoId, path: &str, head: Option<&str>, role: Option<&str>) -> Result<()> {
         self.conn.execute("UPDATE repo SET path=?2, head=?3, role=COALESCE(?4, role) WHERE id=?1", params![id.0, path, head, role])?;
+        Ok(())
+    }
+    /// Set a registered repo's licence and lane (`add --replace --licence/--lane/--licence-from`).
+    pub fn set_repo_licence_lane(&self, id: RepoId, licence: Option<&str>, lane: &str) -> Result<()> {
+        self.conn.execute("UPDATE repo SET licence=?2, lane=?3 WHERE id=?1", params![id.0, licence, lane])?;
         Ok(())
     }
     pub fn repos(&self) -> Result<Vec<RepoRow>> {
