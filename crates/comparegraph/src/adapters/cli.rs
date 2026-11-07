@@ -32,6 +32,9 @@ pub struct Cli {
     /// re-root the clone paths a copied store holds, as `FROM=TO` (repeatable): `--root-map /data/repos=D:/repos`
     #[arg(long, global = true, value_name = "FROM=TO")]
     pub root_map: Vec<String>,
+    /// seconds a writer waits for another writer's store lock before failing (default 30; env COMPAREGRAPH_WAIT)
+    #[arg(long, global = true, value_name = "SECS")]
+    pub wait: Option<u64>,
     #[command(subcommand)]
     pub cmd: Cmd,
 }
@@ -424,6 +427,11 @@ pub fn run() -> i32 {
     if !cli.root_map.is_empty() {
         std::env::set_var("COMPAREGRAPH_ROOT_MAP", cli.root_map.join(";"));
     }
+    if let Some(w) = cli.wait {
+        std::env::set_var("COMPAREGRAPH_WAIT", w.to_string());
+    }
+    // the store's holder note names this verb when another writer times out on the lock
+    std::env::set_var("COMPAREGRAPH_VERB", verb_of(&cli.cmd));
     if matches!(cli.cmd, Cmd::Mcp) {
         crate::adapters::mcp::serve(&cli.root, std::io::stdin().lock(), std::io::stdout().lock());
         return 0;
