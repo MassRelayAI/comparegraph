@@ -83,3 +83,22 @@ fast on purpose (`docs/reports/2026-10-14-answer-size.md`). The fix builds the r
 Keep all of it: nothing measured regressed accuracy or determinism, and the abilities answer the asks as written (whether they close the gaps in use is not measured). Do not claim an
 accuracy gain: there is none in the gold. The next measurement worth doing is the field task re-run with the new binary,
 which is what would show whether readers lose less time.
+
+## After the independent review (same day)
+
+Two opus reviewers read the code diff and a fable reviewer checked this report against its raw data. The code review found
+real bugs, all reproduced and fixed with a failing test first (`fix/review-claims`, `fix/review-store-terms`, merged):
+`--at-commit` was checked against the head at `add` time instead of the head the build read; concurrent single `claim`s
+failed at once with a false "timed out" (the write took the lock only after a read); concurrent opens of an old store failed
+with `duplicate column name`; a read-only old store could not be read; `--wait` above 2,147,483 s panicked; "row" and
+"specific" were dropped from every feature term, not only from bookkeeping notes; a batch re-run never refreshed a claim
+whose lines changed and its rows carried no limitations; the pattern matcher overflowed the stack on a long line; and a few
+path and glob edge cases. Left as known gaps (`docs/decisions.md`): `none --searched` with no code hits ignores
+`--read-hits`; the holders notes can outlive a killed process; a first concurrent open of a store in rollback-journal mode
+can still fail busy; a read-only store missing a whole table.
+
+Re-measured on the final build (`main` at the merge of both fix branches): the call-edge gold on 5 projects and the mapping
+gold on 5 clones are still identical to before the field run, the conformance fixtures are identical, the codanna store hash
+is still `a6f3b565078576f5`, the 30-row batch takes 0.163 / 0.164 / 0.165 s and a single claim 0.158 / 0.147 / 0.141 s. The
+test suite is 564 tests, 0 failures. The review did not change the verdict above.
+
