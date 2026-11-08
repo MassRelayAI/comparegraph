@@ -1003,7 +1003,7 @@ pub(crate) fn reach_from_entries(
 ) -> Result<EntryReach> {
     check_bounds(depth, max_nodes, min_conf)?;
     let mut c = Ctx::on(StoreRef::Borrowed(store), repo)?;
-    let r = referenced(&c, min_conf)?;
+    let r = referenced(&c.store, c.run_id, min_conf, true)?;
     let target_set: HashSet<i64> = targets.iter().copied().collect();
     let mut uncalled_targets = vec![];
     let mut starts: Vec<(String, i64)> = vec![];
