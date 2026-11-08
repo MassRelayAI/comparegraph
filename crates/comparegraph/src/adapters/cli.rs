@@ -360,11 +360,19 @@ pub enum FamilyCmd {
     List,
     /// One family with its features by group
     Show { name: String },
-    /// Write a draft taxonomy (rows.draft.md) from the terms the given repos share; no model
+    /// Write a draft taxonomy (rows.draft.md) from the terms the given repos share; or, with --from-claims, draft the
+    /// feature ids a standard repo's scored rows name and the family lacks (rows.from-claims.draft.md); no model
     Propose {
         name: String,
-        #[arg(long, value_delimiter = ',', required = true)]
+        #[arg(long, value_delimiter = ',', required_unless_present = "from_claims", conflicts_with = "from_claims")]
         repos: Vec<String>,
+        /// the standard repo whose scored rows (--rows) are checked against family NAME
+        #[arg(long, requires = "rows")]
+        from_claims: Option<String>,
+        /// JSON lines in the `claim --batch` shape (`feature` required; `repo`, `title`, `group`, `verdict`, `note`,
+        /// `at` used), `-` for stdin
+        #[arg(long, requires = "from_claims")]
+        rows: Option<String>,
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, default_value_t = 2)]
@@ -1022,10 +1030,35 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 }
                 FamilyCmd::Propose {
                     name,
+                    from_claims: Some(repo),
+                    rows: Some(rows),
+                    out,
+                    ..
+                } => {
+                    let reader: Box<dyn std::io::BufRead> = if rows == "-" {
+                        Box::new(std::io::BufReader::new(std::io::stdin().lock()))
+                    } else {
+                        let f = std::fs::File::open(rows)
+                            .map_err(|e| AppError::Io(PathBuf::from(rows), e))?;
+                        Box::new(std::io::BufReader::new(f))
+                    };
+                    serde_json::to_value(crate::application::propose::from_claims(
+                        &cli.root,
+                        name,
+                        repo,
+                        reader,
+                        rows,
+                        out.as_deref(),
+                    )?)
+                    .unwrap()
+                }
+                FamilyCmd::Propose {
+                    name,
                     repos,
                     out,
                     min_repos,
                     max,
+                    ..
                 } => serde_json::to_value(crate::application::propose::propose(
                     &cli.root,
                     name,

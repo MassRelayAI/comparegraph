@@ -128,3 +128,189 @@ fn one_repo_uses_min_repos_one_and_max_caps() {
     assert_eq!(v["data"]["candidates"].as_array().unwrap().len(), 2);
     assert_eq!(v["data"]["min_repos"], 1);
 }
+
+// ---- `family propose <family> --from-claims <repo> --rows <jsonl>`: draft the ids a standard's scored rows lack ----
+
+const FAM: &str = "---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n| net.retry | net | Retry | retries a call | a retry loop | basics | 1 |\n| net.auth | net | Auth | checks auth | an auth check | common | 2 |\n";
+
+/// The corpus plus family `fam` (net.retry, net.auth) and one stored claim of `one` on net.retry.
+fn standard() -> (tempfile::TempDir, Vec<tempfile::TempDir>, tempfile::TempDir) {
+    let (ws, keep) = corpus();
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(pack.path().join("rows.md"), FAM).unwrap();
+    cc(ws.path())
+        .args(["family", "add"])
+        .arg(pack.path())
+        .assert()
+        .success();
+    cc(ws.path())
+        .args([
+            "claim",
+            "one",
+            "net.retry",
+            "has",
+            "--family",
+            "fam",
+            "--author",
+            "me",
+            "--at",
+            "src/net/a.py:1-2",
+        ])
+        .assert()
+        .success();
+    (ws, keep, pack)
+}
+const ROWS: &str = "\u{feff}{\"repo\":\"one\",\"feature\":\"net.retry\",\"verdict\":\"has\",\"author\":\"me\"}\n\
+{\"repo\":\"one\",\"feature\":\"tools.tool-search\",\"verdict\":\"has\",\"author\":\"me\",\"note\":\"searches the | tool list\\nby name\",\"at\":[\"src/net/a.py:1-2\"]}\n\
+\n\
+{\"repo\":\"one\",\"feature\":\"Skill curator\",\"title\":\"Skill curator\",\"group\":\"skills\",\"verdict\":\"partial\",\"author\":\"me\"}\n\
+{\"repo\":\"one\",\"feature\":\"tools.tool-search\",\"verdict\":\"has\",\"author\":\"other\"}\n\
+{\"repo\":\"two\",\"feature\":\"net.only-two\",\"verdict\":\"has\",\"author\":\"me\"}\n\
+{\"feature\":\"conformance probes\",\"verdict\":\"none\",\"author\":\"me\"}\n";
+
+fn from_claims(
+    ws: &std::path::Path,
+    rows: &std::path::Path,
+    out: &std::path::Path,
+) -> assert_cmd::assert::Assert {
+    cc(ws)
+        .args(["family", "propose", "fam", "--from-claims", "one", "--rows"])
+        .arg(rows)
+        .arg("--out")
+        .arg(out)
+        .assert()
+}
+
+#[test]
+fn from_claims_drafts_only_the_missing_ids_marked_as_drafts() {
+    let (ws, _k, _p) = standard();
+    let dir = tempfile::tempdir().unwrap();
+    let rows = dir.path().join("rows.jsonl");
+    std::fs::write(&rows, ROWS).unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let a = from_claims(ws.path(), &rows, out.path()).success();
+    let v: serde_json::Value = serde_json::from_slice(&a.get_output().stdout).unwrap();
+    let d = &v["data"];
+    assert_eq!(d["repo"], "one");
+    assert_eq!(d["family"], "fam");
+    assert_eq!(d["draft"], true);
+    let ids: Vec<&str> = d["drafts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["id"].as_str().unwrap())
+        .collect();
+    // sorted; the row without a repo is the standard's; two rows on one id draft it once; `two`'s row is not drafted
+    assert_eq!(
+        ids,
+        [
+            "draft.conformance-probes",
+            "skills.skill-curator",
+            "tools.tool-search"
+        ],
+        "{d}"
+    );
+    assert_eq!(d["covered"], serde_json::json!(["net.retry"]));
+    assert_eq!(d["other_repo_rows"], 1);
+    assert_eq!(d["stored_claims"], 1);
+    let ts = d["drafts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["id"] == "tools.tool-search")
+        .unwrap();
+    assert_eq!(ts["lines"], serde_json::json!([2, 5]));
+    assert_eq!(ts["at"], serde_json::json!(["src/net/a.py:1-2"]));
+    // the draft parses as a pack, every row is a candidate whose text says draft, and the note's pipe and newline are gone
+    let path = d["draft_path"].as_str().unwrap();
+    assert!(path.ends_with("rows.from-claims.draft.md"), "{path}");
+    let text = std::fs::read_to_string(path).unwrap();
+    assert!(text.contains("\ndraft: true\n"), "{text}");
+    let pack = parse_pack(&text).unwrap();
+    assert_eq!(pack.family, "fam");
+    assert_eq!(pack.rows.len(), 3);
+    for r in &pack.rows {
+        assert_eq!(r.tier, "candidate");
+        assert!(r.definition.starts_with("draft: "), "{r:?}");
+        assert!(r.counts_as_has.starts_with("draft: "), "{r:?}");
+    }
+    let ts = pack
+        .rows
+        .iter()
+        .find(|r| r.id == "tools.tool-search")
+        .unwrap();
+    assert!(
+        ts.definition.contains("searches the / tool list by name"),
+        "{}",
+        ts.definition
+    );
+    // deterministic: a second run writes the same bytes; rows.md is never written
+    let first = std::fs::read(path).unwrap();
+    from_claims(ws.path(), &rows, out.path()).success();
+    assert_eq!(first, std::fs::read(path).unwrap());
+    assert!(!out.path().join("rows.md").exists());
+}
+
+#[test]
+fn from_claims_with_nothing_missing_writes_no_draft() {
+    let (ws, _k, _p) = standard();
+    let dir = tempfile::tempdir().unwrap();
+    let rows = dir.path().join("rows.jsonl");
+    std::fs::write(
+        &rows,
+        "{\"repo\":\"one\",\"feature\":\"net.auth\",\"verdict\":\"none\",\"author\":\"me\"}\n",
+    )
+    .unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let a = from_claims(ws.path(), &rows, out.path()).success();
+    let v: serde_json::Value = serde_json::from_slice(&a.get_output().stdout).unwrap();
+    assert_eq!(v["data"]["drafts"], serde_json::json!([]));
+    assert!(v["data"]["draft_path"].is_null());
+    assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn from_claims_refuses_bad_input_before_writing() {
+    let (ws, _k, _p) = standard();
+    let dir = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let rows = dir.path().join("rows.jsonl");
+    // a line that is not a row names its line number
+    std::fs::write(&rows, "{\"repo\":\"one\",\"feature\":\"x.y\"}\nnot json\n").unwrap();
+    let a = from_claims(ws.path(), &rows, out.path()).code(1);
+    let s = String::from_utf8_lossy(&a.get_output().stdout).to_string();
+    assert!(s.contains("line 2"), "{s}");
+    // an unknown repo and an unknown family are not found
+    std::fs::write(&rows, "{\"feature\":\"x.y\"}\n").unwrap();
+    for (fam, repo) in [("fam", "nope"), ("nofam", "one")] {
+        let a = cc(ws.path())
+            .args(["family", "propose", fam, "--from-claims", repo, "--rows"])
+            .arg(&rows)
+            .arg("--out")
+            .arg(out.path())
+            .assert()
+            .code(1);
+        let s = String::from_utf8_lossy(&a.get_output().stdout).to_string();
+        assert!(s.contains("not_found"), "{s}");
+    }
+    assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
+    // --from-claims needs --rows, and does not mix with --repos
+    cc(ws.path())
+        .args(["family", "propose", "fam", "--from-claims", "one"])
+        .assert()
+        .failure();
+    cc(ws.path())
+        .args([
+            "family",
+            "propose",
+            "fam",
+            "--from-claims",
+            "one",
+            "--repos",
+            "one",
+            "--rows",
+        ])
+        .arg(&rows)
+        .assert()
+        .failure();
+}

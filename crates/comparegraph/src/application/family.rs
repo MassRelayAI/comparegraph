@@ -197,16 +197,21 @@ pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
     let text = std::fs::read_to_string(&file).map_err(|e| AppError::Io(file.clone(), e))?;
     let pack = parse_pack(&text)?; // validate everything before the store is touched
     let store = Store::open(root)?;
+    // IMMEDIATE takes the write lock up front, where the busy timeout (`--wait`) applies. A deferred transaction that
+    // reads first holds a read snapshot; if another writer commits meanwhile, the upgrade fails at once (SQLITE_BUSY,
+    // no wait) and the error would claim a timeout that never ran. Same as `claim --batch` (claim.rs run_batch).
+    let tx = rusqlite::Transaction::new_unchecked(
+        store.conn(),
+        rusqlite::TransactionBehavior::Immediate,
+    )
+    .map_err(AppError::from)?;
+    // read inside the transaction, so `added` is measured against the state this write replaces
     let before: Vec<String> = store
         .features_of(&pack.family)?
         .iter()
         .filter(|f| f.tier != "retired")
         .map(|f| f.key())
         .collect();
-    let tx = store
-        .conn()
-        .unchecked_transaction()
-        .map_err(AppError::from)?;
     let rel = snapshot_rel(&pack.family);
     let hash = crate::providers::reference::hex_sha256(text.as_bytes());
     let source = dir.to_string_lossy().to_string();
