@@ -352,3 +352,20 @@ fn conform_gate_refuses_only_a_failed_language_present_in_the_repo() {
     // --allow-unverified waives it
     cc(w.path()).args(["--allow-unverified", "build", "a", "--provider", "fake"]).assert().success();
 }
+
+/// field run 2026-11-07 item 6: an external engine walks the clone itself, so `--include/--exclude` drop its nodes afterwards
+#[test]
+fn a_subset_filters_an_external_providers_nodes_and_says_so() {
+    let tools = tempfile::tempdir().unwrap();
+    let cmd = script(tools.path(), "p", GOOD);
+    manifest(tools.path());
+    let w = ws(&cmd);
+    let _c = added(w.path());
+    let out = cc(w.path()).args(["build", "a", "--provider", "fake", "--exclude", "src"]).assert().success().get_output().stdout.clone();
+    let v = json(&out);
+    assert_eq!((v["data"]["nodes"].as_u64(), v["data"]["edges"].as_u64()), (Some(0), Some(0)), "{v}");
+    assert_eq!(v["data"]["exclude"], serde_json::json!(["src"]));
+    assert!(v["evidence"]["limitations"].as_array().unwrap().iter().any(|l| l["code"] == "subset_filtered"), "{v}");
+    let out = cc(w.path()).args(["build", "a", "--provider", "fake", "--include", "src/**"]).assert().success().get_output().stdout.clone();
+    assert_eq!(json(&out)["data"]["nodes"], 2);
+}

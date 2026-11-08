@@ -131,6 +131,17 @@ pub struct RepoRow {
     pub category: Option<String>,
     pub stars: Option<i64>,
     pub added_at: String,
+    /// `add --source-commit`: the upstream commit an export was taken from (a fresh `git init` of it has no head)
+    #[serde(default)]
+    pub source_commit: Option<String>,
+    /// `add --moved-to`: where this project's core now lives (a registered repo name or a URL); a note, never followed
+    #[serde(default)]
+    pub moved_to: Option<String>,
+    /// `add --include/--exclude`: the default subset `build` reads when it is given none of its own
+    #[serde(default)]
+    pub include: Vec<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 impl RepoRow {
     pub fn new(name: &str, path: &str) -> Self {
@@ -146,6 +157,10 @@ impl RepoRow {
             category: None,
             stars: None,
             added_at: now_iso(),
+            source_commit: None,
+            moved_to: None,
+            include: vec![],
+            exclude: vec![],
         }
     }
 }
@@ -276,6 +291,29 @@ impl Store {
                     .map_err(open_err)?;
             }
         }
+        // additive columns (field run 2026-11-07 items 6 and 7): a repo's notes and default subset, a run's subset
+        for (table, col, ty) in [
+            ("repo", "source_commit", "TEXT"),
+            ("repo", "moved_to", "TEXT"),
+            ("repo", "include_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("repo", "exclude_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("run", "include_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("run", "exclude_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ] {
+            let has = {
+                let mut st = conn.prepare(&format!("PRAGMA table_info({table})")).map_err(open_err)?;
+                let names = st
+                    .query_map([], |r| r.get::<_, String>(1))
+                    .map_err(open_err)?
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(open_err)?;
+                names.iter().any(|n| n == col)
+            };
+            if !has {
+                conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty}"))
+                    .map_err(open_err)?;
+            }
+        }
         let existing: Option<String> = conn
             .query_row(
                 "SELECT value FROM meta WHERE key = 'schema_version'",
@@ -329,12 +367,13 @@ impl Store {
 
     // ---- repo ----
     pub fn insert_repo(&self, r: &RepoRow) -> Result<RepoId> {
-        self.conn.execute("INSERT INTO repo(name, path, remote, head, licence, lane, role, category, stars, added_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
-            params![r.name, r.path, r.remote, r.head, r.licence, r.lane, r.role, r.category, r.stars, r.added_at])?;
+        self.conn.execute("INSERT INTO repo(name, path, remote, head, licence, lane, role, category, stars, added_at, source_commit, moved_to, include_json, exclude_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+            params![r.name, r.path, r.remote, r.head, r.licence, r.lane, r.role, r.category, r.stars, r.added_at, r.source_commit, r.moved_to,
+                serde_json::to_string(&r.include).unwrap(), serde_json::to_string(&r.exclude).unwrap()])?;
         Ok(RepoId(self.conn.last_insert_rowid()))
     }
     pub fn repo_by_name(&self, name: &str) -> Result<Option<RepoRow>> {
-        Ok(self.conn.query_row("SELECT id,name,path,remote,head,licence,lane,role,category,stars,added_at FROM repo WHERE name=?1", params![name], row_to_repo).optional()?)
+        Ok(self.conn.query_row("SELECT id,name,path,remote,head,licence,lane,role,category,stars,added_at,source_commit,moved_to,include_json,exclude_json FROM repo WHERE name=?1", params![name], row_to_repo).optional()?)
     }
     /// Re-point a registered repo at another checkout (path and head only; claims, runs and the rest of the row stay).
     pub fn set_repo_path(&self, id: RepoId, path: &str, head: Option<&str>, role: Option<&str>) -> Result<()> {
@@ -346,8 +385,16 @@ impl Store {
         self.conn.execute("UPDATE repo SET licence=?2, lane=?3 WHERE id=?1", params![id.0, licence, lane])?;
         Ok(())
     }
+    /// Set a registered repo's notes and default subset (`add` with `--source-commit/--moved-to/--include/--exclude`).
+    pub fn set_repo_notes(&self, id: RepoId, source_commit: Option<&str>, moved_to: Option<&str>, include: &[String], exclude: &[String]) -> Result<()> {
+        self.conn.execute(
+            "UPDATE repo SET source_commit=?2, moved_to=?3, include_json=?4, exclude_json=?5 WHERE id=?1",
+            params![id.0, source_commit, moved_to, serde_json::to_string(include).unwrap(), serde_json::to_string(exclude).unwrap()],
+        )?;
+        Ok(())
+    }
     pub fn repos(&self) -> Result<Vec<RepoRow>> {
-        let mut st = self.conn.prepare("SELECT id,name,path,remote,head,licence,lane,role,category,stars,added_at FROM repo ORDER BY name")?;
+        let mut st = self.conn.prepare("SELECT id,name,path,remote,head,licence,lane,role,category,stars,added_at,source_commit,moved_to,include_json,exclude_json FROM repo ORDER BY name")?;
         let rows = st
             .query_map([], row_to_repo)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -387,6 +434,23 @@ impl Store {
             params![id.0, serde_json::to_string(limitations).unwrap()],
         )?;
         Ok(())
+    }
+    /// Record the file subset (`--include/--exclude` globs) a run read; written once, before the run is parsed.
+    pub fn set_run_subset(&self, id: RunId, include: &[String], exclude: &[String]) -> Result<()> {
+        self.conn.execute(
+            "UPDATE run SET include_json=?2, exclude_json=?3 WHERE id=?1",
+            params![id.0, serde_json::to_string(include).unwrap(), serde_json::to_string(exclude).unwrap()],
+        )?;
+        Ok(())
+    }
+    /// The (include, exclude) globs a run read; both empty for a run of the whole clone (and for every run before the columns).
+    pub fn run_subset(&self, id: RunId) -> Result<(Vec<String>, Vec<String>)> {
+        let (i, e): (String, String) = self.conn.query_row(
+            "SELECT include_json, exclude_json FROM run WHERE id=?1",
+            params![id.0],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok((serde_json::from_str(&i).unwrap_or_default(), serde_json::from_str(&e).unwrap_or_default()))
     }
     pub fn run(&self, id: RunId) -> Result<Option<Run>> {
         Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE id=?1", params![id.0], row_to_run).optional()?)
@@ -621,6 +685,10 @@ fn row_to_repo(r: &rusqlite::Row<'_>) -> rusqlite::Result<RepoRow> {
         category: r.get(8)?,
         stars: r.get(9)?,
         added_at: r.get(10)?,
+        source_commit: r.get(11)?,
+        moved_to: r.get(12)?,
+        include: serde_json::from_str(&r.get::<_, String>(13)?).unwrap_or_default(),
+        exclude: serde_json::from_str(&r.get::<_, String>(14)?).unwrap_or_default(),
     })
 }
 fn row_to_run(r: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {

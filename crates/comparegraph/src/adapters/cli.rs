@@ -39,9 +39,9 @@ pub struct Cli {
 }
 #[derive(Subcommand)]
 pub enum Cmd {
-    /// Register a clone (read, never run)
+    /// Register a clone (read, never run); with --name and no path, amend a registered repo's notes
     Add {
-        path: PathBuf,
+        path: Option<PathBuf>,
         #[arg(long)]
         name: Option<String>,
         /// register this clone as the workspace's root (spec §2b product/baseline modes)
@@ -59,6 +59,18 @@ pub enum Cmd {
         /// read the licence from another clone (the full source of a partial export)
         #[arg(long, value_name = "SOURCE_CLONE")]
         licence_from: Option<PathBuf>,
+        /// the upstream commit this clone was exported from (a fresh `git init` has no head); '' clears it
+        #[arg(long, value_name = "SHA")]
+        source_commit: Option<String>,
+        /// where this project's core now lives (a registered repo name or a URL); '' clears it
+        #[arg(long, value_name = "REPO_OR_URL")]
+        moved_to: Option<String>,
+        /// default subset for `build`: read only files matching these gitignore-style globs (repeat; '' clears)
+        #[arg(long, value_name = "GLOB")]
+        include: Vec<String>,
+        /// default subset for `build`: never read files matching these globs (repeat; '' clears); wins over --include
+        #[arg(long, value_name = "GLOB")]
+        exclude: Vec<String>,
     },
     /// Parse a registered clone into the graph (one run)
     Build {
@@ -78,6 +90,12 @@ pub enum Cmd {
         /// print progress lines to stderr while building (also COMPAREGRAPH_PROGRESS=1); stdout stays one envelope
         #[arg(long)]
         progress: bool,
+        /// read only files matching these gitignore-style globs (repeat); with --exclude, replaces the repo's `add` subset
+        #[arg(long, value_name = "GLOB")]
+        include: Vec<String>,
+        /// never read files matching these globs (repeat); wins over --include; recorded on the run
+        #[arg(long, value_name = "GLOB")]
+        exclude: Vec<String>,
     },
     /// Verify: schema, determinism, locations
     Check,
@@ -694,9 +712,30 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             licence,
             lane,
             licence_from,
+            source_commit,
+            moved_to,
+            include,
+            exclude,
         } => {
-            use crate::application::add::{add_repo_with, replace_repo_with, LicenceOverride};
-            let over = LicenceOverride { licence: licence.clone(), lane: lane.clone(), licence_from: licence_from.clone() };
+            use crate::application::add::{add_repo_with, amend_repo, replace_repo_with, LicenceOverride};
+            let over = LicenceOverride {
+                licence: licence.clone(),
+                lane: lane.clone(),
+                licence_from: licence_from.clone(),
+                source_commit: source_commit.clone(),
+                moved_to: moved_to.clone(),
+                include: include.clone(),
+                exclude: exclude.clone(),
+            };
+            let Some(path) = path else {
+                let Some(name) = name else {
+                    return Err(AppError::InvalidArguments("add needs a path, or --name of a registered repo to amend".into()));
+                };
+                if *replace || *as_root {
+                    return Err(AppError::InvalidArguments("--replace and --as-root need a path".into()));
+                }
+                return Ok(Ok(serde_json::to_value(amend_repo(&cli.root, name, &over)?).unwrap()));
+            };
             if *replace {
                 serde_json::to_value(replace_repo_with(&cli.root, path, name.as_deref().unwrap_or_default(), *as_root, &over)?).unwrap()
             } else {
@@ -711,12 +750,22 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             max_files,
             full,
             progress,
+            include,
+            exclude,
         } if !providers.is_empty() => {
             let rep = crate::application::build::build_many(
                 &cli.root,
                 repo,
                 providers,
-                &BuildOptions { max_file_bytes: *max_file_bytes, max_files: *max_files, full: *full, progress: progress_on(*progress), ..BuildOptions::default() },
+                &BuildOptions {
+                    max_file_bytes: *max_file_bytes,
+                    max_files: *max_files,
+                    full: *full,
+                    progress: progress_on(*progress),
+                    include: include.clone(),
+                    exclude: exclude.clone(),
+                    ..BuildOptions::default()
+                },
             )?;
             eprint!("{}", crate::application::agreement::table(&rep.agreement));
             serde_json::to_value(rep).unwrap()
@@ -728,6 +777,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             max_files,
             full,
             progress,
+            include,
+            exclude,
             ..
         } => serde_json::to_value(build_repo(
             &cli.root,
@@ -738,6 +789,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 max_files: *max_files,
                 full: *full,
                 progress: progress_on(*progress),
+                include: include.clone(),
+                exclude: exclude.clone(),
                 ..BuildOptions::default()
             },
         )?)
@@ -1136,8 +1189,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 let latest = match run {
                     Some(run) => {
                         let rid = run.id.expect("stored run has id");
+                        let (inc, exc) = store.run_subset(rid)?;
                         serde_json::json!({
-                            "status": run.status,
+                            "status": run.status, "include": inc, "exclude": exc,
                             "nodes": store.nodes_of_run(rid)?.len(),
                             "communities": store.communities_of_run(rid)?.len(),
                             "store_hash": run.store_hash,
@@ -1147,7 +1201,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 };
                 out.push(serde_json::json!({
                     "name": r.name, "licence": r.licence, "lane": r.lane, "role": r.role,
-                    "head": r.head, "latest_run": latest,
+                    "head": r.head, "source_commit": r.source_commit, "moved_to": r.moved_to,
+                    "include": r.include, "exclude": r.exclude, "latest_run": latest,
                 }));
             }
             let next = (offset + out.len() < total).then(|| (offset + out.len()).to_string());

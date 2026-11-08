@@ -350,6 +350,12 @@ impl GraphProvider for ReferenceProvider {
                 format!("{minified} minified or bundled files (*.min.js, *.min.css, *.bundle.js, or a line over {} chars)", walker::MINIFIED_LINE_CHARS),
             ));
         }
+        if walked.out_of_subset > 0 {
+            out.limitations.push(Limitation::new(
+                "out_of_subset",
+                format!("{} source files outside --include {:?} --exclude {:?} were not read", walked.out_of_subset, opts.include, opts.exclude),
+            ));
+        }
         if let Some(c) = &opts.cache {
             c.put_many(&fresh);
         }

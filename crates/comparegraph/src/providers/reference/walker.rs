@@ -72,6 +72,8 @@ pub struct WalkResult {
     pub minified: usize,
     /// repo-relative paths of `go.mod` files (they are no source file, but name the module path Go imports resolve against)
     pub go_mods: Vec<String>,
+    /// source files left out by `--include/--exclude`
+    pub out_of_subset: usize,
 }
 
 /// A minified or bundled artifact by file name.
@@ -83,6 +85,48 @@ pub fn is_minified_name(path: &Path) -> bool {
 /// A single line this long is generated or minified code, never source a person wrote.
 pub const MINIFIED_LINE_CHARS: usize = 5_000;
 
+/// A file subset: `include` and `exclude` globs with gitignore semantics (a glob without `/` matches a name at any depth;
+/// `dir/**` everything under `dir`). A glob that matches a directory covers every file under it. A file is in the subset when
+/// `include` is empty or it (or a parent directory) matches an include glob, and neither it nor a parent matches an exclude.
+#[derive(Debug, Clone)]
+pub struct Subset {
+    include: Option<ignore::overrides::Override>,
+    exclude: Option<ignore::overrides::Override>,
+}
+impl Subset {
+    /// Compile the globs; a bad glob, or one starting with `!`, is an error naming it.
+    pub fn new(include: &[String], exclude: &[String]) -> Result<Subset, String> {
+        fn compile(globs: &[String], flag: &str) -> Result<Option<ignore::overrides::Override>, String> {
+            if globs.is_empty() {
+                return Ok(None);
+            }
+            let mut b = ignore::overrides::OverrideBuilder::new("");
+            for g in globs {
+                if g.trim().is_empty() {
+                    return Err(format!("{flag} '': an empty glob matches nothing"));
+                }
+                if g.starts_with('!') {
+                    return Err(format!("{flag} '{g}': a glob may not start with '!'; give it to --exclude instead"));
+                }
+                b.add(g).map_err(|e| format!("{flag} '{g}': not a glob ({e})"))?;
+            }
+            b.build().map(Some).map_err(|e| format!("{flag}: {e}"))
+        }
+        Ok(Subset { include: compile(include, "--include")?, exclude: compile(exclude, "--exclude")? })
+    }
+    pub fn is_all(&self) -> bool {
+        self.include.is_none() && self.exclude.is_none()
+    }
+    /// Whether a repo-relative file path (`/`-separated) is in the subset.
+    pub fn contains(&self, rel: &str) -> bool {
+        let hit = |o: &ignore::overrides::Override| {
+            o.matched(rel, false).is_whitelist()
+                || rel.match_indices('/').any(|(i, _)| o.matched(&rel[..i], true).is_whitelist())
+        };
+        self.include.as_ref().is_none_or(hit) && !self.exclude.as_ref().is_some_and(hit)
+    }
+}
+
 /// Gitignore-aware walk (the `ignore` crate honours .gitignore and .ignore). Collects everything, sorts by rel_path, THEN truncates to
 /// `max_files`, so the kept set is deterministic whatever the directory order. Reports what it dropped.
 pub fn walk(root: &Path, opts: &BuildOptions) -> WalkResult {
@@ -91,6 +135,8 @@ pub fn walk(root: &Path, opts: &BuildOptions) -> WalkResult {
     let skipped_dirs = Arc::new(AtomicUsize::new(0));
     let counter = skipped_dirs.clone();
     let mut res = WalkResult::default();
+    // the globs were validated where they were given (`add`, `build`); a bad one here reads the whole clone
+    let subset = Subset::new(&opts.include, &opts.exclude).ok().filter(|s| !s.is_all());
     let walker = ignore::WalkBuilder::new(root)
         .hidden(true)
         .require_git(false)
@@ -118,6 +164,13 @@ pub fn walk(root: &Path, opts: &BuildOptions) -> WalkResult {
         let Some(language) = language_for(entry.path()) else {
             continue;
         };
+        if let Some(sub) = &subset {
+            let rel = entry.path().strip_prefix(root).unwrap_or(entry.path()).to_string_lossy().replace('\\', "/");
+            if !sub.contains(&rel) {
+                res.out_of_subset += 1;
+                continue;
+            }
+        }
         if is_minified_name(entry.path()) {
             res.minified += 1;
             continue;
@@ -187,6 +240,24 @@ mod tests {
         );
         assert_eq!(language_for(std::path::Path::new("x.tsx")), Some("tsx"));
         assert_eq!(language_for(std::path::Path::new("x.unknown")), None);
+    }
+    #[test]
+    fn subset_globs_follow_gitignore_rules() {
+        let s = |i: &[&str], e: &[&str]| {
+            Subset::new(&i.iter().map(|x| x.to_string()).collect::<Vec<_>>(), &e.iter().map(|x| x.to_string()).collect::<Vec<_>>()).unwrap()
+        };
+        let sub = s(&["src/**"], &["tests"]);
+        assert!(sub.contains("src/a.py"));
+        assert!(sub.contains("src/x/b.py"));
+        assert!(!sub.contains("gui/a.ts"));
+        assert!(!sub.contains("src/tests/t.py"), "a name glob matches a directory at any depth");
+        let sub = s(&[], &["*.ts"]);
+        assert!(sub.contains("a.py") && !sub.contains("x/y/a.ts"));
+        let sub = s(&["pkg/core"], &[]);
+        assert!(sub.contains("pkg/core/a.py") && !sub.contains("pkg/gui/a.py"), "an include of a directory covers its files");
+        assert!(s(&[], &[]).is_all());
+        assert!(Subset::new(&["a[".into()], &[]).unwrap_err().contains("a["));
+        assert!(Subset::new(&[], &["!x".into()]).is_err());
     }
     #[test]
     fn minified_names_are_skipped_and_counted() {
