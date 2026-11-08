@@ -3,7 +3,7 @@ title: Did the 15 field-run asks improve the engine? Measured
 date: 2026-11-08
 valid_until: 2027-05-08
 lane: engine quality
-verdict: "No accuracy gain is measured, and none was lost: the call-edge gold, the mapping gold, the conformance fixtures and the store hash are identical before and after. The asks add abilities and remove failure modes (lock waits, comma-split names, silent comment citations). One cost regression was found by this measurement (reach made a claim batch about 100 times slower) and fixed before the report; what remains is 0.15 s per claim with reach (0.01 s before), 0.14 s for a 30-row batch (0.02 s before), and a map about 5 to 10 percent slower."
+verdict: "No accuracy change is measured: the call-edge gold, the mapping gold (5 clones, 77 features, 113 labelled locations, 51 hits), the conformance fixtures and the store hash are identical before and after. These see `build` and the top 5 of `map`; nothing measures `claim`, `reach` or the citation checks, and the mapping gold is the set the reach factor was tuned to leave unchanged. The asks add abilities and remove failure modes (lock waits, comma-split names, silent comment citations). One cost regression was found by this measurement (reach made a claim batch about 100 times slower) and fixed; what remains is 0.15 s per claim with reach (0.01 s before), 0.14 to 0.18 s for a 30-row batch (0.02 s before), and a map about 5 percent slower on the mean of three runs, inside the baseline spread."
 status: measured
 ---
 
@@ -52,12 +52,12 @@ The community signal was tried as a score and made the gold worse (pooled r5 0.4
 | `claim --batch`, 300 rows | not measured on the baseline (the merged-before-fix build took 22 s) | 0.39 to 0.41 s | measured by the fix lane |
 | single `claim` | 0.009 / 0.011 / 0.010 s | 0.159 / 0.143 / 0.150 s | reach built once per process |
 | single `claim --no-reach` | n/a | about 0.01 s | escape hatch |
-| `map`, 30 features | 0.576 / 0.507 / 0.568 s | 0.571 / 0.582 / 0.585 s | within noise to about +10 percent |
+| `map`, 30 features | 0.576 / 0.507 / 0.568 s | 0.571 / 0.582 / 0.585 s | +5 percent on the mean of three runs, inside the baseline spread |
 
-Found by this measurement: the first merged version computed reach per claim and took 2.5 to 2.7 s for the 30 rows (about
+Found by this measurement: the first merged version computed reach per claim and took 2.7 to 2.8 s for the 30 rows (2.672, 2.779, 2.679) (about
 90 ms per claim; 22 s for 300 rows). At the field run's scale of 4,400 claims that is minutes added to a verb that was made
 fast on purpose (`docs/reports/2026-10-14-answer-size.md`). The fix builds the reach state once per run for a batch
-(`docs/reports/2026-11-08-reach-cost.md`); the reach of every row is byte-identical to the per-row build.
+(`docs/reports/2026-11-08-reach-cost.md`); the reach, limitations, confidence and error message of every row are identical to the per-row build (ids and timestamps differ).
 
 ## What the asks change, by kind
 
@@ -72,7 +72,7 @@ fast on purpose (`docs/reports/2026-10-14-answer-size.md`). The fix builds the r
 
 - Whether a reader on the field run's task now finishes with fewer dead ends. That needs the same task run again with the
   new binary; it was not done.
-- `reach` quality: codanna reports 1,950 entry points for 797 files, a generous heuristic; 26 of 30 test claims came out
+- `reach` quality: codanna reports 1,931 entry points for 797 files, a generous heuristic; 26 of 30 test claims came out
   `reached`. A tool registered through an uncalled helper reads as reached.
 - Shim marking on a real ADK clone, and JS/TS barrel files (the provider writes no edge for them).
 - The hand-written regex subset behind `--anchor` and `--expect` against real patterns (no `regex` dependency without a
@@ -80,6 +80,6 @@ fast on purpose (`docs/reports/2026-10-14-answer-size.md`). The fix builds the r
 
 ## Verdict
 
-Keep all of it: nothing measured regressed accuracy or determinism, and the abilities close real gaps. Do not claim an
+Keep all of it: nothing measured regressed accuracy or determinism, and the abilities answer the asks as written (whether they close the gaps in use is not measured). Do not claim an
 accuracy gain: there is none in the gold. The next measurement worth doing is the field task re-run with the new binary,
 which is what would show whether readers lose less time.

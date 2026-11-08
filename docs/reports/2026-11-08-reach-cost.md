@@ -3,7 +3,7 @@ title: The cost of reach in a claim batch
 date: 2026-11-08
 valid_until: 2027-05-08
 lane: fix/reach-cost
-verdict: "Sharing the run's reach state across a batch brings a 30-row `claim --batch` on codanna from 2.54-2.65 s back to 0.12-0.15 s and a 300-row batch from 22.1-22.5 s to 0.39-0.41 s, with every row's reach, limitations and confidence identical to the per-row build (331 rows compared). A single claim is unchanged at 0.13-0.14 s."
+verdict: "Sharing the run's reach state across a batch brings a 30-row `claim --batch` on codanna from 2.54-2.65 s back to 0.12-0.15 s and a 300-row batch from 22.1-22.5 s to 0.39-0.41 s, with every row's reach, limitations and confidence identical to the per-row build (630 rows compared (30 + 300 + 300), on ok, reach, limitations, confidence and message). A single claim is unchanged at 0.13-0.14 s."
 status: measured
 ---
 

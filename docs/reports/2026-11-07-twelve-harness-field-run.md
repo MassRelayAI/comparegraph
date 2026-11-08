@@ -114,7 +114,7 @@ A score, a weight or a model in the engine. The consumer keeps its prioritisatio
 
 | Ask | Outcome |
 |---|---|
-| 1 | Shipped in part. `map` ranks by entry-point reach (unreached callers x0.5) and shows `reach`, `entry_hops`, `community_peers`; boilerplate words are stripped. Community peers are shown but not scored: both scoring forms lowered the mapping gold (`docs/decisions.md`). Pooled p5 0.1325 and r5 0.4513 are equal to before. The real openai-agents case was not measured (no clone). |
+| 1 | Shipped in part. `map` ranks by entry-point reach (an unreached callable x0.5; the gold that is equal to before is the set this factor was tuned on) and shows `reach`, `entry_hops`, `community_peers`; boilerplate words are stripped. Community peers are shown but not scored: both scoring forms lowered the mapping gold (`docs/decisions.md`). Pooled p5 0.1325 and r5 0.4513 are equal to before. The real openai-agents case was not measured (no clone). |
 | 2 | Shipped. `--read-hits` is a repeated flag; css/scss/html nodes stay out of the read set unless `--include-non-code`. |
 | 3 | Shipped. `--wait` / `COMPAREGRAPH_WAIT`, default 30 s; the timeout error lists other processes with the store open. A snapshot conflict has its own message. |
 | 4 | Shipped. `none_refused` with `error.data` (the exact `searched`, the full `hits_read`); a superset `searched` is accepted. Breaking: the code was `invalid_arguments`. |
@@ -125,11 +125,10 @@ A score, a weight or a model in the engine. The consumer keeps its prioritisatio
 | 9 | Shipped. `family propose --from-claims <repo> --rows <jsonl>`; drafts only, never writes `rows.md`. |
 | 10 | Shipped for Python and Rust-like file shims through `imports` edges (`shim_of` on `map`). Open: JS/TS barrels (the provider writes no edge) and symbol-level targets. |
 | 11 | Shipped. `--expect`. |
-| 12 | No fix needed; regression test added. |
+| 12 | No truncation in any verb or JSON export (`tests/untruncated_ids.rs`); `export vault` still caps file names at 80 and `description:` at 160 characters. |
 | 13 | Shipped. `add --licence/--lane/--licence-from`. |
 | 14 | Shipped. Blank, comment and docstring lines refused unless `--allow-comment`. |
 | 15 | Shipped. `--out-of-subset`. |
 
-Open items: claim patterns use a small hand-written regex subset (no new dependency without a ruling); `comparegraph_claim`
-over MCP does not expose the new claim flags; vault file names still cap at 80 characters.
+Open items (one list, also in the roadmap): JS/TS barrel files as shims; `comparegraph_claim` over MCP does not expose the new claim flags; community peers unscored in `map`; reach unmeasured on a large repo and on a repo with decorator or trait dispatch; claim patterns use a small hand-written regex subset (no new dependency without a ruling); vault file names cap at 80 characters. Ask 1's motivating cases (openai-agents, OpenHands, goose, langgraph) were not re-run.
 
