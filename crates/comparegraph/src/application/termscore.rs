@@ -9,7 +9,19 @@
 //! weight comes from the run being searched.
 //!
 //! Score of a node = (sum over distinct terms of weight x source weight x best channel: name 1, path `K_PATH_W`, community
-//! keywords `K_COMM_W`) x name coverage x kind prior x (1 + `K_GRAPH_W` x ln(1 + callers)). Top `limit`, ties by qualified name.
+//! keywords `K_COMM_W`) x name coverage x kind prior x (1 + `K_GRAPH_W` x ln(1 + callers)) x reach.
+//! Graph position (item 1 of the 2026-11-07 field run: a name match alone put `_get_running_loop` above the loop):
+//! - reach: a function, method or route that no `entry-points` symbol reaches over `calls` edges within `graph::MAX_DEPTH`
+//!   hops, but that code outside test paths calls, is multiplied by `K_UNREACHED`: it hangs off code nothing runs. A
+//!   callable nothing outside tests calls is `uncalled` and keeps its score (decorator, trait or registry dispatch is
+//!   invisible to the graph). Roots are the `entry-points` symbols, counting no test caller, and the entry files. Applied
+//!   only when the run has a root, and never to other kinds. `K_UNREACHED` 0.3 and 0.5 gave the same gold numbers.
+//! - community peers: how many OTHER candidates whose names carry a term share the node's community. Reported on each
+//!   candidate, not scored: as a factor (`1 + 0.3 ln(1 + p)`, or by density `p / community size`) it lowered the mapping
+//!   gold (pooled r5 0.451 -> 0.416), because communities are connected components and one giant component holds most
+//!   names. Measured 2026-11-08, see docs/decisions.md.
+//!
+//! Top `limit`, ties by qualified name. Terms drop pack bookkeeping first (`strip_boilerplate`, `BOILERPLATE`).
 use super::communities::tokens;
 use crate::store::{FeatureRow, Store};
 use rusqlite::params;
@@ -33,6 +45,35 @@ const K_FILE_PEN: f64 = 0.5;
 const K_GRAPH_W: f64 = 0.3;
 /// the score is scaled by `K_LN_W + (1 - K_LN_W) * (share of the node's name tokens that match a term)`
 const K_LN_W: f64 = 0.5;
+/// factor on a callable candidate that is called, but from nothing a root reaches (`Reach::Unreached`)
+const K_UNREACHED: f64 = 0.5;
+
+/// Words of a pack author's bookkeeping, not of the feature: dropped from every term source. A parenthesised note that
+/// names a row (`(pair row)`, `(kBoolFlags row)`) is dropped whole by `strip_boilerplate`.
+const BOILERPLATE: &[&str] = &["row", "rows", "specific", "specifically", "etc"];
+
+/// `text` without its parenthesised notes about rows (`Retry (pair row)` -> `Retry `): their words are pack bookkeeping.
+/// Other parentheses are kept.
+pub fn strip_boilerplate(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('(') {
+        let Some(len) = rest[open..].find(')') else { break };
+        let inner = &rest[open + 1..open + len];
+        out.push_str(&rest[..open]);
+        if !inner.split(|c: char| !c.is_alphanumeric()).any(|w| w.eq_ignore_ascii_case("row") || w.eq_ignore_ascii_case("rows")) {
+            out.push_str(&rest[open..=open + len]);
+        }
+        rest = &rest[open + len + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `tokens` of feature text after `strip_boilerplate`, minus the `BOILERPLATE` words.
+pub fn feature_tokens(text: &str) -> Vec<String> {
+    tokens(&strip_boilerplate(text)).into_iter().filter(|t| !BOILERPLATE.contains(&t.as_str())).collect()
+}
 
 const ENGLISH: &[&str] = &[
     "the", "and", "for", "with", "from", "are", "its", "that", "which", "each", "not", "only", "than", "into", "can", "one",
@@ -60,6 +101,45 @@ pub struct Ranked {
     pub matched: Vec<String>,
     /// the name carries a term that is the feature's own (group, slug tail, title or the compound)
     pub named: bool,
+    /// where the node sits relative to the run's entry points
+    pub reach: Reach,
+    /// other candidates of this feature, in the node's community, whose names carry a term (reported, not scored)
+    pub peers: usize,
+}
+
+/// A candidate's graph position: what the reach factor saw.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reach {
+    /// an `entry-points` symbol itself
+    Entry,
+    /// reached from an entry point over `calls` edges, in this many hops (1..=`graph::MAX_DEPTH`)
+    Reached(u32),
+    /// a function, method or route that code outside test paths calls, but no entry point reaches: it hangs off code
+    /// nothing runs
+    Unreached,
+    /// a function, method or route no entry point reaches and no code outside test paths calls: dispatch the graph
+    /// cannot see (a decorator, a trait, a registry) is as likely as dead code, so no reach factor applied
+    Uncalled,
+    /// not a callable kind, or the run has no entry points: no reach factor applied
+    NotApplicable,
+}
+impl Reach {
+    pub fn label(self) -> &'static str {
+        match self {
+            Reach::Entry => "entry",
+            Reach::Reached(_) => "reached",
+            Reach::Unreached => "unreached",
+            Reach::Uncalled => "uncalled",
+            Reach::NotApplicable => "not_applicable",
+        }
+    }
+    pub fn hops(self) -> Option<u32> {
+        match self {
+            Reach::Entry => Some(0),
+            Reach::Reached(h) => Some(h),
+            _ => None,
+        }
+    }
 }
 
 impl Term {
@@ -89,12 +169,18 @@ pub struct NodeInfo {
     flat: String,
     pub community: Option<usize>,
     pub callers: usize,
+    /// hops from the nearest entry point over `calls` edges (0 = an entry point), `None` when none reaches it
+    pub hops: Option<u32>,
+    /// callers outside test paths
+    live_callers: usize,
     is_test_path: bool,
 }
 
 pub struct RunIndex {
     pub run: i64,
     pub nodes: Vec<NodeInfo>,
+    /// how many roots the reach walk starts from (`entry-points` symbols and entry files); 0 turns the reach factor off
+    pub entries: usize,
     /// every distinct name/path token of the run; nodes hold ids into it
     vocab: Vec<String>,
     comm_toks: Vec<HashSet<String>>,
@@ -186,6 +272,8 @@ impl RunIndex {
                 le,
                 community: None,
                 callers: 0,
+                hops: None,
+                live_callers: 0,
             });
         }
         drop(st);
@@ -206,14 +294,24 @@ impl RunIndex {
             }
         }
         let mut st = c.prepare("SELECT source_node_id, target_node_id FROM edge WHERE run_id=?1 AND kind='calls'")?;
+        let mut callees: Vec<Vec<usize>> = vec![vec![]; nodes.len()];
         for r in st.query_map(params![run], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
             let (s, t) = r?;
             if let (Some(&a), Some(&b)) = (idx.get(&s), idx.get(&t)) {
                 if a != b {
                     nodes[b].callers += 1;
+                    nodes[b].live_callers += usize::from(!nodes[a].is_test_path);
+                    callees[a].push(b);
                 }
             }
         }
+        drop(st);
+        // the `entry-points` rule itself (graph.rs), at that verb's default confidence, plus the entry files
+        let roots = super::graph::entry_roots(store, run, 0.5)?;
+        let mut starts: Vec<usize> = roots.symbols.iter().chain(&roots.files).filter_map(|id| idx.get(id).copied()).collect();
+        starts.sort_unstable();
+        let entries = starts.len();
+        set_hops(&mut nodes, &callees, &starts);
         let (mut name_inv, mut path_inv): (HashMap<u32, Vec<usize>>, HashMap<u32, Vec<usize>>) = (HashMap::new(), HashMap::new());
         let mut comm_nodes: Vec<Vec<usize>> = vec![vec![]; comm_toks.len()];
         for (i, n) in nodes.iter().enumerate() {
@@ -227,7 +325,21 @@ impl RunIndex {
                 comm_nodes[c].push(i);
             }
         }
-        Ok(Self { run, nodes, vocab, comm_toks, comm_label, name_inv, path_inv, comm_nodes, memo: RefCell::new(HashMap::new()) })
+        Ok(Self { run, nodes, entries, vocab, comm_toks, comm_label, name_inv, path_inv, comm_nodes, memo: RefCell::new(HashMap::new()) })
+    }
+
+    /// The graph position of node `i`, as the reach factor sees it.
+    pub fn reach(&self, i: usize) -> Reach {
+        let n = &self.nodes[i];
+        if self.entries == 0 || !callable(&n.kind) {
+            return Reach::NotApplicable;
+        }
+        match n.hops {
+            Some(0) => Reach::Entry,
+            Some(h) => Reach::Reached(h),
+            None if n.live_callers == 0 => Reach::Uncalled,
+            None => Reach::Unreached,
+        }
     }
 
     /// What term `t` matches in this run (memoised across features).
@@ -268,11 +380,11 @@ impl RunIndex {
         let n_nodes = self.nodes.len() as f64;
         let slug_tail = f.slug.rsplit('.').next().unwrap_or(&f.slug);
         let mut raw: BTreeMap<String, (f64, bool)> = BTreeMap::new();
-        for t in tokens(&f.grp).into_iter().chain(tokens(slug_tail)).chain(tokens(&f.title)).chain(tokens(&f.synonyms)) {
+        for t in feature_tokens(&f.grp).into_iter().chain(feature_tokens(slug_tail)).chain(feature_tokens(&f.title)).chain(feature_tokens(&f.synonyms)) {
             raw.insert(t, (1.0, false));
         }
         let def = f.definition.split("[kinds:").next().unwrap_or("");
-        for t in tokens(def) {
+        for t in feature_tokens(def) {
             if !ENGLISH.contains(&t.as_str()) {
                 raw.entry(t).or_insert((K_DEF_W, false));
             }
@@ -345,12 +457,56 @@ impl RunIndex {
             let kp = kind_prior(&n.kind, &fkinds, n.is_test_path && !about_tests);
             let score = s * kp * (1.0 + K_GRAPH_W * (1.0 + n.callers as f64).ln());
             if score > 0.0 {
-                pool.push(Ranked { i, score, matched: by_name, named });
+                pool.push(Ranked { i, score, matched: by_name, named, reach: self.reach(i), peers: 0 });
+            }
+        }
+        // graph position: reach scales the score; community peers are reported, not scored (see the module doc)
+        let mut named_in: HashMap<usize, usize> = HashMap::new();
+        for r in pool.iter().filter(|r| !r.matched.is_empty()) {
+            if let Some(c) = self.nodes[r.i].community {
+                *named_in.entry(c).or_default() += 1;
+            }
+        }
+        for r in &mut pool {
+            if let Some(c) = self.nodes[r.i].community {
+                r.peers = named_in.get(&c).copied().unwrap_or(0) - usize::from(!r.matched.is_empty());
+            }
+            if r.reach == Reach::Unreached {
+                r.score *= K_UNREACHED;
             }
         }
         pool.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap().then(self.nodes[a.i].qn.cmp(&self.nodes[b.i].qn)).then(a.i.cmp(&b.i)));
         pool.truncate(limit);
         pool
+    }
+}
+
+/// The kinds `entry-points` and `calls` edges are about: the only ones the reach factor judges.
+fn callable(kind: &str) -> bool {
+    matches!(kind, "function" | "method" | "route")
+}
+
+/// Breadth-first over `callees` from `starts`, at most `graph::MAX_DEPTH` hops: each node's distance to its nearest
+/// start. Deterministic: a breadth-first distance does not depend on visit order.
+fn set_hops(nodes: &mut [NodeInfo], callees: &[Vec<usize>], starts: &[usize]) {
+    let mut q: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    for &s in starts {
+        if nodes[s].hops.is_none() {
+            nodes[s].hops = Some(0);
+            q.push_back(s);
+        }
+    }
+    while let Some(a) = q.pop_front() {
+        let h = nodes[a].hops.unwrap_or(0);
+        if h as usize >= super::graph::MAX_DEPTH {
+            continue;
+        }
+        for &b in &callees[a] {
+            if nodes[b].hops.is_none() {
+                nodes[b].hops = Some(h + 1);
+                q.push_back(b);
+            }
+        }
     }
 }
 
@@ -427,6 +583,8 @@ impl RunIndex {
                 flat: name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect(),
                 community: None,
                 callers: 0,
+                hops: None,
+                live_callers: 0,
                 is_test_path: is_test_path(path),
             });
         }
@@ -439,7 +597,31 @@ impl RunIndex {
                 path_inv.entry(*t).or_default().push(i);
             }
         }
-        Self { run: 1, nodes, vocab, comm_toks: vec![], comm_label: vec![], name_inv, path_inv, comm_nodes: vec![], memo: RefCell::new(HashMap::new()) }
+        Self { run: 1, nodes, entries: 0, vocab, comm_toks: vec![], comm_label: vec![], name_inv, path_inv, comm_nodes: vec![], memo: RefCell::new(HashMap::new()) }
+    }
+
+    /// `from_rows` plus `calls` edges (row indices), the entry points, and a community per row (`None` = no community).
+    pub(crate) fn from_graph(rows: &[(&str, &str, &str)], calls: &[(usize, usize)], entries: &[usize], comms: &[Option<usize>]) -> Self {
+        let mut idx = Self::from_rows(rows);
+        let mut callees: Vec<Vec<usize>> = vec![vec![]; rows.len()];
+        for &(a, b) in calls {
+            idx.nodes[b].callers += 1;
+            idx.nodes[b].live_callers += usize::from(!idx.nodes[a].is_test_path);
+            callees[a].push(b);
+        }
+        set_hops(&mut idx.nodes, &callees, entries);
+        idx.entries = entries.len();
+        let n_comm = comms.iter().flatten().max().map_or(0, |m| m + 1);
+        idx.comm_nodes = vec![vec![]; n_comm];
+        for (i, c) in comms.iter().enumerate() {
+            idx.nodes[i].community = *c;
+            if let Some(c) = c {
+                idx.comm_nodes[*c].push(i);
+            }
+        }
+        idx.comm_toks = vec![HashSet::new(); n_comm];
+        idx.comm_label = (0..n_comm).map(|c| format!("c{c}")).collect();
+        idx
     }
 }
 
@@ -623,5 +805,98 @@ mod tests {
         assert!(r[0].score.is_finite());
         // path channel 0.35, coverage 0 -> K_LN_W, function prior 1, no callers
         assert!(near(r[0].score, 12f64.ln() * K_PATH_W * K_LN_W), "{}", r[0].score);
+    }
+
+    /// The field-run case (openai-agents, 2026-11-07): `loop` put `_get_running_loop`, a helper three private cache
+    /// functions call, above the loop an entry point runs.
+    fn loop_run(entries: &[usize]) -> RunIndex {
+        let mut rows = vec![
+            ("function", "main", "app/main.py"),                  // 0: an entry point
+            ("function", "run_loop", "app/runner.py"),            // 1: main calls it
+            ("function", "_get_running_loop", "app/ws_cache.py"), // 2: three callers, none of them reached
+            ("function", "_cache_a", "app/ws_cache.py"),
+            ("function", "_cache_b", "app/ws_cache.py"),
+            ("function", "_cache_c", "app/ws_cache.py"),
+            ("function", "test_serve_helper", "tests/test_x.py"), // 6: a test-path caller
+            ("function", "serve_tool", "app/tools.py"),          // 7: only the test calls it
+        ];
+        rows.extend((0..8).map(|_| ("function", "filler", "app/z.py")));
+        RunIndex::from_graph(&rows, &[(0, 1), (3, 2), (4, 2), (5, 2), (6, 7)], entries, &vec![None; rows.len()])
+    }
+    fn loop_feature() -> FeatureRow {
+        feat("runtime", "runtime.loop", "Loop", "")
+    }
+
+    #[test]
+    fn a_structurally_reached_symbol_beats_a_lexical_match() {
+        let idx = loop_run(&[0]);
+        let f = loop_feature();
+        let r = idx.rank(&f, &idx.terms(&f), 5);
+        let names: Vec<&str> = r.iter().map(|x| idx.nodes[x.i].qn.as_str()).collect();
+        assert_eq!(names, vec!["app/runner.py::run_loop", "app/ws_cache.py::_get_running_loop"]);
+        assert_eq!(r[0].reach, Reach::Reached(1));
+        assert_eq!(r[1].reach, Reach::Unreached);
+        assert_eq!((r[0].reach.label(), r[0].reach.hops()), ("reached", Some(1)));
+        assert_eq!((r[1].reach.label(), r[1].reach.hops()), ("unreached", None));
+    }
+
+    #[test]
+    fn without_roots_the_lexical_match_still_wins() {
+        // the fixture is a real regression: name match and callers alone rank the helper first, and reach is off
+        let idx = loop_run(&[]);
+        let f = loop_feature();
+        let r = idx.rank(&f, &idx.terms(&f), 5);
+        assert_eq!(idx.nodes[r[0].i].qn, "app/ws_cache.py::_get_running_loop");
+        assert!(r.iter().all(|x| x.reach == Reach::NotApplicable));
+    }
+
+    #[test]
+    fn reach_labels_roots_uncalled_and_test_only_callers() {
+        let idx = loop_run(&[0]);
+        assert_eq!(idx.reach(0), Reach::Entry);
+        assert_eq!(idx.reach(3), Reach::Uncalled, "nothing calls it: dispatch is invisible, no factor");
+        assert_eq!(idx.reach(7), Reach::Uncalled, "a test caller does not count");
+        let mut file = loop_run(&[0]);
+        file.nodes[1].kind = "file".into();
+        assert_eq!(file.reach(1), Reach::NotApplicable, "not a callable kind");
+    }
+
+    #[test]
+    fn hops_stop_at_max_depth() {
+        let n = super::super::graph::MAX_DEPTH + 2;
+        let names: Vec<String> = (0..n).map(|i| format!("f{i}")).collect();
+        let rows: Vec<(&str, &str, &str)> = names.iter().map(|s| ("function", s.as_str(), "a.py")).collect();
+        let calls: Vec<(usize, usize)> = (0..n - 1).map(|i| (i, i + 1)).collect();
+        let idx = RunIndex::from_graph(&rows, &calls, &[0], &vec![None; n]);
+        assert_eq!(idx.nodes[n - 2].hops, Some(super::super::graph::MAX_DEPTH as u32));
+        assert_eq!(idx.nodes[n - 1].hops, None);
+    }
+
+    #[test]
+    fn community_peers_count_other_named_candidates() {
+        let mut rows = vec![("function", "loop_a", "a.py"), ("function", "loop_b", "b.py"), ("function", "loop_c", "c.py")];
+        rows.extend((0..12).map(|_| ("function", "filler", "z.py")));
+        let mut comms = vec![Some(0), Some(0), Some(1)];
+        comms.extend(std::iter::repeat_n(None, 12));
+        let idx = RunIndex::from_graph(&rows, &[], &[], &comms);
+        let f = loop_feature();
+        let r = idx.rank(&f, &idx.terms(&f), 5);
+        let peers: Vec<(String, usize)> = r.iter().map(|x| (idx.nodes[x.i].qn.clone(), x.peers)).collect();
+        assert_eq!(peers, vec![("a.py::loop_a".into(), 1), ("b.py::loop_b".into(), 1), ("c.py::loop_c".into(), 0)]);
+        assert!(near(r[0].score, r[2].score), "peers are reported, not scored");
+    }
+
+    #[test]
+    fn boilerplate_is_stripped_before_term_extraction() {
+        assert_eq!(strip_boilerplate("Sub-agent spawn (pair row)"), "Sub-agent spawn ");
+        assert_eq!(strip_boilerplate("Flags (kBoolFlags row) and (dot and arrow)"), "Flags  and (dot and arrow)");
+        assert_eq!(strip_boilerplate("unclosed (pair row"), "unclosed (pair row");
+        assert_eq!(feature_tokens("Provider-specific retry (pair row)"), vec!["provider", "retry"]);
+        let idx = run_with(12, 1, "foo");
+        let ts = idx.terms(&feat("zz", "zz.zz", "Retry (pair row)", "a specific foo, etc (rows)"));
+        for w in ["pair", "row", "rows", "specific", "etc"] {
+            assert!(ts.iter().all(|t| t.text != w), "{w} in {ts:?}");
+        }
+        assert!(ts.iter().any(|t| t.text == "retry") && ts.iter().any(|t| t.text == "foo"));
     }
 }

@@ -756,21 +756,22 @@ fn is_entry_file(path: &str, provider_ref: Option<&str>) -> bool {
 /// Which symbols have at least one counted caller, for entry points and dead code. One streaming pass over the run's
 /// reference edges (no adjacency lists): `called` holds targets of a `calls` edge, `referenced` targets of a calls, extends
 /// or implements edge. A module-level call counts only from an entry file: it does not make the callee live in any other file.
+/// `test_callers` false: a caller under a test path does not count either (a tool handler only tests call is still a root).
 struct Referenced {
     called: HashSet<i64>,
     referenced: HashSet<i64>,
 }
-fn referenced(c: &Ctx, min_conf: f64) -> Result<Referenced> {
-    let conn = c.store.conn();
+fn referenced(store: &Store, run_id: i64, min_conf: f64, test_callers: bool) -> Result<Referenced> {
+    let conn = store.conn();
     let mut st = conn.prepare(
         "SELECT e.target_node_id, e.kind, CASE WHEN s.kind = ?3 THEN s.path END, CASE WHEN s.kind = ?3 THEN s.provider_ref END, \
-                s.kind = ?4, CASE WHEN substr(s.name, 1, 10) = 'describe: ' THEN s.path END \
+                s.kind = ?4, CASE WHEN substr(s.name, 1, 10) = 'describe: ' THEN s.path END, CASE WHEN ?5 THEN NULL ELSE s.path END \
          FROM edge e JOIN node s ON s.id = e.source_node_id \
          WHERE e.run_id = ?1 AND e.confidence >= ?2 AND e.kind IN ('calls','extends','implements') AND e.source_node_id <> e.target_node_id",
     )?;
     let mut called = HashSet::new();
     let mut referenced = HashSet::new();
-    let rows = st.query_map(params![c.run_id, min_conf, NodeKind::File.as_str(), NodeKind::Test.as_str()], |r| {
+    let rows = st.query_map(params![run_id, min_conf, NodeKind::File.as_str(), NodeKind::Test.as_str(), test_callers], |r| {
         Ok((
             r.get::<_, i64>(0)?,
             r.get::<_, String>(1)?,
@@ -778,10 +779,14 @@ fn referenced(c: &Ctx, min_conf: f64) -> Result<Referenced> {
             r.get::<_, Option<String>>(3)?,
             r.get::<_, bool>(4)?,
             r.get::<_, Option<String>>(5)?,
+            r.get::<_, Option<String>>(6)?,
         ))
     })?;
     for row in rows {
-        let (t, k, file_path, pref, is_test_node, describe_path) = row?;
+        let (t, k, file_path, pref, is_test_node, describe_path, src_path) = row?;
+        if src_path.as_deref().is_some_and(is_test_path) {
+            continue;
+        }
         // a test file's own scope and a `describe` body run at load time, not as a test: neither makes its callee live
         if is_test_node || describe_path.as_deref().is_some_and(is_test_path) {
             continue;
@@ -868,10 +873,40 @@ fn paged_nodes(
     Ok((items, json!({ "next": next, "total": total })))
 }
 
+/// Where a run's execution starts, for ranking by graph position (`map`): the `entry-points` symbols (the same rule,
+/// unpaged, except that a caller under a test path does not count), and the entry files (`is_entry_file`), whose
+/// module-level calls are what make a `main` called.
+pub(crate) struct EntryRoots {
+    pub symbols: HashSet<i64>,
+    pub files: HashSet<i64>,
+}
+pub(crate) fn entry_roots(store: &Store, run_id: i64, min_conf: f64) -> Result<EntryRoots> {
+    let r = referenced(store, run_id, min_conf, false)?;
+    let mut st = store.conn().prepare(&format!(
+        "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ('{}','{}','{}','{}')",
+        NodeKind::Function.as_str(),
+        NodeKind::Method.as_str(),
+        NodeKind::Route.as_str(),
+        NodeKind::File.as_str()
+    ))?;
+    let (mut symbols, mut files) = (HashSet::new(), HashSet::new());
+    for n in st.query_map(params![run_id], node_from_row)? {
+        let n = n?;
+        if n.kind == NodeKind::File {
+            if is_entry_file(&n.path, n.provider_ref.as_deref()) {
+                files.insert(n.id.unwrap().0);
+            }
+        } else if is_entry(&n, &r.called) {
+            symbols.insert(n.id.unwrap().0);
+        }
+    }
+    Ok(EntryRoots { symbols, files })
+}
+
 pub fn entry_points(root: &Path, repo: &str, limit: usize, cursor: Option<&str>, min_conf: f64) -> Result<Value> {
     check_conf(min_conf)?;
     let c = Ctx::open(root, repo)?;
-    let r = referenced(&c, min_conf)?;
+    let r = referenced(&c.store, c.run_id, min_conf, true)?;
     let (items, pg) = paged_nodes(
         &c,
         &[NodeKind::Function, NodeKind::Method, NodeKind::Route],
@@ -894,7 +929,7 @@ pub fn entry_points(root: &Path, repo: &str, limit: usize, cursor: Option<&str>,
 pub fn dead_code(root: &Path, repo: &str, limit: usize, cursor: Option<&str>, min_conf: f64) -> Result<Value> {
     check_conf(min_conf)?;
     let c = Ctx::open(root, repo)?;
-    let r = referenced(&c, min_conf)?;
+    let r = referenced(&c.store, c.run_id, min_conf, true)?;
     let (items, pg) = paged_nodes(
         &c,
         &[NodeKind::Function, NodeKind::Method, NodeKind::Class],
