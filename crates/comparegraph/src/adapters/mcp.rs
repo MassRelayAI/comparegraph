@@ -339,6 +339,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 expect: vec![],
                 allow_comment: false,
                 out_of_subset: None,
+                no_reach: false,
             }
         }
         _ => Cmd::Communities {

@@ -331,6 +331,9 @@ pub enum Cmd {
         /// has/partial evidence present upstream at this path[:lines] but absent from the exported tree
         #[arg(long = "out-of-subset", value_name = "PATH[:LINES]")]
         out_of_subset: Option<String>,
+        /// skip the reach walk: the has/partial claim records no reach
+        #[arg(long = "no-reach")]
+        no_reach: bool,
     },
     /// Latest claim per (clone, feature); --history lists every row with its supersede chain
     Claims {
@@ -562,10 +565,10 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     use std::io::BufRead;
     let verb = verb_of(&cli.cmd);
     let stray = match &cli.cmd {
-        Cmd::Claim { repo, feature, verdict, author, family, at, searched, read_hits, note, at_commit, anchor, expect, allow_comment, out_of_subset, .. } => {
+        Cmd::Claim { repo, feature, verdict, author, family, at, searched, read_hits, note, at_commit, anchor, expect, allow_comment, out_of_subset, no_reach, .. } => {
             !(repo.is_none() && feature.is_none() && verdict.is_none() && author.is_none()
                 && family.is_none() && at.is_empty() && searched.is_none() && read_hits.is_empty() && note.is_none())
-                || at_commit.is_some() || !anchor.is_empty() || !expect.is_empty() || *allow_comment || out_of_subset.is_some()
+                || at_commit.is_some() || !anchor.is_empty() || !expect.is_empty() || *allow_comment || out_of_subset.is_some() || *no_reach
         }
         Cmd::Decide { repo, disposition, why, by, feature, family, .. } => {
             !(repo.is_none() && disposition.is_none() && why.is_none() && by.is_none()
@@ -1033,6 +1036,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             expect,
             allow_comment,
             out_of_subset,
+            no_reach,
         } => serde_json::to_value(crate::application::claim::claim(
             &cli.root,
             &crate::application::claim::ClaimInput {
@@ -1052,6 +1056,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     expect,
                     allow_comment: *allow_comment,
                     out_of_subset: out_of_subset.as_deref(),
+                    no_reach: *no_reach,
                 },
             },
         )?)

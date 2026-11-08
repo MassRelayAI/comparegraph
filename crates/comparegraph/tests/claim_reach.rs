@@ -264,3 +264,35 @@ fn a_batch_row_gets_reach_too() {
     let out = String::from_utf8(c.assert().success().get_output().stdout.clone()).unwrap();
     assert!(out.contains("\"unreached\""), "{out}");
 }
+
+#[test]
+fn no_reach_skips_the_walk_and_records_none() {
+    let (ws, _a) = agent();
+    let v = claim(
+        ws.path(),
+        "memory.recall",
+        &["has", "--author", "me", "--at", "src/tools.py:2", "--no-reach"],
+    );
+    assert!(v["data"].get("reach").is_none(), "{v}");
+    let lim = v["evidence"]["limitations"].to_string();
+    assert!(!lim.contains("reach_"), "{lim}");
+    let c = json(
+        cc(ws.path())
+            .args(["claims", "--feature", "memory.recall"])
+            .assert()
+            .success(),
+    );
+    assert!(c["data"]["items"][0].get("reach").is_none(), "{c}");
+    // a batch row says it with `no_reach: true`; the flag itself is a row flag, refused beside --batch
+    let mut b = cc(ws.path());
+    b.args(["claim", "--batch", "-"]).write_stdin(
+        "{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/main.py:10\"],\"no_reach\":true}\n",
+    );
+    let out = String::from_utf8(b.assert().success().get_output().stdout.clone()).unwrap();
+    assert!(out.contains("\"ok\":true") && !out.contains("\"reach\""), "{out}");
+    cc(ws.path())
+        .args(["claim", "--batch", "-", "--no-reach"])
+        .write_stdin("")
+        .assert()
+        .failure();
+}

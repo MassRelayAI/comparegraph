@@ -79,6 +79,8 @@ pub struct Evidence<'a> {
     pub allow_comment: bool,
     /// `--out-of-subset <upstream path[:lines]>`: has/partial evidence that the exported tree does not contain.
     pub out_of_subset: Option<&'a str>,
+    /// `--no-reach`: skip the reach walk; the claim records no reach (as a none or unknown does).
+    pub no_reach: bool,
 }
 
 /// `a, b, …` up to `n` items, then `+k more` (`…` for a word list).
@@ -227,6 +229,12 @@ fn check_input(i: &ClaimInput) -> Result<()> {
 
 /// The body of `claim` on an already open store; inside a batch transaction the write is a savepoint.
 pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
+    claim_on_with(store, i, &mut super::reach::ReachCache::default())
+}
+
+/// `claim_on` with a reach cache shared across calls: a batch passes one for all its rows, so the run's reach state is
+/// built once (`graph::ReachCache`).
+pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::reach::ReachCache) -> Result<ClaimOut> {
     check_input(i)?;
     let repo = store
         .repo_by_name(i.repo)?
@@ -418,9 +426,9 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
         ));
     }
     // field-run ask 5: whether an entry point reaches the cited code, after every citation check has passed
-    let reach = if matches!(i.verdict, "has" | "partial") {
+    let reach = if matches!(i.verdict, "has" | "partial") && !ev.no_reach {
         let nodes: Vec<Option<i64>> = res.iter().map(|r| r.node).collect();
-        Some(super::reach::compute(store, i.repo, &nodes, &mut limitation_items)?)
+        Some(super::reach::compute(store, i.repo, &nodes, &mut limitation_items, reach_cache)?)
     } else {
         None
     };
@@ -817,6 +825,8 @@ pub struct ClaimLine {
     pub allow_comment: bool,
     #[serde(default)]
     pub out_of_subset: Option<String>,
+    #[serde(default)]
+    pub no_reach: bool,
 }
 
 /// `claim` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line, each handed to
@@ -826,8 +836,21 @@ pub fn claim_batch(
     lines: impl std::io::BufRead,
     on_row: impl FnMut(BatchRow<ClaimOut>),
 ) -> Result<BatchSummary> {
+    claim_batch_with(root, lines, true, on_row)
+}
+
+/// `claim_batch` with the per-run reach cache on or off (off rebuilds the reach state for every row, as a single
+/// `claim` does): the equivalence test runs both and compares every row.
+#[doc(hidden)]
+pub fn claim_batch_with(
+    root: &Path,
+    lines: impl std::io::BufRead,
+    reach_cache: bool,
+    on_row: impl FnMut(BatchRow<ClaimOut>),
+) -> Result<BatchSummary> {
+    let mut cache = super::reach::ReachCache::new(reach_cache);
     run_batch(root, lines, |store, l: ClaimLine| {
-        claim_on(
+        claim_on_with(
             store,
             &ClaimInput {
                 repo: &l.repo,
@@ -846,8 +869,10 @@ pub fn claim_batch(
                     expect: &l.expect,
                     allow_comment: l.allow_comment,
                     out_of_subset: l.out_of_subset.as_deref(),
+                    no_reach: l.no_reach,
                 },
             },
+            &mut cache,
         )
     }, |o: &ClaimOut| o.skipped, on_row)
 }

@@ -993,6 +993,68 @@ pub(crate) struct EntryReach {
     pub depth_hit: bool,
 }
 
+thread_local! {
+    /// how many times this thread built a run's reach state (referenced set, entry list): the cost guard counts it
+    pub(crate) static REACH_STATE_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// What `reach_from_entries` reads that does not depend on the targets, kept for one run and one set of bounds: the
+/// sorted entry points, the walk's node and adjacency caches, and the walk from every entry point (the walk every
+/// claim takes unless a target is itself an entry point only by the uncalled-function heuristic).
+struct ReachState {
+    /// (qualified name, id, stays a start when it is a target: handler-named or a route), in (name, id) order
+    entries: Vec<(String, i64, bool)>,
+    nodes: HashMap<i64, Node>,
+    adj: HashMap<(i64, bool), Adj>,
+    adj_kinds: Vec<EdgeKind>,
+    adj_min_conf: f64,
+    /// the walk from every entry point, once taken
+    full: Option<(Vec<Reached>, bool)>,
+}
+
+/// The reach state per (run, depth, max-nodes, min-confidence), shared by every claim of one `claim --batch`. A batch
+/// holds its write transaction, so no build lands between two of its rows, and a new run is a new key. Disabled, it
+/// drops the state before every claim (what a single `claim` does; the equivalence test's baseline).
+#[derive(Default)]
+pub struct ReachCache {
+    off: bool,
+    runs: HashMap<(i64, usize, usize, u64), ReachState>,
+}
+impl ReachCache {
+    pub fn new(enabled: bool) -> Self {
+        ReachCache { off: !enabled, runs: HashMap::new() }
+    }
+}
+
+fn reach_state(c: &Ctx, min_conf: f64) -> Result<ReachState> {
+    REACH_STATE_BUILDS.with(|n| n.set(n.get() + 1));
+    let r = referenced(&c.store, c.run_id, min_conf, true)?;
+    let mut entries = vec![];
+    let conn = c.store.conn();
+    let mut st = conn.prepare(&format!(
+        "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ('{}','{}','{}')",
+        NodeKind::Function.as_str(),
+        NodeKind::Method.as_str(),
+        NodeKind::Route.as_str()
+    ))?;
+    for row in st.query_map(params![c.run_id], node_from_row)? {
+        let n = row?;
+        if is_entry(&n, &r.called) {
+            let keeps = handler_name(&n.name) || n.kind == NodeKind::Route;
+            entries.push((n.qualified_name, n.id.unwrap().0, keeps));
+        }
+    }
+    entries.sort();
+    Ok(ReachState {
+        entries,
+        nodes: HashMap::new(),
+        adj: HashMap::new(),
+        adj_kinds: vec![],
+        adj_min_conf: 2.0,
+        full: None,
+    })
+}
+
 pub(crate) fn reach_from_entries(
     store: &Store,
     repo: &str,
@@ -1000,39 +1062,57 @@ pub(crate) fn reach_from_entries(
     depth: usize,
     max_nodes: usize,
     min_conf: f64,
+    cache: &mut ReachCache,
 ) -> Result<EntryReach> {
     check_bounds(depth, max_nodes, min_conf)?;
     let mut c = Ctx::on(StoreRef::Borrowed(store), repo)?;
-    let r = referenced(&c.store, c.run_id, min_conf, true)?;
-    let target_set: HashSet<i64> = targets.iter().copied().collect();
-    let mut uncalled_targets = vec![];
-    let mut starts: Vec<(String, i64)> = vec![];
-    {
-        let conn = c.store.conn();
-        let mut st = conn.prepare(&format!(
-            "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ('{}','{}','{}')",
-            NodeKind::Function.as_str(),
-            NodeKind::Method.as_str(),
-            NodeKind::Route.as_str()
-        ))?;
-        let rows = st.query_map(params![c.run_id], node_from_row)?;
-        for row in rows {
-            let n = row?;
-            if !is_entry(&n, &r.called) {
-                continue;
-            }
-            let id = n.id.unwrap().0;
-            if target_set.contains(&id) && !(handler_name(&n.name) || n.kind == NodeKind::Route) {
-                uncalled_targets.push(n.qualified_name);
-                continue;
-            }
-            starts.push((n.qualified_name, id));
-        }
+    if cache.off {
+        cache.runs.clear();
     }
-    starts.sort();
+    let key = (c.run_id, depth, max_nodes, min_conf.to_bits());
+    let st = match cache.runs.entry(key) {
+        std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+        std::collections::hash_map::Entry::Vacant(e) => e.insert(reach_state(&c, min_conf)?),
+    };
+    // the walk reads and fills the state's caches through the Ctx; they go back whatever the outcome
+    c.nodes = std::mem::take(&mut st.nodes);
+    c.adj = std::mem::take(&mut st.adj);
+    c.adj_kinds = std::mem::take(&mut st.adj_kinds);
+    c.adj_min_conf = st.adj_min_conf;
+    let out = walk_from_entries(&mut c, st, targets, depth, max_nodes, min_conf);
+    st.nodes = std::mem::take(&mut c.nodes);
+    st.adj = std::mem::take(&mut c.adj);
+    st.adj_kinds = std::mem::take(&mut c.adj_kinds);
+    st.adj_min_conf = c.adj_min_conf;
+    out
+}
+
+fn walk_from_entries(
+    c: &mut Ctx,
+    st: &mut ReachState,
+    targets: &[i64],
+    depth: usize,
+    max_nodes: usize,
+    min_conf: f64,
+) -> Result<EntryReach> {
+    let target_set: HashSet<i64> = targets.iter().copied().collect();
+    let left_out = |id: &i64, keeps: bool| target_set.contains(id) && !keeps;
+    let mut uncalled_targets: Vec<String> =
+        st.entries.iter().filter(|e| left_out(&e.1, e.2)).map(|e| e.0.clone()).collect();
     uncalled_targets.sort();
-    let start_ids: Vec<i64> = starts.iter().map(|s| s.1).collect();
-    let (v, truncated) = bfs(&mut c, &start_ids, Direction::Callees, &[EdgeKind::Calls], min_conf, depth, max_nodes)?;
+    let start_ids: Vec<i64> = st.entries.iter().filter(|e| !left_out(&e.1, e.2)).map(|e| e.1).collect();
+    // with every entry point a start the walk is the same for every claim of the run: taken once
+    let own;
+    let (v, truncated): (&Vec<Reached>, bool) = if uncalled_targets.is_empty() {
+        if st.full.is_none() {
+            st.full = Some(bfs(c, &start_ids, Direction::Callees, &[EdgeKind::Calls], min_conf, depth, max_nodes)?);
+        }
+        let (v, t) = st.full.as_ref().unwrap();
+        (v, *t)
+    } else {
+        own = bfs(c, &start_ids, Direction::Callees, &[EdgeKind::Calls], min_conf, depth, max_nodes)?;
+        (&own.0, own.1)
+    };
     let best = v
         .iter()
         .enumerate()

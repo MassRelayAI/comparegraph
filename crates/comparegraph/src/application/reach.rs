@@ -1,7 +1,10 @@
 //! `reach` on a has/partial claim (field-run ask 5, docs/reports/2026-11-07-twelve-harness-field-run.md): does a
 //! running program get to the cited code? Computed once, at write time, by the graph's own breadth-first walk
 //! (`graph::reach_from_entries`: callees over `calls` edges from every `entry-points` symbol), bounded like every query.
+//! The run's reach state (entry points, walk caches, the walk from every entry point) is built once per run and shared
+//! by every row of a batch (`graph::ReachCache`; docs/reports/2026-11-08-reach-cost.md).
 //! `reached` carries the path; `unreached` means no static call path within the bounds; `unknown` says why in `note`.
+pub use super::graph::ReachCache;
 use super::graph::{reach_from_entries, MAX_DEPTH, MAX_NODES};
 use super::{AppError, Result};
 use crate::domain::{Limitation, NodeKind};
@@ -53,6 +56,13 @@ impl Reach {
     }
 }
 
+/// How many times this thread has built a run's reach state (the entry set and the walk's caches). A batch builds it
+/// once per run; the cost guard in `tests/claim_reach_cost.rs` counts it.
+#[doc(hidden)]
+pub fn state_builds() -> usize {
+    super::graph::REACH_STATE_BUILDS.with(|n| n.get())
+}
+
 pub fn parse_status(s: &str) -> Result<&'static str> {
     STATUSES.iter().find(|x| **x == s).copied().ok_or_else(|| {
         AppError::InvalidArguments(format!("unknown reach {s} (reached|unreached|unknown)"))
@@ -66,6 +76,7 @@ pub(crate) fn compute(
     repo: &str,
     nodes: &[Option<i64>],
     lims: &mut Vec<Limitation>,
+    cache: &mut ReachCache,
 ) -> Result<Reach> {
     // only a function, method or route is something a call reaches; a file or class scope line is not
     let ids: Vec<i64> = nodes.iter().flatten().copied().collect();
@@ -107,6 +118,7 @@ pub(crate) fn compute(
         REACH_DEPTH,
         REACH_MAX_NODES,
         REACH_MIN_CONF,
+        cache,
     )?;
     if !er.uncalled_targets.is_empty() {
         lims.push(Limitation::new(
