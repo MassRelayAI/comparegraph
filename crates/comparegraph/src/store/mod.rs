@@ -26,6 +26,10 @@ pub enum StoreError {
     /// SQLite's busy timeout (`--wait` / `COMPAREGRAPH_WAIT`) ran out while another connection held the write lock.
     #[error("timed out after {waited_secs} s waiting for the store lock ({holders}); retry, or raise --wait / COMPAREGRAPH_WAIT")]
     Locked { waited_secs: u64, holders: String },
+    /// SQLITE_BUSY_SNAPSHOT: a transaction that read, then wrote, found the store changed under it. SQLite fails at
+    /// once here (no wait can help), so the message must not claim a timeout.
+    #[error("the store changed under this read-then-write transaction (snapshot conflict, no wait was possible); retry the command")]
+    LockedSnapshot,
     #[error("schema: {0}")]
     Schema(String),
     #[error("{0}")]
@@ -34,7 +38,9 @@ pub enum StoreError {
 pub type Result<T> = std::result::Result<T, StoreError>;
 impl From<rusqlite::Error> for StoreError {
     fn from(e: rusqlite::Error) -> Self {
-        if is_busy(&e) {
+        if is_snapshot_conflict(&e) {
+            StoreError::LockedSnapshot
+        } else if is_busy(&e) {
             locked()
         } else {
             StoreError::Sqlite(e)
@@ -51,6 +57,10 @@ pub fn wait_secs() -> u64 {
         .ok()
         .and_then(|v| v.trim().parse().ok())
         .unwrap_or(DEFAULT_WAIT_SECS)
+}
+/// SQLITE_BUSY_SNAPSHOT (extended code 517): returned immediately, never after a wait.
+fn is_snapshot_conflict(e: &rusqlite::Error) -> bool {
+    matches!(e, rusqlite::Error::SqliteFailure(f, _) if f.extended_code == 517)
 }
 fn is_busy(e: &rusqlite::Error) -> bool {
     matches!(
@@ -1104,5 +1114,22 @@ impl Store {
             }
         }
         Ok(retired)
+    }
+}
+
+#[cfg(test)]
+mod snapshot_conflict_tests {
+    use super::*;
+    fn failure(code: i32) -> rusqlite::Error {
+        rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None)
+    }
+    #[test]
+    fn a_snapshot_conflict_does_not_claim_a_timeout() {
+        let m = StoreError::from(failure(517)).to_string();
+        assert!(m.contains("snapshot conflict") && !m.contains("timed out"), "{m}");
+    }
+    #[test]
+    fn a_plain_busy_still_says_it_waited() {
+        assert!(StoreError::from(failure(5)).to_string().contains("timed out after"));
     }
 }
