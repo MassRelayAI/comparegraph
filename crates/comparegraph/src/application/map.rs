@@ -1,8 +1,7 @@
 //! `map` and `relate`: per-feature candidates from the graph (idf-weighted ranking of the nodes, `termscore.rs`, plus
 //! communities whose label or keywords carry a term), and a relatedness band per (clone, family). Candidates are never verdicts.
-use super::communities::tokens;
 use super::search::Hit;
-use super::termscore::{tok_match, RunIndex};
+use super::termscore::{feature_tokens, tok_match, RunIndex};
 use super::{AppError, Result};
 use crate::store::{FeatureRow, Store};
 use rusqlite::params;
@@ -22,6 +21,14 @@ pub struct SymbolCandidate {
     #[serde(flatten)]
     pub hit: Hit,
     pub matched: Vec<String>,
+    /// graph position, as the ranking used it (`termscore::Reach`): `entry` (a root: an `entry-points` symbol), `reached`
+    /// (called from a root, `entry_hops` away), `unreached` (called, but only from code no root reaches: ranked down),
+    /// `uncalled` (no root reaches it and nothing outside tests calls it: left alone), `not_applicable` (not a
+    /// function/method/route, or the run has no root)
+    pub reach: &'static str,
+    pub entry_hops: Option<u32>,
+    /// other candidates in the same community whose names carry a term (reported, not scored: `termscore.rs`)
+    pub community_peers: usize,
     /// the name carries one of the feature's own terms; what `relate` counts (see `termscore::Term::names_feature`)
     #[serde(skip)]
     pub named: bool,
@@ -38,6 +45,8 @@ pub struct FeatureMap {
 pub struct Mapped {
     pub repo: String,
     pub family: String,
+    /// roots of the reach walk (`entry-points` symbols and entry files); 0 means the reach signal was off for every candidate
+    pub entry_points: usize,
     pub features: Vec<FeatureMap>,
 }
 #[derive(Debug, Serialize, Clone)]
@@ -50,14 +59,15 @@ pub struct Related {
     pub basis: Vec<String>,
 }
 
-/// Tokens of the group, the slug, the title and the pack author's synonyms; deduped and sorted. The definition is not used.
+/// Tokens of the group, the slug, the title and the pack author's synonyms, without pack bookkeeping (`(pair row)`,
+/// `specific`: `termscore::feature_tokens`); deduped and sorted. The definition is not used.
 pub fn feature_terms(f: &FeatureRow) -> Vec<String> {
     let slug = f.slug.rsplit('.').next().unwrap_or(&f.slug);
-    let set: BTreeSet<String> = tokens(&f.grp)
+    let set: BTreeSet<String> = feature_tokens(&f.grp)
         .into_iter()
-        .chain(tokens(slug))
-        .chain(tokens(&f.title))
-        .chain(tokens(&f.synonyms))
+        .chain(feature_tokens(slug))
+        .chain(feature_tokens(&f.title))
+        .chain(feature_tokens(&f.synonyms))
         .collect();
     set.into_iter().collect()
 }
@@ -109,6 +119,9 @@ fn map_feature(
                     label: "candidate",
                 },
                 matched: r.matched,
+                reach: r.reach.label(),
+                entry_hops: r.reach.hops(),
+                community_peers: r.peers,
                 named: r.named,
             }
         })
@@ -177,6 +190,7 @@ pub fn map(
     Ok(Mapped {
         repo: repo.into(),
         family: family.into(),
+        entry_points: idx.entries,
         features,
     })
 }
@@ -385,6 +399,14 @@ mod tests {
         let m = map_feature("r", &idx, &f, 1).unwrap();
         assert_eq!(m.symbols[0].matched, vec!["gadgets".to_string()]);
         assert!(!m.symbols[0].named, "a definition token has source weight 0.5");
+    }
+
+    #[test]
+    fn feature_terms_drop_pack_bookkeeping() {
+        let mut f = feature();
+        f.title = "Provider-specific retry (pair row)".into();
+        f.synonyms = "backoff (rows)".into();
+        assert_eq!(feature_terms(&f), vec!["backoff", "provider", "quality", "retry", "widget"]);
     }
 
     #[test]
