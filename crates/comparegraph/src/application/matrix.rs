@@ -1,6 +1,7 @@
 //! `matrix <family>`: active features x repos. A cell is the latest claim's verdict; a claim with a stale location
 //! displays `unknown*` and counts as unknown. Prevalence counts comparators only. `reach` is the latest claim's reach per
-//! cell (field-run ask 5); `--reach <status>` keeps the rows with at least one cell of that reach.
+//! cell (field-run ask 5); `--reach <status>` keeps the rows with at least one cell of that reach, where a stale cell's
+//! reach counts as unknown (its stored reach is still shown).
 use super::claim::claims;
 use super::decide::decisions;
 use super::{AppError, Result};
@@ -87,11 +88,12 @@ pub fn matrix_reach(
     let comparators = repos.iter().filter(|r| r.2 != "root").count();
 
     let mut cl: HashMap<(String, String), String> = HashMap::new();
-    let mut rch: HashMap<(String, String), String> = HashMap::new();
+    // (stored reach, stale): a stale cell shows its stored reach but filters as unknown, as its verdict displays `unknown*`
+    let mut rch: HashMap<(String, String), (String, bool)> = HashMap::new();
     for x in claims(root, None, Some(family), None, false)? {
         let stale = x.locations.iter().any(|l| l.stale);
         if let Some(r) = x.reach {
-            rch.insert((x.repo.clone(), x.feature.clone()), r.status);
+            rch.insert((x.repo.clone(), x.feature.clone()), (r.status, stale));
         }
         cl.insert(
             (x.repo, x.feature),
@@ -155,15 +157,20 @@ pub fn matrix_reach(
                     .unwrap_or_else(|| "-".into())
             })
             .collect();
-        let cell_reach: Vec<Option<String>> = repos
+        let stored: Vec<Option<&(String, bool)>> = repos
             .iter()
-            .map(|r| rch.get(&(r.1.clone(), slug.clone())).cloned())
+            .map(|r| rch.get(&(r.1.clone(), slug.clone())))
             .collect();
         if let Some(want) = reach {
-            if !cell_reach.iter().any(|c| c.as_deref() == Some(want)) {
+            let hit = stored
+                .iter()
+                .flatten()
+                .any(|(status, stale)| if *stale { want == "unknown" } else { status == want });
+            if !hit {
                 continue;
             }
         }
+        let cell_reach: Vec<Option<String>> = stored.iter().map(|c| c.map(|(s, _)| s.clone())).collect();
         let comp: Vec<&String> = repos
             .iter()
             .zip(&cells)

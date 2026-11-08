@@ -597,7 +597,15 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     let pretty = cli.pretty;
     let print_row = |line: usize, res: Result<serde_json::Value, BatchErr>, conf: &'static str| {
         let env = match res {
-            Ok(v) => Envelope::ok(verb, v, conf, vec![], None),
+            Ok(mut v) => {
+                // as `envelope_for` does for a single claim: the row's qualifiers go to evidence.limitations
+                let lims: Vec<crate::domain::Limitation> = v
+                    .as_object_mut()
+                    .and_then(|o| o.remove("limitation_items"))
+                    .and_then(|x| serde_json::from_value(x).ok())
+                    .unwrap_or_default();
+                Envelope::ok(verb, v, conf, lims, None)
+            }
             Err((code, msg, data)) => {
                 if msg.starts_with("line ") {
                     eprintln!("comparegraph: {msg}");

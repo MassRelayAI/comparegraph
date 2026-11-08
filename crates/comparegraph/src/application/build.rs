@@ -96,6 +96,7 @@ pub fn build_repo(
     if !opts.full && provider.name() == "reference" {
         if let Some(mut r) = try_reuse(&store, repo_id, &repo.path, &provider.version(), opts, t)? {
             r.source_commit = repo.source_commit.clone();
+            store.set_run_head(r.run, r.head.as_deref())?;
             return Ok(r);
         }
     }
@@ -111,6 +112,8 @@ pub fn build_repo(
         store_hash: None,
     })?;
     store.set_run_subset(run, &opts.include, &opts.exclude)?;
+    let head = super::git(Path::new(&repo.path), &["rev-parse", "--short=7", "HEAD"]);
+    store.set_run_head(run, head.as_deref())?;
     let mut opts = opts.clone();
     let mut prev_comms: Option<PrevComms> = None;
     if opts.full {
@@ -235,7 +238,7 @@ pub fn build_repo(
     Ok(BuildReport {
         run,
         path: repo.path.clone(),
-        head: super::git(Path::new(&repo.path), &["rev-parse", "--short=7", "HEAD"]),
+        head,
         source_commit: repo.source_commit.clone(),
         include: opts.include.clone(),
         exclude: opts.exclude.clone(),

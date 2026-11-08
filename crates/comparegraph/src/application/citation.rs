@@ -2,12 +2,11 @@
 //! unless the caller allows it; matching an `--expect` pattern when one is given; and the one-line resolution of an
 //! `--anchor 'path::regex'`. One classifier serves all three, so an anchor and an `--at` are judged the same way.
 //!
-//! Patterns are a regex subset matched per line by a small backtracking matcher (no `regex` dependency without a
-//! ruling): literals, `.`, `[...]` (ranges, `^` negation), `\d \w \s \D \W \S \b \B`, escapes, `^ $`, groups `( )` and
+//! Patterns are a regex subset matched per line by a small Thompson-NFA (Pike VM) matcher with an explicit thread list
+//! (no `regex` dependency without a ruling; no recursion, so a long line cannot overflow the stack, and linear in the
+//! line's length): literals, `.`, `[...]` (ranges, `^` negation), `\d \w \s \D \W \S \b \B`, escapes, `^ $`, groups `( )` and
 //! `(?: )`, `|`, and the quantifiers `* + ? {n} {n,} {n,m}` (a trailing `?` for laziness is accepted; for a yes/no match
 //! it changes nothing). Look-around, back-references and inline flags are refused as unsupported.
-use std::cell::Cell;
-
 // ---------------------------------------------------------------- pattern
 
 #[derive(Debug, Clone)]
@@ -35,11 +34,14 @@ struct Item {
 /// A compiled pattern; `is_match` tests one line.
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    alts: Vec<Vec<Item>>,
+    prog: Vec<Inst>,
     pub source: String,
 }
 
-const STEP_BUDGET: usize = 200_000;
+/// Instructions processed per line before the match is refused as too costly (a long line times a large program).
+const STEP_BUDGET: usize = 20_000_000;
+/// The largest compiled program (counted quantifiers are expanded).
+const MAX_INSTS: usize = 20_000;
 
 struct Parser<'a> {
     s: &'a [char],
@@ -273,69 +275,109 @@ fn short_matches(s: char, c: char) -> bool {
     }
 }
 
-struct Matcher<'a> {
-    t: &'a [char],
-    steps: Cell<usize>,
+/// One instruction of the compiled pattern.
+#[derive(Debug, Clone)]
+enum Inst {
+    /// consume one character that matches the atom (Char, Any, Short, Class)
+    Consume(Atom),
+    /// a zero-width assertion (Start, End, WordB)
+    Assert(Atom),
+    Split(usize, usize),
+    Jmp(usize),
+    Match,
 }
 
-impl Matcher<'_> {
-    fn tick(&self) -> bool {
-        let n = self.steps.get() + 1;
-        self.steps.set(n);
-        n <= STEP_BUDGET
+struct Compiler {
+    prog: Vec<Inst>,
+}
+
+impl Compiler {
+    fn push(&mut self, i: Inst) -> Result<usize, String> {
+        if self.prog.len() >= MAX_INSTS {
+            return Err("a pattern too large to compile (its counted repeats expand too far)".into());
+        }
+        self.prog.push(i);
+        Ok(self.prog.len() - 1)
     }
-    fn seq(&self, seq: &[Item], i: usize, pos: usize, k: &mut dyn FnMut(usize) -> bool) -> bool {
-        if !self.tick() {
-            return false;
+    fn alts(&mut self, alts: &[Vec<Item>]) -> Result<(), String> {
+        let mut jumps = vec![];
+        for (k, seq) in alts.iter().enumerate() {
+            if k + 1 == alts.len() {
+                self.seq(seq)?;
+            } else {
+                let split = self.push(Inst::Split(0, 0))?;
+                self.seq(seq)?;
+                jumps.push(self.push(Inst::Jmp(0))?);
+                self.prog[split] = Inst::Split(split + 1, self.prog.len());
+            }
         }
-        match seq.get(i) {
-            None => k(pos),
-            Some(it) => self.rep(it, 0, pos, &mut |p| self.seq(seq, i + 1, p, k)),
+        let end = self.prog.len();
+        for j in jumps {
+            self.prog[j] = Inst::Jmp(end);
         }
+        Ok(())
     }
-    fn rep(&self, it: &Item, count: usize, pos: usize, k: &mut dyn FnMut(usize) -> bool) -> bool {
-        if !self.tick() {
-            return false;
+    fn seq(&mut self, seq: &[Item]) -> Result<(), String> {
+        seq.iter().try_for_each(|it| self.item(it))
+    }
+    fn item(&mut self, it: &Item) -> Result<(), String> {
+        for _ in 0..it.min {
+            self.atom(&it.atom)?;
         }
-        if it.max.is_none_or(|m| count < m)
-            && self.atom(&it.atom, pos, &mut |p| {
-                // an empty iteration past the minimum would loop forever
-                if p == pos && count >= it.min {
-                    return false;
+        match it.max {
+            None => {
+                let l = self.push(Inst::Split(0, 0))?;
+                self.atom(&it.atom)?;
+                self.push(Inst::Jmp(l))?;
+                self.prog[l] = Inst::Split(l + 1, self.prog.len());
+            }
+            Some(max) => {
+                let mut splits = vec![];
+                for _ in it.min..max {
+                    splits.push(self.push(Inst::Split(0, 0))?);
+                    self.atom(&it.atom)?;
                 }
-                self.rep(it, count + 1, p, k)
-            })
-        {
-            return true;
+                let end = self.prog.len();
+                for sp in splits {
+                    self.prog[sp] = Inst::Split(sp + 1, end);
+                }
+            }
         }
-        count >= it.min && k(pos)
+        Ok(())
     }
-    fn atom(&self, a: &Atom, pos: usize, k: &mut dyn FnMut(usize) -> bool) -> bool {
-        let cur = self.t.get(pos).copied();
+    fn atom(&mut self, a: &Atom) -> Result<(), String> {
         match a {
-            Atom::Char(c) => cur == Some(*c) && k(pos + 1),
-            Atom::Any => cur.is_some() && k(pos + 1),
-            Atom::Short(s) => cur.is_some_and(|c| short_matches(*s, c)) && k(pos + 1),
-            Atom::Class {
-                neg,
-                ranges,
-                shorts,
-            } => {
-                cur.is_some_and(|c| {
-                    let inside = ranges.iter().any(|(lo, hi)| (*lo..=*hi).contains(&c))
-                        || shorts.iter().any(|s| short_matches(*s, c));
-                    inside != *neg
-                }) && k(pos + 1)
-            }
-            Atom::Start => pos == 0 && k(pos),
-            Atom::End => pos == self.t.len() && k(pos),
-            Atom::WordB(want) => {
-                let before = pos > 0 && is_word(self.t[pos - 1]);
-                let after = cur.is_some_and(is_word);
-                ((before != after) == *want) && k(pos)
-            }
-            Atom::Group(alts) => alts.iter().any(|seq| self.seq(seq, 0, pos, k)),
+            Atom::Group(alts) => self.alts(alts),
+            Atom::Start | Atom::End | Atom::WordB(_) => self.push(Inst::Assert(a.clone())).map(|_| ()),
+            _ => self.push(Inst::Consume(a.clone())).map(|_| ()),
         }
+    }
+}
+
+fn consumes(a: &Atom, c: char) -> bool {
+    match a {
+        Atom::Char(x) => c == *x,
+        Atom::Any => true,
+        Atom::Short(s) => short_matches(*s, c),
+        Atom::Class { neg, ranges, shorts } => {
+            let inside = ranges.iter().any(|(lo, hi)| (*lo..=*hi).contains(&c))
+                || shorts.iter().any(|s| short_matches(*s, c));
+            inside != *neg
+        }
+        _ => false,
+    }
+}
+
+fn holds(a: &Atom, t: &[char], pos: usize) -> bool {
+    match a {
+        Atom::Start => pos == 0,
+        Atom::End => pos == t.len(),
+        Atom::WordB(want) => {
+            let before = pos > 0 && is_word(t[pos - 1]);
+            let after = t.get(pos).copied().is_some_and(is_word);
+            (before != after) == *want
+        }
+        _ => false,
     }
 }
 
@@ -350,32 +392,72 @@ impl Pattern {
         if p.i != chars.len() {
             return p.err("an unmatched `)`");
         }
+        let mut c = Compiler { prog: vec![] };
+        c.alts(&alts)?;
+        c.push(Inst::Match)?;
         Ok(Pattern {
-            alts,
+            prog: c.prog,
             source: src.to_string(),
         })
     }
-    /// Does the pattern match anywhere in `line`? Err when the match exceeds the step budget.
+    /// Does the pattern match anywhere in `line`? Err when the line times the program exceeds the step budget.
     pub fn is_match(&self, line: &str) -> Result<bool, String> {
         let t: Vec<char> = line.chars().collect();
-        let m = Matcher {
-            t: &t,
-            steps: Cell::new(0),
+        let n = self.prog.len();
+        // seen[pc] == pos + 1: pc is already on the list for position pos
+        let mut seen = vec![0usize; n];
+        let (mut clist, mut nlist): (Vec<usize>, Vec<usize>) = (vec![], vec![]);
+        let mut stack: Vec<usize> = vec![];
+        let mut steps = 0usize;
+        let too_costly = || {
+            format!(
+                "the pattern {:?} is too costly to match on a line of {} characters",
+                self.source,
+                t.len()
+            )
         };
-        for start in 0..=t.len() {
-            if self
-                .alts
-                .iter()
-                .any(|seq| m.seq(seq, 0, start, &mut |_| true))
-            {
-                return Ok(true);
+        // follow the zero-width instructions from `pc` at `pos`, adding every consuming (or Match) one to `list`
+        let mut add = |list: &mut Vec<usize>, pc: usize, pos: usize, steps: &mut usize, seen: &mut Vec<usize>| {
+            stack.push(pc);
+            while let Some(pc) = stack.pop() {
+                *steps += 1;
+                if seen[pc] == pos + 1 {
+                    continue;
+                }
+                seen[pc] = pos + 1;
+                match &self.prog[pc] {
+                    Inst::Jmp(x) => stack.push(*x),
+                    Inst::Split(x, y) => {
+                        stack.push(*y);
+                        stack.push(*x);
+                    }
+                    Inst::Assert(a) => {
+                        if holds(a, &t, pos) {
+                            stack.push(pc + 1);
+                        }
+                    }
+                    Inst::Consume(_) | Inst::Match => list.push(pc),
+                }
             }
-            if m.steps.get() > STEP_BUDGET {
-                return Err(format!(
-                    "the pattern {:?} is too costly to match (backtracking budget spent)",
-                    self.source
-                ));
+        };
+        for pos in 0..=t.len() {
+            // a new thread at every position: the match may start anywhere
+            add(&mut clist, 0, pos, &mut steps, &mut seen);
+            for &pc in &clist {
+                steps += 1;
+                match &self.prog[pc] {
+                    Inst::Match => return Ok(true),
+                    Inst::Consume(a) if t.get(pos).is_some_and(|&c| consumes(a, c)) => {
+                        add(&mut nlist, pc + 1, pos + 1, &mut steps, &mut seen);
+                    }
+                    _ => {}
+                }
             }
+            if steps > STEP_BUDGET {
+                return Err(too_costly());
+            }
+            std::mem::swap(&mut clist, &mut nlist);
+            nlist.clear();
         }
         Ok(false)
     }
@@ -388,6 +470,8 @@ pub enum LineKind {
     Blank,
     Comment,
     Docstring,
+    /// a line of a prose file (Markdown, plain text, reStructuredText)
+    Prose,
     /// an import, use, include or package line: real code, weak evidence
     Import,
     Code,
@@ -396,7 +480,7 @@ impl LineKind {
     pub fn is_prose(self) -> bool {
         matches!(
             self,
-            LineKind::Blank | LineKind::Comment | LineKind::Docstring
+            LineKind::Blank | LineKind::Comment | LineKind::Docstring | LineKind::Prose
         )
     }
     pub fn word(self) -> &'static str {
@@ -404,6 +488,7 @@ impl LineKind {
             LineKind::Blank => "blank",
             LineKind::Comment => "comment",
             LineKind::Docstring => "docstring",
+            LineKind::Prose => "prose",
             LineKind::Import => "import",
             LineKind::Code => "code",
         }
@@ -419,6 +504,8 @@ struct Syntax {
     markup: bool,
     semicolon: bool,
     triple: bool,
+    /// every non-blank line is prose
+    prose: bool,
 }
 
 fn syntax_of(path: &str) -> Syntax {
@@ -435,6 +522,7 @@ fn syntax_of(path: &str) -> Syntax {
         markup: false,
         semicolon: false,
         triple: false,
+        prose: false,
     };
     let lower = name.to_ascii_lowercase();
     if lower == "dockerfile"
@@ -491,6 +579,7 @@ fn syntax_of(path: &str) -> Syntax {
             semicolon: true,
             ..none
         },
+        "md" | "markdown" | "txt" | "text" | "rst" => Syntax { prose: true, ..none },
         _ => none,
     }
 }
@@ -533,6 +622,24 @@ fn is_import(t: &str, sx: Syntax) -> bool {
     false
 }
 
+/// A Python `def`/`class` header line (`def f(x):`, `async def f():`, `class C(B):`): its next statement may be a
+/// docstring. A signature split over several lines is not recognised.
+fn is_def_header(t: &str) -> bool {
+    (t.starts_with("def ") || t.starts_with("async def ") || t.starts_with("class ")) && t.ends_with(':')
+}
+
+/// A line that is only one single-quoted Python string literal (`'doc'`, `"doc"`, `r"doc"`).
+fn is_one_string(t: &str) -> bool {
+    let rest = t.trim_start_matches(['r', 'R', 'u', 'U', 'b', 'B', 'f', 'F']);
+    if t.len() - rest.len() > 2 {
+        return false;
+    }
+    let Some(q) = rest.chars().next().filter(|c| *c == '"' || *c == '\'') else {
+        return false;
+    };
+    rest.len() >= 2 && rest.ends_with(q) && !rest[1..rest.len() - 1].contains(q)
+}
+
 /// The opener of a Python string that starts the stripped line (`"""`, `r'''`, …), if any.
 fn triple_opener(t: &str) -> Option<&'static str> {
     let rest = t.trim_start_matches(['r', 'R', 'u', 'U', 'b', 'B', 'f', 'F']);
@@ -550,9 +657,12 @@ fn triple_opener(t: &str) -> Option<&'static str> {
 
 /// One `LineKind` per line of `text` (as `str::lines` splits it), judged by the file's extension. Comment and docstring
 /// blocks are recognised only when they start a line, so a `/*` inside a string (`"src/**/*.rs"`) never opens one.
-/// An extension it does not know classifies only blank lines.
+/// A prose file's (`.md`, `.txt`, `.rst`) non-blank lines are all `Prose`; an extension it does not know classifies only
+/// blank lines. In Python a line that is only a one-quote string literal right after a `def`/`class` header is a docstring.
 pub fn classify(path: &str, text: &str) -> Vec<LineKind> {
     let sx = syntax_of(path);
+    // Python: the last code line was a def/class header, so a lone string literal now is its docstring
+    let mut after_def = false;
     // the open multi-line construct: its closing delimiter and the kind of its lines
     let mut open: Option<(&'static str, LineKind)> = None;
     let mut out = vec![];
@@ -578,6 +688,10 @@ pub fn classify(path: &str, text: &str) -> Vec<LineKind> {
             out.push(LineKind::Blank);
             continue;
         }
+        if sx.prose {
+            out.push(LineKind::Prose);
+            continue;
+        }
         if n == 0 && t.starts_with("#!") {
             out.push(LineKind::Comment);
             continue;
@@ -600,6 +714,7 @@ pub fn classify(path: &str, text: &str) -> Vec<LineKind> {
                 .flatten()
                 .map(|q| (q, q, LineKind::Docstring))
         };
+        let was_after_def = std::mem::replace(&mut after_def, false);
         if let Some((opener, close, kind)) = block {
             let body = &t[t.find(opener).unwrap() + opener.len()..];
             match body.find(close) {
@@ -620,6 +735,11 @@ pub fn classify(path: &str, text: &str) -> Vec<LineKind> {
             }
             continue;
         }
+        if sx.triple && was_after_def && is_one_string(t) {
+            out.push(LineKind::Docstring);
+            continue;
+        }
+        after_def = sx.triple && is_def_header(t);
         out.push(if is_import(t, sx) {
             LineKind::Import
         } else {
@@ -830,9 +950,23 @@ mod tests {
     }
 
     #[test]
-    fn a_pathological_pattern_is_an_error_not_a_hang() {
+    fn a_pathological_pattern_is_answered_not_a_hang() {
         let p = Pattern::parse("(a|aa)*(a|aa)*(a|aa)*c").unwrap();
-        assert!(p.is_match(&"a".repeat(60)).is_err());
+        assert_eq!(p.is_match(&"a".repeat(60)), Ok(false));
+        assert_eq!(p.is_match(&("a".repeat(60) + "c")), Ok(true));
+    }
+
+    #[test]
+    fn a_long_line_neither_overflows_the_stack_nor_hangs() {
+        let long = "a".repeat(200_000);
+        assert_eq!(Pattern::parse("a*b").unwrap().is_match(&long), Ok(false));
+        assert_eq!(Pattern::parse(".*q").unwrap().is_match(&long), Ok(false));
+        assert_eq!(Pattern::parse("a+$").unwrap().is_match(&long), Ok(true));
+        assert_eq!(Pattern::parse("(a|aa)*c").unwrap().is_match(&long), Ok(false));
+        // a large program on a long line is refused, not run for minutes
+        let e = Pattern::parse("a{1000}b").unwrap().is_match(&long).unwrap_err();
+        assert!(e.contains("too costly"), "{e}");
+        assert!(Pattern::parse("(a{1000}){1000}").is_err(), "a program past MAX_INSTS");
     }
 
     #[test]
@@ -849,6 +983,10 @@ mod tests {
             vec![Comment, Code, Comment, Comment, Code, Code, Import]
         );
         assert_eq!(classify("a.sql", "-- c\nSELECT 1;\n"), vec![Comment, Code]);
+        assert_eq!(classify("README.md", "# T\n\nRetries.\n"), vec![Prose, Blank, Prose]);
+        assert_eq!(classify("notes.txt", "x = 1\n"), vec![Prose]);
+        let doc = "def f():\n    'One line.'\n    x = 'not a doc'\n    'after code'\nclass C:\n    \"Doc.\"\n";
+        assert_eq!(classify("a.py", doc), vec![Code, Docstring, Code, Code, Code, Docstring]);
         assert_eq!(
             classify("README", "# title\n\n"),
             vec![Code, Blank],

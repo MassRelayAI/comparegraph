@@ -119,6 +119,12 @@ pub fn parse_at(at: &str) -> Result<(String, usize, usize)> {
     if p.is_empty() {
         return invalid(format!("--at {at}: empty path"));
     }
+    if s == 0 {
+        return invalid(format!("--at {at}: lines start at 1"));
+    }
+    if s > e {
+        return invalid(format!("--at {at}: a reversed range ({s} > {e}); give <start>-<end> with start <= end"));
+    }
     Ok((p.to_string(), s, e))
 }
 
@@ -332,7 +338,7 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
 
     // resolve every location before writing anything
     let ev = &i.evidence;
-    let at_commit = check_at_commit(store, &repo, ev.at_commit, &mut limitation_items)?;
+    let at_commit = check_at_commit(store, &repo, run, ev.at_commit, &mut limitation_items)?;
     let out_of_subset = match ev.out_of_subset {
         Some(p) => {
             let p = check_out_of_subset(Path::new(&repo.path), p)?;
@@ -351,8 +357,8 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
         hash: String,
         node: Option<i64>,
     }
-    fn res_keys(r: &[Resolved]) -> Vec<(String, i64, i64)> {
-        r.iter().map(|x| (x.path.clone(), x.s as i64, x.e as i64)).collect()
+    fn res_keys(r: &[Resolved]) -> Vec<(String, i64, i64, String)> {
+        r.iter().map(|x| (x.path.clone(), x.s as i64, x.e as i64, x.hash.clone())).collect()
     }
     let read_text = |rel: &str| -> Result<(String, String)> {
         let (norm, full) = safe_path(Path::new(&repo.path), rel)?;
@@ -444,15 +450,20 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
     };
     if i.skip_equal {
         let quals = (at_commit.as_deref(), out_of_subset.as_deref(), reach.as_ref());
-        if let Some(same) =
+        if let Some(mut same) =
             equal_live_claim(store, i, rid.0, fid, run.0, confidence, &note, &fam, &res_keys(&res), quals)?
         {
+            // the qualifiers this row computed are the stored claim's too (it equals it): the envelope carries them
+            same.limitation_items = limitation_items;
             return Ok(same);
         }
     }
     let now = now_iso();
     let tx = store.conn();
-    tx.execute_batch("SAVEPOINT cg_claim")?;
+    // a single claim takes the write lock before its first read (a deferred read-then-write upgrade skips SQLite's busy
+    // handler and fails at once under a concurrent writer); inside a batch's transaction the write is a savepoint
+    let own = tx.is_autocommit();
+    tx.execute_batch(if own { "BEGIN IMMEDIATE" } else { "SAVEPOINT cg_claim" })?;
     let written: Result<(Option<i64>, i64, Vec<LocationOut>)> = (|| {
         let supersedes: Option<i64> = tx.query_row(
             "SELECT MAX(id) FROM claim WHERE repo_id = ?1 AND feature_id = ?2",
@@ -490,11 +501,11 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
     })();
     let (supersedes, cid, locations) = match written {
         Ok(x) => {
-            tx.execute_batch("RELEASE cg_claim")?;
+            tx.execute_batch(if own { "COMMIT" } else { "RELEASE cg_claim" })?;
             x
         }
         Err(e) => {
-            let _ = tx.execute_batch("ROLLBACK TO cg_claim; RELEASE cg_claim");
+            let _ = tx.execute_batch(if own { "ROLLBACK" } else { "ROLLBACK TO cg_claim; RELEASE cg_claim" });
             return Err(e);
         }
     };
@@ -520,11 +531,13 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
 }
 
 /// `--at-commit`: 7 to 40 hex digits that agree (one a prefix of the other) with the commit the build read: the repo's
-/// `source_commit` when the store has that column and it is set, else its git head. With neither known it is recorded
-/// as given, under an `at_commit_unverified` limitation.
+/// `source_commit` when it is set (an export's upstream commit, which its local head is not), else the git head the
+/// latest done run read, else the head `add` saw (a run from before the run's head was recorded). With none known it is
+/// recorded as given, under an `at_commit_unverified` limitation.
 fn check_at_commit(
     store: &Store,
     repo: &crate::store::RepoRow,
+    run: crate::domain::RunId,
     at: Option<&str>,
     lims: &mut Vec<Limitation>,
 ) -> Result<Option<String>> {
@@ -533,20 +546,10 @@ fn check_at_commit(
     if !(7..=40).contains(&sha.len()) || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
         return invalid(format!("--at-commit {at}: expected a commit id of 7 to 40 hex digits"));
     }
-    let has_source = store
-        .conn()
-        .prepare("SELECT 1 FROM pragma_table_info('repo') WHERE name = 'source_commit'")?
-        .exists([])?;
-    let source: Option<String> = if has_source {
-        store.conn().query_row(
-            "SELECT source_commit FROM repo WHERE id = ?1",
-            params![repo.id.unwrap().0],
-            |r| r.get(0),
-        )?
-    } else {
-        None
-    };
-    let known = source.filter(|s| !s.trim().is_empty()).or_else(|| repo.head.clone());
+    let nonempty = |s: Option<String>| s.filter(|s| !s.trim().is_empty());
+    let known = nonempty(repo.source_commit.clone())
+        .or(nonempty(store.run_head(run)?))
+        .or_else(|| nonempty(repo.head.clone()));
     match known {
         Some(k) => {
             let k = k.trim().to_ascii_lowercase();
@@ -570,7 +573,12 @@ fn check_at_commit(
 fn check_out_of_subset(clone: &Path, given: &str) -> Result<String> {
     let (p, lines) = match given.rsplit_once(':') {
         Some((p, l)) if !l.is_empty() && l.chars().all(|c| c.is_ascii_digit() || c == '-') => {
-            parse_at(given)?;
+            parse_at(given).map_err(|e| match e {
+                AppError::InvalidArguments(m) => {
+                    AppError::InvalidArguments(m.replacen("--at ", "--out-of-subset ", 1))
+                }
+                e => e,
+            })?;
             (p, Some(l))
         }
         Some((_, l)) => {
@@ -590,10 +598,36 @@ fn check_out_of_subset(clone: &Path, given: &str) -> Result<String> {
         return invalid("--out-of-subset needs the upstream path of the evidence");
     }
     let norm = parts.join("/");
-    if clone.join(&norm).is_file() {
-        return invalid(format!(
-            "--out-of-subset {norm}: that file is in the exported tree; cite it with --at {norm}:<start>-<end>"
-        ));
+    // walk the path inside the clone without following a link: a symlink (dangling, or pointing out of the clone) is
+    // refused, and nothing outside the clone is ever touched
+    let mut at = clone.to_path_buf();
+    for (k, part) in parts.iter().enumerate() {
+        at.push(part);
+        let so_far = parts[..=k].join("/");
+        let meta = match std::fs::symlink_metadata(&at) {
+            Ok(m) => m,
+            Err(_) => break, // not in the exported tree from here on
+        };
+        let ft = meta.file_type();
+        if ft.is_symlink() {
+            return invalid(format!(
+                "--out-of-subset {norm}: {so_far} is a symlink in the exported tree; name the upstream path, not a link"
+            ));
+        }
+        let last = k + 1 == parts.len();
+        if ft.is_file() && last {
+            return invalid(format!(
+                "--out-of-subset {norm}: that file is in the exported tree; cite it with --at {norm}:<start>-<end>"
+            ));
+        }
+        if ft.is_dir() && last {
+            return invalid(format!(
+                "--out-of-subset {norm}: that directory is in the exported tree; cite its files with --at"
+            ));
+        }
+        if !ft.is_dir() {
+            break; // a file (or other entry) in the middle: the rest of the path cannot be in the tree
+        }
     }
     Ok(match lines {
         Some(l) => format!("{norm}:{l}"),
@@ -602,7 +636,8 @@ fn check_out_of_subset(clone: &Path, given: &str) -> Result<String> {
 }
 
 /// The live claim for (repo, feature) when it equals the one about to be written: same run, verdict, confidence,
-/// author, note and locations (path and span, in order). Returned as it is stored, marked `skipped`.
+/// author, note and locations (path, span and content hash, in order, none stale). Returned as it is stored, marked
+/// `skipped`; a cited line whose text changed, or a location `check` flagged stale, is a new claim.
 #[allow(clippy::too_many_arguments)]
 fn equal_live_claim(
     store: &Store,
@@ -613,7 +648,7 @@ fn equal_live_claim(
     confidence: &str,
     note: &str,
     family: &str,
-    keys: &[(String, i64, i64)],
+    keys: &[(String, i64, i64, String)],
     quals: (Option<&str>, Option<&str>, Option<&super::reach::Reach>),
 ) -> Result<Option<ClaimOut>> {
     let c = store.conn();
@@ -674,7 +709,7 @@ fn equal_live_claim(
         && locations
             .iter()
             .zip(keys)
-            .all(|(l, k)| l.path == k.0 && l.line_start == k.1 && l.line_end == k.2);
+            .all(|(l, k)| l.path == k.0 && l.line_start == k.1 && l.line_end == k.2 && l.content_hash == k.3 && !l.stale);
     if !same {
         return Ok(None);
     }
