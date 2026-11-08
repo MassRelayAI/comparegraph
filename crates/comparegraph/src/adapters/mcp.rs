@@ -326,6 +326,11 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 read_hits,
                 note: str_arg(a, "note")?,
                 batch: None,
+                at_commit: None,
+                anchor: vec![],
+                expect: vec![],
+                allow_comment: false,
+                out_of_subset: None,
             }
         }
         _ => Cmd::Communities {
