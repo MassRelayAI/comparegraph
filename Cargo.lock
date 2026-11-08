@@ -198,6 +198,7 @@ dependencies = [
  "ignore",
  "libc",
  "predicates",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

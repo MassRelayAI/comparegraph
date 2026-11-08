@@ -2,464 +2,36 @@
 //! unless the caller allows it; matching an `--expect` pattern when one is given; and the one-line resolution of an
 //! `--anchor 'path::regex'`. One classifier serves all three, so an anchor and an `--at` are judged the same way.
 //!
-//! Patterns are a regex subset matched per line by a small Thompson-NFA (Pike VM) matcher with an explicit thread list
-//! (no `regex` dependency without a ruling; no recursion, so a long line cannot overflow the stack, and linear in the
-//! line's length): literals, `.`, `[...]` (ranges, `^` negation), `\d \w \s \D \W \S \b \B`, escapes, `^ $`, groups `( )` and
-//! `(?: )`, `|`, and the quantifiers `* + ? {n} {n,} {n,m}` (a trailing `?` for laziness is accepted; for a yes/no match
-//! it changes nothing). Look-around, back-references and inline flags are refused as unsupported.
+//! Patterns are Rust `regex` syntax matched per line (linear time, no recursion; look-around and back-references are
+//! refused when the pattern is parsed).
 // ---------------------------------------------------------------- pattern
 
-#[derive(Debug, Clone)]
-enum Atom {
-    Char(char),
-    Any,
-    Class {
-        neg: bool,
-        ranges: Vec<(char, char)>,
-        shorts: Vec<char>,
-    },
-    Short(char),
-    Start,
-    End,
-    WordB(bool),
-    Group(Vec<Vec<Item>>),
-}
-#[derive(Debug, Clone)]
-struct Item {
-    atom: Atom,
-    min: usize,
-    max: Option<usize>,
-}
-
-/// A compiled pattern; `is_match` tests one line.
+/// A compiled pattern; `is_match` tests one line. The `regex` crate matches in time linear in the line, without recursion,
+/// and refuses look-around and back-references at parse time.
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    prog: Vec<Inst>,
+    re: regex::Regex,
     pub source: String,
 }
 
-/// Instructions processed per line before the match is refused as too costly (a long line times a large program).
-const STEP_BUDGET: usize = 20_000_000;
-/// The largest compiled program (counted quantifiers are expanded).
-const MAX_INSTS: usize = 20_000;
-
-struct Parser<'a> {
-    s: &'a [char],
-    i: usize,
-}
-
-impl Parser<'_> {
-    fn err<T>(&self, m: &str) -> Result<T, String> {
-        Err(format!("{m} at character {}", self.i + 1))
-    }
-    fn peek(&self) -> Option<char> {
-        self.s.get(self.i).copied()
-    }
-    fn alts(&mut self, depth: usize) -> Result<Vec<Vec<Item>>, String> {
-        let mut alts = vec![self.seq(depth)?];
-        while self.peek() == Some('|') {
-            self.i += 1;
-            alts.push(self.seq(depth)?);
-        }
-        Ok(alts)
-    }
-    fn seq(&mut self, depth: usize) -> Result<Vec<Item>, String> {
-        let mut out = vec![];
-        while let Some(c) = self.peek() {
-            if c == '|' || c == ')' {
-                break;
-            }
-            let atom = self.atom(depth)?;
-            let (min, max) = self.quant()?;
-            if (min, max) != (1, Some(1))
-                && matches!(atom, Atom::Start | Atom::End | Atom::WordB(_))
-            {
-                return self.err("a quantifier after an anchor");
-            }
-            out.push(Item { atom, min, max });
-        }
-        Ok(out)
-    }
-    fn number(&mut self) -> Option<usize> {
-        let st = self.i;
-        while self.peek().is_some_and(|c| c.is_ascii_digit()) {
-            self.i += 1;
-        }
-        self.s[st..self.i].iter().collect::<String>().parse().ok()
-    }
-    fn quant(&mut self) -> Result<(usize, Option<usize>), String> {
-        let q = match self.peek() {
-            Some('*') => (0, None),
-            Some('+') => (1, None),
-            Some('?') => (0, Some(1)),
-            Some('{') => {
-                let save = self.i;
-                self.i += 1;
-                let Some(n) = self.number() else {
-                    self.i = save;
-                    return self
-                        .err("`{` must start a {n}, {n,} or {n,m} quantifier (escape it as \\{)");
-                };
-                let m = if self.peek() == Some(',') {
-                    self.i += 1;
-                    if self.peek() == Some('}') {
-                        None
-                    } else {
-                        Some(
-                            self.number()
-                                .ok_or_else(|| "a {n,m} quantifier needs a number".to_string())?,
-                        )
-                    }
-                } else {
-                    Some(n)
-                };
-                if self.peek() != Some('}') {
-                    return self.err("an unclosed {n,m} quantifier");
-                }
-                if m.is_some_and(|m| m < n) {
-                    return self.err("a {n,m} quantifier with m < n");
-                }
-                (n, m)
-            }
-            _ => return Ok((1, Some(1))),
-        };
-        self.i += 1;
-        if self.peek() == Some('?') {
-            self.i += 1; // lazy: same yes/no answer
-        }
-        if matches!(self.peek(), Some('*' | '+' | '?' | '{')) {
-            return self.err("a repeated quantifier");
-        }
-        Ok(q)
-    }
-    fn escape(&mut self) -> Result<Atom, String> {
-        self.i += 1;
-        let Some(c) = self.peek() else {
-            return self.err("a trailing backslash");
-        };
-        self.i += 1;
-        Ok(match c {
-            'd' | 'w' | 's' | 'D' | 'W' | 'S' => Atom::Short(c),
-            'b' => Atom::WordB(true),
-            'B' => Atom::WordB(false),
-            'n' => Atom::Char('\n'),
-            't' => Atom::Char('\t'),
-            c if c.is_ascii_alphanumeric() => {
-                self.i -= 1;
-                return self.err(&format!("the escape \\{c} is not supported"));
-            }
-            c => Atom::Char(c),
-        })
-    }
-    fn atom(&mut self, depth: usize) -> Result<Atom, String> {
-        let c = self.peek().unwrap();
-        match c {
-            '\\' => self.escape(),
-            '.' => {
-                self.i += 1;
-                Ok(Atom::Any)
-            }
-            '^' => {
-                self.i += 1;
-                Ok(Atom::Start)
-            }
-            '$' => {
-                self.i += 1;
-                Ok(Atom::End)
-            }
-            '*' | '+' | '?' => self.err("a quantifier with nothing to repeat"),
-            '{' => self.err("`{` with nothing to repeat (escape it as \\{)"),
-            '(' => {
-                if depth > 32 {
-                    return self.err("groups nested too deep");
-                }
-                self.i += 1;
-                if self.peek() == Some('?') {
-                    if self.s.get(self.i + 1) == Some(&':') {
-                        self.i += 2;
-                    } else {
-                        return self.err("look-around and inline flags are not supported");
-                    }
-                }
-                let alts = self.alts(depth + 1)?;
-                if self.peek() != Some(')') {
-                    return self.err("an unclosed group");
-                }
-                self.i += 1;
-                Ok(Atom::Group(alts))
-            }
-            ')' => self.err("an unmatched `)`"),
-            '[' => self.class(),
-            c => {
-                self.i += 1;
-                Ok(Atom::Char(c))
-            }
-        }
-    }
-    fn class(&mut self) -> Result<Atom, String> {
-        self.i += 1;
-        let neg = self.peek() == Some('^');
-        if neg {
-            self.i += 1;
-        }
-        let (mut ranges, mut shorts) = (vec![], vec![]);
-        let mut first = true;
-        loop {
-            let Some(c) = self.peek() else {
-                return self.err("an unclosed `[`");
-            };
-            if c == ']' && !first {
-                self.i += 1;
-                break;
-            }
-            first = false;
-            let lo = if c == '\\' {
-                self.i += 1;
-                let Some(e) = self.peek() else {
-                    return self.err("a trailing backslash");
-                };
-                self.i += 1;
-                match e {
-                    'd' | 'w' | 's' | 'D' | 'W' | 'S' => {
-                        shorts.push(e);
-                        continue;
-                    }
-                    'n' => '\n',
-                    't' => '\t',
-                    e if e.is_ascii_alphanumeric() => {
-                        return self.err(&format!("the escape \\{e} is not supported"))
-                    }
-                    e => e,
-                }
-            } else {
-                self.i += 1;
-                c
-            };
-            if self.peek() == Some('-') && self.s.get(self.i + 1).is_some_and(|&n| n != ']') {
-                self.i += 1;
-                let mut hi = self.peek().unwrap();
-                self.i += 1;
-                if hi == '\\' {
-                    hi = self
-                        .peek()
-                        .ok_or_else(|| "a trailing backslash".to_string())?;
-                    self.i += 1;
-                }
-                if hi < lo {
-                    return self.err("a reversed range in `[...]`");
-                }
-                ranges.push((lo, hi));
-            } else {
-                ranges.push((lo, lo));
-            }
-        }
-        Ok(Atom::Class {
-            neg,
-            ranges,
-            shorts,
-        })
-    }
-}
-
-fn is_word(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-fn short_matches(s: char, c: char) -> bool {
-    match s {
-        'd' => c.is_ascii_digit(),
-        'D' => !c.is_ascii_digit(),
-        'w' => is_word(c),
-        'W' => !is_word(c),
-        's' => c.is_whitespace(),
-        _ => !c.is_whitespace(),
-    }
-}
-
-/// One instruction of the compiled pattern.
-#[derive(Debug, Clone)]
-enum Inst {
-    /// consume one character that matches the atom (Char, Any, Short, Class)
-    Consume(Atom),
-    /// a zero-width assertion (Start, End, WordB)
-    Assert(Atom),
-    Split(usize, usize),
-    Jmp(usize),
-    Match,
-}
-
-struct Compiler {
-    prog: Vec<Inst>,
-}
-
-impl Compiler {
-    fn push(&mut self, i: Inst) -> Result<usize, String> {
-        if self.prog.len() >= MAX_INSTS {
-            return Err("a pattern too large to compile (its counted repeats expand too far)".into());
-        }
-        self.prog.push(i);
-        Ok(self.prog.len() - 1)
-    }
-    fn alts(&mut self, alts: &[Vec<Item>]) -> Result<(), String> {
-        let mut jumps = vec![];
-        for (k, seq) in alts.iter().enumerate() {
-            if k + 1 == alts.len() {
-                self.seq(seq)?;
-            } else {
-                let split = self.push(Inst::Split(0, 0))?;
-                self.seq(seq)?;
-                jumps.push(self.push(Inst::Jmp(0))?);
-                self.prog[split] = Inst::Split(split + 1, self.prog.len());
-            }
-        }
-        let end = self.prog.len();
-        for j in jumps {
-            self.prog[j] = Inst::Jmp(end);
-        }
-        Ok(())
-    }
-    fn seq(&mut self, seq: &[Item]) -> Result<(), String> {
-        seq.iter().try_for_each(|it| self.item(it))
-    }
-    fn item(&mut self, it: &Item) -> Result<(), String> {
-        for _ in 0..it.min {
-            self.atom(&it.atom)?;
-        }
-        match it.max {
-            None => {
-                let l = self.push(Inst::Split(0, 0))?;
-                self.atom(&it.atom)?;
-                self.push(Inst::Jmp(l))?;
-                self.prog[l] = Inst::Split(l + 1, self.prog.len());
-            }
-            Some(max) => {
-                let mut splits = vec![];
-                for _ in it.min..max {
-                    splits.push(self.push(Inst::Split(0, 0))?);
-                    self.atom(&it.atom)?;
-                }
-                let end = self.prog.len();
-                for sp in splits {
-                    self.prog[sp] = Inst::Split(sp + 1, end);
-                }
-            }
-        }
-        Ok(())
-    }
-    fn atom(&mut self, a: &Atom) -> Result<(), String> {
-        match a {
-            Atom::Group(alts) => self.alts(alts),
-            Atom::Start | Atom::End | Atom::WordB(_) => self.push(Inst::Assert(a.clone())).map(|_| ()),
-            _ => self.push(Inst::Consume(a.clone())).map(|_| ()),
-        }
-    }
-}
-
-fn consumes(a: &Atom, c: char) -> bool {
-    match a {
-        Atom::Char(x) => c == *x,
-        Atom::Any => true,
-        Atom::Short(s) => short_matches(*s, c),
-        Atom::Class { neg, ranges, shorts } => {
-            let inside = ranges.iter().any(|(lo, hi)| (*lo..=*hi).contains(&c))
-                || shorts.iter().any(|s| short_matches(*s, c));
-            inside != *neg
-        }
-        _ => false,
-    }
-}
-
-fn holds(a: &Atom, t: &[char], pos: usize) -> bool {
-    match a {
-        Atom::Start => pos == 0,
-        Atom::End => pos == t.len(),
-        Atom::WordB(want) => {
-            let before = pos > 0 && is_word(t[pos - 1]);
-            let after = t.get(pos).copied().is_some_and(is_word);
-            (before != after) == *want
-        }
-        _ => false,
-    }
-}
+/// The largest compiled program, in bytes (a counted quantifier such as `(a{1000}){1000}` is refused past it).
+const SIZE_LIMIT: usize = 1 << 20;
 
 impl Pattern {
     pub fn parse(src: &str) -> Result<Pattern, String> {
         if src.is_empty() {
             return Err("an empty pattern".into());
         }
-        let chars: Vec<char> = src.chars().collect();
-        let mut p = Parser { s: &chars, i: 0 };
-        let alts = p.alts(0)?;
-        if p.i != chars.len() {
-            return p.err("an unmatched `)`");
-        }
-        let mut c = Compiler { prog: vec![] };
-        c.alts(&alts)?;
-        c.push(Inst::Match)?;
-        Ok(Pattern {
-            prog: c.prog,
-            source: src.to_string(),
-        })
+        let re = regex::RegexBuilder::new(src)
+            .size_limit(SIZE_LIMIT)
+            .dfa_size_limit(SIZE_LIMIT * 8)
+            .build()
+            .map_err(|e| e.to_string().split_whitespace().collect::<Vec<_>>().join(" "))?;
+        Ok(Pattern { re, source: src.to_string() })
     }
-    /// Does the pattern match anywhere in `line`? Err when the line times the program exceeds the step budget.
+    /// Does the pattern match anywhere in `line`?
     pub fn is_match(&self, line: &str) -> Result<bool, String> {
-        let t: Vec<char> = line.chars().collect();
-        let n = self.prog.len();
-        // seen[pc] == pos + 1: pc is already on the list for position pos
-        let mut seen = vec![0usize; n];
-        let (mut clist, mut nlist): (Vec<usize>, Vec<usize>) = (vec![], vec![]);
-        let mut stack: Vec<usize> = vec![];
-        let mut steps = 0usize;
-        let too_costly = || {
-            format!(
-                "the pattern {:?} is too costly to match on a line of {} characters",
-                self.source,
-                t.len()
-            )
-        };
-        // follow the zero-width instructions from `pc` at `pos`, adding every consuming (or Match) one to `list`
-        let mut add = |list: &mut Vec<usize>, pc: usize, pos: usize, steps: &mut usize, seen: &mut Vec<usize>| {
-            stack.push(pc);
-            while let Some(pc) = stack.pop() {
-                *steps += 1;
-                if seen[pc] == pos + 1 {
-                    continue;
-                }
-                seen[pc] = pos + 1;
-                match &self.prog[pc] {
-                    Inst::Jmp(x) => stack.push(*x),
-                    Inst::Split(x, y) => {
-                        stack.push(*y);
-                        stack.push(*x);
-                    }
-                    Inst::Assert(a) => {
-                        if holds(a, &t, pos) {
-                            stack.push(pc + 1);
-                        }
-                    }
-                    Inst::Consume(_) | Inst::Match => list.push(pc),
-                }
-            }
-        };
-        for pos in 0..=t.len() {
-            // a new thread at every position: the match may start anywhere
-            add(&mut clist, 0, pos, &mut steps, &mut seen);
-            for &pc in &clist {
-                steps += 1;
-                match &self.prog[pc] {
-                    Inst::Match => return Ok(true),
-                    Inst::Consume(a) if t.get(pos).is_some_and(|&c| consumes(a, c)) => {
-                        add(&mut nlist, pc + 1, pos + 1, &mut steps, &mut seen);
-                    }
-                    _ => {}
-                }
-            }
-            if steps > STEP_BUDGET {
-                return Err(too_costly());
-            }
-            std::mem::swap(&mut clist, &mut nlist);
-            nlist.clear();
-        }
-        Ok(false)
+        Ok(self.re.is_match(line))
     }
 }
 
@@ -926,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn the_pattern_subset_matches_like_a_regex() {
+    fn patterns_match_like_a_regex() {
         assert!(m("run_turn", "def run_turn(msg):"));
         assert!(m(r"^def \w+\(", "def run_turn(msg):"));
         assert!(!m(r"^def \w+\(", "  def run_turn(msg):"));
@@ -944,7 +516,7 @@ mod tests {
         assert!(m("Foo::bar", "Foo::bar()"));
         assert!(m("(a*)*b", "aaab"));
         assert!(!m("(a*)*b", "aaaa"), "an empty-loop group terminates");
-        for bad in ["(", ")", "[a", "*a", "a**", r"\q", "(?=x)", "a{3,1}", ""] {
+        for bad in ["(", ")", "[a", "*a", r"\q", "(?=x)", "a{3,1}", ""] {
             assert!(Pattern::parse(bad).is_err(), "{bad}");
         }
     }
@@ -963,10 +535,8 @@ mod tests {
         assert_eq!(Pattern::parse(".*q").unwrap().is_match(&long), Ok(false));
         assert_eq!(Pattern::parse("a+$").unwrap().is_match(&long), Ok(true));
         assert_eq!(Pattern::parse("(a|aa)*c").unwrap().is_match(&long), Ok(false));
-        // a large program on a long line is refused, not run for minutes
-        let e = Pattern::parse("a{1000}b").unwrap().is_match(&long).unwrap_err();
-        assert!(e.contains("too costly"), "{e}");
-        assert!(Pattern::parse("(a{1000}){1000}").is_err(), "a program past MAX_INSTS");
+        assert_eq!(Pattern::parse("a{1000}b").unwrap().is_match(&long), Ok(false));
+        assert!(Pattern::parse("(a{1000}){1000}").is_err(), "a program past SIZE_LIMIT");
     }
 
     #[test]

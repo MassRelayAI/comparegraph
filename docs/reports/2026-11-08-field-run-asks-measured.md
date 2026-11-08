@@ -75,7 +75,7 @@ fast on purpose (`docs/reports/2026-10-14-answer-size.md`). The fix builds the r
 - `reach` quality: codanna reports 1,931 entry points for 797 files, a generous heuristic; 26 of 30 test claims came out
   `reached`. A tool registered through an uncalled helper reads as reached.
 - Shim marking on a real ADK clone, and JS/TS barrel files (the provider writes no edge for them).
-- The hand-written regex subset behind `--anchor` and `--expect` against real patterns (no `regex` dependency without a
+- (Resolved after this report: `--anchor` and `--expect` now use the `regex` crate; see `docs/decisions.md`.) Formerly: the hand-written regex subset behind them (no `regex` dependency without a
   ruling).
 
 ## Verdict

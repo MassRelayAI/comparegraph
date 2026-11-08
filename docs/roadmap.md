@@ -155,4 +155,4 @@ The measured asks, most costly first, are in [`reports/2026-11-07-twelve-harness
 14. refuse a blank, comment or docstring line unless `--allow-comment`;
 15. an `out_of_subset` verdict qualifier carrying the upstream path.
 
-Status, 2026-11-08: all 15 asks are answered, ask 1 in part; see the status table in the report. Left open: JS/TS barrel files as shims, MCP exposure of the new claim flags, community peers unscored in `map`, reach unmeasured on a large repo and on decorator or trait dispatch, the hand-written regex subset, and the 80-character vault file-name cap.
+Status, 2026-11-08: all 15 asks are answered, ask 1 in part; see the status table in the report. Left open: JS/TS barrel files as shims, MCP exposure of the new claim flags, community peers unscored in `map`, reach unmeasured on a large repo and on decorator or trait dispatch, and the 80-character vault file-name cap.
