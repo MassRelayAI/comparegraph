@@ -31,7 +31,7 @@ pub struct Cli {
     /// re-root the clone paths a copied store holds, as `FROM=TO` (repeatable): `--root-map /data/repos=D:/repos`
     #[arg(long, global = true, value_name = "FROM=TO")]
     pub root_map: Vec<String>,
-    /// seconds a writer waits for another writer's store lock before failing (default 30; env COMPAREGRAPH_WAIT)
+    /// seconds a writer waits for another writer's store lock before failing (default 30, at most 3600; env COMPAREGRAPH_WAIT)
     #[arg(long, global = true, value_name = "SECS")]
     pub wait: Option<u64>,
     #[command(subcommand)]
@@ -398,7 +398,12 @@ pub enum Cmd {
 #[derive(Subcommand)]
 pub enum FamilyCmd {
     /// Read a pack directory (rows.md) into the store; features it no longer lists become retired
-    Add { dir: PathBuf },
+    Add {
+        dir: PathBuf,
+        /// add a pack whose front matter says `draft: true` (it would retire every row it does not list)
+        #[arg(long)]
+        accept_draft: bool,
+    },
     /// Registered families
     List,
     /// One family with its features by group
@@ -486,8 +491,28 @@ pub fn run() -> i32 {
     if !cli.root_map.is_empty() {
         std::env::set_var("COMPAREGRAPH_ROOT_MAP", cli.root_map.join(";"));
     }
-    if let Some(w) = cli.wait {
-        std::env::set_var("COMPAREGRAPH_WAIT", w.to_string());
+    // `--wait` past the maximum is refused; a malformed COMPAREGRAPH_WAIT is refused, a huge one is clamped with a note
+    let max = crate::store::MAX_WAIT_SECS;
+    let wait_err = match cli.wait {
+        Some(w) if w > max => Some(format!("--wait {w} is above the maximum of {max} s")),
+        Some(w) => {
+            std::env::set_var("COMPAREGRAPH_WAIT", w.to_string());
+            None
+        }
+        None => match crate::store::wait_env() {
+            Err(e) => Some(e),
+            Ok(Some(w)) if w > max => {
+                eprintln!("comparegraph: COMPAREGRAPH_WAIT={w} is above the maximum; waiting {max} s");
+                None
+            }
+            Ok(_) => None,
+        },
+    };
+    if let Some(msg) = wait_err {
+        let e = AppError::InvalidArguments(msg);
+        eprintln!("comparegraph: {e}");
+        print_line(&serde_json::from_str(&Envelope::err(verb_of(&cli.cmd), &e).to_json()).unwrap(), cli.pretty);
+        return 1;
     }
     // the store's holder note names this verb when another writer times out on the lock
     std::env::set_var("COMPAREGRAPH_VERB", verb_of(&cli.cmd));
@@ -1126,8 +1151,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         Cmd::Family { what } => {
             use crate::application::family as fam;
             match what {
-                FamilyCmd::Add { dir } => {
-                    serde_json::to_value(fam::add_family(&cli.root, dir)?).unwrap()
+                FamilyCmd::Add { dir, accept_draft } => {
+                    serde_json::to_value(fam::add_family_with(&cli.root, dir, *accept_draft)?).unwrap()
                 }
                 FamilyCmd::List => {
                     let items = fam::list_families(&cli.root)?;

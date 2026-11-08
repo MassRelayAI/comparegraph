@@ -161,7 +161,7 @@ fn a_changed_subset_is_never_answered_by_reuse() {
             .success(),
     );
     assert_eq!(b["reused"], false);
-    assert_eq!(strs(&b["exclude"]), vec!["gui", "*.rb"]);
+    assert_eq!(strs(&b["exclude"]), vec!["*.rb", "gui"]);
     // the identical subset again is reused
     let b = data(
         &cc(ws.path())
@@ -170,7 +170,25 @@ fn a_changed_subset_is_never_answered_by_reuse() {
             .success(),
     );
     assert_eq!(b["reused"], true);
-    assert_eq!(strs(&b["exclude"]), vec!["gui", "*.rb"]);
+    assert_eq!(strs(&b["exclude"]), vec!["*.rb", "gui"]);
+}
+
+#[test]
+fn the_same_globs_in_another_order_or_repeated_are_reused() {
+    let ws = tempfile::tempdir().unwrap();
+    let c = clone();
+    cc(ws.path()).arg("add").arg(c.path()).args(["--name", "x"]).assert().success();
+    let b = data(&cc(ws.path()).args(["build", "x", "--exclude", "gui", "--exclude", "*.rb"]).assert().success());
+    assert_eq!(b["reused"], false);
+    // the subset is recorded sorted and deduplicated
+    assert_eq!(strs(&b["exclude"]), vec!["*.rb", "gui"]);
+    let b = data(
+        &cc(ws.path())
+            .args(["build", "x", "--exclude", "*.rb", "--exclude", "gui", "--exclude", "gui"])
+            .assert()
+            .success(),
+    );
+    assert_eq!(b["reused"], true, "{b}");
 }
 
 #[test]

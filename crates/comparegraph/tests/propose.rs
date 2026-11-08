@@ -314,3 +314,72 @@ fn from_claims_refuses_bad_input_before_writing() {
         .assert()
         .failure();
 }
+
+#[test]
+fn from_claims_refuses_a_verdict_outside_the_four_naming_the_line() {
+    let (ws, _k, _p) = standard();
+    let dir = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let rows = dir.path().join("rows.jsonl");
+    std::fs::write(
+        &rows,
+        "{\"repo\":\"one\",\"feature\":\"x.a\",\"verdict\":\"has\"}\n{\"repo\":\"one\",\"feature\":\"x.b\",\"verdict\":\"has|partial\"}\n",
+    )
+    .unwrap();
+    let a = from_claims(ws.path(), &rows, out.path()).code(1);
+    let s = String::from_utf8_lossy(&a.get_output().stdout).to_string();
+    assert!(s.contains("invalid_arguments") && s.contains("line 2") && s.contains("verdict"), "{s}");
+    assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0, "nothing is written when a row is refused");
+}
+
+#[test]
+fn every_from_claims_draft_round_trips_through_parse_pack() {
+    let (ws, _k, _p) = standard();
+    // a repo whose name carries a pipe: it lands in the definition cell
+    let c = clone_with(&[("src/a.py", "def f():\n    return 1\n")]);
+    add_repo(ws.path(), c.path(), Some("odd|name"), false).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let rows = dir.path().join("rows.jsonl");
+    std::fs::write(
+        &rows,
+        "{\"feature\":\"x.a\",\"title\":\"A | b\\nc\",\"verdict\":\" PARTIAL \",\"note\":\"n | m\",\"at\":[\"p|q:1\"]}\n\
+         {\"feature\":\"Plain name\",\"group\":\"G | H\",\"verdict\":\"unknown\"}\n\
+         {\"feature\":\"x.c\"}\n",
+    )
+    .unwrap();
+    for repo in ["one", "odd|name"] {
+        let out = tempfile::tempdir().unwrap();
+        let a = cc(ws.path())
+            .args(["family", "propose", "fam", "--from-claims", repo, "--rows"])
+            .arg(&rows)
+            .arg("--out")
+            .arg(out.path())
+            .assert()
+            .success();
+        let v: serde_json::Value = serde_json::from_slice(&a.get_output().stdout).unwrap();
+        let path = v["data"]["draft_path"].as_str().unwrap();
+        let text = std::fs::read_to_string(path).unwrap();
+        let pack = parse_pack(&text).unwrap_or_else(|e| panic!("{repo}: {e}\n{text}"));
+        assert_eq!(pack.rows.len(), 3, "{text}");
+    }
+}
+
+#[test]
+fn family_add_refuses_a_draft_pack_unless_accepted() {
+    let (ws, _k, _p) = standard();
+    let dir = tempfile::tempdir().unwrap();
+    let rows = dir.path().join("rows.jsonl");
+    std::fs::write(&rows, ROWS).unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let a = from_claims(ws.path(), &rows, out.path()).success();
+    let v: serde_json::Value = serde_json::from_slice(&a.get_output().stdout).unwrap();
+    // the draft renamed to rows.md and added as-is would replace fam's rows (net.retry and net.auth retired)
+    std::fs::rename(v["data"]["draft_path"].as_str().unwrap(), out.path().join("rows.md")).unwrap();
+    let a = cc(ws.path()).args(["family", "add"]).arg(out.path()).assert().code(1);
+    let s = String::from_utf8_lossy(&a.get_output().stdout).to_string();
+    assert!(s.contains("draft: true") && s.contains("--accept-draft"), "{s}");
+    let show = cc(ws.path()).args(["family", "show", "fam"]).assert().success();
+    let s = String::from_utf8_lossy(&show.get_output().stdout).to_string();
+    assert!(s.contains("net.retry") && !s.contains("tools.tool-search"), "the refused draft changed the family: {s}");
+    cc(ws.path()).args(["family", "add", "--accept-draft"]).arg(out.path()).assert().success();
+}

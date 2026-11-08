@@ -36,6 +36,9 @@ pub struct Pack {
     pub family: String,
     pub description: String,
     pub rows: Vec<PackRow>,
+    /// front matter `draft: true` (a `family propose --from-claims` draft): `family add` refuses it without `--accept-draft`
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub draft: bool,
 }
 
 fn bad(msg: String) -> AppError {
@@ -59,7 +62,7 @@ pub fn parse_pack(text: &str) -> Result<Pack> {
     if lines.next().map(str::trim) != Some("---") {
         return Err(bad("rows.md must start with a `---` front matter".into()));
     }
-    let (mut family, mut description) = (String::new(), String::new());
+    let (mut family, mut description, mut draft) = (String::new(), String::new(), false);
     let mut closed = false;
     for l in lines.by_ref() {
         if l.trim() == "---" {
@@ -70,6 +73,7 @@ pub fn parse_pack(text: &str) -> Result<Pack> {
             match k.trim() {
                 "family" => family = v.trim().to_string(),
                 "description" => description = v.trim().to_string(),
+                "draft" => draft = v.trim() == "true",
                 _ => {}
             }
         }
@@ -166,6 +170,7 @@ pub fn parse_pack(text: &str) -> Result<Pack> {
         family,
         description,
         rows,
+        draft,
     })
 }
 
@@ -190,12 +195,25 @@ pub fn snapshot_present(root: &Path, definition_path: &str) -> bool {
 }
 
 pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
+    add_family_with(root, dir, false)
+}
+/// `accept_draft`: add a pack whose front matter says `draft: true`; without it such a pack is refused, because a draft
+/// lists only the rows it drafts and adding it would retire every other row of the family.
+pub fn add_family_with(root: &Path, dir: &Path, accept_draft: bool) -> Result<FamilyAdded> {
     let dir = dir
         .canonicalize()
         .map_err(|e| AppError::Io(dir.to_path_buf(), e))?;
     let file = dir.join("rows.md");
     let text = std::fs::read_to_string(&file).map_err(|e| AppError::Io(file.clone(), e))?;
     let pack = parse_pack(&text)?; // validate everything before the store is touched
+    if pack.draft && !accept_draft {
+        return Err(bad(format!(
+            "{} has `draft: true` in its front matter: adding it would retire every row of `{}` it does not list; merge \
+             its rows into the family's rows.md, or pass --accept-draft to add it as the whole pack",
+            file.display(),
+            pack.family
+        )));
+    }
     let store = Store::open(root)?;
     // IMMEDIATE takes the write lock up front, where the busy timeout (`--wait`) applies. A deferred transaction that
     // reads first holds a read snapshot; if another writer commits meanwhile, the upgrade fails at once (SQLITE_BUSY,

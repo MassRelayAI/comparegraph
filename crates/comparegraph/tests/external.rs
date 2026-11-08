@@ -369,3 +369,28 @@ fn a_subset_filters_an_external_providers_nodes_and_says_so() {
     let out = cc(w.path()).args(["build", "a", "--provider", "fake", "--include", "src/**"]).assert().success().get_output().stdout.clone();
     assert_eq!(json(&out)["data"]["nodes"], 2);
 }
+
+/// A plugin path written `src\a.ts` or `./src/a.ts` is the same file as `src/a.ts`: `--exclude src` drops it too.
+#[test]
+fn a_subset_matches_backslash_and_dot_slash_plugin_paths() {
+    let body = r#"#!/usr/bin/env python3
+import json, sys
+req = json.loads(sys.stdin.readline())
+if req["op"] == "capabilities":
+    print(json.dumps({"ok": True, "data": {"languages": ["typescript"], "edge_kinds": ["calls"], "communities": False, "embeddings": False}}))
+    sys.exit(0)
+n = lambda qn, p: {"kind": "function", "name": "x", "qualified_name": qn, "path": p, "language": "typescript"}
+nodes = [n("a::1", "src\\a.ts"), n("a::2", "./src/a.ts"), n("a::3", ".\\src\\a.ts"), n("k::1", "LICENSE")]
+print(json.dumps({"ok": True, "data": {"nodes": nodes, "edges": [], "files_parsed": 1}}))
+"#;
+    let tools = tempfile::tempdir().unwrap();
+    let cmd = script(tools.path(), "p", body);
+    manifest(tools.path());
+    let w = ws(&cmd);
+    let _c = added(w.path());
+    let out = cc(w.path()).args(["build", "a", "--provider", "fake", "--exclude", "src"]).assert().success().get_output().stdout.clone();
+    let v = json(&out);
+    assert_eq!(v["data"]["nodes"], 1, "only LICENSE is outside src: {v}");
+    let out = cc(w.path()).args(["build", "a", "--provider", "fake", "--include", "src/**"]).assert().success().get_output().stdout.clone();
+    assert_eq!(json(&out)["data"]["nodes"], 3);
+}

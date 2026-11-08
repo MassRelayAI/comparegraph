@@ -24,7 +24,7 @@ pub enum StoreError {
     #[error("sqlite: {0}")]
     Sqlite(rusqlite::Error),
     /// SQLite's busy timeout (`--wait` / `COMPAREGRAPH_WAIT`) ran out while another connection held the write lock.
-    #[error("timed out after {waited_secs} s waiting for the store lock ({holders}); retry, or raise --wait / COMPAREGRAPH_WAIT")]
+    #[error("{}", locked_message(*.waited_secs, .holders))]
     Locked { waited_secs: u64, holders: String },
     /// SQLITE_BUSY_SNAPSHOT: a transaction that read, then wrote, found the store changed under it. SQLite fails at
     /// once here (no wait can help), so the message must not claim a timeout.
@@ -52,11 +52,28 @@ impl From<rusqlite::Error> for StoreError {
 /// concurrent claim batch or build to commit; the old fixed 5 s made writers fail under 3-5 concurrent agents.
 pub const DEFAULT_WAIT_SECS: u64 = 30;
 /// Seconds a writer waits for the store lock: `COMPAREGRAPH_WAIT` (set by `--wait`), else [`DEFAULT_WAIT_SECS`].
+/// Clamped to [`MAX_WAIT_SECS`] (rusqlite panics on a busy timeout past i32 milliseconds); a malformed value falls back
+/// to the default here, and the CLI refuses it before any store is opened ([`wait_env`]).
 pub fn wait_secs() -> u64 {
-    std::env::var("COMPAREGRAPH_WAIT")
-        .ok()
-        .and_then(|v| v.trim().parse().ok())
-        .unwrap_or(DEFAULT_WAIT_SECS)
+    wait_env().ok().flatten().unwrap_or(DEFAULT_WAIT_SECS).min(MAX_WAIT_SECS)
+}
+/// The longest `--wait` / `COMPAREGRAPH_WAIT` accepted: an hour.
+pub const MAX_WAIT_SECS: u64 = 3600;
+/// `COMPAREGRAPH_WAIT` as given: `Ok(None)` when unset, `Err` naming the value when it is not a whole number of seconds.
+pub fn wait_env() -> std::result::Result<Option<u64>, String> {
+    match std::env::var("COMPAREGRAPH_WAIT") {
+        Err(_) => Ok(None),
+        Ok(v) => v.trim().parse().map(Some).map_err(|_| {
+            format!("COMPAREGRAPH_WAIT={v:?} is not a whole number of seconds (0..={MAX_WAIT_SECS})")
+        }),
+    }
+}
+fn locked_message(waited_secs: u64, holders: &str) -> String {
+    if waited_secs == 0 {
+        format!("the store lock is held and --wait is 0, so this did not wait ({holders}); retry, or raise --wait / COMPAREGRAPH_WAIT")
+    } else {
+        format!("timed out after {waited_secs} s waiting for the store lock ({holders}); retry, or raise --wait / COMPAREGRAPH_WAIT")
+    }
 }
 /// SQLITE_BUSY_SNAPSHOT (extended code 517): returned immediately, never after a wait.
 fn is_snapshot_conflict(e: &rusqlite::Error) -> bool {
@@ -117,6 +134,136 @@ fn pid_alive(pid: u32) -> bool {
 #[cfg(not(unix))]
 fn pid_alive(_pid: u32) -> bool {
     true
+}
+
+/// Columns added after a table first shipped (SCHEMA_VERSION stays 1): (table, column, declaration, the value a store
+/// that cannot be migrated reads). They are not in schema.sql, so a fresh store gains them here too.
+const ADDED_COLUMNS: &[(&str, &str, &str, &str)] = &[
+    // Plan 8 lane C
+    ("feature", "synonyms", "TEXT NOT NULL DEFAULT ''", "''"),
+    // family snapshot
+    ("family", "definition_hash", "TEXT NOT NULL DEFAULT ''", "''"),
+    ("family", "source_path", "TEXT NOT NULL DEFAULT ''", "''"),
+    // field run 2026-11-07 items 6 and 7: a repo's notes and default subset, a run's subset
+    ("repo", "source_commit", "TEXT", "NULL"),
+    ("repo", "moved_to", "TEXT", "NULL"),
+    ("repo", "include_json", "TEXT NOT NULL DEFAULT '[]'", "'[]'"),
+    ("repo", "exclude_json", "TEXT NOT NULL DEFAULT '[]'", "'[]'"),
+    ("run", "include_json", "TEXT NOT NULL DEFAULT '[]'", "'[]'"),
+    ("run", "exclude_json", "TEXT NOT NULL DEFAULT '[]'", "'[]'"),
+    // the git head (short) of the clone the run read; `claim --at-commit` is checked against it
+    ("run", "head", "TEXT", "NULL"),
+    // field-run asks 7, 15 and 5: `claim --at-commit`, `out_of_subset`, and `reach` with its path and note
+    ("claim", "at_commit", "TEXT", "NULL"),
+    ("claim", "out_of_subset", "TEXT", "NULL"),
+    ("claim", "reach", "TEXT", "NULL"),
+    ("claim", "reach_path", "TEXT", "NULL"),
+    ("claim", "reach_note", "TEXT", "NULL"),
+];
+fn table_columns(conn: &Connection, table: &str) -> rusqlite::Result<Vec<String>> {
+    let mut st = conn.prepare(&format!("PRAGMA main.table_info({table})"))?;
+    let names = st.query_map([], |r| r.get::<_, String>(1))?.collect();
+    names
+}
+/// The `IF NOT EXISTS` objects schema.sql declares (tables, indexes, triggers).
+fn schema_objects() -> Vec<&'static str> {
+    SCHEMA
+        .split("IF NOT EXISTS")
+        .skip(1)
+        .filter_map(|rest| rest.split(|c: char| !(c.is_alphanumeric() || c == '_')).find(|w| !w.is_empty()))
+        .collect()
+}
+/// True when this store lacks an object of schema.sql, an added column, or its schema_version row. Checked without a
+/// lock, so an up-to-date store (every open after the first) never takes the write lock here.
+fn needs_migration(conn: &Connection) -> rusqlite::Result<bool> {
+    let mut st = conn.prepare("SELECT name FROM main.sqlite_master")?;
+    let present: std::collections::HashSet<String> = st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    if schema_objects().iter().any(|o| !present.contains(*o)) {
+        return Ok(true);
+    }
+    for (table, col, _, _) in ADDED_COLUMNS {
+        if !table_columns(conn, table)?.iter().any(|n| n == col) {
+            return Ok(true);
+        }
+    }
+    let v: Option<String> = conn
+        .query_row("SELECT value FROM main.meta WHERE key = 'schema_version'", [], |r| r.get(0))
+        .optional()?;
+    Ok(v.is_none())
+}
+/// The schema.sql objects, the added columns and the schema_version row, under BEGIN IMMEDIATE: concurrent openers
+/// of an old store wait on the busy timeout, then find the columns present. A `duplicate column name` (another
+/// opener added it between the check and the ALTER) counts as already migrated.
+fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let res = (|| {
+        conn.execute_batch(SCHEMA)?;
+        for (table, col, ty, _) in ADDED_COLUMNS {
+            if table_columns(conn, table)?.iter().any(|n| n == col) {
+                continue;
+            }
+            match conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty}")) {
+                Err(e) if e.to_string().contains("duplicate column name") => {}
+                other => other?,
+            }
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?1)",
+            params![SCHEMA_VERSION.to_string()],
+        )?;
+        Ok(())
+    })();
+    match res {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
+}
+/// A read-only store that predates an added column: a temp view per such table, named as the table (SQLite resolves
+/// `temp` before `main`), adds each missing column with its default. Nothing in the store file is written.
+fn shadow_missing_columns(conn: &Connection) -> rusqlite::Result<()> {
+    let mut tables: Vec<&str> = ADDED_COLUMNS.iter().map(|c| c.0).collect();
+    tables.dedup();
+    for table in tables {
+        let have = table_columns(conn, table)?;
+        if have.is_empty() {
+            continue;
+        }
+        let extra: Vec<String> = ADDED_COLUMNS
+            .iter()
+            .filter(|(t, c, _, _)| *t == table && !have.iter().any(|n| n == c))
+            .map(|(_, c, _, d)| format!(", {d} AS {c}"))
+            .collect();
+        if !extra.is_empty() {
+            conn.execute_batch(&format!("CREATE TEMP VIEW {table} AS SELECT *{} FROM main.{table}", extra.concat()))?;
+        }
+    }
+    Ok(())
+}
+/// Refuses a store whose schema_version this binary does not know; a store without one (fresh) passes.
+fn check_schema_version(conn: &Connection, path: &Path) -> Result<()> {
+    let has_meta = conn
+        .query_row("SELECT 1 FROM main.sqlite_master WHERE type = 'table' AND name = 'meta'", [], |_| Ok(()))
+        .optional()?
+        .is_some();
+    if !has_meta {
+        return Ok(());
+    }
+    let existing: Option<String> = conn
+        .query_row("SELECT value FROM main.meta WHERE key = 'schema_version'", [], |r| r.get(0))
+        .optional()?;
+    match existing.as_deref().map(|v| v.parse::<i64>()) {
+        None => Ok(()),
+        Some(Ok(v)) if v == SCHEMA_VERSION => Ok(()),
+        Some(other) => Err(StoreError::Schema(format!(
+            "{} has schema_version {:?}, this binary needs {}",
+            path.display(),
+            other,
+            SCHEMA_VERSION
+        ))),
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommunityRow {
@@ -242,9 +389,13 @@ impl Store {
                 root.join(".comparegraph").display()
             )));
         }
-        Store::open(root)
+        Store::open_as(root, true)
     }
     pub fn open(root: &Path) -> Result<Store> {
+        Store::open_as(root, false)
+    }
+    /// `reader`: a read verb, which still opens a read-only store that would need migrating (see `shadow_missing_columns`).
+    fn open_as(root: &Path, reader: bool) -> Result<Store> {
         let dir = root.join(".comparegraph");
         std::fs::create_dir_all(&dir).map_err(|e| StoreError::Io {
             path: dir.clone(),
@@ -268,104 +419,27 @@ impl Store {
         // the busy timeout first, so every statement below (and every write after) waits for a held lock
         conn.busy_timeout(std::time::Duration::from_secs(wait_secs()))
             .map_err(open_err)?;
-        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
-            .map_err(open_err)?;
-        conn.execute_batch(SCHEMA).map_err(open_err)?;
-        // additive column (Plan 8 lane C): a store created before it gains it here; SCHEMA_VERSION stays 1
-        let has_synonyms = {
-            let mut st = conn.prepare("PRAGMA table_info(feature)").map_err(open_err)?;
-            let names = st
-                .query_map([], |r| r.get::<_, String>(1))
-                .map_err(open_err)?
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(open_err)?;
-            names.iter().any(|n| n == "synonyms")
-        };
-        if !has_synonyms {
-            conn.execute_batch("ALTER TABLE feature ADD COLUMN synonyms TEXT NOT NULL DEFAULT ''")
-                .map_err(open_err)?;
+        let read_only = conn.is_readonly(rusqlite::DatabaseName::Main).map_err(open_err)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;").map_err(open_err)?;
+        if !read_only {
+            conn.execute_batch("PRAGMA journal_mode = WAL;").map_err(open_err)?;
         }
-        // additive columns (family snapshot): same pattern; older stores keep their rows and gain empty values
-        for col in ["definition_hash", "source_path"] {
-            let has = {
-                let mut st = conn.prepare("PRAGMA table_info(family)").map_err(open_err)?;
-                let names = st
-                    .query_map([], |r| r.get::<_, String>(1))
-                    .map_err(open_err)?
-                    .collect::<std::result::Result<Vec<_>, _>>()
-                    .map_err(open_err)?;
-                names.iter().any(|n| n == col)
-            };
-            if !has {
-                conn.execute_batch(&format!("ALTER TABLE family ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"))
-                    .map_err(open_err)?;
-            }
-        }
-        // additive columns (field run 2026-11-07 items 6 and 7): a repo's notes and default subset, a run's subset
-        for (table, col, ty) in [
-            ("repo", "source_commit", "TEXT"),
-            ("repo", "moved_to", "TEXT"),
-            ("repo", "include_json", "TEXT NOT NULL DEFAULT '[]'"),
-            ("repo", "exclude_json", "TEXT NOT NULL DEFAULT '[]'"),
-            ("run", "include_json", "TEXT NOT NULL DEFAULT '[]'"),
-            ("run", "exclude_json", "TEXT NOT NULL DEFAULT '[]'"),
-            // the git head (short) of the clone the run read; `claim --at-commit` is checked against it
-            ("run", "head", "TEXT"),
-        ] {
-            let has = {
-                let mut st = conn.prepare(&format!("PRAGMA table_info({table})")).map_err(open_err)?;
-                let names = st
-                    .query_map([], |r| r.get::<_, String>(1))
-                    .map_err(open_err)?
-                    .collect::<std::result::Result<Vec<_>, _>>()
-                    .map_err(open_err)?;
-                names.iter().any(|n| n == col)
-            };
-            if !has {
-                conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty}"))
-                    .map_err(open_err)?;
-            }
-        }
-        // additive claim columns (field-run asks 7 and 15): `claim --at-commit` and the `out_of_subset` qualifier;
-        // NULL on every older row, and on a fresh store too (they are not in schema.sql)
-        {
-            let mut st = conn.prepare("PRAGMA table_info(claim)").map_err(open_err)?;
-            let names = st
-                .query_map([], |r| r.get::<_, String>(1))
-                .map_err(open_err)?
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(open_err)?;
-            drop(st);
-            // field-run ask 5: `reach` (reached|unreached|unknown), its path (JSON array) and note, written with the claim
-            for col in ["at_commit", "out_of_subset", "reach", "reach_path", "reach_note"] {
-                if !names.iter().any(|n| n == col) {
-                    conn.execute_batch(&format!("ALTER TABLE claim ADD COLUMN {col} TEXT"))
-                        .map_err(open_err)?;
+        // a store this binary cannot read is refused before anything in it is changed
+        check_schema_version(&conn, &path)?;
+        if needs_migration(&conn).map_err(open_err)? {
+            if read_only {
+                if !reader {
+                    return Err(StoreError::Schema(format!(
+                        "{} is read-only and predates columns this binary adds, so a writer cannot use it; \
+                         make it writable (a read verb still answers from it)",
+                        path.display()
+                    )));
                 }
-            }
-        }
-        let existing: Option<String> = conn
-            .query_row(
-                "SELECT value FROM meta WHERE key = 'schema_version'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()?;
-        match existing.as_deref().map(|v| v.parse::<i64>()) {
-            None => {
-                conn.execute(
-                    "INSERT INTO meta(key, value) VALUES ('schema_version', ?1)",
-                    params![SCHEMA_VERSION.to_string()],
-                )?;
-            }
-            Some(Ok(v)) if v == SCHEMA_VERSION => {}
-            Some(other) => {
-                return Err(StoreError::Schema(format!(
-                    "{} has schema_version {:?}, this binary needs {}",
-                    path.display(),
-                    other,
-                    SCHEMA_VERSION
-                )))
+                // read verbs still answer: the missing columns read as their defaults through temp views
+                shadow_missing_columns(&conn).map_err(open_err)?;
+            } else {
+                migrate(&conn).map_err(open_err)?;
+                check_schema_version(&conn, &path)?;
             }
         }
         // a note naming this process and verb, so a writer that times out can say who has the store open

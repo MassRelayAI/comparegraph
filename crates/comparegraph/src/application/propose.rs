@@ -241,6 +241,8 @@ pub struct FromClaims {
     /// `None` when nothing is missing (no file is written)
     pub draft_path: Option<String>,
     pub rows_md_exists: bool,
+    /// how to use the draft: merge its rows into the family's rows.md; added as-is it would retire every other row
+    pub merge_note: &'static str,
     /// rows read for this repo (rows without a `repo` count as this repo's)
     pub rows: usize,
     /// rows naming another repo, skipped
@@ -330,6 +332,13 @@ pub fn from_claims(
             continue;
         }
         rows += 1;
+        if let Some(v) = row.verdict.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            if !matches!(v.to_ascii_lowercase().as_str(), "has" | "partial" | "none" | "unknown") {
+                return Err(AppError::InvalidArguments(format!(
+                    "{rows_source}: line {line_no}: verdict `{v}` is not one of has|partial|none|unknown"
+                )));
+            }
+        }
         let (id, group) = draft_id(&row).ok_or_else(|| {
             AppError::InvalidArguments(format!(
                 "{rows_source}: line {line_no}: feature `{}` gives no id",
@@ -361,10 +370,10 @@ pub fn from_claims(
         if let Some(v) = row
             .verdict
             .as_deref()
-            .map(str::trim)
+            .map(|v| v.trim().to_ascii_lowercase())
             .filter(|v| !v.is_empty())
         {
-            d.verdicts.push(v.to_string());
+            d.verdicts.push(v);
         }
         d.at.extend(
             row.at
@@ -390,8 +399,9 @@ pub fn from_claims(
         None
     } else {
         let mut text = format!(
-            "---\nfamily: {family}\ndraft: true\ndescription: draft: {} feature ids that {repo}'s scored rows name and {family} lacks; define each, then merge the rows into rows.md\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n",
-            drafts.len()
+            "---\nfamily: {family}\ndraft: true\ndescription: draft: {} feature ids that {}'s scored rows name and {family} lacks; define each, then merge the rows into rows.md (adding this file as rows.md would retire every other row of {family}; `family add` refuses it without --accept-draft)\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n",
+            drafts.len(),
+            cell(repo, 120)
         );
         for d in &drafts {
             let verdicts = if d.verdicts.is_empty() {
@@ -405,7 +415,8 @@ pub fn from_claims(
                 .map(|l| l.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            let mut def = format!("draft: {repo} {verdicts} (rows line {lines})");
+            // every free-text part goes through `cell`: a `|` in the repo name would split the row
+            let mut def = format!("draft: {} {verdicts} (rows line {lines})", cell(repo, 120));
             if let Some(a) = d.at.first() {
                 def.push_str(&format!("; cited {}", cell(a, 120)));
             }
@@ -434,6 +445,8 @@ pub fn from_claims(
         rows_source: rows_source.to_string(),
         draft_path,
         rows_md_exists: dir.join("rows.md").exists(),
+        merge_note: "merge the draft rows into the family's rows.md; adding the draft as the pack would retire every row it \
+                     does not list (its front matter says `draft: true`, so `family add` refuses it without --accept-draft)",
         rows,
         other_repo_rows,
         covered: covered.into_iter().collect(),
