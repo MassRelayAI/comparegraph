@@ -1,7 +1,7 @@
 //! `map` and `relate`: per-feature candidates from the graph (idf-weighted ranking of the nodes, `termscore.rs`, plus
 //! communities whose label or keywords carry a term), and a relatedness band per (clone, family). Candidates are never verdicts.
 use super::search::Hit;
-use super::termscore::{feature_tokens, tok_match, RunIndex};
+use super::termscore::{feature_tokens, tok_match, Ranked, RunIndex};
 use super::{AppError, Result};
 use crate::store::{FeatureRow, Store};
 use rusqlite::params;
@@ -29,6 +29,9 @@ pub struct SymbolCandidate {
     pub entry_hops: Option<u32>,
     /// other candidates in the same community whose names carry a term (reported, not scored: `termscore.rs`)
     pub community_peers: usize,
+    /// set on a re-export shim (see `Shims`): the qualified name of the module it re-exports. The shim's ranking slot
+    /// went to that target, listed above it; the shim itself takes no slot of `--limit`. Null otherwise.
+    pub shim_of: Option<String>,
     /// the name carries one of the feature's own terms; what `relate` counts (see `termscore::Term::names_feature`)
     #[serde(skip)]
     pub named: bool,
@@ -93,39 +96,149 @@ fn latest_done(store: &Store, repo: &str) -> Result<(i64, i64)> {
     Ok((rid.0, run.id.unwrap().0))
 }
 
+/// Re-export shims of a run, from data the store already holds: a `file`/`module` node that contains no symbol (no
+/// `contains` edge out), calls nothing at module level (no `calls` edge out) and imports at least one file of the clone
+/// (`imports` edges, which the reference provider writes for Python `from x import y` and Rust `mod`/`use`). Its body can
+/// only be imports and plain assignments (`__all__ = [...]`): a compatibility module. The target is its one imported file,
+/// or, when it imports several, the one whose stem is the shim's own (`agents/remote_agent.py` re-exporting
+/// `a2a/remote_agent.py` among others); several or none: not a shim. Chains are followed at most `MAX_CHAIN` shims deep;
+/// a cycle never reaches a non-shim within that bound, so it marks nothing. Keyed by index into `RunIndex::nodes`; a BTreeMap, so iteration is sorted.
+#[derive(Debug, Default)]
+pub(crate) struct Shims {
+    target: std::collections::BTreeMap<usize, usize>,
+}
+const MAX_CHAIN: usize = 3;
+
+/// File stem a shim and its target share: the base name without extension, or the directory for a package file.
+fn stem(path: &str) -> &str {
+    let mut parts = path.rsplit('/');
+    let base = parts.next().unwrap_or(path);
+    let s = base.split('.').next().unwrap_or(base);
+    if matches!(s, "__init__" | "index" | "mod" | "lib") {
+        parts.next().unwrap_or(s)
+    } else {
+        s
+    }
+}
+
+impl Shims {
+    pub(crate) fn load(store: &Store, idx: &RunIndex) -> Result<Self> {
+        let at: std::collections::HashMap<i64, usize> = idx.nodes.iter().enumerate().map(|(i, n)| (n.id, i)).collect();
+        let mut st = store.conn().prepare(
+            "SELECT DISTINCT n.id, e.target_node_id FROM node n \
+             JOIN edge e ON e.run_id = n.run_id AND e.source_node_id = n.id AND e.kind = 'imports' \
+             WHERE n.run_id = ?1 AND n.kind IN ('file', 'module') AND e.target_node_id <> n.id \
+             AND NOT EXISTS (SELECT 1 FROM edge x WHERE x.run_id = ?1 AND x.source_node_id = n.id AND x.kind IN ('contains', 'calls')) \
+             ORDER BY n.id, e.target_node_id",
+        )?;
+        let mut imports: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+        for r in st.query_map(params![idx.run], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+            let (s, t) = r?;
+            if let (Some(&s), Some(&t)) = (at.get(&s), at.get(&t)) {
+                imports.entry(s).or_default().push(t);
+            }
+        }
+        Ok(Self::from_imports(idx, &imports))
+    }
+
+    fn from_imports(idx: &RunIndex, imports: &std::collections::BTreeMap<usize, Vec<usize>>) -> Self {
+        let direct: std::collections::BTreeMap<usize, usize> = imports
+            .iter()
+            .filter_map(|(&s, ts)| {
+                let pick: Vec<usize> = if ts.len() == 1 {
+                    ts.clone()
+                } else {
+                    let own = stem(&idx.nodes[s].path);
+                    ts.iter().copied().filter(|&t| stem(&idx.nodes[t].path) == own).collect()
+                };
+                (pick.len() == 1).then(|| (s, pick[0]))
+            })
+            .collect();
+        let target = direct
+            .keys()
+            .filter_map(|&s| {
+                let mut t = direct[&s];
+                for _ in 0..MAX_CHAIN {
+                    match direct.get(&t) {
+                        Some(&next) => t = next,
+                        None => return Some((s, t)),
+                    }
+                }
+                None
+            })
+            .collect();
+        Self { target }
+    }
+}
+
+fn candidate(repo: &str, idx: &RunIndex, r: &Ranked, shim_of: Option<String>) -> SymbolCandidate {
+    let n = &idx.nodes[r.i];
+    SymbolCandidate {
+        hit: Hit {
+            repo: repo.into(),
+            qualified_name: n.qn.clone(),
+            kind: n.kind.to_string(),
+            path: n.path.to_string(),
+            line_start: n.ls,
+            line_end: n.le,
+            community: idx.community_label(r.i),
+            score: r.score,
+            label: "candidate",
+        },
+        matched: r.matched.clone(),
+        reach: r.reach.label(),
+        entry_hops: r.reach.hops(),
+        community_peers: r.peers,
+        shim_of,
+        named: r.named,
+    }
+}
+
 fn map_feature(
     repo: &str,
     idx: &RunIndex,
+    shims: &Shims,
     f: &FeatureRow,
     limit: usize,
 ) -> Result<FeatureMap> {
     let wt = idx.terms(f);
     let terms: Vec<String> = wt.iter().filter(|t| t.informative()).map(|t| t.text.clone()).collect();
-    let symbols: Vec<SymbolCandidate> = idx
-        .rank(f, &wt, limit)
-        .into_iter()
-        .map(|r| {
-            let n = &idx.nodes[r.i];
-            SymbolCandidate {
-                hit: Hit {
-                    repo: repo.into(),
-                    qualified_name: n.qn.clone(),
-                    kind: n.kind.to_string(),
-                    path: n.path.to_string(),
-                    line_start: n.ls,
-                    line_end: n.le,
-                    community: idx.community_label(r.i),
-                    score: r.score,
-                    label: "candidate",
-                },
-                matched: r.matched,
-                reach: r.reach.label(),
-                entry_hops: r.reach.hops(),
-                community_peers: r.peers,
-                named: r.named,
-            }
-        })
-        .collect();
+    // with no shim this is `rank(.., limit)` exactly; with shims the whole ranked pool (rank sorts it whole either way) is
+    // walked so a target ranked below its shim, or not ranked at all, can take the shim's slot
+    let pool = idx.rank(f, &wt, if shims.target.is_empty() { limit } else { usize::MAX });
+    let mut symbols: Vec<SymbolCandidate> = vec![];
+    let mut shown: std::collections::HashSet<usize> = Default::default();
+    let mut slots = 0;
+    for r in &pool {
+        if slots == limit {
+            break;
+        }
+        if shown.contains(&r.i) {
+            continue;
+        }
+        let Some(&t) = shims.target.get(&r.i) else {
+            shown.insert(r.i);
+            symbols.push(candidate(repo, idx, r, None));
+            slots += 1;
+            continue;
+        };
+        if shown.insert(t) {
+            // the target, at the shim's slot and at least the shim's score; its own matched terms when it ranked
+            let own = pool.iter().find(|p| p.i == t);
+            let tr = Ranked {
+                i: t,
+                score: own.map_or(r.score, |o| o.score.max(r.score)),
+                matched: own.map(|o| o.matched.clone()).unwrap_or_default(),
+                named: own.is_some_and(|o| o.named),
+                reach: idx.reach(t),
+                peers: own.map_or(0, |o| o.peers),
+            };
+            symbols.push(candidate(repo, idx, &tr, None));
+            slots += 1;
+        }
+        shown.insert(r.i);
+        symbols.push(candidate(repo, idx, r, Some(idx.nodes[t].qn.clone())));
+    }
     let mut communities: Vec<CommunityCandidate> = idx
         .communities()
         .filter_map(|(label, have)| {
@@ -183,9 +296,10 @@ pub fn map(
         }
     }
     let idx = RunIndex::load(&store, run)?;
+    let shims = Shims::load(&store, &idx)?;
     let features = feats
         .iter()
-        .map(|f| map_feature(repo, &idx, f, limit))
+        .map(|f| map_feature(repo, &idx, &shims, f, limit))
         .collect::<Result<Vec<_>>>()?;
     Ok(Mapped {
         repo: repo.into(),
@@ -214,7 +328,8 @@ fn relate_pair(store: &Store, repo: &str, family: &str, rid: i64, run: i64, idx:
     let ph = pack_hash(store, family)?;
     let mut basis = vec![];
     for f in &feats {
-        let m = map_feature(repo, idx, f, 1)?;
+        // relatedness is scored on the plain ranking: a shim's slot is a `map` display choice
+        let m = map_feature(repo, idx, &Shims::default(), f, 1)?;
         if m.symbols.first().is_some_and(|s| s.named) {
             basis.push(f.key());
         }
@@ -373,10 +488,40 @@ mod tests {
         RunIndex::from_rows(&rows)
     }
 
+    fn shims_of(paths: &[&'static str], imports: &[(usize, &[usize])]) -> Vec<(usize, usize)> {
+        let rows: Vec<(&str, &str, &str)> = paths.iter().map(|p| ("file", *p, *p)).collect();
+        let idx = RunIndex::from_rows(&rows);
+        let m = imports.iter().map(|(s, ts)| (*s, ts.to_vec())).collect();
+        Shims::from_imports(&idx, &m).target.into_iter().collect()
+    }
+
+    #[test]
+    fn a_shim_target_is_its_one_import_or_the_one_sharing_its_stem() {
+        let p = ["agents/remote_agent.py", "a2a/remote_agent.py", "a2a/util.py", "a2a/other.py"];
+        assert_eq!(shims_of(&p, &[(0, &[1])]), vec![(0, 1)]);
+        assert_eq!(shims_of(&p, &[(0, &[1, 2])]), vec![(0, 1)], "stem tie-break");
+        assert!(shims_of(&p, &[(0, &[2, 3])]).is_empty(), "several imports, none its own stem: an aggregator");
+        let pkg = ["web/remote/__init__.py", "web/remote.py"];
+        assert_eq!(shims_of(&pkg, &[(0, &[1])]), vec![(0, 1)]);
+        assert_eq!(stem("web/remote/__init__.py"), "remote");
+        assert_eq!(stem("src/inner/mod.rs"), "inner");
+        assert_eq!(stem("a/b.test.ts"), "b");
+    }
+
+    #[test]
+    fn a_shim_chain_resolves_to_the_real_module_and_a_cycle_to_nothing() {
+        let p = ["a.py", "b.py", "c.py", "d.py", "e.py"];
+        assert_eq!(shims_of(&p, &[(0, &[1]), (1, &[2])]), vec![(0, 2), (1, 2)]);
+        assert!(shims_of(&p, &[(0, &[1]), (1, &[0])]).is_empty(), "cycle");
+        // deeper than MAX_CHAIN: the head marks nothing, the rest resolve
+        let deep = shims_of(&p, &[(0, &[1]), (1, &[2]), (2, &[3]), (3, &[4])]);
+        assert_eq!(deep, vec![(1, 4), (2, 4), (3, 4)]);
+    }
+
     #[test]
     fn a_path_only_match_does_not_count_toward_the_basis() {
         let idx = run(("function", "serve", "src/widget/serve.ts"));
-        let m = map_feature("r", &idx, &feature(), 1).unwrap();
+        let m = map_feature("r", &idx, &Shims::default(), &feature(), 1).unwrap();
         assert_eq!(m.terms, vec!["widget".to_string()]);
         assert_eq!(m.symbols.len(), 1, "the path hit is still a candidate");
         assert!(m.symbols[0].matched.is_empty(), "no name carries the term");
@@ -386,7 +531,7 @@ mod tests {
     #[test]
     fn a_node_named_for_the_feature_counts() {
         let idx = run(("function", "widget_something", "src/other/serve.ts"));
-        let m = map_feature("r", &idx, &feature(), 1).unwrap();
+        let m = map_feature("r", &idx, &Shims::default(), &feature(), 1).unwrap();
         assert_eq!(m.symbols[0].matched, vec!["widget".to_string()]);
         assert!(m.symbols[0].named);
     }
@@ -396,7 +541,7 @@ mod tests {
         let mut f = feature();
         f.definition = "renders gadgets".into();
         let idx = run(("function", "gadgets", "src/other/serve.ts"));
-        let m = map_feature("r", &idx, &f, 1).unwrap();
+        let m = map_feature("r", &idx, &Shims::default(), &f, 1).unwrap();
         assert_eq!(m.symbols[0].matched, vec!["gadgets".to_string()]);
         assert!(!m.symbols[0].named, "a definition token has source weight 0.5");
     }
@@ -418,7 +563,7 @@ mod tests {
         f.grp = "zz".into();
         f.slug = "zz.zz".into();
         f.title = "graph".into();
-        let m = map_feature("r", &idx, &f, 5).unwrap();
+        let m = map_feature("r", &idx, &Shims::default(), &f, 5).unwrap();
         assert!(m.symbols.is_empty() && m.terms.is_empty());
     }
 }
