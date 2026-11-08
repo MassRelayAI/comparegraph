@@ -324,7 +324,8 @@ impl Store {
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(open_err)?;
             drop(st);
-            for col in ["at_commit", "out_of_subset"] {
+            // field-run ask 5: `reach` (reached|unreached|unknown), its path (JSON array) and note, written with the claim
+            for col in ["at_commit", "out_of_subset", "reach", "reach_path", "reach_note"] {
                 if !names.iter().any(|n| n == col) {
                     conn.execute_batch(&format!("ALTER TABLE claim ADD COLUMN {col} TEXT"))
                         .map_err(open_err)?;

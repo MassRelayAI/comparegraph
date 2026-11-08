@@ -16,6 +16,7 @@ pub mod lines;
 pub mod map;
 pub mod matrix;
 pub mod propose;
+pub mod reach;
 pub mod search;
 pub mod setup;
 pub mod show;

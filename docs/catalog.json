@@ -341,6 +341,15 @@
           "relate": {
             "type": "boolean",
             "description": "score comparators with no stored relatedness band before building the matrix, default false"
+          },
+          "reach": {
+            "type": "string",
+            "enum": [
+              "reached",
+              "unreached",
+              "unknown"
+            ],
+            "description": "only the rows with a cell whose latest claim has this reach"
           }
         },
         "required": [

@@ -376,6 +376,9 @@ pub enum Cmd {
         /// score the family's comparators that have no stored relatedness band first
         #[arg(long)]
         relate: bool,
+        /// only the rows with a cell whose latest claim has this reach: reached | unreached | unknown
+        #[arg(long)]
+        reach: Option<String>,
     },
     /// Taxonomy packs: add, list, show
     Family {
@@ -1093,8 +1096,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             let total = items.len();
             serde_json::json!({ "items": items, "page": { "next": null, "total": total } })
         }
-        Cmd::Matrix { family, relate } => {
-            let m = crate::application::matrix::matrix_with(&cli.root, family, *relate)?;
+        Cmd::Matrix { family, relate, reach } => {
+            let m = crate::application::matrix::matrix_reach(&cli.root, family, *relate, reach.as_deref())?;
             let mut v = serde_json::to_value(&m).unwrap();
             if m.not_run > 0 {
                 v["limitation_items"] = serde_json::json!([{

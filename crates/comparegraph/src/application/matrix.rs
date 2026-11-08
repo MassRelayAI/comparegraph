@@ -1,5 +1,6 @@
 //! `matrix <family>`: active features x repos. A cell is the latest claim's verdict; a claim with a stale location
-//! displays `unknown*` and counts as unknown. Prevalence counts comparators only.
+//! displays `unknown*` and counts as unknown. Prevalence counts comparators only. `reach` is the latest claim's reach per
+//! cell (field-run ask 5); `--reach <status>` keeps the rows with at least one cell of that reach.
 use super::claim::claims;
 use super::decide::decisions;
 use super::{AppError, Result};
@@ -24,6 +25,10 @@ pub struct Row {
     pub tier: String,
     pub weight: i64,
     pub cells: Vec<String>,
+    /// parallel to `cells`: the latest claim's reach (reached|unreached|unknown), null when it has none; omitted when
+    /// no cell of the row has one
+    #[serde(skip_serializing_if = "no_reach")]
+    pub reach: Vec<Option<String>>,
     pub prevalence: Option<f64>,
     pub gap: Option<bool>,
     pub differentiator: Option<bool>,
@@ -39,6 +44,10 @@ pub struct Matrix {
     pub not_run: usize,
 }
 
+fn no_reach(r: &[Option<String>]) -> bool {
+    r.iter().all(Option::is_none)
+}
+
 fn present(c: &str) -> bool {
     c == "has" || c == "partial"
 }
@@ -49,6 +58,17 @@ pub fn matrix(root: &Path, family: &str) -> Result<Matrix> {
 
 /// As `matrix`; with `relate`, first scores the family's built comparators that have no stored band.
 pub fn matrix_with(root: &Path, family: &str, relate: bool) -> Result<Matrix> {
+    matrix_reach(root, family, relate, None)
+}
+
+/// As `matrix_with`; with `reach`, only the rows where some cell's latest claim has that reach.
+pub fn matrix_reach(
+    root: &Path,
+    family: &str,
+    relate: bool,
+    reach: Option<&str>,
+) -> Result<Matrix> {
+    let reach = reach.map(super::reach::parse_status).transpose()?;
     let store = Store::open_existing(root)?;
     let c = store.conn();
     let fam_id: i64 = c
@@ -67,8 +87,12 @@ pub fn matrix_with(root: &Path, family: &str, relate: bool) -> Result<Matrix> {
     let comparators = repos.iter().filter(|r| r.2 != "root").count();
 
     let mut cl: HashMap<(String, String), String> = HashMap::new();
+    let mut rch: HashMap<(String, String), String> = HashMap::new();
     for x in claims(root, None, Some(family), None, false)? {
         let stale = x.locations.iter().any(|l| l.stale);
+        if let Some(r) = x.reach {
+            rch.insert((x.repo.clone(), x.feature.clone()), r.status);
+        }
         cl.insert(
             (x.repo, x.feature),
             if stale { "unknown*".into() } else { x.verdict },
@@ -131,6 +155,15 @@ pub fn matrix_with(root: &Path, family: &str, relate: bool) -> Result<Matrix> {
                     .unwrap_or_else(|| "-".into())
             })
             .collect();
+        let cell_reach: Vec<Option<String>> = repos
+            .iter()
+            .map(|r| rch.get(&(r.1.clone(), slug.clone())).cloned())
+            .collect();
+        if let Some(want) = reach {
+            if !cell_reach.iter().any(|c| c.as_deref() == Some(want)) {
+                continue;
+            }
+        }
         let comp: Vec<&String> = repos
             .iter()
             .zip(&cells)
@@ -156,6 +189,7 @@ pub fn matrix_with(root: &Path, family: &str, relate: bool) -> Result<Matrix> {
             tier,
             weight,
             cells,
+            reach: cell_reach,
             prevalence,
             gap,
             differentiator: diff,

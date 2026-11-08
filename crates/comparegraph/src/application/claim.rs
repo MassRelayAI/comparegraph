@@ -37,6 +37,9 @@ pub struct ClaimOut {
     /// Qualifier: the evidence is upstream at this path (`path[:lines]`), outside the exported tree (`--out-of-subset`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub out_of_subset: Option<String>,
+    /// has/partial only: whether an entry point reaches the cited symbol, computed at write time (`reach.rs`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reach: Option<super::reach::Reach>,
     /// True when a batch row equalled the live claim and nothing was written; `id` is the existing claim.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub skipped: bool,
@@ -414,6 +417,13 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
             ),
         ));
     }
+    // field-run ask 5: whether an entry point reaches the cited code, after every citation check has passed
+    let reach = if matches!(i.verdict, "has" | "partial") {
+        let nodes: Vec<Option<i64>> = res.iter().map(|r| r.node).collect();
+        Some(super::reach::compute(store, i.repo, &nodes, &mut limitation_items)?)
+    } else {
+        None
+    };
 
     let confidence = if i.verdict == "unknown" {
         "unknown"
@@ -425,7 +435,7 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
         "derived"
     };
     if i.skip_equal {
-        let quals = (at_commit.as_deref(), out_of_subset.as_deref());
+        let quals = (at_commit.as_deref(), out_of_subset.as_deref(), reach.as_ref());
         if let Some(same) =
             equal_live_claim(store, i, rid.0, fid, run.0, confidence, &note, &fam, &res_keys(&res), quals)?
         {
@@ -442,9 +452,14 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
             |r| r.get(0),
         )?;
         tx.execute(
-            "INSERT INTO claim(repo_id, feature_id, run_id, verdict, confidence, author, note, created_at, supersedes_id, at_commit, out_of_subset) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-            params![rid.0, fid, run.0, i.verdict, confidence, i.author, note, now, supersedes, at_commit, out_of_subset],
+            "INSERT INTO claim(repo_id, feature_id, run_id, verdict, confidence, author, note, created_at, supersedes_id, at_commit, out_of_subset, \
+             reach, reach_path, reach_note) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+            params![
+                rid.0, fid, run.0, i.verdict, confidence, i.author, note, now, supersedes, at_commit, out_of_subset,
+                reach.as_ref().map(|r| r.status.clone()),
+                reach.as_ref().map(|r| r.path_json()),
+                reach.as_ref().and_then(|r| r.note.clone())
+            ],
         )?;
         let cid = tx.last_insert_rowid();
         let mut locations = vec![];
@@ -490,6 +505,7 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
         locations,
         at_commit,
         out_of_subset,
+        reach,
         skipped: false,
         limitation_items,
     })
@@ -590,12 +606,13 @@ fn equal_live_claim(
     note: &str,
     family: &str,
     keys: &[(String, i64, i64)],
-    quals: (Option<&str>, Option<&str>),
+    quals: (Option<&str>, Option<&str>, Option<&super::reach::Reach>),
 ) -> Result<Option<ClaimOut>> {
     let c = store.conn();
     let live = c
         .query_row(
-            "SELECT id, run_id, verdict, confidence, author, note, created_at, supersedes_id, at_commit, out_of_subset FROM claim \
+            "SELECT id, run_id, verdict, confidence, author, note, created_at, supersedes_id, at_commit, out_of_subset, \
+             reach, reach_path, reach_note FROM claim \
              WHERE id = (SELECT MAX(id) FROM claim WHERE repo_id = ?1 AND feature_id = ?2)",
             params![repo_id, feature_id],
             |r| {
@@ -610,11 +627,12 @@ fn equal_live_claim(
                     r.get::<_, Option<i64>>(7)?,
                     r.get::<_, Option<String>>(8)?,
                     r.get::<_, Option<String>>(9)?,
+                    super::reach::Reach::from_columns(r.get(10)?, r.get(11)?, r.get(12)?),
                 ))
             },
         )
         .optional()?;
-    let Some((id, lrun, verdict, lconf, author, lnote, created_at, supersedes_id, lcommit, lsubset)) = live else {
+    let Some((id, lrun, verdict, lconf, author, lnote, created_at, supersedes_id, lcommit, lsubset, lreach)) = live else {
         return Ok(None);
     };
     if lrun != run_id
@@ -624,6 +642,7 @@ fn equal_live_claim(
         || lnote != note
         || lcommit.as_deref() != quals.0
         || lsubset.as_deref() != quals.1
+        || lreach.as_ref() != quals.2
     {
         return Ok(None);
     }
@@ -666,6 +685,7 @@ fn equal_live_claim(
         locations,
         at_commit: lcommit,
         out_of_subset: lsubset,
+        reach: lreach,
         skipped: true,
         limitation_items: vec![],
     }))
@@ -843,8 +863,8 @@ pub fn claims(
     let store = Store::open_existing(root)?;
     let c = store.conn();
     let mut st = c.prepare(
-        "SELECT c.id, r.name, fa.name, f.slug, c.run_id, c.verdict, c.confidence, c.author, c.created_at, c.supersedes_id, c.note, c.at_commit, c.out_of_subset \
-         FROM claim c JOIN repo r ON r.id = c.repo_id JOIN feature f ON f.id = c.feature_id JOIN family fa ON fa.id = f.family_id \
+        "SELECT c.id, r.name, fa.name, f.slug, c.run_id, c.verdict, c.confidence, c.author, c.created_at, c.supersedes_id, c.note, c.at_commit, c.out_of_subset, \
+         c.reach, c.reach_path, c.reach_note FROM claim c JOIN repo r ON r.id = c.repo_id JOIN feature f ON f.id = c.feature_id JOIN family fa ON fa.id = f.family_id \
          WHERE (?1 IS NULL OR r.name = ?1) AND (?2 IS NULL OR fa.name = ?2) AND (?3 IS NULL OR f.slug = ?3) \
          AND (?4 = 1 OR c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id)) \
          ORDER BY r.name, fa.name, f.slug, c.id",
@@ -866,6 +886,7 @@ pub fn claims(
                 locations: vec![],
                 at_commit: r.get(11)?,
                 out_of_subset: r.get(12)?,
+                reach: super::reach::Reach::from_columns(r.get(13)?, r.get(14)?, r.get(15)?),
                 skipped: false,
                 limitation_items: vec![],
             })

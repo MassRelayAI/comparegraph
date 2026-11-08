@@ -81,9 +81,24 @@ pub fn parse_kinds(s: &str) -> Result<Vec<EdgeKind>> {
 
 type Adj = Vec<(i64, EdgeKind, f64)>;
 
+/// The store a walk reads: its own open, or a caller's (a claim written inside a batch transaction).
+enum StoreRef<'a> {
+    Owned(Store),
+    Borrowed(&'a Store),
+}
+impl std::ops::Deref for StoreRef<'_> {
+    type Target = Store;
+    fn deref(&self) -> &Store {
+        match self {
+            StoreRef::Owned(s) => s,
+            StoreRef::Borrowed(s) => s,
+        }
+    }
+}
+
 /// One run, read on demand. Nodes, adjacency and community labels are cached as they are first needed.
-struct Ctx {
-    store: Store,
+struct Ctx<'a> {
+    store: StoreRef<'a>,
     run_id: i64,
     repo: String,
     nodes: HashMap<i64, Node>,
@@ -114,9 +129,11 @@ fn node_from_row(r: &rusqlite::Row) -> rusqlite::Result<Node> {
 }
 const NODE_COLS: &str = "id,kind,name,qualified_name,path,line_start,line_end,content_hash,language,provider_ref";
 
-impl Ctx {
-    fn open(root: &Path, repo: &str) -> Result<Ctx> {
-        let store = Store::open_existing(root)?;
+impl<'a> Ctx<'a> {
+    fn open(root: &Path, repo: &str) -> Result<Ctx<'a>> {
+        Ctx::on(StoreRef::Owned(Store::open_existing(root)?), repo)
+    }
+    fn on(store: StoreRef<'a>, repo: &str) -> Result<Ctx<'a>> {
         let r = store
             .repo_by_name(repo)?
             .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
@@ -923,4 +940,96 @@ pub fn dead_code(root: &Path, repo: &str, limit: usize, cursor: Option<&str>, mi
         )],
         "unknown",
     ))
+}
+
+/// One bounded callee walk from every entry point of the repo's latest run (the `entry-points` set), for `claim`'s
+/// `reach` (field-run ask 5). A target that is an entry point only because nothing calls it is not a start: being
+/// uncalled is the defect `reach` exists to show. A `main`, handler-named or route target stays a start (hop 0).
+pub(crate) struct EntryReach {
+    /// entry points the walk started from
+    pub entries: usize,
+    /// targets left out of the starts: entry points only by the uncalled-function heuristic
+    pub uncalled_targets: Vec<String>,
+    /// qualified names from an entry point to the first target reached (best path confidence, then fewest hops)
+    pub path: Option<Vec<String>>,
+    pub path_confidence: f64,
+    pub truncated: bool,
+    /// some node sat at the depth limit, so a target further out would not have been seen
+    pub depth_hit: bool,
+}
+
+pub(crate) fn reach_from_entries(
+    store: &Store,
+    repo: &str,
+    targets: &[i64],
+    depth: usize,
+    max_nodes: usize,
+    min_conf: f64,
+) -> Result<EntryReach> {
+    check_bounds(depth, max_nodes, min_conf)?;
+    let mut c = Ctx::on(StoreRef::Borrowed(store), repo)?;
+    let r = referenced(&c, min_conf)?;
+    let target_set: HashSet<i64> = targets.iter().copied().collect();
+    let mut uncalled_targets = vec![];
+    let mut starts: Vec<(String, i64)> = vec![];
+    {
+        let conn = c.store.conn();
+        let mut st = conn.prepare(&format!(
+            "SELECT {NODE_COLS} FROM node WHERE run_id=?1 AND kind IN ('{}','{}','{}')",
+            NodeKind::Function.as_str(),
+            NodeKind::Method.as_str(),
+            NodeKind::Route.as_str()
+        ))?;
+        let rows = st.query_map(params![c.run_id], node_from_row)?;
+        for row in rows {
+            let n = row?;
+            if !is_entry(&n, &r.called) {
+                continue;
+            }
+            let id = n.id.unwrap().0;
+            if target_set.contains(&id) && !(handler_name(&n.name) || n.kind == NodeKind::Route) {
+                uncalled_targets.push(n.qualified_name);
+                continue;
+            }
+            starts.push((n.qualified_name, id));
+        }
+    }
+    starts.sort();
+    uncalled_targets.sort();
+    let start_ids: Vec<i64> = starts.iter().map(|s| s.1).collect();
+    let (v, truncated) = bfs(&mut c, &start_ids, Direction::Callees, &[EdgeKind::Calls], min_conf, depth, max_nodes)?;
+    let best = v
+        .iter()
+        .enumerate()
+        .filter(|(_, x)| target_set.contains(&x.id))
+        .min_by(|(i, a), (j, b)| {
+            b.conf
+                .partial_cmp(&a.conf)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.hop.cmp(&b.hop))
+                .then(i.cmp(j))
+        })
+        .map(|(i, x)| (i, x.conf));
+    let (path, path_confidence) = match best {
+        Some((i, conf)) => {
+            let mut chain = vec![];
+            let mut at = Some(i);
+            while let Some(k) = at {
+                chain.push(v[k].id);
+                at = v[k].parent;
+            }
+            chain.reverse();
+            c.ensure_nodes(&chain)?;
+            (Some(chain.iter().map(|id| c.nodes[id].qualified_name.clone()).collect()), conf)
+        }
+        None => (None, 0.0),
+    };
+    Ok(EntryReach {
+        entries: start_ids.len(),
+        uncalled_targets,
+        path,
+        path_confidence,
+        truncated,
+        depth_hit: v.iter().any(|x| x.hop >= depth),
+    })
 }
