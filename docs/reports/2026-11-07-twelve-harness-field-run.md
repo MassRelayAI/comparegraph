@@ -109,3 +109,27 @@ A score, a weight or a model in the engine. The consumer keeps its prioritisatio
     same root as item 11. *Ask:* refuse a line that is blank, a comment or a docstring unless `--allow-comment` is given.
 15. **No way to say "present upstream, absent from the exported tree".** The evidence was in test files the export dropped.
     *Ask:* an `out_of_subset` verdict qualifier carrying the upstream path.
+
+## Status, 2026-11-08 (all 15 asks answered)
+
+| Ask | Outcome |
+|---|---|
+| 1 | Shipped in part. `map` ranks by entry-point reach (unreached callers x0.5) and shows `reach`, `entry_hops`, `community_peers`; boilerplate words are stripped. Community peers are shown but not scored: both scoring forms lowered the mapping gold (`docs/decisions.md`). Pooled p5 0.1325 and r5 0.4513 are equal to before. The real openai-agents case was not measured (no clone). |
+| 2 | Shipped. `--read-hits` is a repeated flag; css/scss/html nodes stay out of the read set unless `--include-non-code`. |
+| 3 | Shipped. `--wait` / `COMPAREGRAPH_WAIT`, default 30 s; the timeout error lists other processes with the store open. A snapshot conflict has its own message. |
+| 4 | Shipped. `none_refused` with `error.data` (the exact `searched`, the full `hits_read`); a superset `searched` is accepted. Breaking: the code was `invalid_arguments`. |
+| 5 | Shipped. `reach` on has/partial claims, `matrix --reach`. Static only; entry-point quality bounds the result; not measured on a large repo. |
+| 6 | Shipped. `add`/`build --include/--exclude`, `--moved-to`. |
+| 7 | Shipped. `add --source-commit`, `claim --at-commit`. |
+| 8 | Shipped. `claim --anchor 'path::regex'`. |
+| 9 | Shipped. `family propose --from-claims <repo> --rows <jsonl>`; drafts only, never writes `rows.md`. |
+| 10 | Shipped for Python and Rust-like file shims through `imports` edges (`shim_of` on `map`). Open: JS/TS barrels (the provider writes no edge) and symbol-level targets. |
+| 11 | Shipped. `--expect`. |
+| 12 | No fix needed; regression test added. |
+| 13 | Shipped. `add --licence/--lane/--licence-from`. |
+| 14 | Shipped. Blank, comment and docstring lines refused unless `--allow-comment`. |
+| 15 | Shipped. `--out-of-subset`. |
+
+Open items: claim patterns use a small hand-written regex subset (no new dependency without a ruling); `comparegraph_claim`
+over MCP does not expose the new claim flags; vault file names still cap at 80 characters.
+
