@@ -71,6 +71,11 @@ pub fn build_repo(
         opts.include = repo.include.clone();
         opts.exclude = repo.exclude.clone();
     }
+    // globs are a set: sorted and deduplicated, so the run records (and reuse compares) one form whatever the flag order
+    for globs in [&mut opts.include, &mut opts.exclude] {
+        globs.sort();
+        globs.dedup();
+    }
     let subset = crate::providers::reference::walker::Subset::new(&opts.include, &opts.exclude).map_err(AppError::InvalidArguments)?;
     let opts = &opts;
     let status = provider.detect();
@@ -152,7 +157,15 @@ pub fn build_repo(
     if provider.name() != "reference" && !subset.is_all() {
         // an external engine walks the clone itself: its nodes outside the subset are dropped here (edges to them follow)
         let before = out.nodes.len();
-        out.nodes.retain(|n| subset.contains(&n.path));
+        // a plugin may write `src\a.py` or `./src/a.py` (external.rs path_ok accepts both): match the `/` form
+        out.nodes.retain(|n| {
+            let p = n.path.replace('\\', "/");
+            let mut p = p.as_str();
+            while let Some(rest) = p.strip_prefix("./") {
+                p = rest.trim_start_matches('/');
+            }
+            subset.contains(p)
+        });
         out.limitations.push(Limitation::new(
             "subset_filtered",
             format!("{} parsed the whole clone; {} of its {before} nodes outside --include/--exclude were dropped, files_parsed counts the whole clone", provider.name(), before - out.nodes.len()),
@@ -336,7 +349,14 @@ fn try_reuse(
         return Ok(None);
     };
     // a run read with other globs is not this build's answer, even when the same files fall inside both
-    if store.run_subset(last_id)? != (opts.include.clone(), opts.exclude.clone()) {
+    // a run recorded before globs were stored sorted compares in the same normal form
+    let norm = |mut v: Vec<String>| {
+        v.sort();
+        v.dedup();
+        v
+    };
+    let (inc, exc) = store.run_subset(last_id)?;
+    if (norm(inc), norm(exc)) != (opts.include.clone(), opts.exclude.clone()) {
         return Ok(None);
     }
     let nodes = store.nodes_of_run(last_id)?;

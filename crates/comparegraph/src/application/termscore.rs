@@ -48,12 +48,13 @@ const K_LN_W: f64 = 0.5;
 /// factor on a callable candidate that is called, but from nothing a root reaches (`Reach::Unreached`)
 const K_UNREACHED: f64 = 0.5;
 
-/// Words of a pack author's bookkeeping, not of the feature: dropped from every term source. A parenthesised note that
-/// names a row (`(pair row)`, `(kBoolFlags row)`) is dropped whole by `strip_boilerplate`.
+/// Words of a pack author's bookkeeping, dropped only inside a parenthesised note: outside one they are the feature's
+/// own words (`grid.rows` "Row virtualization"). A note that names a row (`(pair row)`, `(kBoolFlags row)`) is dropped
+/// whole by `strip_boilerplate`.
 const BOILERPLATE: &[&str] = &["row", "rows", "specific", "specifically", "etc"];
 
-/// `text` without its parenthesised notes about rows (`Retry (pair row)` -> `Retry `): their words are pack bookkeeping.
-/// Other parentheses are kept.
+/// `text` without its parenthesised notes about rows (`Retry (pair row)` -> `Retry `), and without the `BOILERPLATE`
+/// words of its other parenthesised notes (`(specifically X, etc)` -> `( X, )`). Text outside parentheses is kept.
 pub fn strip_boilerplate(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -62,7 +63,21 @@ pub fn strip_boilerplate(text: &str) -> String {
         let inner = &rest[open + 1..open + len];
         out.push_str(&rest[..open]);
         if !inner.split(|c: char| !c.is_alphanumeric()).any(|w| w.eq_ignore_ascii_case("row") || w.eq_ignore_ascii_case("rows")) {
-            out.push_str(&rest[open..=open + len]);
+            out.push('(');
+            let mut word = String::new();
+            for c in inner.chars().chain(std::iter::once(' ')) {
+                if c.is_alphanumeric() {
+                    word.push(c);
+                    continue;
+                }
+                if !BOILERPLATE.contains(&word.to_lowercase().as_str()) {
+                    out.push_str(&word);
+                }
+                word.clear();
+                out.push(c);
+            }
+            out.pop();
+            out.push(')');
         }
         rest = &rest[open + len + 1..];
     }
@@ -70,9 +85,9 @@ pub fn strip_boilerplate(text: &str) -> String {
     out
 }
 
-/// `tokens` of feature text after `strip_boilerplate`, minus the `BOILERPLATE` words.
+/// `tokens` of feature text after `strip_boilerplate`.
 pub fn feature_tokens(text: &str) -> Vec<String> {
-    tokens(&strip_boilerplate(text)).into_iter().filter(|t| !BOILERPLATE.contains(&t.as_str())).collect()
+    tokens(&strip_boilerplate(text))
 }
 
 const ENGLISH: &[&str] = &[
@@ -891,12 +906,25 @@ mod tests {
         assert_eq!(strip_boilerplate("Sub-agent spawn (pair row)"), "Sub-agent spawn ");
         assert_eq!(strip_boilerplate("Flags (kBoolFlags row) and (dot and arrow)"), "Flags  and (dot and arrow)");
         assert_eq!(strip_boilerplate("unclosed (pair row"), "unclosed (pair row");
-        assert_eq!(feature_tokens("Provider-specific retry (pair row)"), vec!["provider", "retry"]);
+        assert_eq!(feature_tokens("Provider retry (pair row)"), vec!["provider", "retry"]);
+        // inside a note that names no row, only the bookkeeping words go
+        assert_eq!(feature_tokens("Retry (specifically backoff, etc)"), vec!["retry", "backoff"]);
         let idx = run_with(12, 1, "foo");
-        let ts = idx.terms(&feat("zz", "zz.zz", "Retry (pair row)", "a specific foo, etc (rows)"));
+        let ts = idx.terms(&feat("zz", "zz.zz", "Retry (pair row)", "a foo (specific to bar, etc) (rows)"));
         for w in ["pair", "row", "rows", "specific", "etc"] {
             assert!(ts.iter().all(|t| t.text != w), "{w} in {ts:?}");
         }
         assert!(ts.iter().any(|t| t.text == "retry") && ts.iter().any(|t| t.text == "foo"));
+    }
+
+    #[test]
+    fn row_and_specific_outside_a_note_are_feature_words() {
+        // `grid.rows` "Row virtualization": the key term is `row`, and absent-check must search for it
+        assert_eq!(feature_tokens("Row virtualization"), vec!["row", "virtualization"]);
+        assert_eq!(feature_tokens("rows"), vec!["rows"]);
+        assert_eq!(feature_tokens("Provider-specific retry"), vec!["provider", "specific", "retry"]);
+        let idx = run_with(12, 1, "foo");
+        let ts = idx.terms(&feat("grid", "grid.rows", "Row virtualization", "render only the visible rows"));
+        assert!(ts.iter().any(|t| t.text == "row") && ts.iter().any(|t| t.text == "rows"), "{ts:?}");
     }
 }

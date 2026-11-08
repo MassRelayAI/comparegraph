@@ -62,8 +62,8 @@ pub struct Related {
     pub basis: Vec<String>,
 }
 
-/// Tokens of the group, the slug, the title and the pack author's synonyms, without pack bookkeeping (`(pair row)`,
-/// `specific`: `termscore::feature_tokens`); deduped and sorted. The definition is not used.
+/// Tokens of the group, the slug, the title and the pack author's synonyms, without pack bookkeeping (`(pair row)`, and
+/// `specific` inside a parenthesised note: `termscore::feature_tokens`); deduped and sorted. The definition is not used.
 pub fn feature_terms(f: &FeatureRow) -> Vec<String> {
     let slug = f.slug.rsplit('.').next().unwrap_or(&f.slug);
     let set: BTreeSet<String> = feature_tokens(&f.grp)
@@ -549,9 +549,19 @@ mod tests {
     #[test]
     fn feature_terms_drop_pack_bookkeeping() {
         let mut f = feature();
-        f.title = "Provider-specific retry (pair row)".into();
-        f.synonyms = "backoff (rows)".into();
-        assert_eq!(feature_terms(&f), vec!["backoff", "provider", "quality", "retry", "widget"]);
+        f.title = "Provider retry (pair row)".into();
+        f.synonyms = "backoff (rows), jitter (specifically, etc)".into();
+        assert_eq!(feature_terms(&f), vec!["backoff", "jitter", "provider", "quality", "retry", "widget"]);
+    }
+
+    #[test]
+    fn feature_terms_keep_row_outside_a_note() {
+        let mut f = feature();
+        f.grp = "grid".into();
+        f.slug = "grid.rows".into();
+        f.title = "Row virtualization".into();
+        f.synonyms = String::new();
+        assert_eq!(feature_terms(&f), vec!["grid", "row", "rows", "virtualization"]);
     }
 
     #[test]

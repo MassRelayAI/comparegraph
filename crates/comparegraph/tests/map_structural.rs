@@ -49,7 +49,7 @@ fn cc(root: &std::path::Path) -> assert_cmd::Command {
 }
 
 const PACK: &str = "---\nfamily: fam\ndescription: d\n---\n| id | group | feature | definition | counts_as_has | tier | weight |\n|---|---|---|---|---|---|---|\n\
-| runtime.loop | runtime | Agent loop (pair row) | The provider-specific turn loop [kinds: function] | a loop | basics | 2 |\n";
+| runtime.loop | runtime | Agent loop (pair row) | The turn loop (provider-specific) [kinds: function] | a loop | basics | 2 |\n";
 
 const MAIN: &str = "from app.runner import run_loop\n\n\ndef main():\n    run_loop()\n";
 const RUNNER: &str = "def run_loop():\n    return 1\n";
@@ -110,7 +110,7 @@ fn a_reached_loop_outranks_a_lexical_match_and_says_why() {
     for s in syms {
         assert!(s["community_peers"].is_u64(), "{s}");
     }
-    // pack bookkeeping is not a term, though a symbol here carries those words
+    // pack bookkeeping inside a parenthesised note is not a term, though a symbol here carries those words
     let terms: Vec<&str> = f["terms"]
         .as_array()
         .unwrap()
