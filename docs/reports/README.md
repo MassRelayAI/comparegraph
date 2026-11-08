@@ -6,6 +6,8 @@ never silently kept.
 
 | date | report | verdict in one line | status |
 |---|---|---|---|
+| 2026-11-08 | [The 15 field-run asks, measured](2026-11-08-field-run-asks-measured.md) | no accuracy change in the call-edge gold, mapping gold, conformance or store hash; reach made a claim batch about 100 times slower, found and fixed (0.14 s for 30 rows, 0.02 s before); `map` changes in 16 of 30 features on codanna, which the gold cannot judge | measured |
+| 2026-11-08 | [Reach cost in claim batches](2026-11-08-reach-cost.md) | reach built once per run for a batch: 30 rows 2.6 s to 0.13 s, 300 rows 22 s to 0.4 s | measured |
 | 2026-10-24 | [The README, judged by a persona jury](2026-10-24-readme-jury.md) | seven composite personas, three lenses, two rounds: 22 findings (16 fixed in the docs, 4 issues, 2 dismissed); critical blockers 15 → 6, compare blockers 6 → 0, all three deltas landed; the forced pick went from 4 of 7 to 7 of 7 | decided |
 | 2026-10-24 | [Time to a first result](2026-10-24-first-result-time.md) | the README's sample walk takes under 0.3 s of tool time; on real clones the build dominates, 0.82 s (85 files) to 6.20 s (797 files), and a three-feature `map` answers in under 0.1 s; `family propose` drafts shared words, not features | measured |
 | 2026-10-14 | [Answer size on six study copies](2026-10-14-answer-size.md) | for 30 features on six code-graph tools the `map` answers total 335,755 bytes (about 84 k tokens, an estimate) against 106,057,965 bytes of source, 316 to 1; ranked places to read, not verdicts | measured |
