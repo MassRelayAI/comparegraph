@@ -98,7 +98,7 @@ fn a_symbol_hit_refuses_the_claim_and_lists_the_hits() {
     assert!(v["data"]["channels"]["symbols"]["count"].as_i64().unwrap() > 0, "{v}");
     assert!(!v["data"]["channels"]["symbols"]["hits"].as_array().unwrap().is_empty());
     let r = json(claim_none(ws.path(), "math.counter", &[]).failure());
-    assert_eq!(r["error"]["code"], "invalid_arguments", "{r}");
+    assert_eq!(r["error"]["code"], "none_refused", "{r}"); // a structured refusal since the 2026-11-07 field run
     let m = r["error"]["message"].as_str().unwrap();
     assert!(m.contains("the graph has") && m.contains("--searched"), "{m}");
     let none = json(cc(ws.path()).args(["claims"]).assert().success());
@@ -143,7 +143,7 @@ fn a_community_keyword_alone_refuses() {
     let r = json(
         cc(ws.path()).args(["claim", "ts", "acct.user", "none", "--author", "me"]).assert().failure(),
     );
-    assert_eq!(r["error"]["code"], "invalid_arguments", "{r}");
+    assert_eq!(r["error"]["code"], "none_refused", "{r}");
 }
 
 #[test]
@@ -317,7 +317,7 @@ fn a_function_named_for_a_feature_that_names_a_kind_is_a_symbol_hit_and_none_is_
         assert_eq!(v["data"]["absent"], false, "{f}: {v}");
         assert!(v["data"]["channels"]["symbols"]["count"].as_i64().unwrap() >= 1, "{f}: {v}");
         let c = json(cc(ws.path()).args(["claim", "r", f, "none", "--author", "me"]).assert().failure());
-        assert_eq!(c["error"]["code"], "invalid_arguments", "{c}");
+        assert_eq!(c["error"]["code"], "none_refused", "{c}");
     }
     assert_eq!(claims(ws.path()), 0);
 }

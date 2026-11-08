@@ -37,6 +37,9 @@ pub struct ErrorBody {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// structured detail of the error (a `none_refused` carries its `NoneRefusal` here)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
 }
 
 impl Envelope {
@@ -77,6 +80,7 @@ impl Envelope {
                 code: e.code(),
                 message: e.to_string(),
                 hint: None,
+                data: e.data(),
             }),
         }
     }

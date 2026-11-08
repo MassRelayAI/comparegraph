@@ -10,6 +10,7 @@ pub const ERROR_CODES: &[&str] = &[
     "empty",
     "invalid_arguments",
     "io_error",
+    "none_refused",
     "not_found",
     "provider_unavailable",
     "store_error",

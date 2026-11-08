@@ -68,7 +68,9 @@ A real `show` answer from the quick start (trimmed):
 Envelope fields: `ok`, `verb`, `schema`, `data`, `evidence`, `page`, `cost`, `error`. The exit code is 0 when `ok` and 1
 otherwise. List verbs take `--limit` (default 50, maximum 500) and `--cursor`. Error codes (from
 [`docs/catalog.json`](catalog.json)): `below_floor`, `catalog_stale`, `check_failed`, `empty`, `invalid_arguments`,
-`io_error`, `not_found`, `provider_unavailable`, `store_error`.
+`io_error`, `none_refused`, `not_found`, `provider_unavailable`, `store_error`. A `none_refused` error also carries
+`error.data`: the exact `searched` and the full `hits_read` list a re-claim needs (see `claim` in
+[`commands.md`](commands.md)).
 
 ## Family packs
 

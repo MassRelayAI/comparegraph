@@ -257,6 +257,9 @@ pub enum Cmd {
         /// also search these terms (the ones a `claim none --searched` would carry); they join the read set
         #[arg(long)]
         searched: Option<String>,
+        /// also rank css/scss/html parser nodes in the read set (left out by default; a `none` is judged without them)
+        #[arg(long)]
+        include_non_code: bool,
     },
     /// Score each clone against each family (related|adjacent|unrelated) and record the band
     Relate {
@@ -288,9 +291,10 @@ pub enum Cmd {
         at: Vec<String>,
         #[arg(long)]
         searched: Option<String>,
-        /// with --searched on a none: the qualified names of every search hit a reader opened and rejected (comma or
-        /// space separated); a none whose hits are all named is recorded `observed`
-        #[arg(long = "read-hits", value_delimiter = ',')]
+        /// with --searched on a none: the qualified name of a candidate a reader opened and rejected; repeat the flag,
+        /// one name each (a name may hold a comma, a space or a newline). A value that is no candidate's name is split
+        /// on commas and spaces (the older `a,b` form). A none whose top candidates are all named is recorded `observed`
+        #[arg(long = "read-hits")]
         read_hits: Vec<String>,
         #[arg(long)]
         note: Option<String>,
@@ -543,10 +547,10 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
         }
     };
     let pretty = cli.pretty;
-    let print_row = |line: usize, res: Result<serde_json::Value, (&'static str, String)>, conf: &'static str| {
+    let print_row = |line: usize, res: Result<serde_json::Value, BatchErr>, conf: &'static str| {
         let env = match res {
             Ok(v) => Envelope::ok(verb, v, conf, vec![], None),
-            Err((code, msg)) => {
+            Err((code, msg, data)) => {
                 if msg.starts_with("line ") {
                     eprintln!("comparegraph: {msg}");
                 } else {
@@ -555,6 +559,7 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
                 let mut e = Envelope::err(verb, &AppError::InvalidArguments(msg));
                 if let Some(b) = e.error.as_mut() {
                     b.code = code;
+                    b.data = data;
                 }
                 e
             }
@@ -598,14 +603,17 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     }
 }
 
+/// A failed batch row: code, message, structured detail (`error.data`).
+type BatchErr = (&'static str, String, Option<serde_json::Value>);
+
 fn batch_value<T: serde::Serialize>(
     data: Option<T>,
     error: Option<crate::application::claim::BatchError>,
-) -> Result<serde_json::Value, (&'static str, String)> {
+) -> Result<serde_json::Value, BatchErr> {
     match (data, error) {
         (Some(d), _) => Ok(serde_json::to_value(d).unwrap()),
-        (None, Some(e)) => Err((e.code, e.message)),
-        (None, None) => Err(("internal", "row has neither data nor error".into())),
+        (None, Some(e)) => Err((e.code, e.message, e.data)),
+        (None, None) => Err(("internal", "row has neither data nor error".into(), None)),
     }
 }
 
@@ -924,8 +932,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             family,
             feature,
             searched,
+            include_non_code,
         } => serde_json::to_value(crate::application::absent::absent_check(
-            &cli.root, repo, family, feature, searched.as_deref(),
+            &cli.root, repo, family, feature, searched.as_deref(), *include_non_code,
         )?)
         .unwrap(),
         Cmd::Claim {

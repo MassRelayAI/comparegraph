@@ -39,6 +39,9 @@ pub enum AppError {
     InvalidArguments(String),
     #[error("{0}: {1}")]
     Io(PathBuf, std::io::Error),
+    /// A `claim none` the engine will not record: the message for people, `error.data` (the `NoneRefusal`) for callers.
+    #[error("{}", .0.message)]
+    NoneRefused(Box<absent::NoneRefusal>),
 }
 impl AppError {
     /// Stable error codes; they are the catalog's error codes.
@@ -53,6 +56,14 @@ impl AppError {
             AppError::BelowFloor(_) => "below_floor",
             AppError::CheckFailed(_) => "check_failed",
             AppError::Io(..) => "io_error",
+            AppError::NoneRefused(_) => "none_refused",
+        }
+    }
+    /// Structured detail an envelope carries as `error.data` (only a `none_refused` has one).
+    pub fn data(&self) -> Option<serde_json::Value> {
+        match self {
+            AppError::NoneRefused(r) => serde_json::to_value(r).ok(),
+            _ => None,
         }
     }
 }

@@ -22,6 +22,10 @@
           "searched": {
             "type": "string",
             "description": "optional: the terms a none would be recorded with; their search hits join the read_set and make absent false when found"
+          },
+          "include_non_code": {
+            "type": "boolean",
+            "description": "also rank css/scss/html parser nodes in read_set (default false; a none is judged without them)"
           }
         },
         "required": [
@@ -563,6 +567,7 @@
     "empty",
     "invalid_arguments",
     "io_error",
+    "none_refused",
     "not_found",
     "provider_unavailable",
     "store_error"

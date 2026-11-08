@@ -137,7 +137,7 @@ fn unsafe_and_unresolvable_paths_are_refused_and_nothing_is_written() {
 fn none_needs_searched_terms_that_miss() {
     let (ws, _a, _p) = setup();
     let v = json(claim(ws.path(), &["none", "--author", "me"]).failure());
-    assert_eq!(v["error"]["code"], "invalid_arguments");
+    assert_eq!(v["error"]["code"], "none_refused"); // structured since the 2026-11-07 field run
     // either term hits (OR rule)
     json(
         claim(
@@ -725,7 +725,7 @@ fn read_hits_whitespace_separated_also_works() {
 fn read_hits_partial_coverage_names_the_unread() {
     let (ws, _a, _p) = rh_setup();
     let v = json(none_read(ws.path(), RH_A).failure());
-    assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
+    assert_eq!(v["error"]["code"], "none_refused", "{v}");
     let m = v["error"]["message"].as_str().unwrap();
     assert!(m.starts_with("not none: 1 of the top 2 candidates were not read: "), "{m}");
     assert!(m.contains(RH_B) && !m.contains(&format!("read: {RH_A}")), "{m}");
