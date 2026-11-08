@@ -309,6 +309,8 @@ impl Store {
             ("repo", "exclude_json", "TEXT NOT NULL DEFAULT '[]'"),
             ("run", "include_json", "TEXT NOT NULL DEFAULT '[]'"),
             ("run", "exclude_json", "TEXT NOT NULL DEFAULT '[]'"),
+            // the git head (short) of the clone the run read; `claim --at-commit` is checked against it
+            ("run", "head", "TEXT"),
         ] {
             let has = {
                 let mut st = conn.prepare(&format!("PRAGMA table_info({table})")).map_err(open_err)?;
@@ -470,6 +472,15 @@ impl Store {
             params![id.0, serde_json::to_string(include).unwrap(), serde_json::to_string(exclude).unwrap()],
         )?;
         Ok(())
+    }
+    /// Record the git head (short) of the clone a run read; a reused run takes the head of the build that reused it.
+    pub fn set_run_head(&self, id: RunId, head: Option<&str>) -> Result<()> {
+        self.conn.execute("UPDATE run SET head=?2 WHERE id=?1", params![id.0, head])?;
+        Ok(())
+    }
+    /// The git head a run read; None for a clone with no git head and for every run before the column.
+    pub fn run_head(&self, id: RunId) -> Result<Option<String>> {
+        Ok(self.conn.query_row("SELECT head FROM run WHERE id=?1", params![id.0], |r| r.get(0))?)
     }
     /// The (include, exclude) globs a run read; both empty for a run of the whole clone (and for every run before the columns).
     pub fn run_subset(&self, id: RunId) -> Result<(Vec<String>, Vec<String>)> {
