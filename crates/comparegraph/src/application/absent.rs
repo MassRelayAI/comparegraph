@@ -29,6 +29,11 @@
 //! Coverage limit: names, paths, community terms and kinds only. Not strings, flags, config keys, abbreviations (`cfg`)
 //! or synonyms (`memoize`), so a graph-absent verdict is `inferred`, never `derived`. The check reads the latest done
 //! run of provider `reference` only.
+//!
+//! Read set and refusals (field run 2026-11-07): css/scss/html nodes are counted by the channels but left out of the
+//! read set a `none` must read (`NON_CODE_LANGUAGES`); a refused `none` is an `AppError::NoneRefused` whose data names
+//! the exact `searched` and every name to read (`NoneRefusal`); a `searched` that is a superset of the terms is also
+//! judged on the terms' own read set (`judge_searched_none`).
 use super::communities::tokens;
 use super::map::feature_terms;
 use super::{AppError, Result};
@@ -76,12 +81,207 @@ pub struct ReadSet {
     pub cap: usize,
     pub total: usize,
     pub candidates: Vec<Candidate>,
-    /// every qualified name of the union, at any rank (the claim's stranger check)
+    /// nodes of the union left out of `total` and `candidates` because their language is markup or style
+    /// (`NON_CODE_LANGUAGES`); 0 when they were asked for (`--include-non-code`)
+    pub non_code: usize,
+    /// every qualified name of the union, at any rank and of any language (the claim's stranger check)
     #[serde(skip)]
     pub(crate) names: BTreeSet<String>,
 }
 /// How many ranked candidates a `none` must name as read.
 pub(crate) const READ_CAP: usize = 10;
+/// Parser languages whose nodes are selectors or markup, not code: a css rule named for a feature word is not where an
+/// agent implements it. Left out of a read set unless asked for; the channels still count them.
+pub(crate) const NON_CODE_LANGUAGES: &[&str] = &["css", "scss", "html"];
+
+/// A `claim none` the engine refuses, as data (envelope `error.data`, code `none_refused`). A caller fixes it by
+/// re-claiming with `searched` unchanged and every name of `hits_read` named as read.
+#[derive(Debug, Serialize, Clone)]
+pub struct NoneRefusal {
+    /// `graph_hits` (no `searched`, some channel hit), `family_words` (no `searched`, zero hits once family words were
+    /// set aside), `no_read_hits` (the search has candidates and none was named), `unread` (some of `hits_read` was not
+    /// named), `strangers` (a named symbol is no candidate of the search at any rank)
+    pub reason: &'static str,
+    pub repo: String,
+    pub family: String,
+    pub feature: String,
+    /// the `searched` text `hits_read` is computed for; re-claim with it unchanged
+    pub searched: String,
+    /// the absent-check terms without the family words: a `searched` holding every one of them (any superset) is also
+    /// accepted against the read set of these terms alone
+    pub terms: Vec<String>,
+    /// the family words set aside
+    pub common: Vec<String>,
+    /// every qualified name the `none` must name as read (the top `cap` candidates, in rank order); empty when the
+    /// search finds nothing, in which case `searched` alone records the absence
+    pub hits_read: Vec<String>,
+    /// the names of `hits_read` that were not named (reason `unread`)
+    pub unread: Vec<String>,
+    /// the named symbols no candidate carries (reason `strangers`)
+    pub strangers: Vec<String>,
+    /// union size of the read set `hits_read` is the top of
+    pub total: usize,
+    pub cap: usize,
+    /// non-code nodes left out of that read set
+    pub non_code: usize,
+    #[serde(skip)]
+    pub message: String,
+}
+
+/// The names a reader gave, one per entry when the entry is a candidate's name (a name may hold a comma, a space or a
+/// newline); any other entry is split on commas and whitespace (the older `a,b` / `a b` form). Order kept, duplicates
+/// dropped.
+pub(crate) fn read_names(raw: &[String], known: &BTreeSet<String>) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    let mut push = |s: &str| {
+        if !s.is_empty() && !out.iter().any(|o| o == s) {
+            out.push(s.to_string());
+        }
+    };
+    for r in raw {
+        if known.contains(r.as_str()) {
+            push(r);
+        } else if known.contains(r.trim()) {
+            push(r.trim());
+        } else {
+            for piece in r.split(|c: char| c.is_whitespace() || c == ',') {
+                push(piece);
+            }
+        }
+    }
+    out
+}
+
+/// What `claim none --searched` was judged on once it is accepted.
+pub(crate) struct SearchedNone {
+    /// union size of the read set judged on; 0 when nothing (code) was found
+    pub total: usize,
+    pub cap: usize,
+    /// the demanded names, every one named as read (empty when `total` is 0)
+    pub top: Vec<String>,
+    pub non_code: usize,
+    /// some names were given
+    pub read_given: bool,
+    /// `Some(terms)` when `searched` is a superset of the absent-check terms and was judged on their read set
+    pub judged_on: Option<String>,
+}
+
+/// Judge a `none --searched <text>` with the names a reader gave. Accepted when every top candidate of the read set of
+/// `text` is named, or, when `text` holds every absent-check term (a superset), every top candidate of the read set of
+/// those terms alone (`absent-check`, with or without `--searched "<terms>"`). Refused with a `NoneRefusal` otherwise.
+pub(crate) fn judge_searched_none(
+    store: &Store,
+    repo: &str,
+    run: i64,
+    f: &FeatureRow,
+    text: &str,
+    read_raw: &[String],
+) -> Result<SearchedNone> {
+    let p = prepare(store, run, f, false)?;
+    let rs = build_read_set(store, run, &p, Some(text), false)?;
+    let given: BTreeSet<String> = searched_terms(text).into_iter().collect();
+    let canonical = p.terms.join(" ");
+    let superset = !p.terms.is_empty() && p.terms.iter().all(|t| given.contains(t));
+    // the read sets a reader may have been handed, the most specific first
+    let mut options: Vec<(ReadSet, bool)> = vec![];
+    if superset {
+        options.push((build_read_set(store, run, &p, Some(&canonical), false)?, true));
+        options.push((build_read_set(store, run, &p, None, false)?, true));
+    }
+    let mut names: BTreeSet<String> = rs.names.clone();
+    for (o, _) in &options {
+        names.extend(o.names.iter().cloned());
+    }
+    let read = read_names(read_raw, &names);
+    if rs.total == 0 {
+        return Ok(SearchedNone {
+            total: 0,
+            cap: rs.cap,
+            top: vec![],
+            non_code: rs.non_code,
+            read_given: !read.is_empty(),
+            judged_on: None,
+        });
+    }
+    let top_of = |r: &ReadSet| -> Vec<String> { r.candidates.iter().map(|c| c.qualified_name.clone()).collect() };
+    let refusal = |reason: &'static str, r: &ReadSet, unread: Vec<String>, strangers: Vec<String>, message: String| {
+        AppError::NoneRefused(Box::new(NoneRefusal {
+            reason,
+            repo: repo.into(),
+            family: f.family.clone(),
+            feature: f.slug.clone(),
+            searched: text.into(),
+            terms: p.terms.clone(),
+            common: p.common.clone(),
+            hits_read: top_of(r),
+            unread,
+            strangers,
+            total: r.total,
+            cap: r.cap,
+            non_code: r.non_code,
+            message,
+        }))
+    };
+    // the list a refusal names: the terms' own read set under a superset (the one `absent-check` printed), else `text`'s
+    let demanded: &ReadSet = options.first().map(|o| &o.0).unwrap_or(&rs);
+    if read.is_empty() {
+        let sample: Vec<String> = top_of(&rs).into_iter().take(5).collect();
+        return Err(refusal(
+            "no_read_hits",
+            demanded,
+            top_of(demanded),
+            vec![],
+            format!(
+                "not none: the search for \"{text}\" finds {} candidate(s) in {repo} (e.g. {}); read them (absent-check --searched) and pass --read-hits",
+                rs.total,
+                sample.join(", ")
+            ),
+        ));
+    }
+    options.insert(0, (rs, false));
+    let unread_of = |r: &ReadSet| -> Vec<String> { top_of(r).into_iter().filter(|n| !read.contains(n)).collect() };
+    let Some(pick) = options.iter().position(|(r, _)| unread_of(r).is_empty()) else {
+        let d = demanded_of(&options, superset);
+        let unread = unread_of(d);
+        return Err(refusal(
+            "unread",
+            d,
+            unread.clone(),
+            vec![],
+            format!(
+                "not none: {} of the top {} candidates were not read: {}; run absent-check --searched \"{text}\" for the list, or claim has/partial",
+                unread.len(),
+                d.candidates.len(),
+                unread.join(", ")
+            ),
+        ));
+    };
+    let (chosen, by_terms) = &options[pick];
+    let strangers: Vec<String> = read.iter().filter(|r| !names.contains(*r)).cloned().collect();
+    if !strangers.is_empty() {
+        return Err(refusal(
+            "strangers",
+            chosen,
+            vec![],
+            strangers.clone(),
+            format!("--read-hits names symbols the search does not find: {}", strangers.join(", ")),
+        ));
+    }
+    Ok(SearchedNone {
+        total: chosen.total,
+        cap: chosen.cap,
+        top: top_of(chosen),
+        non_code: chosen.non_code,
+        read_given: true,
+        judged_on: by_terms.then_some(canonical),
+    })
+}
+
+/// `options` is `[text's read set, terms' read set, absent-check's]` under a superset, else `[text's]`: the list a
+/// refusal names is the terms' one under a superset.
+fn demanded_of(options: &[(ReadSet, bool)], superset: bool) -> &ReadSet {
+    &options[if superset { 1 } else { 0 }].0
+}
 /// The most FTS hits of the author's search that enter the read set.
 const FTS_FETCH: usize = 1000;
 
@@ -167,6 +367,38 @@ impl AbsentCheck {
             c.kinds.count,
             sample.join(", ")
         )
+    }
+    /// `refusal` as a `none_refused` error: the data names the exact `searched` to re-claim with (the terms, space
+    /// separated) and every name that `none` must then list as read (the top of the read set of that search).
+    pub(crate) fn refusal_error(&self, store: &Store, f: &FeatureRow) -> Result<AppError> {
+        let searched = self.terms.join(" ");
+        let p = prepare(store, self.run_id, f, false)?;
+        let rs = build_read_set(store, self.run_id, &p, Some(&searched), false)?;
+        let hits_read: Vec<String> = rs.candidates.iter().map(|c| c.qualified_name.clone()).collect();
+        let tail = if hits_read.is_empty() {
+            format!(" (claim none --searched \"{searched}\" finds no code candidate to read)")
+        } else {
+            format!(
+                " (to record a none: --searched \"{searched}\" and a --read-hits for each of the {} names in error.data.hits_read)",
+                hits_read.len()
+            )
+        };
+        Ok(AppError::NoneRefused(Box::new(NoneRefusal {
+            reason: if self.total() == 0 && !self.common.is_empty() { "family_words" } else { "graph_hits" },
+            repo: self.repo.clone(),
+            family: self.family.clone(),
+            feature: self.feature.clone(),
+            searched,
+            terms: self.terms.clone(),
+            common: self.common.clone(),
+            unread: hits_read.clone(),
+            hits_read,
+            strangers: vec![],
+            total: rs.total,
+            cap: rs.cap,
+            non_code: rs.non_code,
+            message: self.refusal() + &tail,
+        })))
     }
 }
 
@@ -620,8 +852,15 @@ pub(crate) fn guard_searched(store: &Store, f: &FeatureRow, terms_text: &str) ->
     Ok(())
 }
 
-/// Union the channel ids with the author's search, score and rank them.
-fn build_read_set(store: &Store, run: i64, p: &Prep, searched: Option<&str>) -> Result<ReadSet> {
+/// Union the channel ids with the author's search, score and rank them. Non-code nodes (`NON_CODE_LANGUAGES`) are
+/// counted in `non_code` and left out of `total` and `candidates` unless `include_non_code`; `names` keeps them.
+fn build_read_set(
+    store: &Store,
+    run: i64,
+    p: &Prep,
+    searched: Option<&str>,
+    include_non_code: bool,
+) -> Result<ReadSet> {
     let c = store.conn();
     // the author's search: ids with their bm25 score, best first
     let mut fts: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
@@ -659,12 +898,14 @@ fn build_read_set(store: &Store, run: i64, p: &Prep, searched: Option<&str>) -> 
         }
     }
     let mut st = c.prepare(&format!(
-        "SELECT n.name, n.qualified_name, n.kind, n.path, n.line_start, {} FROM node n WHERE n.id = ?1",
+        "SELECT n.name, n.qualified_name, n.kind, n.path, n.line_start, {}, n.language FROM node n WHERE n.id = ?1",
         super::search::LABEL_SUBQUERY
     ))?;
     let mut scored: Vec<(u32, f64, Candidate, i64)> = vec![];
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    let mut non_code = 0usize;
     for id in &ids {
-        let (name, qn, kind, path, line, label) = st.query_row(params![id], |r| {
+        let (name, qn, kind, path, line, label, lang) = st.query_row(params![id], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -672,8 +913,14 @@ fn build_read_set(store: &Store, run: i64, p: &Prep, searched: Option<&str>) -> 
                 r.get::<_, String>(3)?,
                 r.get::<_, i64>(4)?,
                 r.get::<_, Option<String>>(5)?,
+                r.get::<_, String>(6)?,
             ))
         })?;
+        names.insert(qn.clone());
+        if !include_non_code && NON_CODE_LANGUAGES.contains(&lang.as_str()) {
+            non_code += 1;
+            continue;
+        }
         let lname = name.to_lowercase();
         let ltoks = tokens(&name);
         let lpath = path.to_lowercase();
@@ -749,23 +996,8 @@ fn build_read_set(store: &Store, run: i64, p: &Prep, searched: Option<&str>) -> 
             .then(a.3.cmp(&b.3))
     });
     let total = scored.len();
-    let names: BTreeSet<String> = scored.iter().map(|x| x.2.qualified_name.clone()).collect();
     let candidates = scored.into_iter().take(READ_CAP).map(|x| x.2).collect();
-    Ok(ReadSet { cap: READ_CAP, total, candidates, names })
-}
-
-/// The ranked candidates a `none` over `searched` must read: the feature's channel hits plus the author's search,
-/// scored and capped at `READ_CAP`. `total` counts the union before the cap.
-pub(crate) fn read_set(
-    store: &Store,
-    _repo: &str,
-    run: i64,
-    _provider: &str,
-    f: &FeatureRow,
-    searched: Option<&str>,
-) -> Result<ReadSet> {
-    let p = prepare(store, run, f, false)?;
-    build_read_set(store, run, &p, searched)
+    Ok(ReadSet { cap: READ_CAP, total, candidates, non_code, names })
 }
 
 /// The check on an open store for a feature row and a run; shared by `claim` and the verb.
@@ -776,17 +1008,19 @@ pub(crate) fn check_feature(
     provider: &str,
     f: &FeatureRow,
     searched: Option<&str>,
+    include_non_code: bool,
 ) -> Result<AbsentCheck> {
     if let Some(t) = searched {
         guard_searched(store, f, t)?;
     }
     let p = prepare(store, run, f, true)?;
-    let rs = build_read_set(store, run, &p, searched)?;
+    let rs = build_read_set(store, run, &p, searched, include_non_code)?;
     let Prep { terms, common, stem_pairs, forms, names, channels, .. } = p;
     // zero hits records an absence only when no family word was set aside: with one dropped, the graph proves less,
     // and the check refuses with the uncounted words named (the author records the absence with --searched)
     let hits = channels.symbols.count + channels.paths.count + channels.communities.count + channels.kinds.count;
-    let searched_hits = searched.is_some() && rs.total > 0;
+    // a non-code hit is still a hit: only the read set leaves it out
+    let searched_hits = searched.is_some() && rs.total + rs.non_code > 0;
     let absent = hits == 0 && !searched_hits && common.is_empty();
     let reason = if hits > 0 || searched_hits {
         "hits".to_string()
@@ -821,6 +1055,7 @@ pub fn absent_check(
     family: &str,
     feature: &str,
     searched: Option<&str>,
+    include_non_code: bool,
 ) -> Result<AbsentCheck> {
     let store = Store::open_existing(root)?;
     store
@@ -835,5 +1070,5 @@ pub fn absent_check(
     if f.tier == "retired" {
         return Err(AppError::InvalidArguments(format!("feature {feature} is retired")));
     }
-    check_feature(&store, repo, run, &provider, &f, searched)
+    check_feature(&store, repo, run, &provider, &f, searched, include_non_code)
 }

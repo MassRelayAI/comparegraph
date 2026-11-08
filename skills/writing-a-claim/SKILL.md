@@ -26,7 +26,8 @@ Paths are relative to the clone. `<path>:<line>` cites one line. Over MCP, `comp
 - `--searched` matches whole identifier tokens by prefix (`retry` finds `retry_with_backoff`, `backoff` does not); search several stems. Text with no searchable token is refused.
 - `none` without `--searched` when the graph has candidates on any of four channels (symbols, paths, community labels/keywords, node kinds the feature names); the message lists them. Read them, then claim has/partial, or record a manual absence with `--searched`
 - `none` over MCP without `searched` (the MCP server never records a graph-backed absence)
-- `none` with `--searched` when the engine's own search for those terms finds a hit in that repo (the message lists examples) and `--read-hits` does not name every hit: read the hits, name them all (`--read-hits a,b`; `hits_read` in a batch row, `read_hits` over MCP), then claim; the none is recorded `observed`
+- `none` with `--searched` when the engine's own search for those terms finds a hit in that repo (the message lists examples) and `--read-hits` does not name every hit: read the hits, name them all (one `--read-hits <name>` per name; `hits_read` in a batch row, `read_hits` over MCP), then claim; the none is recorded `observed`
+- every `none` refusal above has code `none_refused` and `error.data` with the exact `searched` to use and the full `hits_read` list to read: read those, then re-claim with both unchanged. A `searched` holding every absent-check term plus more is accepted against the terms' own list
 - a retired feature ("feature <id> is retired")
 - an id present in several families without `--family`
 - unknown repo or feature: `not_found`

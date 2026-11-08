@@ -262,62 +262,37 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
                 .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
             super::absent::guard_searched(store, &f, terms_text)?;
             let pin = super::absent::pinned_run(store, i.repo)?;
-            let rs = super::absent::read_set(store, i.repo, pin.0, &pin.1, &f, Some(terms_text))?;
-            let read: Vec<String> = i
-                .read_hits
-                .iter()
-                .flat_map(|r| r.split(|c: char| c.is_whitespace() || c == ','))
-                .filter(|r| !r.is_empty())
-                .map(String::from)
-                .collect();
-            if rs.total == 0 {
-                note = format!("searched (author-supplied): {terms_text} → 0 hits");
-                if !read.is_empty() {
+            // refusals are `none_refused` with the required `hits_read` list as data (see `judge_searched_none`)
+            let j = super::absent::judge_searched_none(store, i.repo, pin.0, &f, terms_text, i.read_hits)?;
+            let non_code = if j.non_code > 0 {
+                format!("; {} non-code (css/scss/html) candidates set aside", j.non_code)
+            } else {
+                String::new()
+            };
+            if j.total == 0 {
+                note = format!("searched (author-supplied): {terms_text} → 0 hits{non_code}");
+                if j.read_given {
                     note.push_str("; no hits were found, so nothing was read");
                 }
-            } else if read.is_empty() {
-                let sample: Vec<&str> = rs.candidates.iter().take(5).map(|h| h.qualified_name.as_str()).collect();
-                return invalid(format!(
-                    "not none: the search for \"{terms_text}\" finds {} candidate(s) in {} (e.g. {}); read them (absent-check --searched) and pass --read-hits",
-                    rs.total,
-                    i.repo,
-                    sample.join(", ")
-                ));
             } else {
-                let top: Vec<&str> = rs.candidates.iter().map(|h| h.qualified_name.as_str()).collect();
-                let unread: Vec<&str> = top.iter().copied().filter(|n| !read.iter().any(|r| r == n)).collect();
-                if !unread.is_empty() {
-                    return invalid(format!(
-                        "not none: {} of the top {} candidates were not read: {}; run absent-check --searched \"{terms_text}\" for the list, or claim has/partial",
-                        unread.len(),
-                        top.len(),
-                        unread.join(", ")
-                    ));
-                }
-                let strangers: Vec<&str> =
-                    read.iter().map(String::as_str).filter(|r| !top.contains(r)).collect();
-                if !strangers.is_empty() {
-                    let strangers: Vec<&str> = strangers.into_iter().filter(|r| !rs.names.contains(*r)).collect();
-                    if !strangers.is_empty() {
-                        return invalid(format!(
-                            "--read-hits names symbols the search does not find: {}",
-                            strangers.join(", ")
-                        ));
-                    }
-                }
+                let top = &j.top;
                 note = format!(
                     "searched: {terms_text} → {} candidates, top {} read and rejected: {}",
-                    rs.total,
+                    j.total,
                     top.len(),
-                    capped(&top, 20)
+                    capped(top, 20)
                 );
-                if rs.total > rs.cap {
-                    note.push_str(&format!("; {} lower-ranked candidates not demanded", rs.total - top.len()));
+                if let Some(t) = &j.judged_on {
+                    note.push_str(&format!("; judged on the read set of the terms \"{t}\" (searched is a superset)"));
+                }
+                if j.total > j.cap {
+                    note.push_str(&format!("; {} lower-ranked candidates not demanded", j.total - top.len()));
                     limitation_items.push(Limitation::new(
                         "read_capped",
-                        format!("{} candidates, the top {} were read; the rest are not demanded", rs.total, top.len()),
+                        format!("{} candidates, the top {} were read; the rest are not demanded", j.total, top.len()),
                     ));
                 }
+                note.push_str(&non_code);
                 read_confirmed = true;
             }
         } else {
@@ -328,9 +303,9 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
                 .find(|f| f.id == fid)
                 .ok_or_else(|| AppError::NotFound(format!("no feature {}", i.feature)))?;
             let pin = super::absent::pinned_run(store, i.repo)?;
-            let chk = super::absent::check_feature(store, i.repo, pin.0, &pin.1, &f, None)?;
+            let chk = super::absent::check_feature(store, i.repo, pin.0, &pin.1, &f, None, false)?;
             if !chk.absent {
-                return invalid(chk.refusal());
+                return Err(chk.refusal_error(store, &f)?);
             }
             note = chk.note();
             graph_absent = true;
@@ -700,6 +675,9 @@ fn equal_live_claim(
 pub struct BatchError {
     pub code: &'static str,
     pub message: String,
+    /// `AppError::data` (a `none_refused` row's `NoneRefusal`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
 }
 
 /// One input line's outcome: `data` on success, `error` otherwise. `line` is 1-based in the input.
@@ -715,11 +693,17 @@ impl<T> BatchRow<T> {
     pub fn from_result(line: usize, r: Result<T>) -> Self {
         match r {
             Ok(d) => BatchRow { line, ok: true, data: Some(d), error: None },
-            Err(e) => BatchRow::fail(line, e.code(), e.to_string()),
+            Err(e) => {
+                let mut row = BatchRow::fail(line, e.code(), e.to_string());
+                if let Some(b) = row.error.as_mut() {
+                    b.data = e.data();
+                }
+                row
+            }
         }
     }
     pub fn fail(line: usize, code: &'static str, message: String) -> Self {
-        BatchRow { line, ok: false, data: None, error: Some(BatchError { code, message }) }
+        BatchRow { line, ok: false, data: None, error: Some(BatchError { code, message, data: None }) }
     }
 }
 
