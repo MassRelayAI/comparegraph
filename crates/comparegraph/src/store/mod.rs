@@ -276,6 +276,23 @@ impl Store {
                     .map_err(open_err)?;
             }
         }
+        // additive claim columns (field-run asks 7 and 15): `claim --at-commit` and the `out_of_subset` qualifier;
+        // NULL on every older row, and on a fresh store too (they are not in schema.sql)
+        {
+            let mut st = conn.prepare("PRAGMA table_info(claim)").map_err(open_err)?;
+            let names = st
+                .query_map([], |r| r.get::<_, String>(1))
+                .map_err(open_err)?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(open_err)?;
+            drop(st);
+            for col in ["at_commit", "out_of_subset"] {
+                if !names.iter().any(|n| n == col) {
+                    conn.execute_batch(&format!("ALTER TABLE claim ADD COLUMN {col} TEXT"))
+                        .map_err(open_err)?;
+                }
+            }
+        }
         let existing: Option<String> = conn
             .query_row(
                 "SELECT value FROM meta WHERE key = 'schema_version'",

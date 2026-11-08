@@ -31,6 +31,12 @@ pub struct ClaimOut {
     pub supersedes_id: Option<i64>,
     pub note: String,
     pub locations: Vec<LocationOut>,
+    /// The upstream commit the citations were read at (`--at-commit`), when the caller gave one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at_commit: Option<String>,
+    /// Qualifier: the evidence is upstream at this path (`path[:lines]`), outside the exported tree (`--out-of-subset`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub out_of_subset: Option<String>,
     /// True when a batch row equalled the live claim and nothing was written; `id` is the existing claim.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub skipped: bool,
@@ -52,6 +58,24 @@ pub struct ClaimInput<'a> {
     pub note: Option<&'a str>,
     /// Write nothing when the live claim for the feature already equals this one (a batch resumed after an interruption).
     pub skip_equal: bool,
+    /// What the citations must be, beyond resolving: see `Evidence`.
+    pub evidence: Evidence<'a>,
+}
+
+/// The write-time checks and qualifiers of a citation (field-run asks 7, 8, 11, 14, 15); the default checks the line
+/// content only.
+#[derive(Default, Clone, Copy)]
+pub struct Evidence<'a> {
+    /// `--at-commit`: the upstream commit the citations were read at; must agree with the head the build read.
+    pub at_commit: Option<&'a str>,
+    /// `--anchor 'path::regex'`: each resolves to the one code line the regex matches, stored as `path:N`.
+    pub anchors: &'a [String],
+    /// `--expect`: one pattern for every `--at`, or one per `--at` in order; checked against the cited lines.
+    pub expect: &'a [String],
+    /// `--allow-comment`: accept a citation that is only blank, comment or docstring lines.
+    pub allow_comment: bool,
+    /// `--out-of-subset <upstream path[:lines]>`: has/partial evidence that the exported tree does not contain.
+    pub out_of_subset: Option<&'a str>,
 }
 
 /// `a, b, …` up to `n` items, then `+k more` (`…` for a word list).
@@ -174,10 +198,25 @@ fn check_input(i: &ClaimInput) -> Result<()> {
     if !i.read_hits.is_empty() && !(i.verdict == "none" && i.searched.is_some()) {
         return invalid("--read-hits needs --searched and a none verdict: it names the hits of that search that were read");
     }
-    if matches!(i.verdict, "has" | "partial") && i.at.is_empty() {
+    let ev = &i.evidence;
+    if matches!(i.verdict, "has" | "partial") && i.at.is_empty() && ev.anchors.is_empty() && ev.out_of_subset.is_none()
+    {
         return invalid(format!(
-            "a {} claim needs at least one --at <path>:<start>-<end>",
+            "a {} claim needs at least one --at <path>:<start>-<end> (or --anchor 'path::regex', or --out-of-subset <upstream path>)",
             i.verdict
+        ));
+    }
+    if ev.out_of_subset.is_some() && !matches!(i.verdict, "has" | "partial") {
+        return invalid("--out-of-subset qualifies a has or partial claim: it names where upstream the evidence is");
+    }
+    if !ev.expect.is_empty() && i.at.is_empty() {
+        return invalid("--expect checks an --at citation; an --anchor carries its own regex");
+    }
+    if ev.expect.len() > 1 && ev.expect.len() != i.at.len() {
+        return invalid(format!(
+            "{} --expect for {} --at: give one --expect for every --at, or one per --at in the same order",
+            ev.expect.len(),
+            i.at.len()
         ));
     }
     Ok(())
@@ -306,6 +345,19 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
     }
 
     // resolve every location before writing anything
+    let ev = &i.evidence;
+    let at_commit = check_at_commit(store, &repo, ev.at_commit, &mut limitation_items)?;
+    let out_of_subset = match ev.out_of_subset {
+        Some(p) => {
+            let p = check_out_of_subset(Path::new(&repo.path), p)?;
+            limitation_items.push(Limitation::new(
+                "out_of_subset",
+                format!("the evidence is upstream at {p}, outside the exported tree; the engine did not read it"),
+            ));
+            Some(p)
+        }
+        None => None,
+    };
     struct Resolved {
         path: String,
         s: usize,
@@ -316,20 +368,51 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
     fn res_keys(r: &[Resolved]) -> Vec<(String, i64, i64)> {
         r.iter().map(|x| (x.path.clone(), x.s as i64, x.e as i64)).collect()
     }
-    let mut res: Vec<Resolved> = vec![];
-    for a in i.at {
-        let (p, s, e) = parse_at(a)?;
-        let (norm, full) = safe_path(Path::new(&repo.path), &p)?;
+    let read_text = |rel: &str| -> Result<(String, String)> {
+        let (norm, full) = safe_path(Path::new(&repo.path), rel)?;
         let text = match std::fs::read(&full) {
             Ok(b) => String::from_utf8(b)
                 .map_err(|_| AppError::InvalidArguments(format!("{norm} is not UTF-8 text")))?,
             Err(er) => return Err(AppError::Io(full.clone(), er)),
         };
+        Ok((norm, text))
+    };
+    let expects: Vec<super::citation::Pattern> = ev
+        .expect
+        .iter()
+        .map(|x| {
+            super::citation::Pattern::parse(x)
+                .map_err(|m| AppError::InvalidArguments(format!("--expect {x:?}: the regex has {m}")))
+        })
+        .collect::<Result<_>>()?;
+    // (path, start, end, file text, index of its --expect): every --at, then every --anchor resolved to its one line
+    let mut spans: Vec<(String, usize, usize, String, Option<usize>)> = vec![];
+    for (k, a) in i.at.iter().enumerate() {
+        let (p, s, e) = parse_at(a)?;
+        let (norm, text) = read_text(&p)?;
+        let ex = (!expects.is_empty()).then_some(if expects.len() == 1 { 0 } else { k });
+        spans.push((norm, s, e, text, ex));
+    }
+    for a in ev.anchors {
+        let (p, pat) = super::citation::split_anchor(a).map_err(AppError::InvalidArguments)?;
+        let (norm, text) = read_text(p)?;
+        let n = super::citation::resolve_anchor(&norm, &text, &pat, ev.allow_comment)
+            .map_err(AppError::InvalidArguments)?;
+        spans.push((norm, n, n, text, None));
+    }
+    let mut imports_only: Vec<String> = vec![];
+    let mut res: Vec<Resolved> = vec![];
+    for (norm, s, e, text, ex) in spans {
         let Some(hash) = super::lines::span_hash(&text, s, e) else {
             return invalid(format!(
                 "{norm}:{s}-{e}: lines out of range (need 1 ≤ start ≤ end ≤ file lines)"
             ));
         };
+        let chk = super::citation::check_span(&norm, &text, s, e, ex.map(|k| &expects[k]), ev.allow_comment)
+            .map_err(AppError::InvalidArguments)?;
+        if chk.imports_only {
+            imports_only.push(super::citation::span_label(&norm, s, e));
+        }
         let node: Option<i64> = store
             .conn()
             .query_row(
@@ -347,18 +430,30 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
             node,
         });
     }
+    if !imports_only.is_empty() {
+        limitation_items.push(Limitation::new(
+            "citation_imports_only",
+            format!(
+                "{} cite(s) only import, use or package lines: the module is present, the feature's code is not shown",
+                imports_only.join(", ")
+            ),
+        ));
+    }
 
     let confidence = if i.verdict == "unknown" {
         "unknown"
     } else if read_confirmed {
         "observed"
-    } else if graph_absent {
+    } else if graph_absent || (out_of_subset.is_some() && res.is_empty()) {
         "inferred"
     } else {
         "derived"
     };
     if i.skip_equal {
-        if let Some(same) = equal_live_claim(store, i, rid.0, fid, run.0, confidence, &note, &fam, &res_keys(&res))? {
+        let quals = (at_commit.as_deref(), out_of_subset.as_deref());
+        if let Some(same) =
+            equal_live_claim(store, i, rid.0, fid, run.0, confidence, &note, &fam, &res_keys(&res), quals)?
+        {
             return Ok(same);
         }
     }
@@ -372,9 +467,9 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
             |r| r.get(0),
         )?;
         tx.execute(
-            "INSERT INTO claim(repo_id, feature_id, run_id, verdict, confidence, author, note, created_at, supersedes_id) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-            params![rid.0, fid, run.0, i.verdict, confidence, i.author, note, now, supersedes],
+            "INSERT INTO claim(repo_id, feature_id, run_id, verdict, confidence, author, note, created_at, supersedes_id, at_commit, out_of_subset) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![rid.0, fid, run.0, i.verdict, confidence, i.author, note, now, supersedes, at_commit, out_of_subset],
         )?;
         let cid = tx.last_insert_rowid();
         let mut locations = vec![];
@@ -418,8 +513,92 @@ pub fn claim_on(store: &Store, i: &ClaimInput) -> Result<ClaimOut> {
         supersedes_id: supersedes,
         note,
         locations,
+        at_commit,
+        out_of_subset,
         skipped: false,
         limitation_items,
+    })
+}
+
+/// `--at-commit`: 7 to 40 hex digits that agree (one a prefix of the other) with the commit the build read: the repo's
+/// `source_commit` when the store has that column and it is set, else its git head. With neither known it is recorded
+/// as given, under an `at_commit_unverified` limitation.
+fn check_at_commit(
+    store: &Store,
+    repo: &crate::store::RepoRow,
+    at: Option<&str>,
+    lims: &mut Vec<Limitation>,
+) -> Result<Option<String>> {
+    let Some(at) = at else { return Ok(None) };
+    let sha = at.trim().to_ascii_lowercase();
+    if !(7..=40).contains(&sha.len()) || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return invalid(format!("--at-commit {at}: expected a commit id of 7 to 40 hex digits"));
+    }
+    let has_source = store
+        .conn()
+        .prepare("SELECT 1 FROM pragma_table_info('repo') WHERE name = 'source_commit'")?
+        .exists([])?;
+    let source: Option<String> = if has_source {
+        store.conn().query_row(
+            "SELECT source_commit FROM repo WHERE id = ?1",
+            params![repo.id.unwrap().0],
+            |r| r.get(0),
+        )?
+    } else {
+        None
+    };
+    let known = source.filter(|s| !s.trim().is_empty()).or_else(|| repo.head.clone());
+    match known {
+        Some(k) => {
+            let k = k.trim().to_ascii_lowercase();
+            if !(k.starts_with(&sha) || sha.starts_with(&k)) {
+                return invalid(format!(
+                    "--at-commit {at} disagrees with the commit the build of {} read ({k}); cite the lines at that commit, or re-export and rebuild at {at}",
+                    repo.name
+                ));
+            }
+        }
+        None => lims.push(Limitation::new(
+            "at_commit_unverified",
+            format!("{} records no commit (no git head, no source commit), so --at-commit {sha} was recorded as given", repo.name),
+        )),
+    }
+    Ok(Some(sha))
+}
+
+/// `--out-of-subset <path[:start[-end]]>`: a clone-relative path with no `..` that the exported tree does not
+/// contain (a file that is there is cited with `--at`). Returned normalised, with its line suffix.
+fn check_out_of_subset(clone: &Path, given: &str) -> Result<String> {
+    let (p, lines) = match given.rsplit_once(':') {
+        Some((p, l)) if !l.is_empty() && l.chars().all(|c| c.is_ascii_digit() || c == '-') => {
+            parse_at(given)?;
+            (p, Some(l))
+        }
+        Some((_, l)) => {
+            return invalid(format!("--out-of-subset {given}: {l:?} is not a line number or range"));
+        }
+        None => (given, None),
+    };
+    let mut parts: Vec<String> = vec![];
+    for c in Path::new(p).components() {
+        match c {
+            Component::Normal(s) => parts.push(s.to_string_lossy().into_owned()),
+            Component::CurDir => {}
+            _ => return invalid(format!("--out-of-subset {given:?}: an upstream path relative to the repo root, with no '..'")),
+        }
+    }
+    if parts.is_empty() {
+        return invalid("--out-of-subset needs the upstream path of the evidence");
+    }
+    let norm = parts.join("/");
+    if clone.join(&norm).is_file() {
+        return invalid(format!(
+            "--out-of-subset {norm}: that file is in the exported tree; cite it with --at {norm}:<start>-<end>"
+        ));
+    }
+    Ok(match lines {
+        Some(l) => format!("{norm}:{l}"),
+        None => norm,
     })
 }
 
@@ -436,11 +615,12 @@ fn equal_live_claim(
     note: &str,
     family: &str,
     keys: &[(String, i64, i64)],
+    quals: (Option<&str>, Option<&str>),
 ) -> Result<Option<ClaimOut>> {
     let c = store.conn();
     let live = c
         .query_row(
-            "SELECT id, run_id, verdict, confidence, author, note, created_at, supersedes_id FROM claim \
+            "SELECT id, run_id, verdict, confidence, author, note, created_at, supersedes_id, at_commit, out_of_subset FROM claim \
              WHERE id = (SELECT MAX(id) FROM claim WHERE repo_id = ?1 AND feature_id = ?2)",
             params![repo_id, feature_id],
             |r| {
@@ -453,11 +633,13 @@ fn equal_live_claim(
                     r.get::<_, String>(5)?,
                     r.get::<_, String>(6)?,
                     r.get::<_, Option<i64>>(7)?,
+                    r.get::<_, Option<String>>(8)?,
+                    r.get::<_, Option<String>>(9)?,
                 ))
             },
         )
         .optional()?;
-    let Some((id, lrun, verdict, lconf, author, lnote, created_at, supersedes_id)) = live else {
+    let Some((id, lrun, verdict, lconf, author, lnote, created_at, supersedes_id, lcommit, lsubset)) = live else {
         return Ok(None);
     };
     if lrun != run_id
@@ -465,6 +647,8 @@ fn equal_live_claim(
         || lconf != confidence
         || author != i.author
         || lnote != note
+        || lcommit.as_deref() != quals.0
+        || lsubset.as_deref() != quals.1
     {
         return Ok(None);
     }
@@ -505,6 +689,8 @@ fn equal_live_claim(
         supersedes_id,
         note: lnote,
         locations,
+        at_commit: lcommit,
+        out_of_subset: lsubset,
         skipped: true,
         limitation_items: vec![],
     }))
@@ -617,6 +803,16 @@ pub struct ClaimLine {
     pub hits_read: Vec<String>,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub at_commit: Option<String>,
+    #[serde(default)]
+    pub anchor: Vec<String>,
+    #[serde(default)]
+    pub expect: Vec<String>,
+    #[serde(default)]
+    pub allow_comment: bool,
+    #[serde(default)]
+    pub out_of_subset: Option<String>,
 }
 
 /// `claim` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line, each handed to
@@ -640,6 +836,13 @@ pub fn claim_batch(
                 read_hits: &l.hits_read,
                 note: l.note.as_deref(),
                 skip_equal: true,
+                evidence: Evidence {
+                    at_commit: l.at_commit.as_deref(),
+                    anchors: &l.anchor,
+                    expect: &l.expect,
+                    allow_comment: l.allow_comment,
+                    out_of_subset: l.out_of_subset.as_deref(),
+                },
             },
         )
     }, |o: &ClaimOut| o.skipped, on_row)
@@ -656,7 +859,7 @@ pub fn claims(
     let store = Store::open_existing(root)?;
     let c = store.conn();
     let mut st = c.prepare(
-        "SELECT c.id, r.name, fa.name, f.slug, c.run_id, c.verdict, c.confidence, c.author, c.created_at, c.supersedes_id, c.note \
+        "SELECT c.id, r.name, fa.name, f.slug, c.run_id, c.verdict, c.confidence, c.author, c.created_at, c.supersedes_id, c.note, c.at_commit, c.out_of_subset \
          FROM claim c JOIN repo r ON r.id = c.repo_id JOIN feature f ON f.id = c.feature_id JOIN family fa ON fa.id = f.family_id \
          WHERE (?1 IS NULL OR r.name = ?1) AND (?2 IS NULL OR fa.name = ?2) AND (?3 IS NULL OR f.slug = ?3) \
          AND (?4 = 1 OR c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id)) \
@@ -677,6 +880,8 @@ pub fn claims(
                 supersedes_id: r.get(9)?,
                 note: r.get(10)?,
                 locations: vec![],
+                at_commit: r.get(11)?,
+                out_of_subset: r.get(12)?,
                 skipped: false,
                 limitation_items: vec![],
             })

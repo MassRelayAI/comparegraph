@@ -294,6 +294,21 @@ pub enum Cmd {
         read_hits: Vec<String>,
         #[arg(long)]
         note: Option<String>,
+        /// the upstream commit the citations were read at (7-40 hex); must agree with the head the build read
+        #[arg(long = "at-commit", value_name = "SHA")]
+        at_commit: Option<String>,
+        /// 'path::regex': cite the one code line of path the regex matches (stored as path:N); zero or several refuse
+        #[arg(long = "anchor", value_name = "PATH::REGEX")]
+        anchor: Vec<String>,
+        /// a symbol or regex the cited lines must match: one for every --at, or one per --at in order
+        #[arg(long = "expect", value_name = "SYMBOL|REGEX")]
+        expect: Vec<String>,
+        /// accept a citation that is only blank, comment or docstring lines (the comment is the evidence)
+        #[arg(long = "allow-comment")]
+        allow_comment: bool,
+        /// has/partial evidence present upstream at this path[:lines] but absent from the exported tree
+        #[arg(long = "out-of-subset", value_name = "PATH[:LINES]")]
+        out_of_subset: Option<String>,
     },
     /// Latest claim per (clone, feature); --history lists every row with its supersede chain
     Claims {
@@ -514,9 +529,10 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     use std::io::BufRead;
     let verb = verb_of(&cli.cmd);
     let stray = match &cli.cmd {
-        Cmd::Claim { repo, feature, verdict, author, family, at, searched, read_hits, note, .. } => {
+        Cmd::Claim { repo, feature, verdict, author, family, at, searched, read_hits, note, at_commit, anchor, expect, allow_comment, out_of_subset, .. } => {
             !(repo.is_none() && feature.is_none() && verdict.is_none() && author.is_none()
                 && family.is_none() && at.is_empty() && searched.is_none() && read_hits.is_empty() && note.is_none())
+                || at_commit.is_some() || !anchor.is_empty() || !expect.is_empty() || *allow_comment || out_of_subset.is_some()
         }
         Cmd::Decide { repo, disposition, why, by, feature, family, .. } => {
             !(repo.is_none() && disposition.is_none() && why.is_none() && by.is_none()
@@ -939,6 +955,11 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             read_hits,
             note,
             batch: _,
+            at_commit,
+            anchor,
+            expect,
+            allow_comment,
+            out_of_subset,
         } => serde_json::to_value(crate::application::claim::claim(
             &cli.root,
             &crate::application::claim::ClaimInput {
@@ -952,6 +973,13 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 read_hits,
                 note: note.as_deref(),
                 skip_equal: false,
+                evidence: crate::application::claim::Evidence {
+                    at_commit: at_commit.as_deref(),
+                    anchors: anchor,
+                    expect,
+                    allow_comment: *allow_comment,
+                    out_of_subset: out_of_subset.as_deref(),
+                },
             },
         )?)
         .unwrap(),

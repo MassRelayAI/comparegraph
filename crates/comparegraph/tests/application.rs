@@ -573,6 +573,7 @@ mod vault_tests {
                     read_hits: &[],
                     note: None,
                     skip_equal: false,
+                    evidence: Default::default(),
                 },
             )
             .unwrap();

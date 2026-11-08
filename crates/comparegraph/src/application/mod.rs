@@ -4,6 +4,7 @@ pub mod agreement;
 pub mod build;
 pub mod catalog;
 pub mod check;
+pub mod citation;
 pub mod claim;
 pub mod communities;
 pub mod conform;
