@@ -257,7 +257,12 @@ fn write_all(
                 .unwrap_or("undecided")
         ));
         let mut s = String::new();
-        let _ = writeln!(s, "---\ntype: repo\n{rdesc}\nname: {}\nlicence: {}\nlane: {}\nrole: {}\nhead: {}\nfiles: {}\nnodes: {}\nedges: {}\ncommunities: {}\n---",
+        // the repo's notes, only when set (an older vault reads the same)
+        let notes = [("source_commit", &r.source_commit), ("moved_to", &r.moved_to)]
+            .iter()
+            .filter_map(|(k, v)| v.as_deref().map(|v| format!("{k}: {}\n", q(v))))
+            .collect::<String>();
+        let _ = writeln!(s, "---\ntype: repo\n{rdesc}\nname: {}\nlicence: {}\nlane: {}\nrole: {}\nhead: {}\n{notes}files: {}\nnodes: {}\nedges: {}\ncommunities: {}\n---",
             q(&r.name), r.licence.as_deref().map(q).unwrap_or_else(|| "null".into()), q(&r.lane), q(&r.role),
             r.head.as_deref().map(q).unwrap_or_else(|| "null".into()), n_files, nodes.len(), edges.len(), comms.len());
         let _ = writeln!(

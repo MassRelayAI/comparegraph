@@ -15,6 +15,14 @@ pub struct BuildReport {
     /// the git head (short) of that path when the build ran
     #[serde(default)]
     pub head: Option<String>,
+    /// the upstream commit the repo was registered with (`add --source-commit`); for an export whose head is not upstream's
+    #[serde(default)]
+    pub source_commit: Option<String>,
+    /// the subset this run read (`--include/--exclude`, else the repo's `add` defaults); both empty for the whole clone
+    #[serde(default)]
+    pub include: Vec<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
     pub nodes: usize,
     pub edges: usize,
     pub files_parsed: usize,
@@ -57,6 +65,14 @@ pub fn build_repo(
     })?;
     let provider = by_name_in(root, provider_name)
         .ok_or_else(|| AppError::NotFound(format!("no provider '{provider_name}'")))?;
+    // the subset: the build's own globs, else the repo's `add` defaults; checked before a run row exists
+    let mut opts = opts.clone();
+    if opts.include.is_empty() && opts.exclude.is_empty() {
+        opts.include = repo.include.clone();
+        opts.exclude = repo.exclude.clone();
+    }
+    let subset = crate::providers::reference::walker::Subset::new(&opts.include, &opts.exclude).map_err(AppError::InvalidArguments)?;
+    let opts = &opts;
     let status = provider.detect();
     if !status.installed {
         return Err(AppError::Provider(
@@ -78,7 +94,8 @@ pub fn build_repo(
     let repo_id = repo.id.unwrap();
     let t = Instant::now();
     if !opts.full && provider.name() == "reference" {
-        if let Some(r) = try_reuse(&store, repo_id, &repo.path, &provider.version(), opts, t)? {
+        if let Some(mut r) = try_reuse(&store, repo_id, &repo.path, &provider.version(), opts, t)? {
+            r.source_commit = repo.source_commit.clone();
             return Ok(r);
         }
     }
@@ -93,6 +110,7 @@ pub fn build_repo(
         limitations: vec![],
         store_hash: None,
     })?;
+    store.set_run_subset(run, &opts.include, &opts.exclude)?;
     let mut opts = opts.clone();
     let mut prev_comms: Option<PrevComms> = None;
     if opts.full {
@@ -131,6 +149,15 @@ pub fn build_repo(
         }
     };
     let mut out = out;
+    if provider.name() != "reference" && !subset.is_all() {
+        // an external engine walks the clone itself: its nodes outside the subset are dropped here (edges to them follow)
+        let before = out.nodes.len();
+        out.nodes.retain(|n| subset.contains(&n.path));
+        out.limitations.push(Limitation::new(
+            "subset_filtered",
+            format!("{} parsed the whole clone; {} of its {before} nodes outside --include/--exclude were dropped, files_parsed counts the whole clone", provider.name(), before - out.nodes.len()),
+        ));
+    }
     out.limitations = collapse_limitations(std::mem::take(&mut out.limitations));
     if out.files_parsed == 0 {
         let msg = format!(
@@ -209,6 +236,9 @@ pub fn build_repo(
         run,
         path: repo.path.clone(),
         head: super::git(Path::new(&repo.path), &["rev-parse", "--short=7", "HEAD"]),
+        source_commit: repo.source_commit.clone(),
+        include: opts.include.clone(),
+        exclude: opts.exclude.clone(),
         nodes: n_nodes,
         edges: n_edges,
         files_parsed: out.files_parsed,
@@ -305,6 +335,10 @@ fn try_reuse(
     let Some(last_id) = last.id else {
         return Ok(None);
     };
+    // a run read with other globs is not this build's answer, even when the same files fall inside both
+    if store.run_subset(last_id)? != (opts.include.clone(), opts.exclude.clone()) {
+        return Ok(None);
+    }
     let nodes = store.nodes_of_run(last_id)?;
     let mut recorded: HashMap<&str, &str> = HashMap::new();
     for n in nodes
@@ -345,6 +379,9 @@ fn try_reuse(
         run: last_id,
         path: repo_path.to_string(),
         head: super::git(root, &["rev-parse", "--short=7", "HEAD"]),
+        source_commit: None,
+        include: opts.include.clone(),
+        exclude: opts.exclude.clone(),
         nodes: nodes.len(),
         edges,
         files_parsed: seen,

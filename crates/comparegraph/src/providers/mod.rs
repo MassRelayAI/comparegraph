@@ -25,6 +25,10 @@ pub struct BuildOptions {
     pub prev: Option<std::rc::Rc<PrevGraph>>,
     /// `build --progress`: stderr lines (`[progress] ...`) while parsing; never on stdout
     pub progress: bool,
+    /// `build --include/--exclude` (or the repo's `add` defaults): gitignore-style globs over repo-relative paths. Empty
+    /// include reads every file; an exclude match wins over an include match. See `reference::walker::Subset`.
+    pub include: Vec<String>,
+    pub exclude: Vec<String>,
 }
 
 /// What an incremental build knows of the previous run, by qualified name (row ids are per run and never carried).
@@ -49,6 +53,8 @@ impl std::fmt::Debug for BuildOptions {
             .field("cache", &self.cache.is_some())
             .field("prev", &self.prev.is_some())
             .field("progress", &self.progress)
+            .field("include", &self.include)
+            .field("exclude", &self.exclude)
             .finish()
     }
 }
@@ -61,6 +67,8 @@ impl Default for BuildOptions {
             cache: None,
             prev: None,
             progress: false,
+            include: vec![],
+            exclude: vec![],
         }
     }
 }

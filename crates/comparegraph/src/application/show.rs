@@ -11,6 +11,11 @@ pub struct Shown {
     pub repo: String,
     pub licence: Option<String>,
     pub lane: String,
+    /// the repo's notes (`add --source-commit/--moved-to`); omitted when unset
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_commit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moved_to: Option<String>,
     pub node: Node,
     pub community: Option<String>,
     pub callers: Vec<String>,
@@ -123,6 +128,8 @@ pub fn show_with(root: &Path, repo: &str, qn: &str, full: bool, max_callers: usi
         repo: r.name,
         licence: r.licence,
         lane: r.lane,
+        source_commit: r.source_commit,
+        moved_to: r.moved_to,
         node,
         community,
         callers,
