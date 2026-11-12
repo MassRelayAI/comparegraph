@@ -31,6 +31,7 @@ pub mod ui;
 pub mod ui_graph;
 pub mod ui_limits;
 pub mod ui_net;
+pub mod ui_owners;
 pub mod vault;
 use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]

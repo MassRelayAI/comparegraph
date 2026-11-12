@@ -273,6 +273,8 @@ comparegraph ui nav-diff --ours ours --ref theirs --ui-root ./captures    # menu
 comparegraph ui graph ours --ui-root ./captures                           # interaction graph: depth, orphans, dead actions, cycles
 comparegraph ui path ours room inbox --ui-root ./captures                 # shortest click path between two screens
 comparegraph ui graph-diff --ours ours --ref target --ui-root ./captures  # against the intended graph built from target-nav.json
+comparegraph ui owners room --ui-root ./captures                      # which files of our web app draw this screen (route table -> page -> closure)
+comparegraph ui screens-of apps/web/src/components/shell/Rail.tsx --ui-root ./captures   # the reverse: which screens render this file
 comparegraph ui journey j1 --ui-root ./captures                           # who completes the goal, in how many clicks
 comparegraph ui matrix FAMILY --net --ui-root ./captures                  # also: captures with failed network calls
 comparegraph ui matrix FAMILY --devices desktop-1440,ipad-portrait,iphone,android --ui-root ./captures   # one column per device, each cell with its support class

@@ -6333,6 +6333,248 @@
       }
     },
     {
+      "name": "comparegraph_ui_owners",
+      "description": "UI evidence: the files of our web app that draw a registry screen. Registry route -> JSX route table of the root repo -> page file -> its render/import closure (components only, depth default 3), ranked page first, each with `how` (route-element | renders | imports | layout-element) and the route-match `confidence` (exact literal | pattern). A screen with no route literal is `route_unmapped`, never guessed. Reads registry.json under ui_root and the root repo graph of the store.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "screen": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string",
+            "description": "registry product and root repo, default massrelay"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          },
+          "src": {
+            "type": "string",
+            "description": "web app folder inside the root repo, default apps/web/src"
+          },
+          "router": {
+            "type": "string",
+            "description": "file holding the <Route> table, default the app root App.tsx"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
+          }
+        },
+        "required": [
+          "screen"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-owners"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "screen",
+                  "product",
+                  "depth",
+                  "root",
+                  "routes",
+                  "pageFiles",
+                  "owners",
+                  "total"
+                ],
+                "properties": {
+                  "screen": {
+                    "type": "string"
+                  },
+                  "product": {
+                    "type": "string"
+                  },
+                  "depth": {
+                    "type": "integer"
+                  },
+                  "root": {
+                    "type": "object"
+                  },
+                  "routes": {
+                    "type": "array"
+                  },
+                  "pageFiles": {
+                    "type": "array"
+                  },
+                  "owners": {
+                    "type": "array"
+                  },
+                  "total": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "comparegraph_ui_path",
       "description": "UI evidence: the shortest click path between two screens (or dialogs) of a product's interaction graph, bounded by max_len (default 8, max 20).",
       "inputSchema": {
@@ -6877,6 +7119,246 @@
                     "type": "string"
                   },
                   "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "comparegraph_ui_screens_of",
+      "description": "UI evidence: the reverse of ui_owners: which registry screens render a file (page, child at depth N, or layout), for blast radius across screens. Screens with no route literal are listed as unmapped: their blast radius is unknown.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "repo-relative path, e.g. apps/web/src/components/shell/Rail.tsx"
+          },
+          "product": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          },
+          "src": {
+            "type": "string"
+          },
+          "router": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-screens-of"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "product",
+                  "depth",
+                  "root",
+                  "symbols",
+                  "screens",
+                  "summary",
+                  "unmapped"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string"
+                  },
+                  "product": {
+                    "type": "string"
+                  },
+                  "depth": {
+                    "type": "integer"
+                  },
+                  "root": {
+                    "type": "object"
+                  },
+                  "symbols": {
+                    "type": "integer"
+                  },
+                  "screens": {
+                    "type": "array"
+                  },
+                  "summary": {
+                    "type": "object"
+                  },
+                  "unmapped": {
                     "type": "array"
                   }
                 }

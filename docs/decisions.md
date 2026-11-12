@@ -197,6 +197,13 @@ Task 6 (2026-10-12): `typed_receiver_method` resolves `r.m()` from a type declar
 | a Python one-quote string literal is a docstring only on the line after a one-line `def`/`class` header (comments and blanks between allowed) | parse the body | cheap and covers the common case | a signature split over several lines, and a module docstring in one-quote form, still pass as code |
 | KNOWN GAP (finding 8, not fixed): `none --searched` whose search has zero code hits records the none without regard to `--read-hits` (names given are not checked against anything) | refuse `--read-hits` when there is nothing to read | out of this lane's scope | a caller who passes stale `--read-hits` learns nothing from the answer |
 
+## UI to code join (2026-11-12, CMP-UI-LOOP round 3)
+| Decision | Rejected | Why | Revisit when |
+|---|---|---|---|
+| owning files of a screen are derived from route literals (JSX `<Route>`), the page's imports and a depth-bounded render/import closure; a screen with no literal is `route_unmapped` | matching a screen id to a file name; asking a worker to grep | a name match is a guess that reads as a fact; the route table is the app's own statement of which component serves a path | a router that is not JSX (object routes, file-system routes) is in use: add its reader, keep `route_unmapped` for the rest |
+| import lines are read from the clone's text, not from the graph's `imports` edges | graph edges only | the stored `imports` edges do not resolve the `~/` alias (App.tsx has 2 stored import edges for 40 import lines), so a graph-only closure would be near empty; the verb says how many edges the graph lacks | the graph resolves path aliases |
+| the default route table is the app root `App.tsx`; other router files are named in a limitation and picked with `--router` | merging every router | the web app mounts three surfaces (control, relay, partners) whose routes overlap on `/` | the registry names the surface per route |
+
 ## UI evidence as files (2026-11-12, lane CMP-UI-1b) - provisional
 
 | choice or known limit | alternative | why | who it hurts |

@@ -128,6 +128,33 @@ pub enum UiCmd {
         #[arg(long)]
         device: Option<String>,
     },
+    /// Which files of our web app draw a registry screen: registry route -> route table -> page file -> its render/import closure (depth-bounded), ranked, each with the edge kind and the route-match confidence
+    Owners {
+        screen: String,
+        #[arg(long)]
+        product: Option<String>,
+        /// closure depth, default 3, at most 6
+        #[arg(long)]
+        depth: Option<usize>,
+        /// the web app folder inside the root repo, default apps/web/src
+        #[arg(long)]
+        src: Option<String>,
+        /// the file holding the <Route> table, default the app root App.tsx
+        #[arg(long)]
+        router: Option<String>,
+    },
+    /// The reverse: which registry screens render this file (through the same closure), for a lane's blast radius across screens
+    ScreensOf {
+        file: String,
+        #[arg(long)]
+        product: Option<String>,
+        #[arg(long)]
+        depth: Option<usize>,
+        #[arg(long)]
+        src: Option<String>,
+        #[arg(long)]
+        router: Option<String>,
+    },
     /// The interaction graph of a product (ui-graph/1): reachable screens, depth, orphans, dead actions, cycles, actions per screen
     Graph {
         product: String,
@@ -671,7 +698,7 @@ pub enum Cmd {
         #[arg(long)]
         reach: Option<String>,
     },
-    /// Read and compare UI evidence files (screens, menus, journeys, runs): `ui products|screens|show|diff|matrix|system|flow|nav|nav-diff|net-diff|journey|coverage|verify`
+    /// Read and compare UI evidence files (screens, menus, journeys, runs): `ui products|screens|show|diff|matrix|system|flow|nav|nav-diff|net-diff|owners|screens-of|journey|coverage|verify`
     Ui {
         /// the directory holding `ui/` (default: --root)
         #[arg(long, global = true)]
@@ -817,6 +844,8 @@ fn verb_of(c: &Cmd) -> &'static str {
             UiCmd::Nav { .. } => "ui-nav",
             UiCmd::NavDiff { .. } => "ui-nav-diff",
             UiCmd::NetDiff { .. } => "ui-net-diff",
+            UiCmd::Owners { .. } => "ui-owners",
+            UiCmd::ScreensOf { .. } => "ui-screens-of",
             UiCmd::Graph { .. } => "ui-graph",
             UiCmd::Path { .. } => "ui-path",
             UiCmd::GraphDiff { .. } => "ui-graph-diff",
@@ -1568,6 +1597,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 UiCmd::Nav { product, viewport, seat } => u::nav(ur, m, product, vp(viewport), vp(seat))?,
                 UiCmd::NavDiff { ours, refp, viewport, seat, ref_seat } => u::nav_diff_verb(ur, m, ours, refp, vp(viewport), vp(seat), vp(ref_seat))?,
                 UiCmd::NetDiff { ours, refp, screen, state, device } => crate::application::ui_net::net_diff(ur, m, ours, refp, vp(screen), vp(state), vp(device), o)?,
+                UiCmd::Owners { screen, product, depth, src, router } => crate::application::ui_owners::owners(&cli.root, ur, screen, product.as_deref(), *depth, src.as_deref(), router.as_deref())?,
+                UiCmd::ScreensOf { file, product, depth, src, router } => crate::application::ui_owners::screens_of(&cli.root, ur, file, product.as_deref(), *depth, src.as_deref(), router.as_deref())?,
                 UiCmd::Graph { product, viewport, seat } => crate::application::ui_graph::graph(ur, m, product, vp(viewport), vp(seat))?,
                 UiCmd::Path { product, from, to, viewport, seat, max_len } => crate::application::ui_graph::path(ur, m, product, from, to, vp(viewport), vp(seat), *max_len)?,
                 UiCmd::GraphDiff { ours, refp, viewport, seat, ref_seat, tree } => crate::application::ui_graph::graph_diff(ur, m, ours, refp, vp(viewport), vp(seat), vp(ref_seat), vp(tree))?,

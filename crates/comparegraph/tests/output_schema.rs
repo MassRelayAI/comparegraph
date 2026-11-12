@@ -212,6 +212,8 @@ fn calls() -> Vec<(&'static str, Value, usize)> {
         ("comparegraph_ui_nav", json!({"product":"cluttered"}), 0),
         ("comparegraph_ui_nav_diff", json!({"ours":"cluttered","ref":"clean"}), 0),
         ("comparegraph_ui_net_diff", json!({"ours":"cluttered","ref":"clean","screen":"room","state":"populated","device":"1440x900"}), 1),
+        ("comparegraph_ui_owners", json!({"screen":"room"}), 0),
+        ("comparegraph_ui_screens_of", json!({"file":"apps/web/src/App.tsx"}), 0),
         ("comparegraph_ui_graph", json!({"product":"clean"}), 1),
         ("comparegraph_ui_path", json!({"product":"clean","from":"room","to":"inbox"}), 1),
         ("comparegraph_ui_graph_diff", json!({"ours":"cluttered","ref":"clean"}), 1),
@@ -320,5 +322,5 @@ fn the_advertised_schemas_are_compact_and_share_their_definitions() {
         assert!(s.len() <= 1700, "{} output schema is {} bytes", t["name"], s.len());
         assert!(t["outputSchema"]["$defs"].is_object());
     }
-    assert!(total <= 52_000, "all output schemas together are {total} bytes");
+    assert!(total <= 55_000, "all output schemas together are {total} bytes");
 }

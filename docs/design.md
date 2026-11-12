@@ -278,8 +278,9 @@ no new dependency (decisions.md, "Store safety").
 ## 9e. REA parity (lane REA-CG, 2026-11-12)
 
 Against REA (MIT, commit a016743; massrelay `REA-ADOPTION-MAP.md` section 0) CompareGraph had three gaps that mattered:
-- **Output schemas.** Every MCP tool advertises a compact `outputSchema` (the envelope with the tool's `verb` and typed `data` keys, a widening of the real answer) and answers with `structuredContent`. See `docs/mcp-tools.md`; `catalog --check` covers them; `tests/output_schema.rs` validates the real answer of all 37 tools.
+- **Output schemas.** Every MCP tool advertises a compact `outputSchema` (the envelope with the tool's `verb` and typed `data` keys, a widening of the real answer) and answers with `structuredContent`. See `docs/mcp-tools.md`; `catalog --check` covers them; `tests/output_schema.rs` validates the real answer of all 39 tools.
 - **Error recovery.** `error.recovery = {kind, operation?, retryable}` for every error code (`RECOVERY`), listed in the catalog as `error_recovery`.
+- **UI to code join.** `ui owners` and `ui screens-of` (CMP-UI-LOOP round 3) join a registry screen to the files of the root repo's web app: registry route -> JSX route table (nested paths joined, layouts kept) -> page file -> render/import closure, depth-bounded. Deterministic text reads over the stored root graph's file list; a route with no literal is `route_unmapped`, never guessed. See `docs/commands.md`.
 - **Network behaviour.** `ui net-diff` compares the probe's `net.behaviour` (`net-behaviour/1`: fingerprinted transactions), `net.shapes` and `net.completeness` (the REA completeness ledger). `ui verify` treats a truncated capture as an incomplete comparison.
 
 ## 15. Standards honoured (so nothing here is a private format)

@@ -47,6 +47,8 @@ const DATA: &[(&str, &str)] = &[
     ("comparegraph_ui_nav", "product:s! viewport:s! seat:s stats:o! tree:a!"),
     ("comparegraph_ui_nav_diff", "viewport:s! ours:o! ref:o! diff:a!"),
     ("comparegraph_ui_net_diff", "ours:s! ref:s! source:s! status:s! normalisation:s summary:o! captures:a!"),
+    ("comparegraph_ui_owners", "screen:s! product:s! depth:i! root:o! routes:a! pageFiles:a! owners:a! total:i!"),
+    ("comparegraph_ui_screens_of", "file:s! product:s! depth:i! root:o! symbols:i! screens:a! summary:o! unmapped:a!"),
     ("comparegraph_ui_graph", "product:s! viewport:s! seat:s start:s? summary:o! orphans:a unreachable:a deadActions:a depth:o"),
     ("comparegraph_ui_path", "product:s! from:s! to:s! found:b! clicks:i? steps:a maxLen:i"),
     ("comparegraph_ui_graph_diff", "viewport:s! ours:o! ref:o! diff:a!"),

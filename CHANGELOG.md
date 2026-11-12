@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `ui owners <screen>` and `ui screens-of <file>` (MCP `comparegraph_ui_owners`, `comparegraph_ui_screens_of`): join a registry screen to the files of the root repo's web app through the JSX route table, the page file and a depth-bounded render/import closure, and back. A screen with no route literal is `route_unmapped`, never guessed.
+
 ### Fixed
 - The release workflow's MCP registry job waits until npm serves the version `server.json` names, instead of failing when it runs ahead of `publish-npm`.
 

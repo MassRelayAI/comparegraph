@@ -136,6 +136,10 @@ pub fn tools() -> Vec<Value> {
             "ours":{"type":"string"}, "ref":{"type":"string"}, "viewport":{"type":"string"}, "seat":{"type":"string"}, "ref_seat":{"type":"string"} }), &["ours", "ref"])),
         tool("comparegraph_ui_net_diff", "UI evidence: the network behaviour of two products on the same screen, state and device: requests added, removed, changed (status or response shape) by normalised method + path (ids become :n :uuid :hex :token, query dropped). Reads net-behaviour/1 when both captures have it, else the `net` block (failed calls and totals). Omit screen/state/device to compare every shared capture (bounded).", ui_schema(json!({
             "ours":{"type":"string"}, "ref":{"type":"string"}, "screen":{"type":"string"}, "state":{"type":"string"}, "device":{"type":"string","description":"a device id or <w>x<h>"} }), &["ours", "ref"])),
+        tool("comparegraph_ui_owners", "UI evidence: the files of our web app that draw a registry screen. Registry route -> JSX route table of the root repo -> page file -> its render/import closure (components only, depth default 3), ranked page first, each with `how` (route-element | renders | imports | layout-element) and the route-match `confidence` (exact literal | pattern). A screen with no route literal is `route_unmapped`, never guessed. Reads registry.json under ui_root and the root repo graph of the store.", ui_schema(json!({
+            "screen":{"type":"string"}, "product":{"type":"string","description":"registry product and root repo, default massrelay"}, "depth":{"type":"integer","minimum":1,"maximum":6}, "src":{"type":"string","description":"web app folder inside the root repo, default apps/web/src"}, "router":{"type":"string","description":"file holding the <Route> table, default the app root App.tsx"} }), &["screen"])),
+        tool("comparegraph_ui_screens_of", "UI evidence: the reverse of ui_owners: which registry screens render a file (page, child at depth N, or layout), for blast radius across screens. Screens with no route literal are listed as unmapped: their blast radius is unknown.", ui_schema(json!({
+            "file":{"type":"string","description":"repo-relative path, e.g. apps/web/src/components/shell/Rail.tsx"}, "product":{"type":"string"}, "depth":{"type":"integer","minimum":1,"maximum":6}, "src":{"type":"string"}, "router":{"type":"string"} }), &["file"])),
         tool("comparegraph_ui_graph", "UI evidence: a product's interaction graph (ui-graph/1): reachable screens, depth from the start, orphans vs the registry, dead actions, duplicate paths, cycles, actions per screen. Read-only crawl evidence.", ui_schema(json!({
             "product":{"type":"string"}, "viewport":{"type":"string","description":"default 1440x900"}, "seat":{"type":"string"} }), &["product"])),
         tool("comparegraph_ui_path", "UI evidence: the shortest click path between two screens (or dialogs) of a product's interaction graph, bounded by max_len (default 8, max 20).", ui_schema(json!({
@@ -227,6 +231,8 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             "comparegraph_ui_flow" => &["product", "task", "ui_root", "max_nodes"],
             "comparegraph_ui_nav" => &["product", "viewport", "seat", "ui_root", "max_nodes"],
             "comparegraph_ui_nav_diff" => &["ours", "ref", "viewport", "seat", "ref_seat", "ui_root", "max_nodes"],
+            "comparegraph_ui_owners" => &["screen", "product", "depth", "src", "router", "ui_root", "max_nodes"],
+            "comparegraph_ui_screens_of" => &["file", "product", "depth", "src", "router", "ui_root", "max_nodes"],
             "comparegraph_ui_net_diff" => &["ours", "ref", "screen", "state", "device", "ui_root", "max_nodes"],
             "comparegraph_ui_graph" => &["product", "viewport", "seat", "ui_root", "max_nodes"],
             "comparegraph_ui_path" => &["product", "from", "to", "viewport", "seat", "max_len", "ui_root", "max_nodes"],
@@ -407,6 +413,8 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 "comparegraph_ui_nav" => UiCmd::Nav { product: req(a, "product")?, viewport: s("viewport")?, seat: s("seat")? },
                 "comparegraph_ui_nav_diff" => UiCmd::NavDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")? },
                 "comparegraph_ui_net_diff" => UiCmd::NetDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, screen: s("screen")?, state: s("state")?, device: s("device")? },
+                "comparegraph_ui_owners" => UiCmd::Owners { screen: req(a, "screen")?, product: s("product")?, depth: match a.get("depth") { None | Some(Value::Null) => None, Some(_) => Some(uint_arg(a, "depth", 3)?) }, src: s("src")?, router: s("router")? },
+                "comparegraph_ui_screens_of" => UiCmd::ScreensOf { file: req(a, "file")?, product: s("product")?, depth: match a.get("depth") { None | Some(Value::Null) => None, Some(_) => Some(uint_arg(a, "depth", 3)?) }, src: s("src")?, router: s("router")? },
                 "comparegraph_ui_graph" => UiCmd::Graph { product: req(a, "product")?, viewport: s("viewport")?, seat: s("seat")? },
                 "comparegraph_ui_path" => UiCmd::Path { product: req(a, "product")?, from: req(a, "from")?, to: req(a, "to")?, viewport: s("viewport")?, seat: s("seat")?, max_len: uint_arg(a, "max_len", 8)? },
                 "comparegraph_ui_graph_diff" => UiCmd::GraphDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")?, tree: s("tree")? },
