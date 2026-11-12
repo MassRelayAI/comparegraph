@@ -166,3 +166,23 @@ fn a_backup_never_migrates_a_store_that_predates_this_binary() {
     ok(w.root(), &["governance", "verify"]);
     assert!(!cols(&w).contains(&"moved_to".to_string()), "a store-safety verb migrated the store");
 }
+
+/// The live store: an older binary's `repo` table (columns missing) WITH its partial unique index. The temp view that
+/// shadows `repo` made VACUUM fail with `views may not be indexed` (backup, gc --parse-cache).
+#[test]
+fn a_vacuum_verb_works_on_a_store_whose_indexed_table_predates_columns() {
+    let w = Ws::new();
+    let c = w.conn();
+    c.execute_batch(
+        "PRAGMA foreign_keys=OFF; CREATE TABLE repo_old AS SELECT id,name,path,remote,head,licence,lane,role,category,stars,added_at FROM repo;
+         DROP TABLE repo; ALTER TABLE repo_old RENAME TO repo;
+         CREATE UNIQUE INDEX idx_repo_one_root ON repo(role) WHERE role = 'root';",
+    )
+    .unwrap();
+    drop(c);
+    let out = tempfile::tempdir().unwrap();
+    let b = ok(w.root(), &["backup", "--out", out.path().to_str().unwrap(), "--by", "t"]);
+    assert_eq!(b["data"]["verified"], true);
+    ok(w.root(), &["gc", "--parse-cache", "--keep-versions", "2", "--apply", "--by", "t"]);
+    ok(w.root(), &["governance", "verify"]);
+}

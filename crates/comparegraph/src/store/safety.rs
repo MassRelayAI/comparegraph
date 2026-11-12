@@ -142,12 +142,34 @@ impl Store {
     /// A consistent, compacted copy of the whole store at `out` (SQLite `VACUUM INTO`, which reads one snapshot and does
     /// not block readers or writers under WAL). `out` must not exist.
     pub fn vacuum_into(&self, out: &Path) -> Result<()> {
-        self.conn.execute("VACUUM INTO ?1", params![out.to_string_lossy()])?;
-        Ok(())
+        self.with_views_suspended(|| {
+            self.conn.execute("VACUUM INTO ?1", params![out.to_string_lossy()])?;
+            Ok(())
+        })
+    }
+    /// VACUUM re-creates every index of the main schema by name, and a temp view named as a table (the shadow of a
+    /// store that predates columns) captures that name: `views may not be indexed`. Drop the temp views, run `f`,
+    /// recreate them from their stored SQL (nothing in the store file changes either way).
+    fn with_views_suspended<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
+        let views: Vec<(String, String)> = {
+            let mut st = self.conn.prepare("SELECT name, sql FROM temp.sqlite_master WHERE type = 'view'")?;
+            let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+            rows
+        };
+        for (name, _) in &views {
+            self.conn.execute_batch(&format!("DROP VIEW temp.\"{name}\""))?;
+        }
+        let r = f();
+        for (name, sql) in &views {
+            // sqlite_master stores a temp view as `CREATE VIEW ...`; re-creating it needs the TEMP keyword back
+            let select = sql.split_once(" AS ").map_or(sql.as_str(), |(_, s)| s);
+            self.conn.execute_batch(&format!("CREATE TEMP VIEW \"{name}\" AS {select}"))?;
+        }
+        r
     }
     /// `VACUUM` the store, then truncate the WAL so the file size is the real one.
     pub fn vacuum(&self) -> Result<()> {
-        self.conn.execute_batch("VACUUM;")?;
+        self.with_views_suspended(|| Ok(self.conn.execute_batch("VACUUM;")?))?;
         self.checkpoint_truncate()
     }
     /// Move the WAL into the database file and truncate it.
