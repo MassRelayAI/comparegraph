@@ -81,6 +81,8 @@ pub struct UiSet {
     pub systems: BTreeMap<String, std::result::Result<Style, String>>,
     pub map: Vec<MapRow>,
     pub registry: Option<UiRegistry>,
+    /// (code, detail): a run-root file the runs' recorded digests contradict
+    pub mismatch: Vec<(String, String)>,
     pub invalid: Vec<(String, String)>,
     pub truncated: bool,
     /// products whose directory was not (fully) read because the file cap was hit: their cells are UNREAD, not absent
@@ -183,6 +185,9 @@ impl UiSet {
         if !unstable.is_empty() {
             l.push(Limitation::new("unstable_excluded", format!("{} unstable capture(s) are excluded from pass counts and gates: {}", unstable.len(), unstable.iter().take(5).cloned().collect::<Vec<_>>().join(", "))).with_data(json!({ "count": unstable.len(), "keys": unstable })));
         }
+        for (code, detail) in &self.mismatch {
+            l.push(Limitation::new(code, detail.clone()));
+        }
         for (rel, why) in self.invalid.iter().take(MAX_INVALID_LISTED) {
             l.push(Limitation::new("invalid_evidence", format!("{rel}: {why}")));
         }
@@ -199,6 +204,24 @@ impl UiSet {
     }
 }
 
+/// The digests the runs of a ui dir record (`inputs.<field>`), per field.
+fn run_digests(dir: &Path) -> BTreeMap<String, BTreeSet<String>> {
+    let mut m: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (_, p, is_dir) in entries(&dir.join("runs")).unwrap_or_default() {
+        if is_dir {
+            continue;
+        }
+        if let Ok(r) = read_json::<UiRun>(&p) {
+            for f in ["registryDigest", "archetypesDigest"] {
+                if let Some(s) = r.inputs.as_ref().and_then(|i| i.get(f)).and_then(|v| v.as_str()) {
+                    m.entry(f.to_string()).or_default().insert(s.to_string());
+                }
+            }
+        }
+    }
+    m
+}
+
 /// Open a ui root: `<root>/ui` when it exists, else the root itself when it looks like a ui dir.
 pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) -> Result<UiSet> {
     let max_nodes = check_max(max_nodes)?;
@@ -209,7 +232,7 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
     }
     let mut set = UiSet {
         shown: slash(&root.display().to_string()), dir: dir.clone(), nested, products: BTreeSet::new(), evidence: vec![], flows: vec![], navs: vec![], graphs: vec![],
-        systems: BTreeMap::new(), map: vec![], registry: None, invalid: vec![], truncated: false, unread: BTreeSet::new(), state_rules: BTreeSet::new(), seat_rules: BTreeSet::new(), max_nodes, count: 0,
+        systems: BTreeMap::new(), map: vec![], registry: None, mismatch: vec![], invalid: vec![], truncated: false, unread: BTreeSet::new(), state_rules: BTreeSet::new(), seat_rules: BTreeSet::new(), max_nodes, count: 0,
     };
     if std::fs::symlink_metadata(dir.join("map.csv")).is_ok() {
         match read_text(&dir.join("map.csv")).and_then(|t| parse_map(&t)) {
@@ -217,16 +240,39 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
             Err(e) => set.invalid.push(("map.csv".into(), e)),
         }
     }
-    if dir.join("registry.json").exists() {
-        match read_json::<UiRegistry>(&dir.join("registry.json")) {
+    // the probe writes registry.json / archetypes.json beside ui/ (the run root); ui/ wins, the root's file is used only when the runs' recorded digests agree
+    let digests = if nested { run_digests(&dir) } else { Default::default() };
+    let find = |name: &str, field: &str, set: &mut UiSet| -> Option<PathBuf> {
+        let inner = dir.join(name);
+        if inner.exists() || !nested {
+            return inner.exists().then_some(inner);
+        }
+        let outer = root.join(name);
+        if !outer.exists() {
+            return None;
+        }
+        let want = digests.get(field).cloned().unwrap_or_default();
+        let got = std::fs::read(&outer).map(|b| sha256_hex(&b)).unwrap_or_default();
+        if want.is_empty() || want.contains(&got) {
+            Some(outer)
+        } else {
+            let code = format!("{}_digest_mismatch", name.trim_end_matches(".json"));
+            set.mismatch.push((code, format!("{name} beside ui/ hashes to {got} but the runs record {}: not used, so no per-archetype limits from it", want.iter().cloned().collect::<Vec<_>>().join(", "))));
+            None
+        }
+    };
+    let reg_path = find("registry.json", "registryDigest", &mut set);
+    let arch_path = find("archetypes.json", "archetypesDigest", &mut set);
+    if let Some(reg_path) = reg_path {
+        match read_json::<UiRegistry>(&reg_path) {
             Ok(r) if r.problems().is_empty() => set.registry = Some(r),
             Ok(r) => set.invalid.push(("registry.json".into(), r.problems().join("; "))),
             Err(e) => set.invalid.push(("registry.json".into(), e)),
         }
     }
     // section 11: the design lane's per-archetype limits (ui-archetypes/1) fill the registry's; other keys (rowHeightMaxPx, overrides, rules) stay in the file
-    if dir.join("archetypes.json").exists() {
-        match read_json::<UiArchetypes>(&dir.join("archetypes.json")) {
+    if let Some(arch_path) = arch_path {
+        match read_json::<UiArchetypes>(&arch_path) {
             Ok(a) if a.problems().is_empty() => {
                 for (state, rules) in &a.state_rules {
                     for id in rules.as_object().into_iter().flat_map(|o| o.keys()).filter(|k| metric_no(k).is_some()) {
@@ -551,6 +597,10 @@ fn pass_cell(set: &UiSet, ev: &UiEvidence) -> String {
         n => format!("{}/{} ({n} unmeasured)", pass_count_of(set, ev), of_count(ev)),
     }
 }
+/// The label of the dialog that covers the page, when the probe recorded one: such a capture shows the dialog, not the screen.
+fn blocked_of(ev: &UiEvidence) -> Option<String> {
+    ev.blocking.as_ref().filter(|b| !b.is_null()).map(|b| b.get("label").and_then(|l| l.as_str()).unwrap_or("?").to_string())
+}
 fn redirect_of(ev: &UiEvidence) -> Option<&str> {
     ev.support.as_ref().filter(|s| s.class == "redirect").map(|s| s.target.as_deref().unwrap_or("?"))
 }
@@ -640,8 +690,10 @@ pub fn show(root: &Path, max_nodes: usize, product: &str, screen: &str, state: &
     let l = select(&set, product, screen, state, viewport, seat, o)?;
     let e = &l.ev;
     let (arch, lim) = archetype_limits(&set, screen, e.archetype.as_deref());
+    let blocked = blocked_of(e);
     let metrics: Vec<Value> = metric_ids_sorted(e, None)
         .iter()
+        .filter(|_| blocked.is_none())
         .map(|id| {
             let m = &e.metrics[id];
             let mut x = judged_json(id, m, &judge(&set, e, id, m));
@@ -665,6 +717,12 @@ pub fn show(root: &Path, max_nodes: usize, product: &str, screen: &str, state: &
         v["deviceClass"] = json!(class_of(e));
         v["device"] = json!(e.device);
         v["support"] = json!(e.support);
+    }
+    if let Some(b) = &blocked {
+        v["pass"] = Value::Null;
+        v["unmeasured"] = Value::Null;
+        v["blocking"] = json!(e.blocking);
+        v["blockedLine"] = json!(format!("blocked by dialog {b}"));
     }
     if let Some(t) = &e.touch {
         v["touch"] = json!(t);
@@ -718,6 +776,11 @@ pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str,
     for (who, e) in [(ours, ea), (refp, eb)] {
         if let Some(t) = redirect_of(e) {
             return Err(bad(format!("refused: {who}'s `{so}` is a redirect -> {t}; the capture shows the landing page, not the requested screen, so it is not compared (capture the target route as its own screen)")));
+        }
+    }
+    for (who, e) in [(ours, ea), (refp, eb)] {
+        if let Some(l) = blocked_of(e) {
+            return Err(bad(format!("refused: {who}'s `{so}` is blocked by dialog {l}; the capture shows the dialog, not the page, so it is not compared (close the dialog in the probe's plan and capture again)")));
         }
     }
     let vp = ea.viewport.as_str();
@@ -781,12 +844,21 @@ fn family_rows(ui_root: &Path, root: &Path, family: &str) -> Option<Vec<String>>
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state: &str, viewport: Option<&str>, devices: Option<&str>, net: bool, o: &Opts) -> Result<Value> {
+pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state: &str, viewport: Option<&str>, devices: Option<&str>, net: bool, map: Option<&Path>, o: &Opts) -> Result<Value> {
     need_token("family", family)?;
     if devices.is_some() && viewport.is_some() {
         return Err(bad("--devices and --viewport both choose the columns: give one".into()));
     }
-    let set = open(ui_root, max_nodes, None, EV)?;
+    let mut set = open(ui_root, max_nodes, None, EV)?;
+    // the sweep keeps map.csv in the run root: --map names a file, else <ui-root>/map.csv is tried when ui/map.csv is absent
+    let map_file = map.map(Path::to_path_buf).or_else(|| set.map.is_empty().then(|| ui_root.join("map.csv")).filter(|p| p.is_file()));
+    if let Some(p) = map_file {
+        match read_text(&p).and_then(|t| parse_map(&t)) {
+            Ok(m) => set.map = m,
+            Err(e) if map.is_some() => return Err(bad(format!("--map {}: {e}", p.display()))),
+            Err(e) => set.invalid.push(("map.csv".into(), e)),
+        }
+    }
     let vp = viewport.unwrap_or(DEFAULT_VIEWPORT);
     let mapped: Vec<&MapRow> = set.map.iter().filter(|m| m.family == family).collect();
     let mut lims = vec![];
@@ -796,7 +868,11 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
             lims.push(Limitation::new("family_pack_missing", format!("families/{family}/rows.md not found: rows are the ids in map.csv only")));
             mapped.iter().map(|m| m.row_id.clone()).collect::<BTreeSet<_>>().into_iter().collect()
         }
-        None => return Err(AppError::NotFound(format!("family `{family}` has no rows.md and no map.csv rows"))),
+        None => {
+            let names: BTreeSet<&str> = set.map.iter().map(|m| m.family.as_str()).collect();
+            let listing = if names.is_empty() { "no map.csv was found (ui/map.csv, <ui-root>/map.csv or --map <file>)".to_string() } else { format!("families in map.csv: {}", names.into_iter().collect::<Vec<_>>().join(", ")) };
+            return Err(AppError::NotFound(format!("family `{family}` has no rows.md and no map.csv rows; {listing}")));
+        }
     };
     let products: Vec<&String> = set.products.iter().collect();
     let mut rows = vec![];
@@ -807,11 +883,11 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
                 mapped
                     .iter()
                     .filter(|m| &m.row_id == id && &&m.product == p)
-                    .filter_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state && (if viewport.is_some() { l.ev.viewport == vp } else { is_default_viewport(&l.ev.viewport) }) && l.ev.unstable != stable && redirect_of(&l.ev).is_none()).map(|l| (pass_count_of(&set, &l.ev), pass_cell(&set, &l.ev))).max_by_key(|(n, _)| *n))
+                    .filter_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state && (if viewport.is_some() { l.ev.viewport == vp } else { is_default_viewport(&l.ev.viewport) }) && l.ev.unstable != stable && redirect_of(&l.ev).is_none() && blocked_of(&l.ev).is_none()).map(|l| (pass_count_of(&set, &l.ev), pass_cell(&set, &l.ev))).max_by_key(|(n, _)| *n))
                     .max_by_key(|(n, _)| *n)
             };
             let redirect_cell = |p: &str, id: &str| -> Option<String> {
-                mapped.iter().filter(|m| m.row_id == id && m.product == p).find_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state).find_map(|l| redirect_of(&l.ev)).map(|t| format!("redirect -> {t}")))
+                mapped.iter().filter(|m| m.row_id == id && m.product == p).find_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state).find_map(|l| blocked_of(&l.ev).map(|b| format!("blocked by dialog {b}")).or_else(|| redirect_of(&l.ev).map(|t| format!("redirect -> {t}")))))
             };
             // `?` = the product was not read (file cap), never confused with `-` (read, nothing captured); unstable captures are not scored
             let cell = match of_cell(true) {
@@ -920,14 +996,16 @@ fn matrix_devices(set: &UiSet, ui_root: &Path, max_nodes: usize, family: &str, s
                 let best = screens
                     .iter()
                     .flat_map(|s| set.evidence_of(p).filter(move |l| l.ev.screen == *s && l.ev.state == state && &l.ev.viewport == d))
-                    .filter(|l| !l.ev.unstable && redirect_of(&l.ev).is_none())
+                    .filter(|l| !l.ev.unstable && redirect_of(&l.ev).is_none() && blocked_of(&l.ev).is_none())
                     .max_by_key(|l| pass_count_of(set, &l.ev));
                 let redirected = screens.iter().find_map(|s| set.evidence_of(p).filter(move |l| l.ev.screen == *s && l.ev.state == state && &l.ev.viewport == d).find_map(|l| redirect_of(&l.ev)));
+                let blocked_dev = screens.iter().find_map(|s| set.evidence_of(p).filter(move |l| l.ev.screen == *s && l.ev.state == state && &l.ev.viewport == d).find_map(|l| blocked_of(&l.ev)));
                 let (cell, cls): (String, &'static str) = match best {
                     Some(l) => {
                         let c = l.ev.support.as_ref().map(|s| s.class.as_str()).unwrap_or("unknown");
                         (format!("{} {c}", pass_cell(set, &l.ev)), SUPPORT_CLASSES.iter().copied().find(|x| *x == c).unwrap_or("unknown"))
                     }
+                    None if blocked_dev.is_some() => (format!("blocked by dialog {}", blocked_dev.unwrap_or_default()), "blocked"),
                     None if redirected.is_some() => (format!("redirect -> {}", redirected.unwrap_or("?")), "redirect"),
                     None => match screens.iter().find_map(|s| absent.get(&(p.to_string(), s.to_string(), d.clone()))) {
                         Some(_) => ("n/a (absent)".to_string(), "absent"),
@@ -998,6 +1076,13 @@ fn select_nav<'a>(set: &'a UiSet, product: &str, viewport: &str, seat: Option<&s
 }
 const NAVS: Want = Want { evidence: false, flows: false, navs: true, systems: false, graphs: false };
 
+fn nav_inferred(n: &UiNav) -> Vec<Limitation> {
+    if n.nav_source.as_deref() == Some("heuristic") {
+        vec![Limitation::new("nav_inferred", format!("the `{}` nav was inferred (navSource: heuristic, a fallback sidebar with no <nav> landmark): its items and counts are a guess, not a proven nav", n.product))]
+    } else {
+        vec![]
+    }
+}
 fn nav_limits(s: &NavStats) -> Vec<Limitation> {
     if s.unresolved_targets {
         vec![Limitation::new("nav_targets_unresolved", "every item's target is `unknown`: the probe wrote no screen for any item, so deadItems and destinations count unresolved items, not proven dead ends")]
@@ -1051,8 +1136,11 @@ pub fn nav(root: &Path, max_nodes: usize, product: &str, viewport: Option<&str>,
         .map(|x| json!({ "order": x.order, "level": x.level, "kind": x.kind, "label": x.label, "target": x.target, "hiddenBehind": x.hidden_behind, "icon": x.icon, "badge": x.badge }))
         .collect();
     let stats = nav_stats(n);
-    let lims = nav_limits(&stats);
-    let v = json!({ "product": product, "version": n.version, "viewport": n.viewport, "seat": n.seat, "stats": stats, "tree": tree });
+    let lims: Vec<Limitation> = nav_limits(&stats).into_iter().chain(nav_inferred(n)).collect();
+    let mut v = json!({ "product": product, "version": n.version, "viewport": n.viewport, "seat": n.seat, "stats": stats, "tree": tree });
+    if let Some(s) = &n.nav_source {
+        v["navSource"] = json!(s);
+    }
     Ok(set.finish(v, &lims))
 }
 
@@ -1074,7 +1162,7 @@ pub fn nav_diff_verb(root: &Path, max_nodes: usize, ours: &str, refp: &str, view
         "ref": { "product": refp, "version": b.version, "seat": b.seat, "stats": sb },
         "diff": nav_diff(&sa, &sb),
     });
-    let lims: Vec<Limitation> = nav_limits(&sa).into_iter().chain(nav_limits(&sb)).collect();
+    let lims: Vec<Limitation> = nav_limits(&sa).into_iter().chain(nav_limits(&sb)).chain(nav_inferred(a)).chain(nav_inferred(b)).collect();
     Ok(set.finish(v, &lims))
 }
 

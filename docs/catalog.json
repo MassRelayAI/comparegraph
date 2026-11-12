@@ -5435,6 +5435,10 @@
           "family": {
             "type": "string"
           },
+          "map": {
+            "type": "string",
+            "description": "map.csv to read (default ui/map.csv, else <ui_root>/map.csv)"
+          },
           "state": {
             "type": "string",
             "description": "default populated"

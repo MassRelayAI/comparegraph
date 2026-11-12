@@ -86,6 +86,9 @@ pub enum UiCmd {
         /// also list the captures with failed network calls (4xx/5xx/network error), from `net.failed`
         #[arg(long)]
         net: bool,
+        /// the map.csv to read (default: ui/map.csv, else <ui-root>/map.csv where the sweep keeps it)
+        #[arg(long)]
+        map: Option<PathBuf>,
     },
     /// A product's design system (system.json, else derived) against the targets
     System { product: String },
@@ -1559,7 +1562,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 UiCmd::Diff { target, ours, refp, state, viewport, ref_viewport, seat, ref_seat } => {
                     u::diff(ur, m, target, ours, refp, st(state), vp(viewport), vp(ref_viewport), vp(seat), vp(ref_seat), o)?
                 }
-                UiCmd::Matrix { family, state, viewport, devices, net } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport), vp(devices), *net, o)?,
+                UiCmd::Matrix { family, state, viewport, devices, net, map } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport), vp(devices), *net, map.as_deref(), o)?,
                 UiCmd::System { product } => u::system(ur, m, product)?,
                 UiCmd::Flow { product, task } => u::flow(ur, m, product, task)?,
                 UiCmd::Nav { product, viewport, seat } => u::nav(ur, m, product, vp(viewport), vp(seat))?,

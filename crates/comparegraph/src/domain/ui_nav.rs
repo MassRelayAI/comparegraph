@@ -26,6 +26,9 @@ pub struct NavNode {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UiNav {
+    /// `heuristic` when the probe found no <nav> landmark and fell back to a sidebar guess: the tree is inferred, never a proven nav
+    #[serde(default, rename = "navSource", skip_serializing_if = "Option::is_none")]
+    pub nav_source: Option<String>,
     pub schema: String,
     pub product: String,
     pub version: String,
@@ -401,7 +404,7 @@ mod tests {
     }
     fn tree() -> UiNav {
         UiNav {
-            schema: NAV_SCHEMA.into(), product: "p".into(), version: "v1".into(), viewport: "1440x900".into(), seat: "member".into(),
+            nav_source: None, schema: NAV_SCHEMA.into(), product: "p".into(), version: "v1".into(), viewport: "1440x900".into(), seat: "member".into(),
             nodes: vec![
                 node("Home", "place", 1, 1, "room", None),
                 node("Work", "group", 1, 2, "unknown", None),

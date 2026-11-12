@@ -230,6 +230,9 @@ pub struct UiEvidence {
     /// section 17: touch-target sizes, hover-only affordances, small text; present on touch devices only
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub touch: Option<Touch>,
+    /// a dialog that covers the page (`{label, ...}`): the capture shows the dialog, not the page, so it is never scored; absent when nothing blocks
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocking: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
