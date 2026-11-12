@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 330" width="1050" role="img" aria-labelledby="t d">
+<title id="t">One screen, two products, measured</title><desc id="d">A side-by-side of the same screen in two products, ours on the left and a reference on the right. Ours has three navigation columns, no primary action, 11 type sizes, 23 colours and 0.71 of its spacing on the 4 pixel scale. The reference has one navigation column, one primary action, 6 type sizes, 12 colours and 0.96 on the 4 pixel scale. The numbers are the layout and style differences of the fixture pair in fixtures/ui.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="Helvetica, Arial, sans-serif" fill="#1f2328">
+<text x="160" y="30" font-size="16" font-weight="700" text-anchor="middle">ours</text>
+<text x="890" y="30" font-size="16" font-weight="700" text-anchor="middle">reference</text>
+<text x="525" y="30" font-size="12" text-anchor="middle" fill="#57606a">same screen, same state, same viewport</text>
+<rect x="20" y="44" width="280" height="190" rx="8" fill="#ffffff" stroke="#57606a" stroke-width="1.2"/>
+<rect x="28" y="52" width="34" height="174" rx="3" fill="#ddf4ff" stroke="#57606a"/>
+<rect x="68" y="52" width="46" height="174" rx="3" fill="#ddf4ff" stroke="#57606a"/>
+<rect x="120" y="52" width="58" height="174" rx="3" fill="#ddf4ff" stroke="#57606a"/>
+<rect x="184" y="52" width="108" height="174" rx="3" fill="#f6f8fa" stroke="#57606a"/>
+<rect x="194" y="64" width="72" height="8" rx="2" fill="#d0d7de"/>
+<rect x="194" y="82" width="88" height="8" rx="2" fill="#d0d7de"/>
+<rect x="194" y="100" width="60" height="8" rx="2" fill="#d0d7de"/>
+<rect x="750" y="44" width="280" height="190" rx="8" fill="#ffffff" stroke="#57606a" stroke-width="1.2"/>
+<rect x="758" y="52" width="44" height="174" rx="3" fill="#ddf4ff" stroke="#57606a"/>
+<rect x="808" y="52" width="214" height="174" rx="3" fill="#f6f8fa" stroke="#57606a"/>
+<rect x="940" y="62" width="72" height="22" rx="4" fill="#0969da"/>
+<rect x="820" y="100" width="150" height="8" rx="2" fill="#d0d7de"/>
+<rect x="820" y="118" width="170" height="8" rx="2" fill="#d0d7de"/>
+<rect x="820" y="136" width="120" height="8" rx="2" fill="#d0d7de"/>
+<text x="160" y="256" font-size="12" text-anchor="middle" fill="#57606a">3 navigation columns before the content</text>
+<text x="890" y="256" font-size="12" text-anchor="middle" fill="#57606a">1 navigation column, one primary action</text>
+<line x1="322" y1="52" x2="322" y2="300" stroke="#d0d7de"/><line x1="728" y1="52" x2="728" y2="300" stroke="#d0d7de"/>
+<g font-size="13">
+<text x="340" y="76" font-weight="700">layout and style</text><text x="610" y="76" font-weight="700" text-anchor="end">ours</text><text x="700" y="76" font-weight="700" text-anchor="end">ref</text>
+<line x1="340" y1="86" x2="710" y2="86" stroke="#d0d7de"/>
+<text x="340" y="112">nav columns</text><text x="610" y="112" text-anchor="end" fill="#cf222e" font-weight="700">3</text><text x="700" y="112" text-anchor="end" fill="#1a7f37" font-weight="700">1</text>
+<text x="340" y="142">primary actions</text><text x="610" y="142" text-anchor="end" fill="#cf222e" font-weight="700">0</text><text x="700" y="142" text-anchor="end" fill="#1a7f37" font-weight="700">1</text>
+<text x="340" y="172">type sizes</text><text x="610" y="172" text-anchor="end" fill="#cf222e" font-weight="700">11</text><text x="700" y="172" text-anchor="end" fill="#1a7f37" font-weight="700">6</text>
+<text x="340" y="202">colours</text><text x="610" y="202" text-anchor="end" fill="#cf222e" font-weight="700">23</text><text x="700" y="202" text-anchor="end" fill="#1a7f37" font-weight="700">12</text>
+<text x="340" y="232">on the 4 px scale</text><text x="610" y="232" text-anchor="end" fill="#cf222e" font-weight="700">0.71</text><text x="700" y="232" text-anchor="end" fill="#1a7f37" font-weight="700">0.96</text>
+</g>
+<text x="340" y="268" font-size="12" font-family="monospace" fill="#0550ae">comparegraph ui diff room --ours A --ref B</text>
+<text x="525" y="316" font-size="12" text-anchor="middle" fill="#57606a">measured from the page structure; the screenshots ride along as context</text>
+</g>
+</svg>

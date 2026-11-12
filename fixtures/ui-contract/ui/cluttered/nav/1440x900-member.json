@@ -1,0 +1,135 @@
+{
+  "derived": {
+    "collapsedGroupsExpanded": 1,
+    "deadItems": 1,
+    "duplicateDestinations": 2,
+    "itemsPerGroup": {
+      "Tools": 2
+    },
+    "itemsPerLevel": {
+      "1": 9,
+      "2": 2
+    },
+    "maxDepth": 2,
+    "overflowOnly": 0,
+    "places": 8,
+    "totalDestinations": 7
+  },
+  "nodes": [
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "R",
+      "level": 1,
+      "order": 0,
+      "target": "rooms-list"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "I",
+      "level": 1,
+      "order": 1,
+      "target": "inbox"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "M",
+      "level": 1,
+      "order": 2,
+      "target": "meetings-list"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Settings",
+      "level": 1,
+      "order": 3,
+      "target": "settings"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Flows",
+      "level": 1,
+      "order": 4,
+      "target": "flows-list"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Nowhere",
+      "level": 1,
+      "order": 5,
+      "target": "unknown"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Router",
+      "level": 1,
+      "order": 6,
+      "target": "router-overview"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Rooms again",
+      "level": 1,
+      "order": 7,
+      "target": "rooms-list"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "group",
+      "label": "Tools",
+      "level": 1,
+      "order": 8,
+      "target": "unknown"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": "collapsed",
+      "icon": false,
+      "kind": "item",
+      "label": "Automations",
+      "level": 2,
+      "order": 9,
+      "target": "flows-list"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": "collapsed",
+      "icon": false,
+      "kind": "item",
+      "label": "Docs",
+      "level": 2,
+      "order": 10,
+      "target": "external"
+    }
+  ],
+  "product": "cluttered",
+  "schema": "ui-nav/1",
+  "seat": "member",
+  "version": "contract-1",
+  "viewport": "1440x900"
+}

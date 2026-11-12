@@ -1,0 +1,1604 @@
+{
+ "basis": "CMP-UI-1-lanes.md section 8b; J1-J5 as named there, j06-j10 added from the use cases (each cites its source)",
+ "expectedNote": "`expected` is the TARGET map's count read off the steps below, not a measurement; the first run replaces it for today's app",
+ "journeys": [
+  {
+   "expected": {
+    "decisions": 3,
+    "decisionsListed": 3,
+    "screensVisited": 5,
+    "steps": 6,
+    "stepsToFirstUseful": 5,
+    "waitNote": "account creation and the first reply (> 2 s each)",
+    "waits": 2,
+    "waitsListed": 1
+   },
+   "firstUsefulScreen": "home-assistant",
+   "flows": [
+    "sign-up",
+    "first-run",
+    "first-ask"
+   ],
+   "goal": "from the public site to a first answer from the assistant that the person can use",
+   "goalArchetype": "conversation",
+   "id": "j01-first-useful-answer",
+   "name": "A new person gets a first useful answer",
+   "protocolId": "J1",
+   "refs": {
+    "anythingllm": {
+     "confidence": "shot-exists",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "open /onboarding, click through",
+      "a workspace is made from the first message",
+      "type q1, send"
+     ],
+     "why": "provider unconfigured. needs the stub model (fixture.json > stubModel): no provider is configured on any reference (MANIFEST) and staging has no model"
+    },
+    "chatgpt": {
+     "confidence": "unproven",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "open chatgpt.com signed out or signed in",
+      "type q1, send",
+      "read the reply"
+     ],
+     "why": "the founder types the prompt by hand in his own browser"
+    },
+    "claude-ai": {
+     "confidence": "unproven",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "open claude.ai/new (signed in)",
+      "type q1, send",
+      "read the reply"
+     ]
+    },
+    "khoj": {
+     "confidence": "unproven",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "open / (anonymous mode)",
+      "type q1, send"
+     ],
+     "why": "needs the stub model (fixture.json > stubModel): no provider is configured on any reference (MANIFEST) and staging has no model"
+    },
+    "librechat": {
+     "confidence": "unproven",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "open /register, create the fixture owner",
+      "land on /c/new",
+      "type q1, send"
+     ],
+     "why": "no reply. needs the stub model (fixture.json > stubModel): no provider is configured on any reference (MANIFEST) and staging has no model"
+    },
+    "lobechat": {
+     "confidence": "shot-exists",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "open /chat",
+      "type q1, send"
+     ],
+     "why": "no reply. needs the stub model (fixture.json > stubModel): no provider is configured on any reference (MANIFEST) and staging has no model"
+    },
+    "mattermost": {
+     "confidence": "unproven",
+     "failsAtStep": 6,
+     "status": "partial",
+     "steps": [
+      "open /signup_user_complete, create the owner",
+      "create a team",
+      "land in town-square",
+      "post q1"
+     ],
+     "why": "a room of people: the post lands, nobody answers - the journey ends at 'first message sent'"
+    },
+    "onyx-chat": {
+     "confidence": "unproven",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "sign up as owner@example.com",
+      "open /chat",
+      "type q1, send"
+     ],
+     "why": "needs the stub model (fixture.json > stubModel): no provider is configured on any reference (MANIFEST) and staging has no model"
+    },
+    "openwebui": {
+     "confidence": "shot-exists",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "open / (no sign-up: WEBUI_AUTH=False)",
+      "type q1, send"
+     ],
+     "why": "no model: the text stays in the box. needs the stub model (fixture.json > stubModel): no provider is configured on any reference (MANIFEST) and staging has no model"
+    },
+    "town": {
+     "confidence": "guess",
+     "status": "n/a",
+     "why": "only public pages captured; the sign-up path is not located"
+    }
+   },
+   "seat": "guest -> admin (a new account owns its workspace)",
+   "source": "CMP-UI-1-lanes.md section 8b (J1); blueprint 01 section 4 ('a new user's first screen is a chat with the default bot'; ONB-2 the first five minutes); blueprint 08 CXU-17",
+   "startState": {
+    "data": "no account; staging has a model enabled for new workspaces (today it has none: blocked, founder action in ia-reset F)",
+    "fixture": "empty",
+    "session": "none"
+   },
+   "steps": [
+    {
+     "action": "click the primary call to action",
+     "confidence": "guess",
+     "expect": "the sign-up page opens",
+     "flow": "sign-up",
+     "n": 1,
+     "screen": "site-home"
+    },
+    {
+     "action": "type the fixture owner's e-mail and a password; submit",
+     "decision": "credentials",
+     "expect": "the account exists; consent is asked",
+     "flow": "sign-up",
+     "n": 2,
+     "screen": "register"
+    },
+    {
+     "action": "accept",
+     "decision": "terms",
+     "expect": "the first-run screen opens",
+     "flow": "sign-up",
+     "n": 3,
+     "screen": "consent"
+    },
+    {
+     "action": "skip connecting a source; continue",
+     "confidence": "guess",
+     "decision": "connect a source now or later",
+     "expect": "Home opens with the ask box and starters",
+     "flow": "first-run",
+     "n": 4,
+     "screen": "onboarding-first-run"
+    },
+    {
+     "action": "type fixture.questions.q1 and send",
+     "expect": "the message shows; the reply starts",
+     "flow": "first-ask",
+     "n": 5,
+     "screen": "home-assistant",
+     "wait": true
+    },
+    {
+     "action": "read the reply",
+     "expect": "a complete answer in words, no id and no JSON; state = populated",
+     "flow": "first-ask",
+     "n": 6,
+     "screen": "home-assistant"
+    }
+   ],
+   "viewports": [
+    "1440x900",
+    "390x844"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 3,
+    "decisionsListed": 3,
+    "screensVisited": 7,
+    "steps": 8,
+    "stepsToFirstUseful": 3,
+    "waits": 0,
+    "waitsListed": 0
+   },
+   "firstUsefulScreen": "receipt",
+   "flows": [
+    "open-client-room",
+    "open-receipt",
+    "share-receipt",
+    "invite-client",
+    "guest-join",
+    "guest-open-receipt",
+    "verify-receipt"
+   ],
+   "goal": "work finished in a client room is seen by the client as a receipt: what was done, what it cost, who approved",
+   "goalArchetype": "detail",
+   "id": "j02-client-sees-receipt",
+   "name": "An owner's client sees the receipt",
+   "protocolId": "J2",
+   "refs": {
+    "chatgpt": {
+     "confidence": "unproven",
+     "failsAtStep": 7,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "open a finished chat",
+      "Share > create link",
+      "open the link signed out"
+     ],
+     "why": "shares the conversation, shows no cost and no approval"
+    },
+    "chatwoot": {
+     "confidence": "shot-exists",
+     "status": "n/a",
+     "why": "a customer sees a chat widget, never a record of work and cost"
+    },
+    "lago": {
+     "confidence": "unproven",
+     "failsAtStep": 6,
+     "status": "partial",
+     "steps": [
+      "open /customer/<id>",
+      "open an invoice",
+      "generate the customer portal link",
+      "open it signed out"
+     ],
+     "why": "a portal of invoices, no room and no 'what was done'"
+    },
+    "manus": {
+     "confidence": "guess",
+     "failsAtStep": 7,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "open a finished task",
+      "Share",
+      "open the replay link signed out"
+     ],
+     "why": "shares the replay; cost is not shown (guess)"
+    },
+    "mattermost": {
+     "confidence": "unproven",
+     "status": "n/a",
+     "why": "no receipt object; a guest account sees channels only"
+    },
+    "slack": {
+     "confidence": "unproven",
+     "status": "n/a",
+     "why": "no receipt object"
+    },
+    "stripe": {
+     "confidence": "unproven",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "open a test-mode invoice",
+      "copy the hosted invoice link",
+      "open it signed out: the customer sees the invoice and its receipt"
+     ],
+     "why": "the nearest closed pattern: a link a customer opens without an account"
+    }
+   },
+   "seat": "admin, then guest (the client)",
+   "source": "CMP-UI-1-lanes.md section 8b (J2); blueprint 35 section 1 rows 1 (the receipt) and 3 (the two-sided room), amendment D227/D228 ('the receipt is the success metric'); ui-journeys.csv J-A-5 step 6",
+   "startState": {
+    "data": "fixture.populated: the client room holds one finished run with a receipt; the client has no account",
+    "fixture": "populated",
+    "session": "the fixture owner"
+   },
+   "steps": [
+    {
+     "action": "filter Clients; open fixture.rooms.client",
+     "expect": "the client room opens",
+     "flow": "open-client-room",
+     "n": 1,
+     "screen": "rooms-list"
+    },
+    {
+     "action": "open the finished run's card",
+     "expect": "the receipt page opens",
+     "flow": "open-receipt",
+     "n": 2,
+     "screen": "room"
+    },
+    {
+     "action": "read it; choose share with the room",
+     "confidence": "guess",
+     "decision": "share or not",
+     "expect": "a receipt card is posted in the room",
+     "flow": "share-receipt",
+     "n": 3,
+     "screen": "receipt"
+    },
+    {
+     "action": "create a guest link for fixture.people.client",
+     "decision": "guest or member",
+     "expect": "a link is shown",
+     "flow": "invite-client",
+     "n": 4,
+     "screen": "invite-person"
+    },
+    {
+     "action": "open the link signed out; type the display name; accept",
+     "decision": "name and consent",
+     "expect": "the one room opens, no rail",
+     "flow": "guest-join",
+     "n": 5,
+     "screen": "guest-join",
+     "seat": "guest"
+    },
+    {
+     "action": "find the receipt card; open it",
+     "expect": "the receipt opens in the guest shell",
+     "flow": "guest-open-receipt",
+     "n": 6,
+     "screen": "guest-room",
+     "seat": "guest"
+    },
+    {
+     "action": "read what was done, the cost and who approved",
+     "expect": "no id, no JSON; a masked field shows as the literal dots with a masked list",
+     "flow": "guest-open-receipt",
+     "n": 7,
+     "screen": "receipt",
+     "seat": "guest"
+    },
+    {
+     "action": "open the verify link",
+     "expect": "the page says the receipt is genuine",
+     "flow": "verify-receipt",
+     "n": 8,
+     "screen": "receipt-verify",
+     "seat": "guest"
+    }
+   ],
+   "viewports": [
+    "1440x900",
+    "390x844"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 4,
+    "decisionsListed": 3,
+    "screensVisited": 7,
+    "steps": 9,
+    "stepsToFirstUseful": 5,
+    "waitNote": "the recording itself and the summary",
+    "waits": 2,
+    "waitsListed": 2
+   },
+   "firstUsefulScreen": "meeting",
+   "flows": [
+    "book-meeting",
+    "record-meeting",
+    "read-minutes",
+    "approve-action-item",
+    "close-follow-up"
+   ],
+   "goal": "a meeting is set, recorded, summarised with sources, and one open step from it is closed by the person it was given to",
+   "goalArchetype": "detail",
+   "id": "j03-meeting-to-follow-up",
+   "name": "Book a meeting, get the minutes, see the follow-up done",
+   "protocolId": "J3",
+   "refs": {
+    "calcom": {
+     "confidence": "shot-exists",
+     "failsAtStep": 2,
+     "status": "partial",
+     "steps": [
+      "open /event-types, create a 30-minute event",
+      "open the public booking page, pick a slot, confirm",
+      "see it under /bookings/upcoming"
+     ],
+     "why": "booking only: no recording, no minutes"
+    },
+    "calendly": {
+     "confidence": "unproven",
+     "failsAtStep": 2,
+     "status": "partial",
+     "steps": [
+      "open a public booking page",
+      "pick a slot (do not confirm with a real address)"
+     ],
+     "why": "booking only"
+    },
+    "fireflies": {
+     "confidence": "guess",
+     "failsAtStep": 6,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "upload the fixture audio",
+      "open the meeting: summary, action items"
+     ],
+     "why": "tasks leave to other tools (guess)"
+    },
+    "google-meet": {
+     "confidence": "guess",
+     "failsAtStep": 5,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "New meeting > schedule or start now",
+      "green room",
+      "in call"
+     ],
+     "why": "notes need a paid add-on (guess)"
+    },
+    "jitsi": {
+     "confidence": "shot-exists",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "type a room name on /",
+      "pass the pre-join page",
+      "be in the meeting"
+     ],
+     "why": "live meeting only: no record, summary or tasks"
+    },
+    "meetings-ai": {
+     "confidence": "guess",
+     "needsFounder": true,
+     "status": "partial",
+     "why": "signed-in product not seen; steps unknown"
+    },
+    "mirotalk": {
+     "confidence": "shot-exists",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "/newcall",
+      "join",
+      "in meeting"
+     ],
+     "why": "live meeting only"
+    },
+    "otter": {
+     "confidence": "guess",
+     "failsAtStep": 7,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "Record",
+      "stop",
+      "open the conversation: transcript, summary, action items",
+      "tick an action item"
+     ],
+     "why": "action items are ticked on the conversation; no inbox for the assignee (guess)"
+    },
+    "rallly": {
+     "confidence": "shot-exists",
+     "failsAtStep": 2,
+     "status": "partial",
+     "steps": [
+      "create a poll with three times",
+      "vote on the invite page",
+      "finalise"
+     ],
+     "why": "a date poll only"
+    }
+   },
+   "seat": "admin, then member",
+   "source": "CMP-UI-1-lanes.md section 8b (J3); CompareGraph family meetings (decisions-action-items-review, agreed-minutes-with-guests); ui-journeys.csv J-A-23 (meeting notes scribe)",
+   "startState": {
+    "data": "fixture.populated; no calendar connected; microphone fed by fixture.audio (fake media)",
+    "fixture": "populated",
+    "session": "the fixture owner"
+   },
+   "steps": [
+    {
+     "action": "ask the assistant to set fixture.meeting.title for tomorrow 14:00 with fixture.people.member; pick the offered slot",
+     "confidence": "guess",
+     "decision": "pick a slot",
+     "expect": "an upcoming meeting shows in Meetings",
+     "flow": "book-meeting",
+     "n": 1,
+     "screen": "room"
+    },
+    {
+     "action": "press Record a meeting (the page's primary)",
+     "expect": "the pre-join step opens",
+     "flow": "record-meeting",
+     "n": 2,
+     "screen": "meetings-list"
+    },
+    {
+     "action": "choose the microphone; press Start recording",
+     "decision": "consent",
+     "expect": "consent is asked of everyone named; recording starts",
+     "flow": "record-meeting",
+     "n": 3,
+     "screen": "meeting-prejoin"
+    },
+    {
+     "action": "let fixture.audio play (60 s); press Stop",
+     "expect": "captions appear while it runs; after Stop the meeting's page opens",
+     "flow": "record-meeting",
+     "n": 4,
+     "screen": "meeting-live",
+     "wait": true
+    },
+    {
+     "action": "wait for the summary; read decisions and open steps",
+     "expect": "each summary line points to its transcript moment",
+     "flow": "read-minutes",
+     "n": 5,
+     "screen": "meeting",
+     "wait": true
+    },
+    {
+     "action": "approve the open step given to fixture.people.member",
+     "decision": "approve or discard",
+     "expect": "the step becomes a task for that person",
+     "flow": "approve-action-item",
+     "n": 6,
+     "screen": "meeting"
+    },
+    {
+     "action": "as the member: open the new item in For me",
+     "expect": "the item shows in its room context",
+     "flow": "close-follow-up",
+     "n": 7,
+     "screen": "inbox",
+     "seat": "member"
+    },
+    {
+     "action": "press Mark done",
+     "expect": "the item leaves For me",
+     "flow": "close-follow-up",
+     "n": 8,
+     "screen": "inbox-item",
+     "seat": "member"
+    },
+    {
+     "action": "as the owner: reopen the meeting",
+     "expect": "the open step shows as done",
+     "flow": "read-minutes",
+     "n": 9,
+     "screen": "meeting"
+    }
+   ],
+   "viewports": [
+    "1440x900",
+    "390x844"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 2,
+    "decisionsListed": 2,
+    "screensVisited": 6,
+    "steps": 8,
+    "stepsToFirstUseful": 3,
+    "waits": 2,
+    "waitsListed": 2
+   },
+   "firstUsefulScreen": "task-run-live",
+   "flows": [
+    "start-task",
+    "pair-browser",
+    "watch-run",
+    "take-the-wheel",
+    "read-result"
+   ],
+   "goal": "a person describes a task, watches the assistant do it in a browser, takes over for one step, hands back, and reads the result with its cost",
+   "goalArchetype": "live-session",
+   "id": "j04-browser-task-take-the-wheel",
+   "name": "Hand a browser task to the assistant, take the wheel, get the result",
+   "protocolId": "J4",
+   "refs": {
+    "chatgpt": {
+     "confidence": "guess",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "switch to agent mode",
+      "type the task",
+      "watch the virtual browser",
+      "Take over, hand back",
+      "read the result"
+     ],
+     "why": "plan-gated (guess)"
+    },
+    "hermes": {
+     "confidence": "shot-exists",
+     "status": "n/a",
+     "why": "no model configured; no agent run view (MANIFEST)"
+    },
+    "manus": {
+     "confidence": "guess",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "type the task",
+      "watch the computer panel",
+      "Take over, one click, hand back",
+      "read the result"
+     ],
+     "why": "the only product in the set where the live view and take-over can be seen; uses the founder's credits; target must be a public page (a loopback fixture is unreachable from a hosted agent)"
+    },
+    "skyvern": {
+     "confidence": "shot-exists",
+     "failsAtStep": 3,
+     "status": "partial",
+     "steps": [
+      "open /discover",
+      "type the task; send"
+     ],
+     "why": "'Unable to verify Skyvern API key': no run without a model key. needs the stub model (fixture.json > stubModel): no provider is configured on any reference (MANIFEST) and staging has no model"
+    },
+    "strawberry": {
+     "confidence": "unproven",
+     "status": "n/a",
+     "why": "a desktop binary: public pages only, by rule"
+    },
+    "windmill": {
+     "confidence": "unproven",
+     "status": "n/a",
+     "why": "runs scripts, no browser view"
+    }
+   },
+   "seat": "member",
+   "source": "CMP-UI-1-lanes.md section 8b (J4); ia-reset D6; CompareGraph harness-agents (agents-computer-use, agents-ob-take-the-wheel); ui-journeys.csv J-A-7",
+   "startState": {
+    "data": "fixture.populated; a model is enabled; one browser is paired; the task targets fixture.site (a static page served on loopback), never the open web",
+    "fixture": "populated",
+    "session": "the fixture member"
+   },
+   "steps": [
+    {
+     "action": "type fixture.tasks.browser in the task box and send",
+     "expect": "a run appears under Running",
+     "flow": "start-task",
+     "n": 1,
+     "screen": "tasks-list"
+    },
+    {
+     "action": "only if no browser is paired: pair this browser",
+     "decision": "pair or not",
+     "expect": "one device card, status ready",
+     "flow": "pair-browser",
+     "n": 2,
+     "screen": "pair-device"
+    },
+    {
+     "action": "open the run; watch two steps",
+     "expect": "the live view and a numbered step list",
+     "flow": "watch-run",
+     "n": 3,
+     "screen": "task-run-live",
+     "wait": true
+    },
+    {
+     "action": "press Take the wheel",
+     "decision": "take over",
+     "expect": "the band 'You are driving' shows; the assistant waits",
+     "flow": "take-the-wheel",
+     "n": 4,
+     "screen": "task-run-live"
+    },
+    {
+     "action": "click fixture.site's 'Show price' button; press Hand back",
+     "expect": "the run continues from where the person left it",
+     "flow": "take-the-wheel",
+     "n": 5,
+     "screen": "task-run-driving"
+    },
+    {
+     "action": "wait for the end",
+     "expect": "the run moves to Done",
+     "flow": "watch-run",
+     "n": 6,
+     "screen": "task-run-live",
+     "wait": true
+    },
+    {
+     "action": "read the result",
+     "expect": "the answer in words (fixture.site.price) and a receipt link",
+     "flow": "read-result",
+     "n": 7,
+     "screen": "task-run-done"
+    },
+    {
+     "action": "open the receipt",
+     "expect": "what was done, the cost, the time",
+     "flow": "read-result",
+     "n": 8,
+     "screen": "receipt"
+    }
+   ],
+   "viewports": [
+    "1440x900",
+    "390x844"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 2,
+    "decisionsListed": 1,
+    "screensVisited": 5,
+    "steps": 6,
+    "stepsToFirstUseful": 3,
+    "waits": 0,
+    "waitsListed": 0
+   },
+   "firstUsefulScreen": "ops-workspace",
+   "flows": [
+    "find-failing",
+    "read-account",
+    "read-failure",
+    "change-limit",
+    "check-audit"
+   ],
+   "goal": "from the console's first screen to an action on the one workspace that needs it, with the action on the audit trail",
+   "goalArchetype": "detail",
+   "id": "j05-operator-acts-on-failing-tenant",
+   "name": "An operator spots a failing workspace and acts",
+   "protocolId": "J5",
+   "refs": {
+    "killbill": {
+     "confidence": "shot-exists",
+     "failsAtStep": 1,
+     "status": "partial",
+     "steps": [
+      "/accounts: search",
+      "open the account",
+      "invoices, payments; add a tag such as AUTO_PAY_OFF",
+      "timeline"
+     ],
+     "why": "no home that says who needs attention"
+    },
+    "lago": {
+     "confidence": "shot-exists",
+     "failsAtStep": 6,
+     "status": "partial",
+     "steps": [
+      "/analytics: overdue balance",
+      "/customers: open the customer",
+      "open the invoice; retry or void"
+     ],
+     "why": "no audit page in the open edition (guess)"
+    },
+    "langfuse": {
+     "confidence": "shot-exists",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "home: error counts",
+      "/traces filtered to the user",
+      "open one trace"
+     ],
+     "why": "observes only: no action on a tenant"
+    },
+    "litellm": {
+     "confidence": "shot-exists",
+     "status": "complete",
+     "steps": [
+      "/ui?page=usage: find the team over its budget",
+      "/ui?page=teams: open it",
+      "edit the budget; save",
+      "/ui?page=logs: see failed calls"
+     ],
+     "why": "closest open pattern; audit log is an enterprise page (guess)"
+    },
+    "posthog-cloud": {
+     "confidence": "unproven",
+     "status": "n/a",
+     "why": "product analytics: no tenant to act on"
+    },
+    "stripe": {
+     "confidence": "unproven",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "home: a 'needs attention' item",
+      "open the customer",
+      "act (retry the invoice, pause the subscription) in test mode",
+      "open the event log"
+     ]
+    }
+   },
+   "seat": "operator",
+   "source": "CMP-UI-1-lanes.md section 8b (J5); ia-reset D8, D9; docs/design/usecases/console-jobs.csv (not opened - unproven which job row)",
+   "startState": {
+    "data": "fixture.populated.console: three workspaces, one over budget with failing calls",
+    "fixture": "populated",
+    "session": "an operator test account (does not exist yet: founder action in ia-reset F)"
+   },
+   "steps": [
+    {
+     "action": "read 'Needs you'; press Open on the over-budget row",
+     "expect": "the workspaces list opens filtered to Over budget",
+     "flow": "find-failing",
+     "n": 1,
+     "screen": "ops-overview"
+    },
+    {
+     "action": "open the one row",
+     "expect": "the account page opens",
+     "flow": "find-failing",
+     "n": 2,
+     "screen": "ops-workspaces"
+    },
+    {
+     "action": "read spend against the ceiling and the error rate",
+     "expect": "numbers with an as-of time; no id outside [data-id]",
+     "flow": "read-account",
+     "n": 3,
+     "screen": "ops-workspace"
+    },
+    {
+     "action": "open Calls for this workspace; open the newest failed call",
+     "expect": "the error in words and the route taken",
+     "flow": "read-failure",
+     "n": 4,
+     "screen": "ops-calls"
+    },
+    {
+     "action": "choose Limits from the overflow; raise the ceiling by the fixture amount; confirm",
+     "decision": "which action; confirm",
+     "expect": "the change is proposed and applied through the gate; a notice confirms",
+     "flow": "change-limit",
+     "n": 5,
+     "screen": "ops-workspace"
+    },
+    {
+     "action": "open Audit; find the entry",
+     "expect": "who, what, when, old and new value",
+     "flow": "check-audit",
+     "n": 6,
+     "screen": "ops-audit"
+    }
+   ],
+   "viewports": [
+    "1440x900",
+    "390x844"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 3,
+    "decisionsListed": 3,
+    "screensVisited": 4,
+    "steps": 4,
+    "stepsToFirstUseful": 3,
+    "waits": 0,
+    "waitsListed": 0
+   },
+   "firstUsefulScreen": "guest-minutes",
+   "flows": [
+    "guest-join",
+    "guest-read-minutes",
+    "guest-agree-minutes",
+    "guest-to-member"
+   ],
+   "goal": "an outsider with no account reads the minutes shared with their side and agrees them by link",
+   "goalArchetype": "detail",
+   "id": "j06-guest-agrees-minutes",
+   "name": "A guest joins by link, sees only their part, and agrees the minutes",
+   "protocolId": null,
+   "refs": {
+    "fireflies": {
+     "confidence": "guess",
+     "failsAtStep": 3,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "open a shared meeting link signed out",
+      "read"
+     ],
+     "why": "read-only share (guess)"
+    },
+    "jitsi": {
+     "confidence": "shot-exists",
+     "failsAtStep": 2,
+     "status": "partial",
+     "steps": [
+      "open the room link",
+      "pre-join: type a name",
+      "in the meeting"
+     ],
+     "why": "joins a live call by link; there are no minutes"
+    },
+    "mattermost": {
+     "confidence": "guess",
+     "failsAtStep": 1,
+     "status": "partial",
+     "steps": [
+      "accept a guest invite; sign up"
+     ],
+     "why": "a guest needs an account; guest accounts may need a licence (guess)"
+    },
+    "otter": {
+     "confidence": "guess",
+     "failsAtStep": 3,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "open a shared conversation link signed out",
+      "read"
+     ],
+     "why": "read-only share; no agreeing (guess)"
+    },
+    "rallly": {
+     "confidence": "shot-exists",
+     "failsAtStep": 2,
+     "status": "partial",
+     "steps": [
+      "open the invite link",
+      "type a name; vote"
+     ],
+     "why": "a guest acts by link without an account - the pattern, on a poll"
+    },
+    "slack": {
+     "confidence": "unproven",
+     "failsAtStep": 1,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "accept a single-channel guest invite"
+     ],
+     "why": "a guest needs an account"
+    }
+   },
+   "seat": "guest",
+   "source": "blueprint 08 CXU-15 ('a guest joins one room for one step and sees only that step's context'); CompareGraph meetings row trust.meetings-agreed-minutes-with-guests; blueprint 35 section 1 row 3 (the two-sided room); ui-journeys.csv J-A-34",
+   "startState": {
+    "data": "fixture.populated: the client room has one meeting with minutes shared to the guest's side; a join link exists",
+    "fixture": "populated",
+    "session": "none"
+   },
+   "steps": [
+    {
+     "action": "open the link; type the display name; accept",
+     "decision": "name and consent",
+     "expect": "the one room opens",
+     "flow": "guest-join",
+     "n": 1,
+     "screen": "guest-join"
+    },
+    {
+     "action": "open the minutes card",
+     "expect": "the shared minutes open",
+     "flow": "guest-read-minutes",
+     "n": 2,
+     "screen": "guest-room"
+    },
+    {
+     "action": "read; press Agree",
+     "decision": "agree or ask for a change",
+     "expect": "the minutes show as agreed by this side, with the version",
+     "flow": "guest-agree-minutes",
+     "n": 3,
+     "screen": "guest-minutes"
+    },
+    {
+     "action": "follow 'keep this in your own account'",
+     "confidence": "guess",
+     "decision": "sign up or leave",
+     "expect": "the sign-up offer, with what carries over",
+     "flow": "guest-to-member",
+     "n": 4,
+     "screen": "welcome-from-guest"
+    }
+   ],
+   "viewports": [
+    "1440x900",
+    "390x844"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 3,
+    "decisionsListed": 3,
+    "screensVisited": 6,
+    "steps": 6,
+    "stepsToFirstUseful": 6,
+    "waits": 1,
+    "waitsListed": 1
+   },
+   "firstUsefulScreen": "receipt",
+   "flows": [
+    "top-up",
+    "propose-split",
+    "accept-split",
+    "read-shares"
+   ],
+   "goal": "the people of a room agree a split, each from their own balance, and the receipt shows each share",
+   "goalArchetype": "detail",
+   "id": "j07-shared-bill",
+   "name": "A room tops up and splits its bill",
+   "note": "whether GP-1 (the group pack) is built and where the split is proposed in the UI is unproven: steps 3-6 are drawn from blueprint 35 and the Room info sketch",
+   "protocolId": null,
+   "refs": {
+    "chatgpt": {
+     "confidence": "unproven",
+     "status": "n/a",
+     "why": "flat subscription"
+    },
+    "lago": {
+     "confidence": "unproven",
+     "failsAtStep": 3,
+     "status": "partial",
+     "steps": [
+      "/customer/<id>: add a wallet",
+      "top up the wallet"
+     ],
+     "why": "a wallet per customer; no split between people"
+    },
+    "openrouter": {
+     "confidence": "unproven",
+     "failsAtStep": 3,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "settings/credits",
+      "Add credits (stop before paying)"
+     ],
+     "why": "one payer; no split"
+    },
+    "stripe": {
+     "confidence": "unproven",
+     "status": "n/a",
+     "why": "no shared-bill concept in the dashboard"
+    }
+   },
+   "seat": "admin, then member",
+   "source": "blueprint 35 section 1 row 2 (the shared bill) and lane GP-1; ui-journeys.csv J-A-4 steps 4-5 and J-A-24 (trip room on a shared bill); AGENTS.md section 1 (money moves only through a proposal and the gate)",
+   "startState": {
+    "data": "fixture.populated: the team room has two people and one finished run with a cost; balances are sandbox credit",
+    "fixture": "populated",
+    "session": "the fixture owner"
+   },
+   "steps": [
+    {
+     "action": "read the balance; press Top up",
+     "expect": "the top-up step opens",
+     "flow": "top-up",
+     "n": 1,
+     "screen": "settings-budgets"
+    },
+    {
+     "action": "choose the fixture amount; continue to the payment provider's page; STOP there (sandbox) and return",
+     "decision": "amount",
+     "expect": "the balance line shows the pending or sandbox credit",
+     "external": true,
+     "flow": "top-up",
+     "n": 2,
+     "screen": "top-up",
+     "wait": true
+    },
+    {
+     "action": "open the room's budget; propose an even split between the two members",
+     "confidence": "guess",
+     "decision": "the split rule",
+     "expect": "a split proposal is sent to the other member",
+     "flow": "propose-split",
+     "n": 3,
+     "screen": "room-info"
+    },
+    {
+     "action": "as the member: open the split proposal",
+     "expect": "the proposal with each share in money",
+     "flow": "accept-split",
+     "n": 4,
+     "screen": "inbox",
+     "seat": "member"
+    },
+    {
+     "action": "press Approve",
+     "decision": "approve",
+     "expect": "the split is accepted",
+     "flow": "accept-split",
+     "n": 5,
+     "screen": "inbox-item",
+     "seat": "member"
+    },
+    {
+     "action": "open the finished run's receipt",
+     "expect": "each member's share and who has paid",
+     "flow": "read-shares",
+     "n": 6,
+     "screen": "receipt"
+    }
+   ],
+   "viewports": [
+    "1440x900",
+    "390x844"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 3,
+    "decisionsListed": 3,
+    "screensVisited": 8,
+    "steps": 8,
+    "stepsToFirstUseful": 7,
+    "waits": 1,
+    "waitsListed": 1
+   },
+   "firstUsefulScreen": "router-logs",
+   "flows": [
+    "router-setup",
+    "set-routing",
+    "set-ceiling",
+    "create-key",
+    "first-call",
+    "read-call",
+    "read-usage"
+   ],
+   "goal": "from an empty router to one call whose log row shows the model chosen, the cost and the reason",
+   "goalArchetype": "list",
+   "id": "j08-key-policy-call-cost",
+   "name": "An admin sets a model rule and a ceiling, makes a call with a key, and sees what it cost and why",
+   "protocolId": null,
+   "refs": {
+    "langfuse": {
+     "confidence": "shot-exists",
+     "failsAtStep": 3,
+     "status": "partial",
+     "steps": [
+      "settings: create API keys",
+      "send one trace with the SDK snippet",
+      "/traces: open it"
+     ],
+     "why": "observes calls; does not route or cap them"
+    },
+    "langsmith": {
+     "confidence": "unproven",
+     "failsAtStep": 3,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "settings: API key",
+      "a project's runs: open one"
+     ],
+     "why": "observes only"
+    },
+    "litellm": {
+     "confidence": "shot-exists",
+     "status": "complete",
+     "steps": [
+      "/ui?page=models: add the stub model",
+      "/ui?page=api-keys: create a key with a budget",
+      "run the same snippet against the proxy",
+      "/ui?page=logs: open the row",
+      "/ui?page=usage"
+     ],
+     "why": "complete with the stub model; no routing objective to choose"
+    },
+    "openrouter": {
+     "confidence": "unproven",
+     "failsAtStep": 6,
+     "needsFounder": true,
+     "status": "partial",
+     "steps": [
+      "settings/keys: create a key with a credit limit",
+      "settings/preferences: routing defaults",
+      "activity: open a past generation"
+     ],
+     "why": "no call is made on the founder's key (terms; memory 2026-10-31): only activity that already exists is read"
+    },
+    "openwebui": {
+     "confidence": "unproven",
+     "failsAtStep": 3,
+     "status": "partial",
+     "steps": [
+      "/admin/settings > Connections: add the stub",
+      "chat once"
+     ],
+     "why": "no keys, ceilings or call log for a developer"
+    },
+    "phoenix": {
+     "confidence": "shot-exists",
+     "failsAtStep": 3,
+     "status": "partial",
+     "steps": [
+      "send one trace",
+      "/projects: open it"
+     ],
+     "why": "observes only; no keys page without auth"
+    }
+   },
+   "seat": "admin-dev",
+   "source": "blueprint 08 CXU-12 (ban models of an origin) and CXU-13 ('cheapest above the quality floor' and a daily ceiling; cost per verified result); CompareGraph surfaces router rows (keys, logs, budgets, routing-strategies); ui-journeys.csv J-A-32",
+   "startState": {
+    "data": "fixture.empty router: no key, no call; the stub model is the only provider",
+    "fixture": "empty",
+    "session": "the fixture owner, Developer view on"
+   },
+   "steps": [
+    {
+     "action": "follow the setup card's first step",
+     "expect": "Providers opens",
+     "flow": "router-setup",
+     "n": 1,
+     "screen": "router-overview"
+    },
+    {
+     "action": "add the stub model as your own endpoint; test it",
+     "decision": "which provider",
+     "expect": "the provider shows healthy",
+     "flow": "router-setup",
+     "n": 2,
+     "screen": "router-providers"
+    },
+    {
+     "action": "choose 'cheapest above the quality floor'; save",
+     "decision": "objective",
+     "expect": "the rule is saved through the gate",
+     "flow": "set-routing",
+     "n": 3,
+     "screen": "router-routing"
+    },
+    {
+     "action": "set a daily ceiling of the fixture amount; save",
+     "decision": "amount",
+     "expect": "the ceiling shows with its reset time",
+     "flow": "set-ceiling",
+     "n": 4,
+     "screen": "router-budgets"
+    },
+    {
+     "action": "create a key named fixture.router.keyName; copy it",
+     "expect": "the key is shown once",
+     "flow": "create-key",
+     "n": 5,
+     "screen": "router-key-create"
+    },
+    {
+     "action": "copy the snippet; run it once outside the browser with fixture.questions.q1",
+     "expect": "a 200 with an answer",
+     "external": true,
+     "flow": "first-call",
+     "n": 6,
+     "screen": "router-docs",
+     "wait": true
+    },
+    {
+     "action": "open Logs; open the newest row",
+     "expect": "model, tokens, cost, latency and why this route",
+     "flow": "read-call",
+     "n": 7,
+     "screen": "router-logs"
+    },
+    {
+     "action": "open Usage",
+     "expect": "one call, its cost, against the ceiling",
+     "flow": "read-usage",
+     "n": 8,
+     "screen": "router-usage"
+    }
+   ],
+   "viewports": [
+    "1440x900"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 2,
+    "decisionsListed": 2,
+    "screensVisited": 4,
+    "steps": 6,
+    "stepsToFirstUseful": 4,
+    "waits": 1,
+    "waitsListed": 1
+   },
+   "firstUsefulScreen": "room",
+   "flows": [
+    "connect-channel",
+    "outside-message",
+    "read-channel-room"
+   ],
+   "goal": "a message sent from outside the app reaches a room and gets an answer within what that sender may see",
+   "goalArchetype": "conversation",
+   "id": "j09-channel-answer",
+   "name": "Connect a channel and have the assistant answer there",
+   "protocolId": null,
+   "refs": {
+    "chatwoot": {
+     "confidence": "shot-exists",
+     "status": "complete",
+     "steps": [
+      "/settings/inboxes/new: Website",
+      "name it; copy the script",
+      "open the widget test page; send q2",
+      "/dashboard: open the conversation",
+      "reply as an agent",
+      "the widget shows the reply"
+     ],
+     "why": "complete with a person answering; no assistant without a provider"
+    },
+    "dify": {
+     "confidence": "shot-exists",
+     "failsAtStep": 5,
+     "status": "partial",
+     "steps": [
+      "/apps: create a chat app",
+      "Publish > Run app (the public web app)",
+      "send q2"
+     ],
+     "why": "needs the stub model (fixture.json > stubModel): no provider is configured on any reference (MANIFEST) and staging has no model"
+    },
+    "hermes": {
+     "confidence": "guess",
+     "failsAtStep": 3,
+     "status": "partial",
+     "steps": [
+      "/channels: add a channel"
+     ],
+     "why": "needs a real messaging account and a model"
+    },
+    "intercom": {
+     "confidence": "guess",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "Settings > Messenger: install on a test page",
+      "send q2 from the page",
+      "Inbox: open; reply or let the AI agent answer"
+     ],
+     "why": "needs a trial"
+    },
+    "slack": {
+     "confidence": "unproven",
+     "status": "n/a",
+     "why": "is itself the channel"
+    }
+   },
+   "seat": "admin, then guest (the outside sender)",
+   "source": "blueprint 01 section 4 (ONB-2: 'one source the person already uses, WhatsApp first'); blueprint 08 CXU-32 (a cashier asks on WhatsApp); CompareGraph surfaces chat.menu-chat-channels; ui-journeys.csv J-A-16",
+   "startState": {
+    "data": "fixture.populated; the channel used is the web widget (no outside account); a model is enabled",
+    "fixture": "populated",
+    "session": "the fixture owner"
+   },
+   "steps": [
+    {
+     "action": "press Connect on the web widget row",
+     "expect": "the connect step opens",
+     "flow": "connect-channel",
+     "n": 1,
+     "screen": "settings-channels"
+    },
+    {
+     "action": "name it; copy the snippet; finish",
+     "decision": "which channel",
+     "expect": "the channel shows as connected, as a card in its room",
+     "flow": "connect-channel",
+     "n": 2,
+     "screen": "connect-channel"
+    },
+    {
+     "action": "on fixture.site's widget page: type fixture.questions.q2 and send",
+     "confidence": "guess",
+     "expect": "the message shows in the widget",
+     "external": true,
+     "flow": "outside-message",
+     "n": 3,
+     "screen": "guest-room",
+     "seat": "guest"
+    },
+    {
+     "action": "as the owner: open the channel's room",
+     "expect": "the outside message is there with the sender's name",
+     "flow": "read-channel-room",
+     "n": 4,
+     "screen": "room"
+    },
+    {
+     "action": "wait for the assistant's reply (or press Approve on its draft)",
+     "decision": "approve the draft, if the policy asks",
+     "expect": "the reply is sent to the widget",
+     "flow": "read-channel-room",
+     "n": 5,
+     "screen": "room",
+     "wait": true
+    },
+    {
+     "action": "back on the widget: read the reply",
+     "expect": "an answer in words",
+     "external": true,
+     "flow": "outside-message",
+     "n": 6,
+     "screen": "guest-room",
+     "seat": "guest"
+    }
+   ],
+   "viewports": [
+    "1440x900",
+    "390x844"
+   ]
+  },
+  {
+   "expected": {
+    "decisions": 3,
+    "decisionsListed": 2,
+    "screensVisited": 5,
+    "steps": 7,
+    "stepsToFirstUseful": 3,
+    "waits": 1,
+    "waitsListed": 1
+   },
+   "firstUsefulScreen": "build-automation",
+   "flows": [
+    "create-flow",
+    "edit-flow",
+    "run-flow",
+    "read-run",
+    "see-schedule",
+    "see-result"
+   ],
+   "goal": "from the automations list to a saved flow with a schedule, one run, and its result - and the member sees it under Tasks > Scheduled",
+   "goalArchetype": "detail",
+   "id": "j10-automation-on-a-schedule",
+   "name": "Build an automation, let it run on a schedule, check the run",
+   "protocolId": null,
+   "refs": {
+    "activepieces": {
+     "confidence": "shot-exists",
+     "status": "complete",
+     "steps": [
+      "/flows: New flow > from scratch",
+      "trigger Schedule; one step",
+      "Publish; Test flow",
+      "/runs: open the run"
+     ]
+    },
+    "dify": {
+     "confidence": "guess",
+     "failsAtStep": 3,
+     "status": "partial",
+     "steps": [
+      "/apps: Create from blank > Workflow",
+      "add a node; Publish; Run"
+     ],
+     "why": "a schedule trigger may not exist in this version (guess)"
+    },
+    "flowise": {
+     "confidence": "guess",
+     "failsAtStep": 3,
+     "status": "partial",
+     "steps": [
+      "/agentflows: Add new",
+      "nodes; save"
+     ],
+     "why": "no schedule trigger (guess); a run needs a model"
+    },
+    "hermes": {
+     "confidence": "guess",
+     "failsAtStep": 4,
+     "status": "partial",
+     "steps": [
+      "/cron: add a job"
+     ],
+     "why": "no model: nothing runs"
+    },
+    "make": {
+     "confidence": "unproven",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "Create a new scenario",
+      "one module; set the schedule",
+      "Run once",
+      "History"
+     ]
+    },
+    "n8n": {
+     "confidence": "shot-exists",
+     "status": "complete",
+     "steps": [
+      "/home/workflows: Create workflow",
+      "add Schedule Trigger and a Set node",
+      "save; Execute workflow",
+      "Executions tab: open the run"
+     ]
+    },
+    "windmill": {
+     "confidence": "shot-exists",
+     "status": "complete",
+     "steps": [
+      "Home: + Flow",
+      "add a schedule trigger and one script step",
+      "Deploy; Run",
+      "/runs: open the job"
+     ]
+    },
+    "zapier": {
+     "confidence": "unproven",
+     "needsFounder": true,
+     "status": "complete",
+     "steps": [
+      "Create > Zap",
+      "trigger Schedule by Zapier; one action",
+      "Test; Publish",
+      "Zap history: open the run"
+     ]
+    }
+   },
+   "seat": "admin-dev, then member",
+   "source": "blueprint 08 CXU-31 (a stock-out event wakes a bot that drafts the order for approval); CompareGraph surfaces advanced rows (flows-list, flow-graph, flow-executions, flow-templates) and chat.menu-chat-schedules; ui-journeys.csv J-A-33",
+   "startState": {
+    "data": "fixture.empty automations",
+    "fixture": "empty",
+    "session": "the fixture owner, Developer view on"
+   },
+   "steps": [
+    {
+     "action": "press the page's primary (New automation)",
+     "expect": "the create step opens - never a wall",
+     "flow": "create-flow",
+     "n": 1,
+     "screen": "build-automations"
+    },
+    {
+     "action": "start blank; name it fixture.flow.name",
+     "decision": "blank or template",
+     "expect": "the flow opens with an empty graph",
+     "flow": "create-flow",
+     "n": 2,
+     "screen": "build-automation-create"
+    },
+    {
+     "action": "add the trigger 'every day 08:00' and one step that posts fixture.flow.message to the team room; save",
+     "decision": "trigger; step",
+     "expect": "the graph shows two nodes; saved through the gate",
+     "flow": "edit-flow",
+     "n": 3,
+     "screen": "build-automation"
+    },
+    {
+     "action": "press Run once",
+     "expect": "a run starts",
+     "flow": "run-flow",
+     "n": 4,
+     "screen": "build-automation",
+     "wait": true
+    },
+    {
+     "action": "open the Runs tab; open the run",
+     "expect": "each step's state and output",
+     "flow": "read-run",
+     "n": 5,
+     "screen": "build-automation"
+    },
+    {
+     "action": "as the member: open Tasks > Scheduled",
+     "expect": "the daily job shows with its next time",
+     "flow": "see-schedule",
+     "n": 6,
+     "screen": "tasks-scheduled",
+     "seat": "member"
+    },
+    {
+     "action": "open the team room",
+     "expect": "the posted message is there",
+     "flow": "see-result",
+     "n": 7,
+     "screen": "room",
+     "seat": "member"
+    }
+   ],
+   "viewports": [
+    "1440x900"
+   ]
+  }
+ ],
+ "metrics": [
+  "screens visited",
+  "total clicks",
+  "decisions asked of the person",
+  "waits (> 2 s)",
+  "dead ends",
+  "steps until the first useful screen"
+ ],
+ "schema": "ui-journeys/1",
+ "sourcesFreshness": "docs/STATUS.md 2026-11-12: blueprint 01 = current (reviewed 2026-10-09); blueprint 08, blueprint 35 and docs/design/usecases/* = unreviewed. Used for intent only.",
+ "statusEnum": [
+  "complete",
+  "partial",
+  "n/a"
+ ],
+ "version": "1"
+}

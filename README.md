@@ -18,9 +18,9 @@
   <a href="docs/reports/README.md">Reports</a>
 </p>
 
-<!-- sources: Cargo.toml (licence, rust-version); docs/catalog.json (18 tools); walker.rs language_for (29 languages); application/setup.rs (12 clients, the Agents table order); .github/workflows/ci.yml; release.yml (five platform builds, SHA256SUMS); docs/assets/hero.svg (cells from fixtures/gold-map, final rows); docs/reports/2026-10-24-first-result-time.md (times) -->
+<!-- sources: Cargo.toml (licence, rust-version); docs/catalog.json (18 tools); walker.rs language_for (29 languages); application/setup.rs (12 clients, the Agents table order); .github/workflows/ci.yml; release.yml (five platform builds, SHA256SUMS); docs/assets/hero.svg (cells from fixtures/gold-map, final rows); docs/reports/2026-10-24-first-result-time.md (times); docs/assets/ui.svg (numbers from the golden tests/golden/ui/diff-room.json: layoutDiff nav columns 3 vs 1, primaries 0 vs 1; styleDiff type sizes 11 vs 6, colours 23 vs 12, onScale4 0.71 vs 0.96) -->
 
-You keep clones of the projects you care about, your own and other people's, and you write down the features you want to compare. CompareGraph reads every clone into one graph and helps you, or your coding agent, fill in a table of features against repositories. Each answer is `has`, `partial` or `none`, and each points at the code, or at the search that found nothing. It is free and open source (Apache-2.0), one program on your machine; it reads clones and never runs them, and the engine never calls an AI model or the network.
+You keep clones of the projects you care about, your own and other people's, and you write down the features you want to compare. CompareGraph reads every clone into one graph and helps you, or your coding agent, fill in a table of features against repositories. Each answer is `has`, `partial` or `none`, and each points at the code, or at the search that found nothing. It also compares screens, not only code: the same page in two products, measured from its structure, with screenshots as context ([below](#compare-screens-not-only-code)). It is free and open source (Apache-2.0), one program on your machine; it reads clones and never runs them, and the engine never calls an AI model or the network.
 
 <p align="center"><img src="docs/assets/hero.svg" alt="A table of four features against four repositories, code-review-graph, srclight, codanna and CodeGraph. All four have full-text search and embedding search; module communities are in code-review-graph and srclight, partly in CodeGraph and not in codanna; diff-aware review is in all but codanna. One has cell cites code_review_graph/communities.py::detect_communities, and one none cell records the search that found nothing. The cells are the agreed verdicts of the mapping gold in fixtures/gold-map." width="100%"></p>
 
@@ -240,11 +240,51 @@ one plugin ([Get started](#get-started)); other agents read the `skills/` direct
 
 ---
 
+## Compare screens, not only code
+
+<p align="center"><img src="docs/assets/ui.svg" alt="One screen in two products, side by side. Ours: three navigation columns, no primary action, 11 type sizes, 23 colours, 0.71 of spacing on the 4 pixel scale. Reference: one navigation column, one primary action, 6 type sizes, 12 colours, 0.96 on the 4 pixel scale." width="100%"></p>
+
+The same idea as the feature table, for what a person sees. A separate probe captures each screen of your product and of the products you compare against into plain files; CompareGraph reads those files and answers in numbers, not adjectives. It reads files only: it never opens a browser or a network connection.
+
+Four layers, from what can be counted to what has to be walked:
+
+1. **Structure.** Twelve clutter metrics, E1 to E12 (navigation columns before the content, primary actions, machine words on screen, and so on), each with a limit per kind of screen and a pass or fail.
+2. **Layout grammar.** Which regions the page has (rail, sidebar, list, main, panel, top bar), where the primary action sits, where the content starts.
+3. **Style.** The design system as measured: type sizes, weights, colours, spacing steps, radii, shadows, density, low-contrast text. A product's system is the union over its screens, held to a target such as at most 6 type sizes and 12 colours.
+4. **Menu tree, flows and journeys.** The navigation as a tree (places, depth, duplicates, dead items), a task as steps and dead ends, and an end-to-end goal as clicks, decisions and time to the first useful thing.
+
+Screenshots are context for people and for a judge, kept by content hash and compared by a 64-bit difference hash. They are never the gate.
+
+**Why two runs agree** (the determinism protocol):
+
+- **Capture key.** A capture is product@version / screen / state / viewport / seat / locale / theme, never a URL; screens come from one versioned registry so products line up.
+- **Frozen environment.** Clock, time zone, locale, scale, motion, fonts and a three-read stability check are fixed; a page that will not settle is marked `unstable`, not kept silently.
+- **Seeded data.** Every state (empty, populated, error, long) is made from a versioned fixture, not read live.
+- **Two hashes.** `domHash` identifies what was shown, exactly; the image hash identifies the picture, within 4 bits.
+- **Run twice.** `ui verify` compares two runs of the same inputs and fails on any difference.
+
+Quick start, against a folder that holds a `ui/` tree (`--ui-root`):
+
+```bash
+comparegraph ui show ours room --ui-root ./captures                       # the 12 metrics, layout, style, the image
+comparegraph ui diff room --ours ours --ref theirs --ui-root ./captures   # layout and style differences in words
+comparegraph ui matrix FAMILY --ui-root ./captures                        # one family's rows against every product
+comparegraph ui nav-diff --ours ours --ref theirs --ui-root ./captures    # menu tree against menu tree
+comparegraph ui journey j1 --ui-root ./captures                           # who completes the goal, in how many clicks
+comparegraph ui verify RUN_A RUN_B --ui-root ./captures                   # the determinism gate: run twice, diff
+```
+
+The file formats are in [`docs/decisions.md`](docs/decisions.md); `fixtures/ui-contract/` is a real probe output that the tests read with every verb.
+
+---
+
 ## Using it
 
 Four pages under `docs/` hold the reference; each is a few clicks from here.
 
 ### What you get
+
+**Screens.** The same four-layer answer for a page of your product against a reference: metrics, layout, style, menu tree and journeys, from capture files ([above](#compare-screens-not-only-code)).
 
 Four levels, each answering how it knows: the repo surface, module communities, symbols (callers, callees, blast radius, tests, entry points, dead-code candidates) and claims (verdict, citation, author, trail). Every answer is one JSON envelope with an evidence class. [Usage](docs/usage.md#what-you-get) has the table and a real `show` answer.
 

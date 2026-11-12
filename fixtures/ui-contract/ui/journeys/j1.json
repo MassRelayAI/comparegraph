@@ -1,0 +1,28 @@
+{
+  "goalArchetype": "conversation",
+  "journey": "j1",
+  "results": {
+    "clean": {
+      "clicks": 1,
+      "deadEnds": 0,
+      "decisions": 1,
+      "firstUseful": 1,
+      "screens": 1,
+      "status": "completed",
+      "waits": 0
+    },
+    "cluttered": {
+      "clicks": 2,
+      "deadEnds": 1,
+      "decisions": 1,
+      "failedStep": 4,
+      "firstUseful": 1,
+      "screens": 1,
+      "status": "partial",
+      "waits": 1,
+      "why": "click button/Missing: target absent"
+    }
+  },
+  "schema": "ui-journey/1",
+  "title": "Open the thing"
+}

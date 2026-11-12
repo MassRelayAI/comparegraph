@@ -1,0 +1,27 @@
+{
+  "captures": {
+    "cluttered@contract-1/inbox/populated/1440x900/member/en-US/light": "cluttered/inbox/populated/1440x900-member.json",
+    "cluttered@contract-1/room/empty/1440x900/member/en-US/light": "cluttered/room/empty/1440x900-member.json",
+    "cluttered@contract-1/room/populated/1440x900/member/en-US/light": "cluttered/room/populated/1440x900-member.json",
+    "cluttered@contract-1/room/populated/390x844/member/en-US/light": "cluttered/room/populated/390x844-member.json"
+  },
+  "failed": [],
+  "inputs": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reducedMotion": "reduce",
+      "timezone": "UTC"
+    },
+    "fixtureHash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "probeVersion": "1",
+    "product": "cluttered",
+    "registryVersion": "1",
+    "runLabel": "b",
+    "version": "contract-1"
+  },
+  "runId": "8f7a2cad6f460c787fc6b5308e480bbc9d3420c19cde7d23d0bd1cc526d193c3",
+  "schema": "ui-run/1"
+}

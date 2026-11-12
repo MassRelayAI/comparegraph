@@ -1,0 +1,342 @@
+{
+  "cells": [
+    {
+      "product": "cluttered",
+      "screen": "room",
+      "seat": "member",
+      "state": "empty",
+      "status": "captured",
+      "viewport": "1440x900",
+      "why": ""
+    },
+    {
+      "product": "cluttered",
+      "screen": "room",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "viewport": "1440x900",
+      "why": ""
+    },
+    {
+      "product": "cluttered",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "viewport": "390x844",
+      "why": ""
+    },
+    {
+      "product": "cluttered",
+      "screen": "room",
+      "seat": "member",
+      "state": "long",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "room",
+      "seat": "member",
+      "state": "long",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "the fixture page has no empty inbox"
+    },
+    {
+      "product": "cluttered",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "the fixture page has no empty inbox"
+    },
+    {
+      "product": "cluttered",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "viewport": "1440x900",
+      "why": ""
+    },
+    {
+      "product": "cluttered",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "flows-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "flows-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "flows-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "flows-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "settings",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "settings",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "console-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "console-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "not in this run's plan"
+    },
+    {
+      "product": "cluttered",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "390x844",
+      "why": "not in this run's plan"
+    }
+  ],
+  "journeyCells": [
+    {
+      "journey": "j1",
+      "product": "cluttered",
+      "status": "captured",
+      "step": 1,
+      "why": ""
+    },
+    {
+      "journey": "j1",
+      "product": "cluttered",
+      "status": "captured",
+      "step": 2,
+      "why": ""
+    },
+    {
+      "journey": "j1",
+      "product": "cluttered",
+      "status": "captured",
+      "step": 3,
+      "why": ""
+    },
+    {
+      "journey": "j1",
+      "product": "cluttered",
+      "status": "failed",
+      "step": 4,
+      "why": "dead end: click button/Missing"
+    }
+  ],
+  "runId": "8f7a2cad6f460c787fc6b5308e480bbc9d3420c19cde7d23d0bd1cc526d193c3",
+  "schema": "ui-coverage/1"
+}

@@ -1,0 +1,486 @@
+family,row_id,product,screen,route,task,note
+budgets,approvals-and-audit.budgets-audit-budget-changes,massrelay-ops,ops-audit,/audit,,
+budgets,approvals-and-audit.budgets-request-more-flow,massrelay,inbox,/inbox,ask-for-more-budget,
+budgets,approvals-and-audit.budgets-separation-of-duties,massrelay,inbox-item,/queue/:id,,
+budgets,enforcement-and-concurrency.budgets-concurrency-exact,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+budgets,enforcement-and-concurrency.budgets-edge-behaviour,massrelay,inbox,/inbox,,
+budgets,enforcement-and-concurrency.budgets-hard-vs-soft-limit,massrelay,router-budgets,/router/budgets,,
+budgets,enforcement-and-concurrency.budgets-hot-path-spend-read,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+budgets,enforcement-and-concurrency.budgets-lease-based-distribution,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+budgets,enforcement-and-concurrency.budgets-reserve-then-settle,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+budgets,payments-connector.budgets-payments-connector-trait,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+budgets,payments-connector.budgets-payments-hosted-checkout,massrelay,top-up,/settings/budgets (top up),top-up,
+budgets,payments-connector.budgets-payments-reconciliation,massrelay-ops,ops-billing,/billing,,
+budgets,payments-connector.budgets-payments-webhook-verify-idempotency,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+budgets,plan-lifecycle.budgets-entitlements,massrelay-ops,ops-plans-pricing,/plans,,
+budgets,plan-lifecycle.budgets-overdue-dunning,massrelay-ops,ops-billing,/billing,,
+budgets,plan-lifecycle.budgets-plan-phases,massrelay-ops,ops-plans-pricing,/plans,,
+budgets,plan-lifecycle.budgets-proration,massrelay-ops,ops-billing,/billing,,
+budgets,reporting-and-forecast.budgets-anomaly-forecast,massrelay,settings-budgets,/settings/budgets,,
+budgets,reporting-and-forecast.budgets-async-rollups,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+budgets,reporting-and-forecast.budgets-cost-per-outcome,massrelay,receipt,/receipts/:id,,
+budgets,reporting-and-forecast.budgets-export,massrelay,settings-budgets,/settings/budgets,,
+budgets,reporting-and-forecast.budgets-showback-chargeback,massrelay,settings-budgets,/settings/budgets,,
+budgets,scope-and-hierarchy.budgets-inheritance-join-move,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+budgets,scope-and-hierarchy.budgets-parent-child-limits,massrelay,router-budgets,/router/budgets,,
+budgets,scope-and-hierarchy.budgets-per-model-tier-budget,massrelay,router-budgets,/router/budgets,,
+budgets,scope-and-hierarchy.budgets-policy-by-level-role,massrelay,settings-budgets,/settings/budgets,,
+budgets,scope-and-hierarchy.budgets-reset-period-timezone,massrelay,router-budgets,/router/budgets,,
+budgets,scope-and-hierarchy.budgets-scope-bot-agent,massrelay,settings-budgets,/settings/budgets,,
+budgets,scope-and-hierarchy.budgets-scope-end-user,massrelay,router-usage,/router/usage/analytics,,
+budgets,scope-and-hierarchy.budgets-scope-key,massrelay,router-budgets,/router/budgets,,
+budgets,scope-and-hierarchy.budgets-scope-organisation,massrelay,settings-budgets,/settings/budgets,,
+budgets,scope-and-hierarchy.budgets-scope-project-cost-centre,massrelay,settings-budgets,/settings/budgets,,
+budgets,scope-and-hierarchy.budgets-scope-team,massrelay,settings-budgets,/settings/budgets,,
+budgets,scope-and-hierarchy.budgets-scope-user,massrelay,settings-budgets,/settings/budgets,,
+budgets,scope-and-hierarchy.budgets-share-of-parent,massrelay,router-budgets,/router/budgets,,
+budgets,wallets-and-grants.budgets-allowance-per-plan-period,massrelay-ops,ops-plans-pricing,/plans,,
+budgets,wallets-and-grants.budgets-grants-expiry-priority-rollover,massrelay,settings-budgets,/settings/budgets,,
+budgets,wallets-and-grants.budgets-prepaid-ledger,massrelay,settings-budgets,/settings/budgets,,
+budgets,wallets-and-grants.budgets-topup-threshold-ceiling,massrelay,top-up,/settings/budgets (top up),top-up,
+budgets,wallets-and-grants.budgets-wallet-kinds,massrelay,settings-budgets,/settings/budgets,,
+context-control,context-store.context-control-catalog-domain-ownership-tags,massrelay,home-knowledge-sources,/brain/sources,,
+context-control,context-store.context-control-confidence-score,massrelay,home-knowledge-memory,/brain/memory,,
+context-control,context-store.context-control-entity-resolution-human-confirm,massrelay,inbox,/inbox,,
+context-control,context-store.context-control-lineage-events,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,context-store.context-control-namespaces,massrelay,home-knowledge,/brain,,
+context-control,context-store.context-control-per-item-expiry-serving,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,context-store.context-control-provenance-source-tier,massrelay,home-knowledge-memory,/brain/memory,,
+context-control,context-store.context-control-public-private-realms,massrelay,settings-public,/settings/public,,
+context-control,context-store.context-control-typed-relationships,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,context-store.context-control-validity-supersession,massrelay,home-knowledge-memory,/brain/memory,,
+context-control,ingestion.context-control-acceptance-rules,massrelay,settings-memory,/settings/memory,,
+context-control,ingestion.context-control-change-events-from-sources,massrelay,home-knowledge-sources,/brain/sources,,
+context-control,ingestion.context-control-conversation-ingestion-consent,massrelay,room-info,"/rooms/:id (header controls: Humans only, memory, agent picker, Members)",,
+context-control,ingestion.context-control-document-parsing,massrelay,home-knowledge-documents,/brain/documents,,
+context-control,ingestion.context-control-injection-screening-quarantine,massrelay,inbox,/inbox,,
+context-control,ingestion.context-control-permission-sync-from-source,massrelay,home-knowledge-sources,/brain/sources,,
+context-control,ingestion.context-control-proposals-not-direct-writes,massrelay,inbox,/inbox,,
+context-control,ingestion.context-control-refresh-policy-attestation,massrelay,inbox,/inbox,,
+context-control,ingestion.context-control-secret-pii-scan-at-ingest,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,people-and-privacy.context-control-erasure-lineage-reevaluation,massrelay,settings-account,/settings/account,,
+context-control,people-and-privacy.context-control-governed-measures-semantic-layer,massrelay,home-progress,/progress,,
+context-control,people-and-privacy.context-control-legal-hold,massrelay-ops,ops-workspace,/accounts/:tenantId,,
+context-control,people-and-privacy.context-control-nl-query-over-data,massrelay,home-assistant,/,,
+context-control,people-and-privacy.context-control-relationship-graph-authz,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,people-and-privacy.context-control-sensitive-rings,massrelay,settings-privacy,/settings/privacy,,
+context-control,people-and-privacy.context-control-subject-access-correction,massrelay,settings-privacy,/settings/privacy,,
+context-control,people-and-privacy.context-control-vault-secret-separation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,policy-and-clearance.context-control-audience-floor,massrelay,room,/rooms/:id,,
+context-control,policy-and-clearance.context-control-deputy-rule,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,policy-and-clearance.context-control-exempt-roles-audited,massrelay-ops,ops-audit,/audit,,
+context-control,policy-and-clearance.context-control-field-masking,massrelay,room,/rooms/:id,,
+context-control,policy-and-clearance.context-control-label-inheritance,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,policy-and-clearance.context-control-org-hierarchy-levels,massrelay,settings-team,/settings/team,,
+context-control,policy-and-clearance.context-control-per-item-permission,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,policy-and-clearance.context-control-policy-as-data-static-analysis,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,policy-and-clearance.context-control-query-time-evaluation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,policy-and-clearance.context-control-row-level-security-db,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,serving-to-agents.context-control-export-obligations,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,serving-to-agents.context-control-mcp-exposure,massrelay,router-keys,/router/keys,,
+context-control,serving-to-agents.context-control-mcp-subscriptions,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,serving-to-agents.context-control-per-read-audit,massrelay-ops,ops-audit,/audit,,
+context-control,serving-to-agents.context-control-request-envelope-api,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,serving-to-agents.context-control-retrieval-quality-hybrid,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,serving-to-agents.context-control-retrieval-ranking-validity-recency,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+context-control,serving-to-agents.context-control-token-budgeted-as-of,massrelay,room,/rooms/:id,,
+frameworks,eval-and-cost.frameworks-cost-token-tracking,massrelay,receipt,/receipts/:id,,
+frameworks,eval-and-cost.frameworks-eval-harness-integration,massrelay,build-definition,/teammates/:key,,
+frameworks,eval-and-cost.frameworks-testing-utilities,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,governance-and-deploy.frameworks-production-deploy-template,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,governance-and-deploy.frameworks-rbac-over-tools,massrelay,build-definition,/teammates/:key,,
+frameworks,governance-and-deploy.frameworks-sandboxed-execution,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,governance-and-deploy.frameworks-versioned-agent-definitions,massrelay,build-definition,/teammates/:key,,
+frameworks,interop-and-protocols.frameworks-agent-to-agent-protocol,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,interop-and-protocols.frameworks-generative-ui-protocol,massrelay,room,/rooms/:id,,
+frameworks,interop-and-protocols.frameworks-model-agnostic-provider,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,interop-and-protocols.frameworks-multi-framework-adapter,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,interop-and-protocols.frameworks-streaming-events,massrelay,room,/rooms/:id,,
+frameworks,orchestration-and-state.frameworks-checkpointing-persistence,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,orchestration-and-state.frameworks-deterministic-replay,massrelay,room-dev-panel,"/rooms/:id (right panel: Trace, Agent, why this model, Dev, Pack in use)",,
+frameworks,orchestration-and-state.frameworks-human-in-the-loop-breakpoint,massrelay,inbox,/inbox,,
+frameworks,orchestration-and-state.frameworks-multi-agent-orchestration,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,orchestration-and-state.frameworks-state-graph-runtime,massrelay,build-automation,/flows/:id,,
+frameworks,typed-io-and-tools.frameworks-memory-abstraction,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,typed-io-and-tools.frameworks-structured-output-validation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,typed-io-and-tools.frameworks-tool-calling-standard,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+frameworks,typed-io-and-tools.frameworks-tool-plugin-ecosystem,massrelay,home-skills,/teammates,,
+frameworks,typed-io-and-tools.frameworks-typed-signatures,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-acp-protocol,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-assistant-market-social,massrelay,directory,/directory,,
+harness-agents,agents.agents-background-durable,massrelay,tasks-list,/runs,,
+harness-agents,agents.agents-background-subagent-tasks,massrelay,task-run-live,/runs/:id (running),,
+harness-agents,agents.agents-cf-bot-free-capacity,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-cf-hot-upgrade-no-downtime,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-charts,massrelay,room,/rooms/:id,,
+harness-agents,agents.agents-code-mode-sandboxed-scripting,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-codemode,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-compaction-branch-summary,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-context-compaction,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-critic-evaluator,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-custom-skills,massrelay,home-skills,/teammates,,
+harness-agents,agents.agents-definition-library-lifecycle,massrelay,build-definition,/teammates/:key,,
+harness-agents,agents.agents-delegation-as-tool,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-delegation-fences,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-desktop-app,massrelay,no-screen,,,a desktop shell comes after the web app (AGENTS.md section 3); not in the approved map
+harness-agents,agents.agents-durable-typed-documents,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-email-calendar,massrelay,settings-calendar,/meetings (the calendar-connect boxes),,
+harness-agents,agents.agents-evaluation-evals,massrelay,build-definition,/teammates/:key,,
+harness-agents,agents.agents-event-stream-replay,massrelay,room-dev-panel,"/rooms/:id (right panel: Trace, Agent, why this model, Dev, Pack in use)",,
+harness-agents,agents.agents-extension-package-manager,massrelay,settings-playbooks,/settings/playbooks,,
+harness-agents,agents.agents-filesystem-tool,massrelay,home-knowledge-files,/files,,
+harness-agents,agents.agents-flows-nocode,massrelay,build-automation,/flows/:id,,
+harness-agents,agents.agents-governance-demotion,massrelay-ops,ops-routing,/relay,,
+harness-agents,agents.agents-group-chat-supervised,massrelay,room,/rooms/:id,,
+harness-agents,agents.agents-human-in-loop-delegation,massrelay,inbox,/inbox,,
+harness-agents,agents.agents-identity-per-agent,massrelay,build-definitions,/router/settings/agent-definitions,,
+harness-agents,agents.agents-image-gen,massrelay,room,/rooms/:id,,
+harness-agents,agents.agents-iteration-and-budget-caps,massrelay,room-info,"/rooms/:id (header controls: Humans only, memory, agent picker, Members)",,
+harness-agents,agents.agents-khoj-research-mode-iterative-tool-loop,massrelay,home-assistant,/,,
+harness-agents,agents.agents-long-running-operations,massrelay,tasks-list,/runs,,
+harness-agents,agents.agents-loop,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-loop-guards,massrelay,inbox,/inbox,,
+harness-agents,agents.agents-marketplace-certification,massrelay,home-skills,/teammates,,
+harness-agents,agents.agents-mcp-client,massrelay,settings-playbooks,/settings/playbooks,,
+harness-agents,agents.agents-memory-skill,massrelay,home-knowledge-memory,/brain/memory,,
+harness-agents,agents.agents-model-hop-recovery,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-multi-channel-bridges,massrelay,settings-channels,/settings/channels,,
+harness-agents,agents.agents-multi-channel-persona-routing,massrelay,settings-channels,/settings/channels,,
+harness-agents,agents.agents-multi-model,massrelay,settings-models,/settings/models,,
+harness-agents,agents.agents-n8n-classic-vs-v2-dual-surface,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-n8n-memory-three-way-split,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-n8n-optimistic-lock-publish,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-n8n-workflow-as-tool,massrelay,build-automation,/flows/:id,,
+harness-agents,agents.agents-ob-byo-agent-protocol,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-ob-routines,massrelay,tasks-scheduled,/runs (no scheduled view today; schedules sit on agent definitions),,
+harness-agents,agents.agents-ob-take-the-wheel,massrelay,task-run-driving,/runs/:id (take the wheel; today in a room's Devices tab),take-the-wheel,
+harness-agents,agents.agents-observability-trace,massrelay,room-dev-panel,"/rooms/:id (right panel: Trace, Agent, why this model, Dev, Pack in use)",,
+harness-agents,agents.agents-operator-config-assistant,massrelay,build-wiring,/wiring,,
+harness-agents,agents.agents-orchestrator,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-planning-explicit,massrelay,room,/rooms/:id,,
+harness-agents,agents.agents-recipe-format,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-remote-exec-env,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-rk-routines-delegation,massrelay,tasks-scheduled,/runs (no scheduled view today; schedules sit on agent definitions),,
+harness-agents,agents.agents-scheduled-jobs,massrelay,tasks-scheduled,/runs (no scheduled view today; schedules sit on agent definitions),,
+harness-agents,agents.agents-scheduling,massrelay,tasks-scheduled,/runs (no scheduled view today; schedules sit on agent definitions),,
+harness-agents,agents.agents-self-improving-skills,massrelay,home-skills,/teammates,,
+harness-agents,agents.agents-separation-of-duties,massrelay,inbox-item,/queue/:id,,
+harness-agents,agents.agents-session-compaction,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-session-revert-checkpoint,massrelay,room,/rooms/:id,,
+harness-agents,agents.agents-session-search-recall,massrelay,search-palette,the command palette (rail Search),,
+harness-agents,agents.agents-spawn-into-room,massrelay,room-info,"/rooms/:id (header controls: Humans only, memory, agent picker, Members)",,
+harness-agents,agents.agents-sql-agent,massrelay,home-knowledge-sources,/brain/sources,,
+harness-agents,agents.agents-streaming-answers,massrelay,room,/rooms/:id,,
+harness-agents,agents.agents-stuck-detection,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-subagents,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-task-reassignment,massrelay,inbox-item,/queue/:id,,
+harness-agents,agents.agents-tool-concurrency,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,agents.agents-web-browsing,massrelay,task-run-live,/runs/:id (running),,
+harness-agents,agents.agents-workflow-cost-estimate,massrelay,room,/rooms/:id,,
+harness-agents,approvals.agents-audit-append-only,massrelay-ops,ops-audit,/audit,,
+harness-agents,approvals.agents-cf-usage-governor-pacing,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,approvals.agents-cost-budget-per-agent,massrelay,settings-budgets,/settings/budgets,,
+harness-agents,approvals.agents-delegation-scope,massrelay,build-definition,/teammates/:key,,
+harness-agents,approvals.agents-done-verification,massrelay,receipt,/receipts/:id,,
+harness-agents,approvals.agents-escalation-human,massrelay,inbox,/inbox,,
+harness-agents,approvals.agents-ob-gateway-only-action-path,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,approvals.agents-ob-secrets-redaction,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,approvals.agents-tool-approval-hitl,massrelay,inbox,/inbox,approve-a-request,
+harness-agents,budgets.agents-rk-monetisation-signals,massrelay,site-pricing,https://massrelay.ai/pricing (path unproven),,
+harness-agents,identity.agents-ob-per-bot-credentials,massrelay,build-definition,/teammates/:key,,
+harness-agents,identity.agents-ob-sso-people-admin,massrelay,settings-team,/settings/team,,
+harness-agents,identity.agents-rk-org-space-model,massrelay,settings-team,/settings/team,,
+harness-agents,integrations.agents-rk-integration-brokers,massrelay,settings-playbooks,/settings/playbooks,,
+harness-agents,memory.agents-memory-per-agent,massrelay,home-knowledge-memory,/brain/memory,,
+harness-agents,memory.agents-memory-shared,massrelay,home-knowledge-memory,/brain/memory,,
+harness-agents,memory.agents-rk-memory-design,massrelay,home-knowledge-memory,/brain/memory,,
+harness-agents,ops.agents-rk-install-path,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,security.agents-rk-secrets-never-in-transcript,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,settings.agents-rk-byo-model-pi,massrelay,settings-models,/settings/models,,
+harness-agents,team.agents-rk-multi-surface,massrelay,no-screen,,,"about shells (desktop, mobile, messaging) as a whole, not one screen; the phone viewport of every screen is its evidence"
+harness-agents,tools.agents-cf-claude-app-steering,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,tools.agents-cf-make-money-loop,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,tools.agents-computer-use,massrelay,task-run-live,/runs/:id (running),,
+harness-agents,tools.agents-marketplace,massrelay,home-skills,/teammates,,
+harness-agents,tools.agents-mcp-tools,massrelay,settings-playbooks,/settings/playbooks,,
+harness-agents,tools.agents-ob-computer-per-bot,massrelay,task-run-live,/runs/:id (running),,
+harness-agents,tools.agents-ob-generative-ui,massrelay,room,/rooms/:id,,
+harness-agents,tools.agents-ob-governed-mcp,massrelay,settings-playbooks,/settings/playbooks,,
+harness-agents,tools.agents-review-checks,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,tools.agents-skills-templates,massrelay,home-skills,/teammates,,
+harness-agents,tools.tools-hooks-lifecycle,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,workspace.agents-cf-multi-seat,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+harness-agents,workspace.agents-presence-collab,massrelay,room,/rooms/:id,,
+harness-agents,workspace.agents-rk-computer-providers,massrelay,settings-devices,/settings/devices,,
+harness-agents,workspace.agents-roaming-remote-agent,massrelay,task-run-driving,/runs/:id (take the wheel; today in a room's Devices tab),,
+harness-agents,workspace.agents-task-lifecycle,massrelay,tasks-list,/runs,,
+integration,certification-and-quality.integration-catalogue-with-maturity,massrelay,home-skills,/teammates,,
+integration,certification-and-quality.integration-certification-gate,massrelay,home-skills,/teammates,,
+integration,certification-and-quality.integration-conformance-tests-per-connector,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+integration,certification-and-quality.integration-third-party-contribution-path,massrelay,no-screen,,,a documented path for outside developers; no app screen in the approved map
+integration,connector-shape.integration-connector-registry-shape,massrelay,settings-playbooks,/settings/playbooks,,
+integration,connector-shape.integration-credential-objects-acl,massrelay,settings-channels,/settings/channels,,
+integration,connector-shape.integration-local-offline-harness,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+integration,connector-shape.integration-no-api-fallback-browser,massrelay,task-run-live,/runs/:id (running),,
+integration,connector-shape.integration-oauth2-credential-flow,massrelay,connect-channel,the Create drawer > Connect a channel,connect-channel,
+integration,mcp-and-protocols.integration-agent-protocol-a2a-agui,massrelay,router-keys,/router/keys,,
+integration,mcp-and-protocols.integration-mcp-client,massrelay,settings-playbooks,/settings/playbooks,,
+integration,mcp-and-protocols.integration-mcp-registry-discovery,massrelay,settings-playbooks,/settings/playbooks,,
+integration,mcp-and-protocols.integration-mcp-server,massrelay,router-keys,/router/keys,,
+integration,security-and-sandboxing.integration-egress-allowlist-sandboxing,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+integration,security-and-sandboxing.integration-identity-oidc-scim,massrelay,login,/login (hands off to the Keycloak page on id-stag),,
+integration,security-and-sandboxing.integration-poisoned-output-guard,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+integration,security-and-sandboxing.integration-policy-intersect-per-tenant,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+integration,triggers-and-workflow.integration-outbound-notifications,massrelay,router-keys,/router/keys,,
+integration,triggers-and-workflow.integration-triggers-inbound-events,massrelay,build-automation,/flows/:id,,
+integration,triggers-and-workflow.integration-workflow-automation-shape,massrelay,build-automation,/flows/:id,,
+meetings,capture.meetings-bot-join-lifecycle,massrelay,meeting,/meetings/:id,,
+meetings,capture.meetings-live-captions,massrelay,meeting-live,/meetings/record (running),,
+meetings,capture.meetings-platform-transcript-pull,massrelay,settings-calendar,/meetings (the calendar-connect boxes),,
+meetings,capture.meetings-recording-capture,massrelay,meeting-live,/meetings/record (running),record-meeting,
+meetings,capture.meetings-status-transition-history,massrelay,meeting,/meetings/:id,,
+meetings,integration.meetings-mcp-and-agent-access,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+meetings,list-and-page.meetings-split-view-page,massrelay,meeting,/meetings/:id,,
+meetings,list-and-page.meetings-transcript-search-from-list,massrelay,meetings-list,/meetings,,
+meetings,share.meetings-clips-and-reels,massrelay,meeting,/meetings/:id,,
+meetings,share.meetings-line-comments,massrelay,meeting,/meetings/:id,,
+meetings,summary.meetings-add-context-before-summary,massrelay,meeting,/meetings/:id,,
+meetings,summary.meetings-decisions-action-items-review,massrelay,meeting,/meetings/:id,approve-action-item,
+meetings,summary.meetings-summary-templates-per-kind,massrelay,meeting,/meetings/:id,,
+meetings,transcript.meetings-speaker-transcript,massrelay,meeting,/meetings/:id,,
+meetings,trust.meetings-agreed-minutes-with-guests,massrelay,guest-minutes,/guest/rooms/:id/shared-minutes,guest-agree-minutes,
+meetings,trust.meetings-per-person-consent-and-sides,massrelay,meeting-prejoin,/meetings/record (before start),,
+meetings,trust.meetings-sourced-summary-lines,massrelay,meeting,/meetings/:id,,
+memory,reflect-and-consolidate.memory-background-reflect-sweep,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,reflect-and-consolidate.memory-contradiction-detection,massrelay,inbox,/inbox,,
+memory,reflect-and-consolidate.memory-multi-source-confirmation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,reflect-and-consolidate.memory-periodic-summarisation,massrelay,home-knowledge-memory,/brain/memory,,
+memory,reflect-and-consolidate.memory-promote-demote-tiers,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,retrieval-and-access.memory-clearance-acl-on-reads,massrelay,home-knowledge-memory,/brain/memory,,
+memory,retrieval-and-access.memory-cross-agent-sharing-clearance,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,retrieval-and-access.memory-per-user-isolation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,retrieval-and-access.memory-retrieval-hybrid,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,storage-and-structure.memory-archival-recall-split,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,storage-and-structure.memory-graph-entities-relationships,massrelay,home-knowledge,/brain,,
+memory,storage-and-structure.memory-long-term-persistent,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,storage-and-structure.memory-mid-term-semantic-facts,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,storage-and-structure.memory-short-term-working,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,temporal-and-integrity.memory-decay-forgetting,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+memory,temporal-and-integrity.memory-fact-provenance,massrelay,home-knowledge-memory,/brain/memory,,
+memory,temporal-and-integrity.memory-memory-versioning-audit,massrelay,home-knowledge-memory,/brain/memory,,
+memory,temporal-and-integrity.memory-no-silent-deletion,massrelay,home-knowledge-memory,/brain/memory,,
+memory,temporal-and-integrity.memory-staleness-trigger,massrelay,inbox,/inbox,,
+memory,temporal-and-integrity.memory-temporally-valid-edges,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,api-surface.model-access-chat-endpoints,massrelay,router-docs,/router/docs,,
+model-access,api-surface.model-access-cost-decision-metadata,massrelay,router-logs,/router/logs,,
+model-access,api-surface.model-access-filtered-models-list,massrelay,router-models,/router/models,,
+model-access,api-surface.model-access-free-trial-variants,massrelay,public-model-catalogue,/router/public/models,,
+model-access,api-surface.model-access-model-aliases,massrelay,router-routing,/router/setup/routing,,
+model-access,api-surface.model-access-sdk-compat-base-url,massrelay,router-docs,/router/docs,,
+model-access,catalogue-metadata.model-access-capability-flags,massrelay,router-model,/router/models/:model,,
+model-access,catalogue-metadata.model-access-catalogue-price-context-licence,massrelay,router-model,/router/models/:model,,
+model-access,catalogue-metadata.model-access-free-tier-limits-field,massrelay,router-model,/router/models/:model,,
+model-access,catalogue-metadata.model-access-hosting-regions-field,massrelay,router-model,/router/models/:model,,
+model-access,catalogue-metadata.model-access-origin-jurisdiction-fields,massrelay,router-model,/router/models/:model,,
+model-access,catalogue-metadata.model-access-per-tenant-private-models,massrelay,router-providers,/router/setup/providers,,
+model-access,catalogue-metadata.model-access-retention-terms-field,massrelay,router-model,/router/models/:model,,
+model-access,catalogue-metadata.model-access-weights-licence-field,massrelay,router-model,/router/models/:model,,
+model-access,models.model-access-catalogue-sync-adapters,massrelay-ops,ops-catalog,/catalog,,
+model-access,models.model-access-model-family-field,massrelay,router-model,/router/models/:model,,
+model-access,models.model-access-reasoning-options-field,massrelay,router-model,/router/models/:model,,
+model-access,policy-and-presets.model-access-allow-deny-lists,massrelay,router-routing,/router/setup/routing,,
+model-access,policy-and-presets.model-access-exclusion-explain,massrelay,router-logs,/router/logs,,
+model-access,policy-and-presets.model-access-hosting-region-filter,massrelay,router-routing,/router/setup/routing,,
+model-access,policy-and-presets.model-access-named-presets,massrelay,router-routing,/router/setup/routing,,
+model-access,policy-and-presets.model-access-narrow-only-composition,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,policy-and-presets.model-access-objective,massrelay,router-routing,/router/setup/routing,,
+model-access,policy-and-presets.model-access-open-weights-only,massrelay,router-routing,/router/setup/routing,,
+model-access,policy-and-presets.model-access-origin-filter,massrelay,router-routing,/router/setup/routing,,
+model-access,policy-and-presets.model-access-per-request-override,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,policy-and-presets.model-access-preference-order,massrelay,router-routing,/router/setup/routing,,
+model-access,policy-and-presets.model-access-price-ceiling,massrelay,router-routing,/router/setup/routing,,
+model-access,policy-and-presets.model-access-retention-filter,massrelay,router-routing,/router/setup/routing,,
+model-access,runtime-serving.model-access-api-key-auth,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,runtime-serving.model-access-deploy-recipes,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,runtime-serving.model-access-metrics-health-endpoints,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,runtime-serving.model-access-multi-model-hot-swap,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,runtime-serving.model-access-openai-compatible-server,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,runtime-serving.model-access-quantisation-formats,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,runtime-serving.model-access-sizing-guidance,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,runtime-serving.model-access-tool-calling-structured-output,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,self-hosted-onboarding.model-access-capability-gated-routing,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+model-access,self-hosted-onboarding.model-access-credential-handling,massrelay,router-providers,/router/setup/providers,,
+model-access,self-hosted-onboarding.model-access-health-checks,massrelay,router-health,/router/setup/resilience,,
+model-access,self-hosted-onboarding.model-access-no-inbound-access,massrelay,settings-devices,/settings/devices,,
+model-access,self-hosted-onboarding.model-access-probe-and-benchmark,massrelay,router-providers,/router/setup/providers,,
+model-access,self-hosted-onboarding.model-access-register-endpoint,massrelay,router-keys,/router/keys,,
+observability,evals-and-scoring.observability-dataset-versioning,massrelay-ops,ops-quality,/scorers,,
+observability,evals-and-scoring.observability-human-annotation-workflow,massrelay-ops,ops-quality,/scorers,,
+observability,evals-and-scoring.observability-llm-as-judge,massrelay-ops,ops-quality,/scorers,,
+observability,evals-and-scoring.observability-offline-eval-suites,massrelay,build-definition,/teammates/:key,,
+observability,evals-and-scoring.observability-online-eval-guardrails,massrelay,router-routing,/router/setup/routing,,
+observability,evals-and-scoring.observability-score-rubric-library,massrelay-ops,ops-quality,/scorers,,
+observability,instrumentation-and-ops.observability-auto-instrumentation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+observability,instrumentation-and-ops.observability-dashboards-per-model,massrelay,router-usage,/router/usage/analytics,,
+observability,instrumentation-and-ops.observability-data-export-sink,massrelay,router-settings,/router/settings/privacy,,
+observability,instrumentation-and-ops.observability-load-capacity-measurement,massrelay-ops,ops-health,/fleet,,
+observability,instrumentation-and-ops.observability-otel-native,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+observability,instrumentation-and-ops.observability-self-hosted-option,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+observability,safety-and-guardrails.observability-alerting-drift-cost,massrelay-ops,ops-overview,/overview,,
+observability,safety-and-guardrails.observability-pii-redaction,massrelay,router-settings,/router/settings/privacy,,
+observability,safety-and-guardrails.observability-redteam-adversarial,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+observability,safety-and-guardrails.observability-regression-detection,massrelay-ops,ops-routing,/relay,,
+observability,tracing-and-capture.observability-cost-per-call,massrelay,router-logs,/router/logs,,
+observability,tracing-and-capture.observability-decision-explain,massrelay,router-logs,/router/logs,,
+observability,tracing-and-capture.observability-prompt-capture,massrelay,router-logs,/router/logs,,
+observability,tracing-and-capture.observability-replay-trace,massrelay-ops,ops-routing,/relay,,
+observability,tracing-and-capture.observability-session-grouping,massrelay-ops,ops-calls,/llm-calls,,
+observability,tracing-and-capture.observability-trace-spans,massrelay,room-dev-panel,"/rooms/:id (right panel: Trace, Agent, why this model, Dev, Pack in use)",,
+router-relay,budgets.relay-budgets,massrelay,router-budgets,/router/budgets,,
+router-relay,budgets.relay-rate-limits,massrelay,router-budgets,/router/budgets,,
+router-relay,caching.relay-prompt-caching,massrelay,router-health,/router/setup/resilience,,
+router-relay,caching.relay-semantic-cache,massrelay,router-health,/router/setup/resilience,,
+router-relay,console.relay-observability,massrelay,router-logs,/router/logs,,
+router-relay,context.relay-context-compaction,massrelay,router-health,/router/setup/resilience,,
+router-relay,context.relay-token-saving-stack,massrelay,router-health,/router/setup/resilience,,
+router-relay,gateway.relay-a2a-mcp-surface,massrelay,router-keys,/router/keys,,
+router-relay,gateway.relay-gateway-relay-mode,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,gateway.relay-large-body,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,gateway.relay-latency-per-decision,massrelay,router-logs,/router/logs,,
+router-relay,gateway.relay-openai-compatible-api,massrelay,router-docs,/router/docs,,
+router-relay,gateway.relay-streaming-passthrough,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,gateway.relay-sy-gateway-plugin-shape,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,gateway.relay-sy-protocol-translation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,gateway.relay-ttft-throughput,massrelay,router-model,/router/models/:model,,
+router-relay,keys.relay-byok-custody,massrelay,router-providers,/router/setup/providers,,
+router-relay,keys.relay-key-management,massrelay,router-keys,/router/keys,create-key,
+router-relay,keys.relay-provider-oauth,massrelay,router-providers,/router/setup/providers,,
+router-relay,keys.relay-virtual-keys,massrelay,router-keys,/router/keys,,
+router-relay,ops.relay-evaluation-harness,massrelay-ops,ops-quality,/scorers,,
+router-relay,partners.relay-free-tier-catalog,massrelay,public-model-catalogue,/router/public/models,,
+router-relay,partners.relay-partners-open-models,massrelay-ops,ops-partners,/partners,,
+router-relay,providers.relay-catalog-discovery,massrelay-ops,ops-catalog,/catalog,,
+router-relay,providers.relay-provider-health,massrelay,router-health,/router/setup/resilience,,
+router-relay,routing.decision-batched-questions,massrelay-ops,ops-routing,/relay,,
+router-relay,routing.decision-calibrated-classifier,massrelay-ops,ops-routing,/relay,,
+router-relay,routing.decision-confidence-routing,massrelay-ops,ops-routing,/relay,,
+router-relay,routing.relay-ab-experimentation,massrelay-ops,ops-routing,/relay,,
+router-relay,routing.relay-cache-aware-stickiness,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-configs-targets,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-context-routing,massrelay,router-routing,/router/setup/routing,,
+router-relay,routing.relay-decision-record,massrelay,router-logs,/router/logs,,
+router-relay,routing.relay-fallback-chain,massrelay,router-routing,/router/setup/routing,,
+router-relay,routing.relay-inference-time-ensembles,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-jev-router,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-layer-toggles,massrelay,router-routing,/router/setup/routing,,
+router-relay,routing.relay-load-balancing,massrelay,router-routing,/router/setup/routing,,
+router-relay,routing.relay-reasoning-effort-routed,massrelay,router-logs,/router/logs,,
+router-relay,routing.relay-replay-parity,massrelay-ops,ops-routing,/relay,,
+router-relay,routing.relay-retry-policy,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-router-types-bert,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-router-types-causal-llm,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-router-types-mf,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-router-types-sw-ranking,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-static-routing,massrelay,router-routing,/router/setup/routing,,
+router-relay,routing.relay-strategy-catalog,massrelay,router-routing,/router/setup/routing,,
+router-relay,routing.relay-strategy-modes,massrelay,router-routing,/router/setup/routing,,
+router-relay,routing.relay-sy-escalation-mode,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-sy-llm-judge-classifier,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-sy-prefill-router,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-sy-skill-distillation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-sy-stage-router,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-sy-subagent-aware-routing,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,routing.relay-thinking-level-clamp,massrelay,router-model,/router/models/:model,,
+router-relay,routing.relay-threshold-calibration,massrelay-ops,ops-routing,/relay,,
+router-relay,routing.relay-virtual-models,massrelay,router-models,/router/models,,
+router-relay,scorecards.relay-price-book,massrelay,router-models,/router/models,,
+router-relay,scorecards.relay-scorecards,massrelay-ops,ops-routing,/relay,,
+router-relay,scorecards.relay-sy-benchmark-provenance,massrelay,public-model,/router/public/models/:provider/:model,,
+router-relay,security.relay-guardrail-hooks,massrelay,router-routing,/router/setup/routing,,
+router-relay,security.relay-guardrails,massrelay,router-routing,/router/setup/routing,,
+router-relay,security.relay-multi-tenant-isolation,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+router-relay,security.relay-sy-advisor-gate,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+surfaces,advanced.menu-advanced-agent-definitions,massrelay,build-definitions,/router/settings/agent-definitions,,
+surfaces,advanced.menu-advanced-extend,massrelay,settings-playbooks,/settings/playbooks,,
+surfaces,advanced.menu-advanced-flow-credentials,massrelay,build-automation,/flows/:id,,
+surfaces,advanced.menu-advanced-flow-executions,massrelay,build-automation,/flows/:id,,
+surfaces,advanced.menu-advanced-flow-graph,massrelay,build-automation,/flows/:id,,
+surfaces,advanced.menu-advanced-flow-import-export,massrelay,build-automation,/flows/:id,,
+surfaces,advanced.menu-advanced-flow-templates,massrelay,build-automation-create,/flows (create),create-flow,
+surfaces,advanced.menu-advanced-flow-versions,massrelay,build-automation,/flows/:id,,
+surfaces,advanced.menu-advanced-flow-webhooks,massrelay,build-automation,/flows/:id,,
+surfaces,advanced.menu-advanced-flows-list,massrelay,build-automations,/flows,,
+surfaces,advanced.menu-advanced-node-registry,massrelay,build-nodes,/flows (node registry; no page of its own today - unproven),,
+surfaces,advanced.menu-advanced-people-access,massrelay,settings-team,/settings/team,,
+surfaces,advanced.menu-advanced-settings-registry,massrelay,settings-registry,/settings/registry,,
+surfaces,advanced.menu-advanced-wiring-chat,massrelay,build-wiring,/wiring,,
+surfaces,chat.menu-chat-channels,massrelay,settings-channels,/settings/channels,connect-channel,
+surfaces,chat.menu-chat-front-room,massrelay,settings-public,/settings/public,,
+surfaces,chat.menu-chat-inbox,massrelay,inbox,/inbox,,
+surfaces,chat.menu-chat-library,massrelay,home-skills,/teammates,,
+surfaces,chat.menu-chat-memory,massrelay,home-knowledge-memory,/brain/memory,,
+surfaces,chat.menu-chat-new-room,massrelay,new-room,/rooms (New chat),new-room,
+surfaces,chat.menu-chat-receipts,massrelay,receipt,/receipts/:id,,
+surfaces,chat.menu-chat-rooms,massrelay,rooms-list,/rooms,,
+surfaces,chat.menu-chat-schedules,massrelay,tasks-scheduled,/runs (no scheduled view today; schedules sit on agent definitions),,
+surfaces,chat.menu-chat-search,massrelay,search-palette,the command palette (rail Search),,
+surfaces,chat.menu-chat-settings,massrelay,settings-list,/settings,,
+surfaces,chat.menu-chat-settings-account,massrelay,settings-account,/settings/account,,
+surfaces,chat.menu-chat-settings-appearance,massrelay,settings-general,/settings/general,,
+surfaces,chat.menu-chat-settings-budgets,massrelay,settings-budgets,/settings/budgets,,
+surfaces,chat.menu-chat-settings-models-keys,massrelay,settings-models,/settings/models,,
+surfaces,chat.menu-chat-settings-privacy,massrelay,settings-privacy,/settings/privacy,,
+surfaces,chat.menu-chat-settings-team,massrelay,settings-team,/settings/team,,
+surfaces,chat.menu-chat-teammates,massrelay,home-skills,/teammates,,
+surfaces,ops.menu-ops-abuse,massrelay-ops,ops-abuse,/abuse,,
+surfaces,ops.menu-ops-audit,massrelay-ops,ops-audit,/audit,,
+surfaces,ops.menu-ops-billing,massrelay-ops,ops-billing,/billing,,
+surfaces,ops.menu-ops-catalog,massrelay-ops,ops-catalog,/catalog,,
+surfaces,ops.menu-ops-decision,massrelay-ops,ops-routing,/relay,,
+surfaces,ops.menu-ops-fleet,massrelay-ops,ops-health,/fleet,,
+surfaces,ops.menu-ops-keypool,massrelay-ops,ops-keys-providers,/keypool,,
+surfaces,ops.menu-ops-llm-calls,massrelay-ops,ops-calls,/llm-calls,,
+surfaces,ops.menu-ops-operators,massrelay-ops,ops-access,/operators,,
+surfaces,ops.menu-ops-partners,massrelay-ops,ops-partners,/partners,,
+surfaces,ops.menu-ops-plans,massrelay-ops,ops-plans-pricing,/plans,,
+surfaces,ops.menu-ops-pools,massrelay-ops,ops-keys-providers,/keypool,,
+surfaces,ops.menu-ops-relay-scorecards,massrelay-ops,ops-routing,/relay,,
+surfaces,ops.menu-ops-tenants,massrelay-ops,ops-workspaces,/tenants,,
+surfaces,router.menu-router-audit,massrelay,no-screen,,,"no page serves it today (STUBBED_DOORS.tenantAudit, ia-reset B5); target home: Router > Settings"
+surfaces,router.menu-router-budgets,massrelay,router-budgets,/router/budgets,,
+surfaces,router.menu-router-cache,massrelay,router-health,/router/setup/resilience,,
+surfaces,router.menu-router-context-compression,massrelay,router-health,/router/setup/resilience,,
+surfaces,router.menu-router-docs,massrelay,router-docs,/router/docs,,
+surfaces,router.menu-router-endpoints,massrelay,router-keys,/router/keys,,
+surfaces,router.menu-router-keys,massrelay,router-keys,/router/keys,create-key,
+surfaces,router.menu-router-logs,massrelay,router-logs,/router/logs,,
+surfaces,router.menu-router-mcp-a2a,massrelay,router-keys,/router/keys,,
+surfaces,router.menu-router-menu-customise,massrelay,router-settings,/router/settings/privacy,,
+surfaces,router.menu-router-models,massrelay,router-models,/router/models,,
+surfaces,router.menu-router-overview,massrelay,router-overview,/router,,
+surfaces,router.menu-router-playground,massrelay,no-screen,,,no route exists (ia-reset B5); when built: Router > Models > Try
+surfaces,router.menu-router-pricing,massrelay,router-models,/router/models,,
+surfaces,router.menu-router-privacy,massrelay,router-settings,/router/settings/privacy,,
+surfaces,router.menu-router-providers-connections,massrelay,router-providers,/router/setup/providers,,
+surfaces,router.menu-router-quotas,massrelay,router-budgets,/router/budgets,,
+surfaces,router.menu-router-rankings,massrelay,router-models,/router/models,,
+surfaces,router.menu-router-resilience-health,massrelay,router-health,/router/setup/resilience,,
+surfaces,router.menu-router-routing-strategies,massrelay,router-routing,/router/setup/routing,,
+surfaces,router.menu-router-settings,massrelay,router-settings,/router/settings/privacy,,
+surfaces,router.menu-router-team-access,massrelay,router-settings,/router/settings/privacy,,
+surfaces,router.menu-router-usage-analytics,massrelay,router-usage,/router/usage/analytics,,
+surfaces,router.menu-router-webhooks,massrelay,router-keys,/router/keys,,
+voice,asr.voice-endpoint-rules,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+voice,asr.voice-hallucination-filter,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+voice,asr.voice-per-speaker-capture,massrelay,meeting,/meetings/:id,,
+voice,asr.voice-streaming-asr,massrelay,meeting-live,/meetings/record (running),,
+voice,asr.voice-vad,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+voice,trust.voice-gated-fixed-utterances,massrelay,meeting-live,/meetings/record (running),,
+voice,trust.voice-voice-licence-record,massrelay,no-screen,,,"a licence record beside each voice model: a document, not a screen"
+voice,tts.voice-call-audio-injection,massrelay,meeting-live,/meetings/record (running),,
+voice,tts.voice-echo-suppression,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+voice,tts.voice-tts-cpu,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+voice,tts.voice-tts-streaming-chunks,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+voice,turns.voice-barge-in,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+voice,turns.voice-false-interruption-resume,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"
+voice,turns.voice-turn-end-strategies,massrelay,no-screen,,,"engine capability: nothing a person looks at; judged from code, not from a screen"

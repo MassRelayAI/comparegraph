@@ -9,7 +9,10 @@ pub const EVIDENCE_SCHEMA: &str = "ui-evidence/1";
 pub const FLOW_SCHEMA: &str = "ui-flow/1";
 pub const RUN_SCHEMA: &str = "ui-run/1";
 pub const REGISTRY_SCHEMA: &str = "ui-registry/1";
-pub const SEATS: &[&str] = &["guest", "member", "admin", "admin-dev", "operator", "ref"];
+pub const SEATS: &[&str] = &["guest", "member", "admin", "admin-dev", "operator", "client", "ref"];
+/// The locale and theme a capture has unless its file name says otherwise (section 10 path rule).
+pub const DEFAULT_LOCALE: &str = "en-US";
+pub const DEFAULT_THEME: &str = "light";
 pub const STATES: &[&str] = &["empty", "populated", "error", "loading-skeleton", "long"];
 pub const REGION_KINDS: &[&str] = &["rail", "sidebar", "list", "main", "panel", "topbar", "bottombar", "composer"];
 pub const ARCHETYPES: &[&str] = &[
@@ -153,7 +156,7 @@ pub struct Style {
     pub motion: MotionStyle,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UiEvidence {
     pub schema: String,
     pub product: String,
@@ -167,6 +170,17 @@ pub struct UiEvidence {
     pub locale: String,
     pub theme: String,
     pub dom_hash: String,
+    /// section 10 top-level fields: absent in older files, validated when present
+    #[serde(default)]
+    pub archetype: Option<String>,
+    #[serde(default)]
+    pub key: Option<String>,
+    #[serde(default)]
+    pub fixture: Value,
+    #[serde(default)]
+    pub masks: Vec<String>,
+    #[serde(default)]
+    pub unstable: bool,
     pub image: ImageRef,
     pub metrics: BTreeMap<String, Metric>,
     pub layout: Layout,
@@ -186,7 +200,11 @@ impl UiEvidence {
     }
     /// The file stem under `ui/<product>/<screen>/<state>/`.
     pub fn stem(&self) -> String {
-        format!("{}-{}", self.viewport, self.seat)
+        if self.locale == DEFAULT_LOCALE && self.theme == DEFAULT_THEME {
+            format!("{}-{}", self.viewport, self.seat)
+        } else {
+            format!("{}-{}-{}-{}", self.viewport, self.seat, self.locale, self.theme)
+        }
     }
     pub fn pass_count(&self) -> usize {
         self.metrics.values().filter(|m| m.pass).count()
@@ -220,6 +238,16 @@ impl UiEvidence {
         }
         if self.locale.is_empty() || self.theme.is_empty() {
             p.push("locale and theme must be set".into());
+        }
+        if let Some(a) = &self.archetype {
+            if !ARCHETYPES.contains(&a.as_str()) {
+                p.push(format!("archetype `{a}` must be one of {}", ARCHETYPES.join("|")));
+            }
+        }
+        if let Some(k) = &self.key {
+            if *k != self.capture_key() {
+                p.push(format!("key `{k}` does not match the fields it joins (`{}`)", self.capture_key()));
+            }
         }
         if !sha_ok(&self.dom_hash) {
             p.push("domHash must be 64 lowercase hex digits".into());
@@ -378,6 +406,35 @@ impl UiRegistry {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ArchetypeEntry {
+    #[serde(default)]
+    pub limits: BTreeMap<String, Value>,
+}
+/// `ui/archetypes.json` (ui-archetypes/1, section 11): per-archetype limits; judge questions, style targets, overrides and rules are kept in the file, not read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UiArchetypes {
+    pub schema: String,
+    pub archetypes: BTreeMap<String, ArchetypeEntry>,
+}
+impl UiArchetypes {
+    pub fn problems(&self) -> Vec<String> {
+        let mut p = vec![];
+        if self.schema != "ui-archetypes/1" {
+            p.push(format!("schema `{}` is not `ui-archetypes/1`", self.schema));
+        }
+        for (a, e) in &self.archetypes {
+            if !ARCHETYPES.contains(&a.as_str()) {
+                p.push(format!("limits for unknown archetype `{a}`"));
+            }
+            if let Some(b) = e.limits.keys().find(|k| metric_no(k).is_none()) {
+                p.push(format!("archetype `{a}` limits metric `{b}`, not E1..E{METRIC_COUNT}"));
+            }
+        }
+        p
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MapRow {
     pub family: String,
@@ -386,8 +443,11 @@ pub struct MapRow {
     pub screen: String,
     pub route: String,
     pub task: String,
+    pub note: String,
 }
 const MAP_HEADER: &str = "family,row_id,product,screen,route,task";
+/// section 11: the design lane adds a seventh column
+const MAP_HEADER_NOTE: &str = "family,row_id,product,screen,route,task,note";
 
 fn csv_fields(line: &str) -> Result<Vec<String>, String> {
     let (mut out, mut cur, mut quoted) = (vec![], String::new(), false);
@@ -413,19 +473,21 @@ fn csv_fields(line: &str) -> Result<Vec<String>, String> {
 /// Parse `map.csv` (RFC 4180, header `family,row_id,product,screen,route,task`); rows come back sorted.
 pub fn parse_map(text: &str) -> Result<Vec<MapRow>, String> {
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-    if lines.next().map(str::trim) != Some(MAP_HEADER) {
-        return Err(format!("map.csv header must be `{MAP_HEADER}`"));
-    }
+    let cols = match lines.next().map(str::trim) {
+        Some(MAP_HEADER) => 6,
+        Some(MAP_HEADER_NOTE) => 7,
+        _ => return Err(format!("map.csv header must be `{MAP_HEADER}` or `{MAP_HEADER_NOTE}`")),
+    };
     let mut rows = vec![];
     for (i, l) in lines.enumerate() {
         let f = csv_fields(l).map_err(|e| format!("map.csv row {}: {e}", i + 1))?;
-        if f.len() != 6 {
-            return Err(format!("map.csv row {}: expected 6 fields, found {}", i + 1, f.len()));
+        if f.len() != cols {
+            return Err(format!("map.csv row {}: expected {cols} fields, found {}", i + 1, f.len()));
         }
         if !token_ok(&f[0]) || !token_ok(&f[1]) || !token_ok(&f[2]) || !token_ok(&f[3]) {
             return Err(format!("map.csv row {}: family, row_id, product and screen must be path-safe tokens", i + 1));
         }
-        rows.push(MapRow { family: f[0].clone(), row_id: f[1].clone(), product: f[2].clone(), screen: f[3].clone(), route: f[4].clone(), task: f[5].clone() });
+        rows.push(MapRow { family: f[0].clone(), row_id: f[1].clone(), product: f[2].clone(), screen: f[3].clone(), route: f[4].clone(), task: f[5].clone(), note: f.get(6).cloned().unwrap_or_default() });
     }
     rows.sort_by(|a, b| (&a.family, &a.row_id, &a.product, &a.screen).cmp(&(&b.family, &b.row_id, &b.product, &b.screen)));
     Ok(rows)

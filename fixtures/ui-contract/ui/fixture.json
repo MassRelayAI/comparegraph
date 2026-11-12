@@ -1,0 +1,815 @@
+{
+ "audio": {
+  "status": "PROPOSAL - not built; the voices must come from an open, licence-recorded model",
+  "what": "one 60-second WAV, two synthetic voices reading fixture.meeting.script, fed to Chromium as the fake microphone"
+ },
+ "basis": "CMP-UI-1-lanes.md DETERMINISM PROTOCOL section 3: 'populated = the canonical fixture: 3 rooms, 5 messages by 2 people + the assistant, 2 inbox items, 1 meeting, 1 run'. Everything beyond those counts is added here so every registry screen has something to show, and is marked added.",
+ "clock": {
+  "confidence": "unproven",
+  "probe": "2026-01-15T10:00:00Z (the protocol's frozen browser clock)",
+  "problem": "seeded rows carry the server's real creation time (November 2026 or later), which lies AFTER the frozen browser clock: every relative time ('3 days ago') would render as a negative or nonsense age",
+  "rule": "until a seed can back-date rows, every element that renders a time derived from the server is a mask ([data-relative-time], time). Proposed fix for ours: the seed door accepts created_at for the fixture workspace only (a plan and a gate are needed - not designed here). For references: mask."
+ },
+ "ours": {
+  "gaps": [
+   "no way to seed a meeting or a finished run without a model, a microphone and a paired browser: 'meeting', 'task-run-*', 'receipt', 'room-minutes' and 'guest-minutes' stay uncaptured on ours until staging has a model (founder) or a seed door exists (a lane)",
+   "the assistant's messages cannot be posted as fixed text through a member door (unproven)",
+   "an operator test account does not exist (ia-reset F: founder action) - every console cell waits on it",
+   "seeded rows cannot be back-dated: see clock",
+   "the e2e helpers run against a local API (E2E_API_ORIGIN, helpers.ts:10); pointing them at staging needs QA_API_URL and a seed identity - never the founder's review ports (AGENTS.md section 4)"
+  ],
+  "status": "DESIGN ONLY - nothing was executed. Door and helper names are read from apps/web/e2e/helpers.ts on the current branch; whether each is reachable on staging for a seed role is unproven.",
+  "steps": [
+   {
+    "confidence": "unproven",
+    "door": "apiOnboardWorkspace(name) (helpers.ts:382)",
+    "ui": "sign up as people.owner; name the workspace",
+    "what": "the workspace and the owner"
+   },
+   {
+    "confidence": "unproven",
+    "door": "POST /api/team/invites (seen in e2e)",
+    "ui": "Settings > Team and access > Invite (e-mail)",
+    "what": "the member"
+   },
+   {
+    "confidence": "unproven",
+    "door": "apiCreateRoom(name) (helpers.ts:84); client room: POST /api/rooms/clients (seen in e2e)",
+    "ui": "New > New room: 'Planning'; 'Northwind order'",
+    "what": "rooms"
+   },
+   {
+    "confidence": "unproven",
+    "door": "apiAddPerson(roomId, personRef) (helpers.ts:106); guest link: apiCreateInvite(roomId) (helpers.ts:126)",
+    "ui": "room > Invite",
+    "what": "people in rooms"
+   },
+   {
+    "confidence": "guess",
+    "door": "apiPostMessage(roomId, text) (helpers.ts:122) once per author session; the assistant's line needs a door that posts as the agent - apiPostRoomEvent(roomId, kind, payload) (helpers.ts:93) may serve; without it the line is typed by the member and the fixture is 'degraded' for ours",
+    "ui": "type and send as each person",
+    "what": "messages"
+   },
+   {
+    "confidence": "guess",
+    "door": "apiPostAssistRequest(roomId, text) (helpers.ts:88) or a proposal door (not located)",
+    "ui": "none (an approval is born from the assistant's draft)",
+    "what": "inbox: approval"
+   },
+   {
+    "confidence": "unproven",
+    "door": "apiCreateTask(...) (helpers.ts:153)",
+    "ui": "room > task card",
+    "what": "inbox: task"
+   },
+   {
+    "confidence": "guess",
+    "door": "NOT LOCATED - no meeting seed helper in helpers.ts; staging has no meeting (MANIFEST)",
+    "ui": "Meetings > Record a meeting with the fake microphone, or Upload a recording (fixture.audio)",
+    "what": "meeting"
+   },
+   {
+    "confidence": "guess",
+    "door": "NOT LOCATED - a finished run cannot be seeded without running one; apiSeedLlmCall(key) (helpers.ts:176) seeds a call, not a run",
+    "ui": "Tasks > type tasks.browser (needs a model and a paired browser)",
+    "what": "run + receipt"
+   },
+   {
+    "confidence": "unproven",
+    "door": "POST /api/agent-definitions/:key/schedules (seen in e2e)",
+    "ui": "none in the client app today",
+    "what": "scheduled job"
+   },
+   {
+    "confidence": "guess",
+    "door": "POST /rooms/:id/attachments (seen in e2e); memory door not located",
+    "ui": "Home > Knowledge > upload menu-2026.pdf and price-list.csv; memory fact via the meeting or a proposal",
+    "what": "knowledge"
+   },
+   {
+    "confidence": "unproven",
+    "door": "POST /relay/keys (seen in e2e); POST /v1/chat/completions against the stub model; apiSeedLlmCall for rows without a provider",
+    "ui": "Router > Keys > Create key; then three calls with the key",
+    "what": "router key and calls"
+   },
+   {
+    "confidence": "guess",
+    "door": "not located",
+    "ui": "Build > Automations > New",
+    "what": "flow"
+   },
+   {
+    "confidence": "unproven",
+    "door": "apiCreateAgentDefinitionDraft + apiPublishAgentDefinition (helpers.ts:191, 200)",
+    "ui": "Build > Definitions",
+    "what": "definition"
+   },
+   {
+    "confidence": "guess",
+    "door": "three seeded workspaces; the over-budget one via apiSeedTinyBudgetEnvelope + apiSeedIncident('budget_exhausted') (helpers.ts:371, 296); billing rows need the sandbox processor",
+    "ui": "none - the console reads what the fleet holds",
+    "what": "console rows"
+   },
+   {
+    "confidence": "unproven",
+    "door": "the same doors in a loop; 200 messages and 1,000 audit entries are append-only rows on staging for good (events and audit_log are never deleted) - the fixture workspaces are therefore permanent and named so",
+    "ui": "not practical by hand",
+    "what": "long"
+   }
+  ],
+  "workspaces": {
+   "empty": "cmpui-empty",
+   "long": "cmpui-long",
+   "note": "three dedicated staging workspaces, one per size, re-created when the fixture version changes",
+   "populated": "cmpui-populated"
+  }
+ },
+ "people": {
+  "assistant": {
+   "name": "Assistant",
+   "note": "the product's own default name is kept if it cannot be changed; recorded per product"
+  },
+  "client": {
+   "email": "jordan.lee@example.com",
+   "initials": "JL",
+   "name": "Jordan Lee",
+   "seat": "guest / client"
+  },
+  "member": {
+   "email": "sam.rivera@example.com",
+   "initials": "SR",
+   "name": "Sam Rivera",
+   "seat": "member"
+  },
+  "operator": {
+   "email": "riley.chen@example.com",
+   "name": "Riley Chen",
+   "note": "console only",
+   "seat": "operator"
+  },
+  "owner": {
+   "email": "alex.morgan@example.com",
+   "initials": "AM",
+   "name": "Alex Morgan",
+   "seat": "admin"
+  }
+ },
+ "perProduct": {
+  "activepieces": {
+   "can": [
+    "a flow 'Morning note' (Schedule + one step)",
+    "one run",
+    "a connection"
+   ],
+   "cannot": [],
+   "how": "UI"
+  },
+  "anythingllm": {
+   "can": [
+    "workspaces as rooms",
+    "typed messages",
+    "documents"
+   ],
+   "cannot": [
+    "a second person in one thread",
+    "inbox",
+    "meeting",
+    "run"
+   ],
+   "how": "UI + its developer API (key under Settings)"
+  },
+  "calcom": {
+   "can": [
+    "an event type 'Supplier call'",
+    "one booking",
+    "a public booking page"
+   ],
+   "cannot": [
+    "minutes",
+    "rooms"
+   ],
+   "how": "UI; unproven - no MANIFEST row"
+  },
+  "chatwoot": {
+   "can": [
+    "3 conversations",
+    "messages by a contact and an agent",
+    "private notes",
+    "assignments as inbox state",
+    "60 conversations for long"
+   ],
+   "cannot": [
+    "rooms of several people",
+    "meeting",
+    "run"
+   ],
+   "how": "rails runner / API (already used: 3 conversations)"
+  },
+  "closed": {
+   "can": [],
+   "cannot": [
+    "seeding of any kind: we create no accounts and type no credentials"
+   ],
+   "how": "the founder's own account as it is; every capture is labelled seeded=false and is context, not gated evidence. Where the founder is willing, he types fixture text himself (q1, the room name 'Planning') in a spare workspace"
+  },
+  "dify": {
+   "can": [
+    "a workflow app",
+    "a knowledge base with menu-2026.pdf (needs an embedding model: guess)",
+    "a tool"
+   ],
+   "cannot": [
+    "a run without a model"
+   ],
+   "how": "UI"
+  },
+  "flowise": {
+   "can": [
+    "a chatflow / agentflow",
+    "a tool",
+    "a credential",
+    "an API key"
+   ],
+   "cannot": [
+    "a schedule (guess)",
+    "an execution without a model"
+   ],
+   "how": "UI"
+  },
+  "growthbook": {
+   "can": [
+    "a feature flag",
+    "a metric",
+    "an experiment (draft)"
+   ],
+   "cannot": [
+    "real funnel data"
+   ],
+   "how": "internal REST API (one flag was seeded)"
+  },
+  "hermes": {
+   "can": [
+    "cron jobs",
+    "profiles"
+   ],
+   "cannot": [
+    "sessions without a gateway",
+    "anything that needs a model"
+   ],
+   "how": "config.yaml in the volume + UI"
+  },
+  "jitsi": {
+   "can": [
+    "a meeting with a fixed name",
+    "one chat message",
+    "two participants with two browser contexts"
+   ],
+   "cannot": [
+    "anything stored: every state is live"
+   ],
+   "how": "two Playwright contexts with fake media"
+  },
+  "khoj": {
+   "can": [
+    "chat",
+    "agents",
+    "automations (scheduled)"
+   ],
+   "cannot": [
+    "people",
+    "inbox",
+    "meeting"
+   ],
+   "how": "UI typing; anonymous mode = one person"
+  },
+  "killbill": {
+   "can": [
+    "tenant",
+    "account Harbour Studio",
+    "a catalog upload, then a subscription and an invoice"
+   ],
+   "cannot": [],
+   "how": "Kaui UI + catalog XML (no catalog was uploaded in the first sweep)"
+  },
+  "lago": {
+   "can": [
+    "metric api_calls",
+    "plan Starter 29.00 + 0.01 per call",
+    "customer Harbour Studio",
+    "a subscription",
+    "an invoice",
+    "a wallet"
+   ],
+   "cannot": [
+    "rooms"
+   ],
+   "how": "API (already seeded with Acme Ltd: rename to the fixture)"
+  },
+  "langfuse": {
+   "can": [
+    "3 traces (fixture.router.calls) with fixed ids, one failed",
+    "a prompt",
+    "a dataset",
+    "a score",
+    "a user"
+   ],
+   "cannot": [
+    "routing, ceilings"
+   ],
+   "how": "public ingestion API with the project's keys"
+  },
+  "librechat": {
+   "can": [
+    "conversations",
+    "typed messages",
+    "agents"
+   ],
+   "cannot": [
+    "rooms of people",
+    "inbox",
+    "meeting"
+   ],
+   "how": "UI typing"
+  },
+  "litellm": {
+   "can": [
+    "the stub as a model",
+    "a key 'fixture-key' with a budget",
+    "a team",
+    "3 calls through the proxy"
+   ],
+   "cannot": [
+    "rooms"
+   ],
+   "how": "admin API with the master key + 3 calls"
+  },
+  "lobechat": {
+   "can": [
+    "sessions and typed messages"
+   ],
+   "cannot": [
+    "a second person",
+    "inbox",
+    "meeting",
+    "run"
+   ],
+   "how": "UI typing; data lives in the browser profile (IndexedDB): seed in the same persistent context the probe captures with"
+  },
+  "mattermost": {
+   "can": [
+    "3 channels",
+    "5 posts by 2 people",
+    "a bot account posting the assistant's line",
+    "threads and mentions as inbox items",
+    "200 posts for long"
+   ],
+   "cannot": [
+    "meeting",
+    "run",
+    "receipt"
+   ],
+   "how": "REST API (already used for the first sweep: user, team, #planning)"
+  },
+  "mirotalk": {
+   "can": [
+    "same as jitsi"
+   ],
+   "cannot": [
+    "stored state"
+   ],
+   "how": "two contexts with fake media; unproven - no MANIFEST row"
+  },
+  "mirotalk-sfu": {
+   "can": [
+    "same as jitsi"
+   ],
+   "cannot": [
+    "stored state"
+   ],
+   "how": "unproven - no MANIFEST row"
+  },
+  "n8n": {
+   "can": [
+    "a workflow 'Morning note' (Schedule Trigger + Set)",
+    "one execution",
+    "a credential"
+   ],
+   "cannot": [
+    "a member's Tasks view"
+   ],
+   "how": "UI or import of a JSON workflow (already seeded once: Manual Trigger + Set)"
+  },
+  "onyx-chat": {
+   "can": [
+    "chat",
+    "assistants",
+    "users"
+   ],
+   "cannot": [
+    "documents (lite mode, no vector DB)",
+    "inbox",
+    "meeting"
+   ],
+   "how": "UI + admin pages"
+  },
+  "openwebui": {
+   "can": [
+    "chats (typed)",
+    "channels (beta) for the team room"
+   ],
+   "cannot": [
+    "assistant replies without the stub",
+    "inbox",
+    "meeting",
+    "run"
+   ],
+   "how": "UI typing; WEBUI_AUTH=False means one implicit person - the second person cannot exist"
+  },
+  "phoenix": {
+   "can": [
+    "3 traces sent with the OpenTelemetry snippet (fixed ids and times)",
+    "a prompt",
+    "a dataset"
+   ],
+   "cannot": [
+    "keys, budgets"
+   ],
+   "how": "HTTP ingest"
+  },
+  "rallly": {
+   "can": [
+    "a poll 'Supplier call' with three times",
+    "one vote"
+   ],
+   "cannot": [
+    "minutes"
+   ],
+   "how": "UI; unproven - no MANIFEST row"
+  },
+  "skyvern": {
+   "can": [
+    "an agent (workflow) definition",
+    "a credential (fake)"
+   ],
+   "cannot": [
+    "a run, live view or result: no model key"
+   ],
+   "how": "UI"
+  },
+  "superset": {
+   "can": [
+    "a SQLite dataset of fixture.console rows",
+    "one chart",
+    "one dashboard"
+   ],
+   "cannot": [],
+   "how": "UI; needs a database connection to a fixture SQLite file"
+  },
+  "windmill": {
+   "can": [
+    "a flow and a script",
+    "a schedule",
+    "one run",
+    "a resource"
+   ],
+   "cannot": [],
+   "how": "API (workspace refws was seeded through it)"
+  }
+ },
+ "questions": {
+  "q1": "Summarise this week's plan in three points.",
+  "q2": "Can I change my order after it has shipped?"
+ },
+ "rules": [
+  "product-neutral: no product, vendor, model or place name appears in any text; a model is 'model-a', 'model-b'",
+  "every text is fixed and ASCII; every name is fixed; nothing is random and nothing is generated by a model at seed time",
+  "all assistant text in the fixture is typed by the seed (posted as the assistant where the product allows, else as the second person) - a live model reply is never part of a fixture",
+  "money is in one currency with fixed amounts; the currency code is a parameter of the seed (default USD) so a product that only knows one currency can still hold it",
+  "the fixture's hash = sha256 of this file's canonical JSON (keys sorted, no whitespace); it is written into every capture"
+ ],
+ "schema": "ui-fixture/1",
+ "site": {
+  "limit": "a hosted closed agent (Manus, ChatGPT agent) cannot reach loopback: for those the founder uses any stable public page and the journey is marked not seeded",
+  "price": "24.00",
+  "status": "PROPOSAL - not built",
+  "what": "two static pages served on loopback for journeys J4 and J9: /shop (a 'Show price' button that reveals 'Standard plan: 24.00') and /widget (a blank page that loads a product's chat widget snippet)"
+ },
+ "sizes": {
+  "empty": {
+   "what": "a new workspace owned by people.owner, nothing else. For ours: the first-run state after sign-up (the default assistant thread exists and is empty)."
+  },
+  "long": {
+   "console": {
+    "audit_entries": 1000,
+    "invoices": 200,
+    "workspaces": 120
+   },
+   "flow": {
+    "executions": 100,
+    "steps": 30
+   },
+   "inbox": {
+    "count": 60,
+    "pattern": "30 approvals, 20 tasks, 10 incidents; titles cycle over 12 fixed titles; one title of 140 characters"
+   },
+   "knowledge": {
+    "documents": 40,
+    "files": 80,
+    "memory": 120
+   },
+   "meetings": {
+    "count": 30,
+    "pattern": "titles cycle over 6 fixed titles; one meeting of 60 minutes with a 400-line transcript"
+   },
+   "messages": {
+    "count": 200,
+    "pattern": "the five populated messages, then 195 cycling over 10 fixed sentences alternating owner / member / assistant",
+    "room": "team",
+    "specials": [
+     "one message of 1,200 characters (fixed text, four paragraphs)",
+     "one message with a 180-character unbroken token (a URL)",
+     "one message with a 12-line code block",
+     "one message with a 6-row, 4-column table",
+     "one message of a single emoji-free word"
+    ]
+   },
+   "people": {
+    "count": 25,
+    "pattern": "Person 01 .. Person 22 plus the three; one display name of 48 characters"
+   },
+   "rooms": {
+    "count": 40,
+    "naming": "Room 01 .. Room 37 plus the three populated rooms; one room named with 64 characters: 'Quarterly planning and supplier review for the northern region 2026'"
+   },
+   "router": {
+    "calls": 500,
+    "keys": 12,
+    "models": 60
+   },
+   "runs": {
+    "count": 50,
+    "pattern": "40 done, 8 scheduled, 2 failed; one run with 30 steps"
+   },
+   "what": "stress for clipping, scrolling and density (the 'long' state). Built on top of populated.",
+   "workspace_name": "workspace.long_name"
+  },
+  "populated": {
+   "added": {
+    "budget": {
+     "balance": "50.00",
+     "ceiling_month": "100.00",
+     "spent_month": "4.20"
+    },
+    "console": {
+     "abuse_cases": 1,
+     "billing": {
+      "customer": "Harbour Studio",
+      "invoice": {
+       "amount": "33.20",
+       "state": "open"
+      },
+      "plan": {
+       "name": "Starter",
+       "per_call": "0.01",
+       "price": "29.00"
+      },
+      "subscription": 1
+     },
+     "limit_raise": "50.00",
+     "partners": 1,
+     "waitlist": 2,
+     "workspaces": [
+      {
+       "members": 2,
+       "name": "Harbour Studio",
+       "plan": "team",
+       "spent": "4.20",
+       "state": "ok"
+      },
+      {
+       "members": 1,
+       "name": "Lakeside Bakery",
+       "plan": "free",
+       "spent": "0.00",
+       "state": "ok"
+      },
+      {
+       "members": 5,
+       "name": "Ridge Logistics",
+       "plan": "team",
+       "spent": "112.40",
+       "state": "over budget; 3 failed calls"
+      }
+     ]
+    },
+    "definition": {
+     "key": "summary-helper",
+     "versions": 1
+    },
+    "flow": {
+     "executions": 1,
+     "message": "Good morning. Three items are open today.",
+     "name": "Morning note",
+     "steps": 1,
+     "trigger": "every day 08:00"
+    },
+    "knowledge": {
+     "documents": [
+      {
+       "name": "menu-2026.pdf",
+       "pages": 2
+      }
+     ],
+     "files": [
+      {
+       "name": "price-list.csv",
+       "rows": 12
+      }
+     ],
+     "memory": [
+      {
+       "source": "meeting: Supplier call",
+       "text": "The supplier price holds until March."
+      }
+     ],
+     "sources": []
+    },
+    "receipt": {
+     "approved_by": "owner",
+     "cost": "0.12",
+     "for_run": "browser",
+     "masked_field": "supplier account number",
+     "what": "Found the price of the Standard plan"
+    },
+    "router": {
+     "calls": [
+      {
+       "cost": "0.0021",
+       "model": "model-a",
+       "n": 1,
+       "status": "ok",
+       "tokens_in": 120,
+       "tokens_out": 80
+      },
+      {
+       "cost": "0.0104",
+       "model": "model-b",
+       "n": 2,
+       "status": "ok",
+       "tokens_in": 300,
+       "tokens_out": 150
+      },
+      {
+       "cost": "0.0000",
+       "model": "model-a",
+       "n": 3,
+       "status": "error: provider timeout",
+       "tokens_in": 90,
+       "tokens_out": 0
+      }
+     ],
+     "ceiling_day": "5.00",
+     "keyName": "fixture-key",
+     "provider": "the stub model"
+    },
+    "scheduled": {
+     "every": "day 08:00",
+     "room": "team",
+     "title": "Daily summary"
+    },
+    "skill": {
+     "name": "Chase an invoice"
+    },
+    "tasks": {
+     "browser": "Open the shop page, press 'Show price' and tell me the price of the Standard plan."
+    }
+   },
+   "inbox": [
+    {
+     "for": "owner",
+     "key": "approval",
+     "kind": "approval",
+     "room": "client",
+     "title": "Approve 2 reminder messages"
+    },
+    {
+     "due": "3 days before the capture",
+     "for": "owner",
+     "key": "task",
+     "kind": "task",
+     "room": "team",
+     "title": "Write today's summary"
+    }
+   ],
+   "meeting": {
+    "decisions": [
+     "The price holds until March."
+    ],
+    "duration_min": 12,
+    "open_steps": [
+     {
+      "owner": "member",
+      "text": "Send the contract"
+     }
+    ],
+    "people": [
+     "owner",
+     "member"
+    ],
+    "room": "team",
+    "script": [
+     "Sam: We keep the price until March, then review.",
+     "Alex: Agreed. Please send the contract this week."
+    ],
+    "title": "Supplier call"
+   },
+   "messages": {
+    "count": 5,
+    "list": [
+     {
+      "by": "owner",
+      "n": 1,
+      "text": "Morning. Can we lock the plan for this week?"
+     },
+     {
+      "by": "member",
+      "n": 2,
+      "text": "I drafted it yesterday. Three items, the supplier price is the open one."
+     },
+     {
+      "by": "assistant",
+      "n": 3,
+      "text": "Here is the plan as drafted: confirm the supplier price by Wednesday, send the revised menu to the printer, review open invoices on Friday."
+     },
+     {
+      "by": "owner",
+      "n": 4,
+      "text": "Good. Sam, can you take the supplier call?"
+     },
+     {
+      "by": "member",
+      "n": 5,
+      "text": "Yes, booked for tomorrow at 14:00."
+     }
+    ],
+    "room": "team"
+   },
+   "rooms": [
+    {
+     "key": "assistant",
+     "kind": "the owner's main thread with the assistant",
+     "members": [
+      "owner",
+      "assistant"
+     ],
+     "name": "Assistant"
+    },
+    {
+     "key": "team",
+     "kind": "team room",
+     "members": [
+      "owner",
+      "member",
+      "assistant"
+     ],
+     "name": "Planning"
+    },
+    {
+     "key": "client",
+     "kind": "client room (two sides)",
+     "members": [
+      "owner",
+      "client",
+      "assistant"
+     ],
+     "name": "Northwind order"
+    }
+   ],
+   "run": {
+    "cost": "0.12",
+    "key": "browser",
+    "result": "Standard plan: 24.00",
+    "room": "client",
+    "state": "done",
+    "steps": 4,
+    "title": "Find the price of the Standard plan"
+   }
+  }
+ },
+ "stubModel": {
+  "answers": {
+   "default": "I can help with that. Tell me a little more about what you need.",
+   "q1": "Here are the three points for this week:\n1. Confirm the supplier price by Wednesday.\n2. Send the revised menu to the printer.\n3. Review open invoices on Friday.",
+   "q2": "Yes. Until the parcel is delivered you can change the address or cancel; after delivery you can return it within 14 days."
+  },
+  "confidence": "guess",
+  "status": "PROPOSAL - not built; needs the orchestrator's word (a new small tool) and, for staging, the founder's word (a model for the QA workspace is already a founder action in ia-reset F)",
+  "what": "one OpenAI-compatible endpoint on loopback that always answers a chat request with the same fixed text for the same prompt (a lookup of fixture.questions -> fixture.answers; anything else -> answers.default), with fixed token counts and no delay",
+  "why": "no provider is configured on any reference and staging has no model, so today no conversation screen can show an assistant reply and J1, J4, J8, J9 stop at the first send. A stub makes replies identical across products and runs, and costs nothing."
+ },
+ "version": "1",
+ "workspace": {
+  "long_name": "Harbour Studio International Operations and Client Services Group",
+  "name": "Harbour Studio"
+ }
+}

@@ -1,0 +1,64 @@
+{
+  "product": "clean",
+  "schema": "ui-system/1",
+  "screens": 2,
+  "style": {
+    "color": {
+      "accent": "#0000ee",
+      "background": {
+        "#0969da": 2,
+        "#f6f8fa": 2
+      },
+      "border": {},
+      "distinctColors": 5,
+      "lowContrast": [],
+      "text": {
+        "#0000ee": 4,
+        "#1f2328": 6,
+        "#ffffff": 2
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0.03,
+      "textPerKpx": 0.18,
+      "whitespaceRatio": 0.92
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 0,
+      "radius": {
+        "6px": 2
+      },
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 4,
+      "onScale4": 0.89,
+      "values": {
+        "14px": 4,
+        "16px": 14,
+        "24px": 8,
+        "8px": 12
+      }
+    },
+    "type": {
+      "distinctSizes": 2,
+      "families": [
+        "Arial"
+      ],
+      "lineHeights": {
+        "normal": 12
+      },
+      "sizes": {
+        "14px": 10,
+        "24px": 2
+      },
+      "weights": {
+        "400": 10,
+        "700": 2
+      }
+    }
+  }
+}

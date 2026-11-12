@@ -1,0 +1,322 @@
+{
+  "deadEnds": [
+    {
+      "action": "click",
+      "n": 4,
+      "reason": "target absent",
+      "target": "button/Missing"
+    }
+  ],
+  "goal": {
+    "archetype": "conversation"
+  },
+  "journey": "j1",
+  "meta": {
+    "waits": 1
+  },
+  "metrics": {
+    "deadEnds": 1,
+    "decisions": 1,
+    "screensVisited": 1,
+    "stepCount": 4,
+    "timeToFirstUseful": 1,
+    "totalClicks": 2
+  },
+  "product": "cluttered",
+  "schema": "ui-journey/1",
+  "seat": "member",
+  "status": "partial (fails at step 4)",
+  "steps": [
+    {
+      "action": "goto",
+      "domHash": "1f8d5205e22a799a7db612998e4256ae686d08b4f48531b0d8dddb2e5ea67ce0",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "633272c1a038ee13c1ea11268180b85c73e9d82555e6d46142daee6749998479"
+      },
+      "key": {
+        "screen": "room",
+        "seat": "member",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 1644
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 1,
+      "screen": "room",
+      "status": "ok",
+      "target": "http://127.0.0.1:47831/flow.html"
+    },
+    {
+      "action": "fill",
+      "domHash": "1f8d5205e22a799a7db612998e4256ae686d08b4f48531b0d8dddb2e5ea67ce0",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "0786312589c71302653e6cb24758ac61cc373fa742e478de396d26ebf01a0177"
+      },
+      "key": {
+        "screen": "room",
+        "seat": "member",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 1090
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 2,
+      "screen": "room",
+      "status": "ok",
+      "target": "Name"
+    },
+    {
+      "action": "click",
+      "domHash": "e93a62eb9d582aa362a1ad3643e8a8fe5c96759499dbdc93a3cc7208803efd75",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "a8dcb6c715cd1ababe39779bfe35001703cf440afca788e33cff2dcdb856b3e6"
+      },
+      "key": {
+        "screen": "room",
+        "seat": "member",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 1136
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 3,
+      "screen": "room",
+      "status": "ok",
+      "target": "button/Open"
+    },
+    {
+      "action": "click",
+      "domHash": "e93a62eb9d582aa362a1ad3643e8a8fe5c96759499dbdc93a3cc7208803efd75",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "a8dcb6c715cd1ababe39779bfe35001703cf440afca788e33cff2dcdb856b3e6"
+      },
+      "key": {
+        "screen": "room",
+        "seat": "member",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 4079
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 4,
+      "screen": "room",
+      "status": "dead-end",
+      "target": "button/Missing"
+    }
+  ],
+  "title": "Open the thing",
+  "version": "contract-1",
+  "viewport": "1440x900"
+}

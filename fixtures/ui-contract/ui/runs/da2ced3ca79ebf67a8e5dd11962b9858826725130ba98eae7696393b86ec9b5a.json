@@ -1,0 +1,25 @@
+{
+  "captures": {
+    "clean@contract-1/room/populated/1440x900/ref/en-US/light": "clean/room/populated/1440x900-ref.json",
+    "clean@contract-1/room/populated/390x844/ref/en-US/light": "clean/room/populated/390x844-ref.json"
+  },
+  "failed": [],
+  "inputs": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reducedMotion": "reduce",
+      "timezone": "UTC"
+    },
+    "fixtureHash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "probeVersion": "1",
+    "product": "clean",
+    "registryVersion": "1",
+    "runLabel": "b",
+    "version": "contract-1"
+  },
+  "runId": "da2ced3ca79ebf67a8e5dd11962b9858826725130ba98eae7696393b86ec9b5a",
+  "schema": "ui-run/1"
+}

@@ -1,0 +1,42 @@
+{
+  "derived": {
+    "collapsedGroupsExpanded": 0,
+    "deadItems": 0,
+    "duplicateDestinations": 0,
+    "itemsPerGroup": {},
+    "itemsPerLevel": {
+      "1": 2
+    },
+    "maxDepth": 1,
+    "overflowOnly": 0,
+    "places": 2,
+    "totalDestinations": 2
+  },
+  "nodes": [
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Rooms",
+      "level": 1,
+      "order": 0,
+      "target": "rooms-list"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Inbox",
+      "level": 1,
+      "order": 1,
+      "target": "inbox"
+    }
+  ],
+  "product": "clean",
+  "schema": "ui-nav/1",
+  "seat": "ref",
+  "version": "contract-1",
+  "viewport": "1440x900"
+}

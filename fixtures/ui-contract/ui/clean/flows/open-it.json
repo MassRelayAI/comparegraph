@@ -1,0 +1,383 @@
+{
+  "deadEnds": [
+    {
+      "action": "click",
+      "n": 5,
+      "reason": "target absent",
+      "target": "button/Missing"
+    }
+  ],
+  "env": {
+    "clock": "2026-01-15T10:00:00.000Z",
+    "locale": "en-US"
+  },
+  "product": "clean",
+  "schema": "ui-flow/1",
+  "seat": "ref",
+  "stepCount": 5,
+  "steps": [
+    {
+      "action": "goto",
+      "domHash": "1f8d5205e22a799a7db612998e4256ae686d08b4f48531b0d8dddb2e5ea67ce0",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "633272c1a038ee13c1ea11268180b85c73e9d82555e6d46142daee6749998479"
+      },
+      "key": {
+        "screen": "unknown",
+        "seat": "ref",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 1662
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 1,
+      "screen": "unknown",
+      "status": "ok",
+      "target": "http://127.0.0.1:47831/flow.html"
+    },
+    {
+      "action": "fill",
+      "domHash": "1f8d5205e22a799a7db612998e4256ae686d08b4f48531b0d8dddb2e5ea67ce0",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "49eee1891557ae820e3d6fa8a4c3be969e2b33ffcb40906573d499dbe1879854"
+      },
+      "key": {
+        "screen": "unknown",
+        "seat": "ref",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 1093
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 2,
+      "screen": "unknown",
+      "status": "ok",
+      "target": "Name"
+    },
+    {
+      "action": "click",
+      "domHash": "e93a62eb9d582aa362a1ad3643e8a8fe5c96759499dbdc93a3cc7208803efd75",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "8ebbbe8e4dcbd9dbed83fe0d2bb7e9fef5c6efb23f7ab5e0194249de4e660891"
+      },
+      "key": {
+        "screen": "unknown",
+        "seat": "ref",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 1119
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 3,
+      "screen": "unknown",
+      "status": "ok",
+      "target": "button/Open"
+    },
+    {
+      "action": "expect",
+      "domHash": "e93a62eb9d582aa362a1ad3643e8a8fe5c96759499dbdc93a3cc7208803efd75",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "8ebbbe8e4dcbd9dbed83fe0d2bb7e9fef5c6efb23f7ab5e0194249de4e660891"
+      },
+      "key": {
+        "screen": "unknown",
+        "seat": "ref",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 1079
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 4,
+      "screen": "unknown",
+      "status": "ok",
+      "target": "Opened the thing"
+    },
+    {
+      "action": "click",
+      "domHash": "e93a62eb9d582aa362a1ad3643e8a8fe5c96759499dbdc93a3cc7208803efd75",
+      "image": {
+        "dhash": "0000000000000000",
+        "sha256": "8ebbbe8e4dcbd9dbed83fe0d2bb7e9fef5c6efb23f7ab5e0194249de4e660891"
+      },
+      "key": {
+        "screen": "unknown",
+        "seat": "ref",
+        "state": "populated",
+        "viewport": "1440x900"
+      },
+      "meta": {
+        "stable": true,
+        "waitMs": 4069
+      },
+      "metrics": {
+        "E1": {
+          "pass": true,
+          "value": 0
+        },
+        "E10": {
+          "pass": true,
+          "value": 0
+        },
+        "E11": {
+          "pass": true,
+          "value": 0
+        },
+        "E12": {
+          "pass": true,
+          "value": 0
+        },
+        "E2": {
+          "pass": true,
+          "value": 0
+        },
+        "E3": {
+          "pass": true,
+          "value": 0
+        },
+        "E4": {
+          "pass": true,
+          "value": 2
+        },
+        "E5": {
+          "pass": true,
+          "value": 0
+        },
+        "E6": {
+          "pass": true,
+          "value": 0
+        },
+        "E7": {
+          "pass": true,
+          "value": 0.13
+        },
+        "E8": {
+          "pass": true,
+          "value": 0
+        },
+        "E9": {
+          "pass": true,
+          "value": 0
+        }
+      },
+      "n": 5,
+      "screen": "unknown",
+      "status": "dead-end",
+      "target": "button/Missing"
+    }
+  ],
+  "task": "open-it",
+  "version": "contract-1",
+  "viewport": "1440x900"
+}

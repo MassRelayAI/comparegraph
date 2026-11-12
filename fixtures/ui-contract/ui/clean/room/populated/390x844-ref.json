@@ -1,0 +1,206 @@
+{
+  "archetype": "conversation",
+  "domHash": "b9849acb06fc491317d2bbea3664be5744c94a90d2b92b6969745a82c9e5a85a",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "0c0c000000000000",
+    "file": "blobs/4e1604e438f0a7523b9a7c815ae2474045bbebb4a1fd5d5c7920780579dd4a41.png",
+    "sha256": "4e1604e438f0a7523b9a7c815ae2474045bbebb4a1fd5d5c7920780579dd4a41"
+  },
+  "key": "clean@contract-1/room/populated/390x844/ref/en-US/light",
+  "layout": {
+    "contentStart": {
+      "how": "data-content-start",
+      "y": 114
+    },
+    "primary": {
+      "name": "New room",
+      "x": 224,
+      "y": 68
+    },
+    "regions": [
+      {
+        "h": 900,
+        "kind": "main",
+        "w": 190,
+        "x": 200,
+        "y": 0
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T06:06:54.490Z",
+    "url": "http://127.0.0.1:47831/clean.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [
+        "New room"
+      ],
+      "limit": 1,
+      "pass": true,
+      "value": 1
+    },
+    "E4": {
+      "detail": [],
+      "limit": 8,
+      "pass": true,
+      "value": 1
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "data-content-start"
+      ],
+      "limit": 0.3,
+      "pass": true,
+      "value": 0.14
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    "notes": [],
+    "version": "1"
+  },
+  "product": "clean",
+  "route": "/clean.html",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "ref",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": "#0000ee",
+      "background": {
+        "#0969da": 1,
+        "#f6f8fa": 1
+      },
+      "border": {},
+      "distinctColors": 5,
+      "lowContrast": [],
+      "text": {
+        "#0000ee": 2,
+        "#1f2328": 3,
+        "#ffffff": 1
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0.04,
+      "textPerKpx": 0.28,
+      "whitespaceRatio": 0.93
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 0,
+      "radius": {
+        "6px": 1
+      },
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 4,
+      "onScale4": 0.89,
+      "values": {
+        "14px": 2,
+        "16px": 7,
+        "24px": 4,
+        "8px": 6
+      }
+    },
+    "type": {
+      "distinctSizes": 2,
+      "families": [
+        "Arial"
+      ],
+      "lineHeights": {
+        "normal": 6
+      },
+      "sizes": {
+        "14px": 5,
+        "24px": 1
+      },
+      "weights": {
+        "400": 5,
+        "700": 1
+      }
+    }
+  },
+  "theme": "light",
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "390x844"
+}

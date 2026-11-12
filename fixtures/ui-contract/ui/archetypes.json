@@ -1,0 +1,1524 @@
+{
+ "archetypes": {
+  "conversation": {
+   "judgeQuestions": [
+    "In which screenshot do the messages start higher on the screen and fill more of it?",
+    "In which screenshot can you tell who said each message (a name or a face, not an id) faster?",
+    "In which screenshot is it more obvious where to type and how to send?",
+    "Which screenshot shows fewer controls that are not about reading or writing a message?",
+    "If the thread is empty: which screenshot tells a newcomer what to do first in fewer words?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": false,
+     "desktop": "<=2",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E10": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "=1",
+     "name": "primary actions",
+     "phone": "=1",
+     "reason": "the composer's Send is the only primary, also when the thread is empty"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=10",
+     "name": "visible actions in main",
+     "phone": "<=6",
+     "reason": "messages and the composer only; header icons and the composer's few icons are the whole budget (ia-reset D2, M1)"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": true,
+     "desktop": "<=0.20",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.20",
+     "reason": "the first message must start right under the header: the known defect is content below the fold on the phone (diagnosis line 6)"
+    },
+    "E8": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "boxes before content",
+     "phone": "=0",
+     "reason": "nothing boxed may stand between the header and the first message; settings live in Room info"
+    },
+    "E9": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    }
+   },
+   "screens": [
+    "build-wiring",
+    "guest-room",
+    "home-assistant",
+    "room"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "textPerKpxMin": 1.0,
+     "whitespaceRatioMin": 0.35
+    },
+    "distinctColorsMax": 9,
+    "distinctSizesMax": 4,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     8,
+     12
+    ],
+    "reason": "reading text: body 14 or 16, meta 12/13; bubbles or rows on 8/12 radius; few colours so cards stand out",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     4,
+     8,
+     12,
+     16
+    ],
+    "typeSizesPxLine": [
+     "12/16",
+     "13/18",
+     "14/20",
+     "16/24"
+    ]
+   },
+   "what": "a thread of messages with one composer (Home > Assistant, a room, the guest room, Wiring)"
+  },
+  "create-flow": {
+   "judgeQuestions": [
+    "In which screenshot is it clearer what will be created?",
+    "Which screenshot asks for fewer things before the first result?",
+    "In which screenshot is the button that moves forward more obvious, and the way out still visible?",
+    "Which screenshot gives a more useful starting point (a template, a default, an example)?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": false,
+     "desktop": "<=2",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E10": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "=1",
+     "name": "primary actions",
+     "phone": "=1",
+     "reason": "one way forward per step"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=8",
+     "name": "visible actions in main",
+     "phone": "<=6",
+     "reason": "one decision per step: a few fields, the primary, cancel"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": true,
+     "desktop": "<=0.40",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.40",
+     "reason": "a centred dialog starts lower than a page; measured on the dialog when one is open (how the probe scopes 'main' to a dialog is unproven)"
+    },
+    "E8": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "boxes before content",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E9": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    }
+   },
+   "screens": [
+    "add-model-key",
+    "build-automation-create",
+    "connect-channel",
+    "invite-person",
+    "new-room",
+    "new-sheet",
+    "pair-device",
+    "router-key-create",
+    "top-up"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "whitespaceRatioMin": 0.45
+    },
+    "distinctColorsMax": 8,
+    "distinctSizesMax": 4,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     8,
+     12
+    ],
+    "reason": "dialog title 18, labels 14, help 13",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     8,
+     12,
+     16,
+     24
+    ],
+    "typeSizesPxLine": [
+     "13/18",
+     "14/20",
+     "16/24",
+     "18/26"
+    ]
+   },
+   "what": "a sheet, dialog or short page that makes one new thing (New, new room, invite, connect a channel, create a key, top up)"
+  },
+  "dashboard": {
+   "extraProposed": {
+    "kpiCardsMax": {
+     "confidence": "guess",
+     "desktop": 4,
+     "phone": 4,
+     "reason": "DETERMINISM PROTOCOL section 2: 'a dashboard may show 4 KPIs'; not an E metric - proposed"
+    }
+   },
+   "judgeQuestions": [
+    "In which screenshot can you read the three most important numbers faster?",
+    "Which screenshot tells you first what needs your attention, before the numbers?",
+    "Which screenshot handles missing data more honestly (one clear 'no data' state rather than dashes and empty boxes)?",
+    "Which screenshot shows fewer notes or labels written for engineers?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": false,
+     "desktop": "<=2",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E10": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "<=1",
+     "name": "primary actions",
+     "phone": "<=1",
+     "reason": "a time range is a control, not a primary; one primary only while a setup card is open"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=16",
+     "name": "visible actions in main",
+     "phone": "<=10",
+     "reason": "KPI cards that link, the range, two tables' headers"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": false,
+     "desktop": "<=0.25",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.30",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E8": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "boxes before content",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E9": {
+     "adjusted": true,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "the known defect is a pile of empty boxes: all empty blocks collapse into one empty state (ia-reset O1)"
+    }
+   },
+   "screens": [
+    "home-progress",
+    "ops-analytics",
+    "ops-demand",
+    "ops-funnel",
+    "ops-health",
+    "ops-overview",
+    "ops-revenue",
+    "ops-routing",
+    "room-updates",
+    "router-health",
+    "router-overview",
+    "router-usage"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "whitespaceRatioMin": 0.35
+    },
+    "distinctColorsMax": 12,
+    "distinctSizesMax": 5,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     8,
+     12
+    ],
+    "reason": "KPI figure 30 or 22 with tabular numerals, label 12/13; chart colours count toward the 12",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     4,
+     8,
+     12,
+     16,
+     24,
+     32
+    ],
+    "typeSizesPxLine": [
+     "12/16",
+     "13/18",
+     "14/20",
+     "22/28",
+     "30/36"
+    ]
+   },
+   "what": "numbers at a glance, then where to act (Home > Progress, Router overview, usage, the console overview, revenue, funnel)"
+  },
+  "detail": {
+   "judgeQuestions": [
+    "In which screenshot can you say what this object is and its current state within three seconds?",
+    "In which screenshot is the one thing you would most likely do next more obvious?",
+    "Which screenshot puts the body of the object (not its settings or metadata) higher on the page?",
+    "Which screenshot shows fewer internal words, ids or raw data?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": false,
+     "desktop": "<=2",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E10": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E3": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "primary actions",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=16",
+     "name": "visible actions in main",
+     "phone": "<=8",
+     "reason": "tabs of sibling views plus the object's actions; two more than a list because tabs count"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": true,
+     "desktop": "<=0.30",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.35",
+     "reason": "a title block with two lines of meta is legitimate before the body"
+    },
+    "E8": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "boxes before content",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E9": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    }
+   },
+   "screens": [
+    "build-automation",
+    "build-definition",
+    "build-workflow",
+    "guest-minutes",
+    "inbox-item",
+    "meeting",
+    "meeting-series",
+    "ops-workspace",
+    "receipt",
+    "room-dev-panel",
+    "room-evidence",
+    "room-minutes",
+    "router-docs",
+    "router-model",
+    "task-run-done"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "whitespaceRatioMin": 0.35
+    },
+    "distinctColorsMax": 10,
+    "distinctSizesMax": 5,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     4,
+     8,
+     12
+    ],
+    "reason": "title 22, section heads 16, body 14, meta 12/13",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     4,
+     8,
+     12,
+     16,
+     24,
+     32
+    ],
+    "typeSizesPxLine": [
+     "12/16",
+     "13/18",
+     "14/20",
+     "16/24",
+     "22/28"
+    ]
+   },
+   "what": "one object, read and acted on (a meeting, a receipt, a finished run, a model, a flow, an account)"
+  },
+  "inbox": {
+   "judgeQuestions": [
+    "In which screenshot can you tell what each row wants from you without opening it?",
+    "In which screenshot is the action for the selected item one obvious button?",
+    "Which screenshot shows how many items wait on you, and on others, more clearly?",
+    "Which screenshot shows who or which room each item comes from and how old it is?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": true,
+     "desktop": "<=1",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "the Inbox has no sidebar of its own (ia-reset B1): the rail only; list and detail are content"
+    },
+    "E10": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "<=1",
+     "name": "primary actions",
+     "phone": "<=1",
+     "reason": "the selected item's one action; an empty inbox may have none"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=12",
+     "name": "visible actions in main",
+     "phone": "<=8",
+     "reason": "tabs with counts, the row, the one action and an overflow - nothing else"
+    },
+    "E5": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "the known defect: rows named by raw keys ('Request model_unavailable')"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": false,
+     "desktop": "<=0.25",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.30",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E8": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "boxes before content",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E9": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    }
+   },
+   "screens": [
+    "inbox",
+    "ops-abuse"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "whitespaceRatioMin": 0.3
+    },
+    "distinctColorsMax": 9,
+    "distinctSizesMax": 4,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     4,
+     8
+    ],
+    "reason": "row title 14 medium, preview 13, age 12; one accent for the action",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     4,
+     8,
+     12,
+     16
+    ],
+    "typeSizesPxLine": [
+     "12/16",
+     "13/18",
+     "14/20",
+     "16/24"
+    ]
+   },
+   "what": "items that wait on the person: list and detail, one action each (Inbox, the console's Abuse desk)"
+  },
+  "list": {
+   "extraProposed": {
+    "rowHeightMaxPx": {
+     "confidence": "guess",
+     "desktop": 56,
+     "phone": 72,
+     "reason": "one-line rows on desktop, two-line cards on the phone (ia-reset D9); not an E metric - proposed"
+    }
+   },
+   "judgeQuestions": [
+    "In which screenshot do you find the newest or most important row faster?",
+    "In which screenshot is there exactly one obvious way to add a new item (or, on a read-only list, to search)?",
+    "Which screenshot shows each row in fewer lines without cutting text off?",
+    "Which screenshot has fewer buttons repeated on every row?",
+    "If the list is empty: which screenshot explains what will appear here and offers the next step?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": false,
+     "desktop": "<=2",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E10": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "row actions go in an overflow menu; a button repeated on every row is the console defect ('Limits' x N)"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "<=1",
+     "name": "primary actions",
+     "phone": "<=1",
+     "reason": "exactly one on a list that creates (New room, Record a meeting, Create key); none on a read-only list where search has the focus (ia-reset D9)"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=14",
+     "name": "visible actions in main",
+     "phone": "<=8",
+     "reason": "base limit; row controls count once per list"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": false,
+     "desktop": "<=0.25",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.30",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E8": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "boxes before content",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E9": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    }
+   },
+   "screens": [
+    "build-automations",
+    "build-definitions",
+    "build-nodes",
+    "build-workflows",
+    "find-people",
+    "home-knowledge",
+    "home-knowledge-documents",
+    "home-knowledge-files",
+    "home-knowledge-memory",
+    "home-knowledge-sources",
+    "home-skills",
+    "meetings-list",
+    "ops-access",
+    "ops-audit",
+    "ops-billing",
+    "ops-calls",
+    "ops-catalog",
+    "ops-keys-providers",
+    "ops-partners",
+    "ops-people",
+    "ops-plans-pricing",
+    "ops-quality",
+    "ops-waiting-list",
+    "ops-workspaces",
+    "room-meetings",
+    "rooms-list",
+    "router-keys",
+    "router-logs",
+    "router-models",
+    "router-providers",
+    "search-palette",
+    "tasks-list",
+    "tasks-scheduled"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "elementsPerKpxMax": 1.2,
+     "whitespaceRatioMin": 0.3
+    },
+    "distinctColorsMax": 9,
+    "distinctSizesMax": 4,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     4,
+     8
+    ],
+    "reason": "a title (22), row text (14), meta (12/13); dense but on the grid",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     4,
+     8,
+     12,
+     16,
+     24
+    ],
+    "typeSizesPxLine": [
+     "12/16",
+     "13/18",
+     "14/20",
+     "22/28"
+    ]
+   },
+   "what": "a collection to scan and open one of (rooms, meetings, tasks, models, keys, logs, workspaces, plans)"
+  },
+  "live-session": {
+   "judgeQuestions": [
+    "In which screenshot is it more obvious that something is happening right now (recording, running)?",
+    "In which screenshot is the control that stops or takes over easier to find?",
+    "Which screenshot gives more of the screen to the live content itself?",
+    "Which screenshot makes it clearer who is in control at this moment (the person or the assistant)?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": true,
+     "desktop": "<=2",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "a live run keeps the rail and the Tasks sidebar; a meeting has no navigation at all (override below)"
+    },
+    "E10": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "=1",
+     "name": "primary actions",
+     "phone": "=1",
+     "reason": "Stop in a meeting, Take the wheel / Hand back in a run: the only filled control"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=8",
+     "name": "visible actions in main",
+     "phone": "<=6",
+     "reason": "one toolbar"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": true,
+     "desktop": "<=0.15",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.20",
+     "reason": "the stage or the live view is the content and starts at the top"
+    },
+    "E8": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "boxes before content",
+     "phone": "=0",
+     "reason": "nothing boxed before the stage"
+    },
+    "E9": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "empty boxes",
+     "phone": "=0",
+     "reason": "no empty boxes around a live view"
+    }
+   },
+   "screenOverrides": {
+    "meeting-live": {
+     "E1": {
+      "desktop": "=0",
+      "phone": "=0",
+      "reason": "same"
+     },
+     "E2": {
+      "desktop": "=0",
+      "phone": "=0",
+      "reason": "the toolbar is a control group, not navigation; the bottom bar hides"
+     }
+    },
+    "meeting-prejoin": {
+     "E1": {
+      "desktop": "=0",
+      "phone": "=0",
+      "reason": "no rail and no bottom bar while a meeting runs (ia-reset D5)"
+     }
+    }
+   },
+   "screens": [
+    "meeting-live",
+    "meeting-prejoin",
+    "task-run-driving",
+    "task-run-live"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "whitespaceRatioMin": 0.2
+    },
+    "distinctColorsMax": 8,
+    "distinctSizesMax": 4,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     8,
+     12
+    ],
+    "reason": "the live view dominates; text is captions, step lines and a timer with tabular numerals",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     4,
+     8,
+     12,
+     16
+    ],
+    "typeSizesPxLine": [
+     "12/16",
+     "13/18",
+     "14/20",
+     "16/24"
+    ]
+   },
+   "what": "something happening now that the person watches or steers (the meeting recorder, a live browser run, taking the wheel)"
+  },
+  "onboarding": {
+   "judgeQuestions": [
+    "Which screenshot asks for less before letting the person in?",
+    "In which screenshot is it clearer what happens after the button is pressed?",
+    "Which screenshot says more plainly what the product will do for the person, in one line?",
+    "Which screenshot looks more trustworthy for typing an e-mail address or granting a microphone?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "no navigation before the first value"
+    },
+    "E10": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "=0",
+     "reason": "no bars either: one task on the screen"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "=1",
+     "name": "primary actions",
+     "phone": "=1",
+     "reason": "one way forward"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=6",
+     "name": "visible actions in main",
+     "phone": "<=5",
+     "reason": "fields of one step, the primary, one alternative"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": true,
+     "desktop": "<=0.40",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.40",
+     "reason": "centred forms start lower"
+    },
+    "E8": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "boxes before content",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E9": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    }
+   },
+   "screens": [
+    "consent",
+    "guest-join",
+    "login",
+    "onboarding-first-run",
+    "register",
+    "welcome-from-guest"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "whitespaceRatioMin": 0.55
+    },
+    "distinctColorsMax": 7,
+    "distinctSizesMax": 4,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     8,
+     12
+    ],
+    "reason": "one heading 22, body 14/16; the calmest screens of the product",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     8,
+     12,
+     16,
+     24,
+     32
+    ],
+    "typeSizesPxLine": [
+     "13/18",
+     "14/20",
+     "16/24",
+     "22/28"
+    ]
+   },
+   "what": "sign in, sign up, consent, the first run, a guest's join page"
+  },
+  "public-page": {
+   "judgeQuestions": [
+    "Which screenshot says what this page is, and for whom, in the first screen?",
+    "In which screenshot is the one next step (sign up, book, verify) more obvious?",
+    "Which screenshot shows proof (a real number, a real example, a verified mark) rather than claims?",
+    "Which screenshot would you trust more if you arrived from a link a stranger sent you?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "no app shell on a public page"
+    },
+    "E10": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": true,
+     "desktop": "<=1",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "one sticky top bar is normal on a public page"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "<=1",
+     "name": "primary actions",
+     "phone": "<=1",
+     "reason": "one call to action in the first viewport; a legal page may have none"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=10",
+     "name": "visible actions in main",
+     "phone": "<=6",
+     "reason": "counted in the first viewport only"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": true,
+     "desktop": "<=0.20",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.25",
+     "reason": "the headline or the object starts near the top"
+    },
+    "E8": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "boxes before content",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E9": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    }
+   },
+   "screens": [
+    "access-wall",
+    "directory",
+    "legal",
+    "not-found",
+    "public-front-room",
+    "public-model",
+    "public-model-catalogue",
+    "public-pack",
+    "public-profile",
+    "receipt-verify",
+    "site-home",
+    "site-join",
+    "site-pricing"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "whitespaceRatioMin": 0.5
+    },
+    "distinctColorsMax": 10,
+    "distinctSizesMax": 5,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     8,
+     12
+    ],
+    "reason": "display sizes allowed (30, and up to 6rem on the marketing site per standard line 103 - the site is outside the app scale)",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     8,
+     16,
+     24,
+     32,
+     48
+    ],
+    "typeSizesPxLine": [
+     "14/20",
+     "16/24",
+     "18/26",
+     "22/28",
+     "30/36"
+    ]
+   },
+   "what": "a page with no session: public catalogue, profile, front room, receipt verify, directory, legal, the marketing site, 404 and 403"
+  },
+  "settings": {
+   "judgeQuestions": [
+    "In which screenshot do you find a named setting (for example 'notifications') faster from the list on the left?",
+    "Which screenshot explains what each setting does in fewer, plainer words?",
+    "Which screenshot makes it clearer whether a change is saved?",
+    "Which screenshot shows fewer settings that only an engineer would understand?"
+   ],
+   "limits": {
+    "E1": {
+     "adjusted": false,
+     "desktop": "<=2",
+     "name": "navigation columns before content",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E10": {
+     "adjusted": true,
+     "desktop": "=0",
+     "name": "repeated controls",
+     "phone": "=0",
+     "reason": "'Connect' on each provider row counts once per list; the same control twice outside a list is the Meetings defect"
+    },
+    "E11": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "walls",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E12": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "untranslated keys",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E2": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "navigation bars",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E3": {
+     "adjusted": true,
+     "desktop": "<=1",
+     "name": "primary actions",
+     "phone": "<=1",
+     "reason": "none on a clean form; Save appears when the form is dirty; a row's own action (Invite, Connect) otherwise (ia-reset D7)"
+    },
+    "E4": {
+     "adjusted": true,
+     "desktop": "<=20",
+     "name": "visible actions in main",
+     "phone": "<=12",
+     "reason": "a form legitimately has many inputs; grouped under headings"
+    },
+    "E5": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "machine text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E6": {
+     "adjusted": false,
+     "desktop": "=0",
+     "name": "clipped text",
+     "phone": "=0",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E7": {
+     "adjusted": false,
+     "desktop": "<=0.25",
+     "name": "content start (share of viewport height)",
+     "phone": "<=0.30",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E8": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "boxes before content",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    },
+    "E9": {
+     "adjusted": false,
+     "desktop": "<=1",
+     "name": "empty boxes",
+     "phone": "<=1",
+     "reason": "base limit of ia-reset section E"
+    }
+   },
+   "screens": [
+    "ops-settings",
+    "room-info",
+    "room-shop",
+    "router-budgets",
+    "router-routing",
+    "router-settings",
+    "settings-account",
+    "settings-budgets",
+    "settings-calendar",
+    "settings-channels",
+    "settings-devices",
+    "settings-general",
+    "settings-list",
+    "settings-memory",
+    "settings-models",
+    "settings-playbooks",
+    "settings-privacy",
+    "settings-public",
+    "settings-referrals",
+    "settings-registry",
+    "settings-team",
+    "settings-workspace"
+   ],
+   "style": {
+    "confidence": "guess",
+    "density": {
+     "whitespaceRatioMin": 0.4
+    },
+    "distinctColorsMax": 9,
+    "distinctSizesMax": 5,
+    "lowContrastMax": 0,
+    "onScale4Min": 0.95,
+    "radiusPx": [
+     4,
+     8
+    ],
+    "reason": "label 13/14, help 12/13, group head 16; calm, mostly neutral",
+    "shadowsMax": 1,
+    "spacingStepsPx": [
+     4,
+     8,
+     12,
+     16,
+     24
+    ],
+    "typeSizesPxLine": [
+     "12/16",
+     "13/18",
+     "14/20",
+     "16/24",
+     "22/28"
+    ]
+   },
+   "what": "a grouped list beside one setting's form (Settings, Room info, router and console settings)"
+  }
+ },
+ "basis": "limits start from docs/design/ia/2026-11-12-ia-reset.md section E; an adjusted limit carries its one-line reason",
+ "judgeProtocol": {
+  "answers": "A | B | same - one word per question, then one sentence naming what in the picture decided it",
+  "blind": "the judge is not told which screenshot is ours; product names and logos are not masked (unproven whether they should be)",
+  "inputs": "the two screenshots and the two metric blocks (E1-E12, style)",
+  "pairing": "ours against one reference, same screen, same state, same viewport",
+  "promptVersion": "1",
+  "runs": "3 per pair with the order swapped; a verdict counts at 3/3, else `split`",
+  "temperature": 0
+ },
+ "schema": "ui-archetypes/1",
+ "seatOverrides": {
+  "admin-dev": {
+   "E5": {
+    "desktop": "ids allowed only inside [data-id]; JSON allowed only inside a code block; =0 for dotted keys and untranslated snake_case labels",
+    "phone": "n/a (Developer view is absent on the phone)",
+    "reason": "ia-reset C6: Developer view is where the machine may show"
+   }
+  },
+  "operator": {
+   "E5": {
+    "desktop": "=0 for JSON, dotted keys and snake_case; ids allowed only inside [data-id]",
+    "phone": "same",
+    "reason": "ia-reset section E, E5 console rule"
+   }
+  },
+  "ref": {
+   "all": "limits are not gates for a reference product: the numbers are recorded and compared, never failed"
+  }
+ },
+ "stateRules": {
+  "empty": {
+   "E3": "=1 on Home, Rooms, Meetings, Tasks and on every empty state that can create (ia-reset E3)",
+   "E9": "=1: exactly one empty state, with what is empty, the next action and the benefit (standard section 6)"
+  },
+  "error": {
+   "E11": "=0: an error names what failed and offers one way on (retry, go back, ask for help); a bare 'Something went wrong' is a wall",
+   "E5": "=0: no status code, stack or key in the message"
+  },
+  "loading-skeleton": {
+   "E6": "not measured",
+   "E9": "not measured (skeleton blocks are not empty boxes)",
+   "note": "only layout stability is compared: the skeleton's regions must match the populated regions within 8 px (proposed, unproven)"
+  },
+  "long": {
+   "E6": "=0 is the point of this state: long names, long lists and long messages must not clip or push the layout sideways",
+   "E7": "unchanged: more data must not push content down"
+  }
+ },
+ "styleSystem": {
+  "colour": {
+   "accentCount": 1,
+   "borderNeutralsMax": 2,
+   "hexValues": "not fixed here: read from the token file by the probe (unproven where the DTCG file lives); the targets are counts",
+   "rule": "structure carries hierarchy, not colour (standard 13 rule 2): neutrals for text, surface and border; ONE accent; state colours (danger, warning, success) only on state",
+   "stateColoursMax": 3,
+   "surfaceNeutralsMax": 3,
+   "textNeutralsMax": 3
+  },
+  "confidence": "guess",
+  "distinctColorsMaxSystem": 12,
+  "distinctSizesMaxSystem": 7,
+  "distinctSizesNote": "the standard's scale has 7 steps while the lanes file says '<= 6 type sizes': the per-archetype caps below are <= 5, the system union <= 7 - the founder or the orchestrator settles 6 against 7",
+  "fontFamilies": [
+   "Inter"
+  ],
+  "lowContrastMax": 0,
+  "onScale4Min": 0.95,
+  "radiusNote": "a fully round avatar or pill (9999px / 50%) is allowed and not counted as a radius step",
+  "radiusSetPx": [
+   4,
+   8,
+   12
+  ],
+  "shadowsMax": 1,
+  "source": "docs/design/13-massrelay-design-standard.md line 99 (type scale), line 253 (spacing 4-pt, radii 4/8/12, shadows none in light / one elevation step), lines 311-312 (8 between controls, 16 between groups, 24/32 between sections); the three system caps come from CMP-UI-1-lanes.md ('<= 6 type sizes, <= 12 colours, >= 0.95 on the 4px scale'). docs/STATUS.md lists the standard as unreviewed.",
+  "spacingScalePx": [
+   4,
+   8,
+   12,
+   16,
+   24,
+   32,
+   48
+  ],
+  "typeScalePxLine": [
+   "12/16",
+   "13/18",
+   "14/20",
+   "16/24",
+   "18/26",
+   "22/28",
+   "30/36"
+  ]
+ },
+ "version": "1"
+}

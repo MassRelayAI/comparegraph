@@ -167,6 +167,20 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
             Err(e) => set.invalid.push(("registry.json".into(), e)),
         }
     }
+    // section 11: the design lane's per-archetype limits (ui-archetypes/1) fill the registry's; other keys (rowHeightMaxPx, overrides, rules) stay in the file
+    if dir.join("archetypes.json").exists() {
+        match read_json::<UiArchetypes>(&dir.join("archetypes.json")) {
+            Ok(a) if a.problems().is_empty() => {
+                if let Some(r) = set.registry.as_mut() {
+                    for (name, e) in a.archetypes {
+                        r.archetypes.entry(name).or_insert(e.limits);
+                    }
+                }
+            }
+            Ok(a) => set.invalid.push(("archetypes.json".into(), a.problems().join("; "))),
+            Err(e) => set.invalid.push(("archetypes.json".into(), e)),
+        }
+    }
     for (product, ppath, is_dir) in entries(&dir)? {
         if !is_dir || TOP_RESERVED.contains(&product.as_str()) || !token_ok(&product) {
             continue;
