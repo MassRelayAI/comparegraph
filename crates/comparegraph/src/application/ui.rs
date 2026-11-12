@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 pub use super::ui_limits::{DEFAULT_MAX_NODES, DEFAULT_PAGE_SIZE, MAX_NODES, MAX_PAGE_SIZE};
-use super::ui_limits::{MAX_BLANK_LISTED, MAX_FILE, MAX_INVALID_LISTED, PHONE_MAX_WIDTH};
+use super::ui_limits::{MAX_BLANK_LISTED, MAX_FILE, MAX_INVALID_LISTED, PHONE_MAX_WIDTH, TABLET_CONTENT_START_PERCENT, TABLET_MAX_ACTIONS, TABLET_MAX_NAV_COLUMNS};
 /// Top-level directories of `ui/` that are not products.
 const TOP_RESERVED: &[&str] = &["blobs", "snapshots", "runs", "journeys", "coverage"];
 const SEAT_PREFERENCE: &[&str] = &["member", "admin", "ref", "operator", "admin-dev", "guest"];
@@ -401,8 +401,8 @@ fn select<'a>(set: &'a UiSet, product: &str, screen: &str, state: &str, viewport
         let cands: Vec<String> = in_state.iter().map(|l| l.ev.stem()).collect();
         return Err(AppError::not_found_with(format!("`{product}/{screen}/{state}` has no capture for viewport {} seat {} (captured: {})", viewport.unwrap_or("any"), seat.unwrap_or("any"), available(&in_state)), &format!("{}/{}", viewport.unwrap_or("any"), seat.unwrap_or("any")), cands, "pass --viewport and --seat for one of the captured pairs"));
     }
-    if viewport.is_none() && c.iter().any(|l| l.ev.viewport == DEFAULT_VIEWPORT) {
-        c.retain(|l| l.ev.viewport == DEFAULT_VIEWPORT);
+    if viewport.is_none() && c.iter().any(|l| is_default_viewport(&l.ev.viewport)) {
+        c.retain(|l| is_default_viewport(&l.ev.viewport));
     }
     c.sort_by(|a, b| (seat_rank(&a.ev.seat), &a.ev.viewport, &a.ev.seat).cmp(&(seat_rank(&b.ev.seat), &b.ev.viewport, &b.ev.seat)));
     Ok(c[0])
@@ -414,13 +414,30 @@ fn archetype_limits(set: &UiSet, screen: &str) -> (Option<String>, BTreeMap<Stri
         None => (None, BTreeMap::new()),
     }
 }
-/// The device class (the column of the archetype limits) of a viewport "WxH".
-fn device_of(viewport: &str) -> &'static str {
-    let w = viewport.split('x').next().and_then(|w| w.parse::<u32>().ok()).unwrap_or(u32::MAX);
-    if w <= PHONE_MAX_WIDTH {
-        "phone"
-    } else {
-        "desktop"
+/// The device class (the column of the archetype limits) of a capture: its own `device.class`, else the class of a known device id, else the width of a legacy "WxH".
+fn class_of(ev: &UiEvidence) -> &'static str {
+    let named = ev.device.as_ref().map(|d| d.class.as_str()).or_else(|| known_device_class(&ev.viewport));
+    match named {
+        Some("tablet") => "tablet",
+        Some("phone") => "phone",
+        Some(_) => "desktop",
+        None => {
+            let w = ev.viewport.split('x').next().and_then(|w| w.parse::<u32>().ok()).unwrap_or(u32::MAX);
+            if w <= PHONE_MAX_WIDTH {
+                "phone"
+            } else {
+                "desktop"
+            }
+        }
+    }
+}
+/// The tablet limit used when the archetype has no `tablet` column: <= 1 side column, <= 12 actions, content start <= 0.25.
+fn tablet_default(id: &str) -> Option<String> {
+    match id {
+        "E1" => Some(format!("<={TABLET_MAX_NAV_COLUMNS}")),
+        "E4" => Some(format!("<={TABLET_MAX_ACTIONS}")),
+        "E7" => Some(format!("<={}", TABLET_CONTENT_START_PERCENT as f64 / 100.0)),
+        _ => None,
     }
 }
 fn parse_limit(s: &str) -> Option<(&'static str, f64)> {
@@ -453,9 +470,20 @@ fn judge(set: &UiSet, ev: &UiEvidence, id: &str, m: &Metric) -> Judged {
         return probe("seat-rule");
     }
     let (_, lim) = archetype_limits(set, &ev.screen);
-    let Some(text) = lim.get(id).and_then(|e| e.get(device_of(&ev.viewport)).or_else(|| e.get("desktop"))).and_then(|v| v.as_str()) else {
-        return probe("probe-default");
+    let class = class_of(ev);
+    let column = lim.get(id).and_then(|e| e.get(class)).and_then(|v| v.as_str()).map(str::to_string);
+    // a tablet with no `tablet` column is judged by the tablet defaults for E1/E4/E7 (named in limitSource), by the desktop column for the rest
+    let (text, source) = match column {
+        Some(t) => (t, "registry"),
+        None => match (class == "tablet").then(|| tablet_default(id)).flatten() {
+            Some(t) => (t, "tablet-default"),
+            None => match lim.get(id).and_then(|e| e.get("desktop")).and_then(|v| v.as_str()) {
+                Some(t) => (t.to_string(), "registry"),
+                None => return probe("probe-default"),
+            },
+        },
     };
+    let text = text.as_str();
     let Some((op, n)) = parse_limit(text) else {
         return probe("probe-default");
     };
@@ -466,7 +494,7 @@ fn judge(set: &UiSet, ev: &UiEvidence, id: &str, m: &Metric) -> Judged {
         ">" => v > n,
         _ => (v - n).abs() < 1e-9,
     });
-    Judged { pass, limit: json!(text), source: "registry", probe_pass: m.pass }
+    Judged { pass, limit: json!(text), source, probe_pass: m.pass }
 }
 /// Metrics passed under the engine's verdict.
 fn pass_count_of(set: &UiSet, ev: &UiEvidence) -> usize {
@@ -530,7 +558,13 @@ pub fn screens(root: &Path, max_nodes: usize, product: &str, o: &Opts) -> Result
 
 fn one_side(set: &UiSet, l: &Loaded) -> Value {
     let e = &l.ev;
-    json!({ "product": e.product, "version": e.version, "seat": e.seat, "route": e.route, "domHash": e.dom_hash, "pass": pass_count_of(set, e), "unstable": e.unstable, "image": set.image(&e.image) })
+    let mut v = json!({ "product": e.product, "version": e.version, "seat": e.seat, "route": e.route, "domHash": e.dom_hash, "pass": pass_count_of(set, e), "unstable": e.unstable, "image": set.image(&e.image) });
+    if e.device.is_some() || e.support.is_some() {
+        v["device"] = json!(e.device.as_ref().map(|d| d.id.clone()));
+        v["deviceClass"] = json!(class_of(e));
+        v["support"] = json!(e.support);
+    }
+    v
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -559,6 +593,19 @@ pub fn show(root: &Path, max_nodes: usize, product: &str, screen: &str, state: &
         "image": set.image(&e.image), "captures": others,
     });
     let mut v = v;
+    if e.device.is_some() || e.support.is_some() {
+        // only captures that carry the CMP-UI-1i blocks: older evidence prints exactly what it printed before
+        v["deviceClass"] = json!(class_of(e));
+        v["device"] = json!(e.device);
+        v["support"] = json!(e.support);
+    }
+    if let Some(t) = &e.touch {
+        v["touch"] = json!(t);
+        v["touchLine"] = json!(touch_line(t));
+    }
+    if let Some(s) = &e.support {
+        v["supportLine"] = json!(support_line(s));
+    }
     if let Some(n) = &e.net {
         v["net"] = json!(n);
         v["netLine"] = json!(n.line());
@@ -581,9 +628,15 @@ fn resolve_screen(set: &UiSet, product: &str, target: &str) -> Result<String> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str, state: &str, viewport: Option<&str>, seat: Option<&str>, ref_seat: Option<&str>, o: &Opts) -> Result<Value> {
+pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str, state: &str, viewport: Option<&str>, ref_viewport: Option<&str>, seat: Option<&str>, ref_seat: Option<&str>, o: &Opts) -> Result<Value> {
     for (w, v) in [("target", target), ("--ours", ours), ("--ref", refp)] {
         need_token(w, v)?;
+    }
+    // a comparison is within ONE device, exactly as it is within one state: a phone against a desktop proves nothing about either layout
+    if let (Some(a), Some(b)) = (viewport, ref_viewport) {
+        if a != b {
+            return Err(bad(format!("refused: --viewport {a} against --ref-viewport {b} is a cross-device comparison; a comparison is only within the same screen, state and device")));
+        }
     }
     let set = open(root, max_nodes, Some(&[ours, refp]), EV)?;
     need_product_pub(&set, ours)?;
@@ -592,9 +645,14 @@ pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str,
     if so != sr {
         return Err(bad(format!("refused: `{target}` is screen `{so}` for {ours} but `{sr}` for {refp}; a comparison is only within the same screen, state and viewport")));
     }
-    let vp = viewport.unwrap_or(DEFAULT_VIEWPORT);
-    let (a, b) = (select(&set, ours, &so, state, Some(vp), seat, o)?, select(&set, refp, &sr, state, Some(vp), ref_seat, o)?);
+    let vp_want = viewport.or(ref_viewport);
+    let (a, b) = (select(&set, ours, &so, state, vp_want, seat, o)?, select(&set, refp, &sr, state, vp_want, ref_seat, o)?);
     let (ea, eb) = (&a.ev, &b.ev);
+    let vp = ea.viewport.as_str();
+    let same_device = ea.viewport == eb.viewport || (is_default_viewport(&ea.viewport) && is_default_viewport(&eb.viewport));
+    if !same_device || class_of(ea) != class_of(eb) {
+        return Err(bad(format!("refused: {ours} was captured on `{}` ({}) and {refp} on `{}` ({}); a comparison is only within the same device (pass --viewport for one both have)", ea.viewport, class_of(ea), eb.viewport, class_of(eb))));
+    }
     let drift = evidence_drift(ea, eb);
     if !drift.is_empty() && !o.allow_drift {
         return Err(drift_error(&drift, "the two captures"));
@@ -643,8 +701,11 @@ fn family_rows(ui_root: &Path, root: &Path, family: &str) -> Option<Vec<String>>
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state: &str, viewport: Option<&str>, net: bool, o: &Opts) -> Result<Value> {
+pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state: &str, viewport: Option<&str>, devices: Option<&str>, net: bool, o: &Opts) -> Result<Value> {
     need_token("family", family)?;
+    if devices.is_some() && viewport.is_some() {
+        return Err(bad("--devices and --viewport both choose the columns: give one".into()));
+    }
     let set = open(ui_root, max_nodes, None, EV)?;
     let vp = viewport.unwrap_or(DEFAULT_VIEWPORT);
     let mapped: Vec<&MapRow> = set.map.iter().filter(|m| m.family == family).collect();
@@ -666,7 +727,7 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
                 mapped
                     .iter()
                     .filter(|m| &m.row_id == id && &&m.product == p)
-                    .filter_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state && l.ev.viewport == vp && l.ev.unstable != stable).map(|l| pass_count_of(&set, &l.ev)).max())
+                    .filter_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state && (if viewport.is_some() { l.ev.viewport == vp } else { is_default_viewport(&l.ev.viewport) }) && l.ev.unstable != stable).map(|l| pass_count_of(&set, &l.ev)).max())
                     .max()
             };
             // `?` = the product was not read (file cap), never confused with `-` (read, nothing captured); unstable captures are not scored
@@ -679,6 +740,9 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
             cells.insert(p.to_string(), cell);
         }
         rows.push(json!({ "row": id, "cells": cells }));
+    }
+    if let Some(d) = devices {
+        return matrix_devices(&set, ui_root, max_nodes, family, state, d, &products, &mapped, &ids, lims, o);
     }
     let (rows, next, total) = o.page(&rows);
     let mut out = json!({ "family": family, "state": state, "viewport": vp, "products": products, "items": rows, "page": { "next": next, "total": total } });
@@ -701,6 +765,107 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
     Ok(set.finish(out, &lims))
 }
 
+fn touch_line(t: &Touch) -> String {
+    format!("{} of {} touch targets under {}px; {} hover-only affordances; {} small text elements", t.failing_count, t.checked, t.min_target_px, t.hover_only_count, t.small_text)
+}
+fn support_line(s: &Support) -> String {
+    let mut l = s.class.clone();
+    if !s.reasons.is_empty() {
+        l.push_str(&format!(": {}", s.reasons.join("; ")));
+    }
+    if let Some(t) = &s.target {
+        l.push_str(&format!(" -> {t}"));
+    }
+    if let Some(m) = &s.message {
+        l.push_str(&format!(" \"{m}\""));
+    }
+    l
+}
+/// The cells `n/a (absent)` the probe's coverage files state, as (product, screen, device) -> source. At most `max_nodes` coverage files are read.
+fn absent_cells(ui_root: &Path, max_nodes: usize, lims: &mut Vec<Limitation>) -> BTreeMap<(String, String, String), String> {
+    let dir = ui_dir(ui_root).join("coverage");
+    let mut out = BTreeMap::new();
+    let Ok(rd) = std::fs::read_dir(&dir) else { return out };
+    let mut files: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect();
+    files.sort();
+    if files.len() > max_nodes {
+        lims.push(Limitation::new("coverage_truncated", format!("{} coverage files, only the first {max_nodes} read for `absent` cells", files.len())));
+        files.truncate(max_nodes);
+    }
+    for f in files {
+        match read_json::<UiCoverage>(&f) {
+            Ok(c) => {
+                for cell in c.cells.into_iter().filter(|x| x.support.as_deref() == Some("absent")) {
+                    out.insert((cell.product, cell.screen, cell.viewport), cell.source.unwrap_or(cell.why));
+                }
+            }
+            Err(e) => lims.push(Limitation::new("coverage_unreadable", format!("{}: {e}", f.display()))),
+        }
+    }
+    out
+}
+
+/// `ui matrix --devices <ids|all>`: the rows of a family by product x device. A cell is `pass/12 <support class>`, `-` (nothing captured) or `n/a (absent)` (the probe's coverage says
+/// the product has no such screen on that device, with the source); `supportColumns` counts the classes per product and device.
+#[allow(clippy::too_many_arguments)]
+fn matrix_devices(set: &UiSet, ui_root: &Path, max_nodes: usize, family: &str, state: &str, devices: &str, products: &[&String], mapped: &[&MapRow], ids: &[String], mut lims: Vec<Limitation>, o: &Opts) -> Result<Value> {
+    let mut devs: Vec<String> = if devices == "all" {
+        set.products.iter().flat_map(|p| set.evidence_of(p).map(|l| l.ev.viewport.clone())).collect::<BTreeSet<_>>().into_iter().collect()
+    } else {
+        devices.split(',').map(|d| d.trim().to_string()).filter(|d| !d.is_empty()).collect()
+    };
+    devs.sort_by_key(|d| (class_rank(known_device_class(d).unwrap_or("desktop")), d.clone()));
+    devs.dedup();
+    if devs.is_empty() {
+        return Err(bad("--devices names no device (use device ids such as desktop-1440,iphone, or `all`)".into()));
+    }
+    for d in &devs {
+        if !viewport_ok(d) {
+            return Err(bad(format!("--devices: `{d}` is neither a device id nor <width>x<height>")));
+        }
+    }
+    let absent = absent_cells(ui_root, max_nodes, &mut lims);
+    let mut rows = vec![];
+    let mut counts: BTreeMap<String, BTreeMap<String, BTreeMap<&'static str, usize>>> = BTreeMap::new();
+    for id in ids {
+        let (mut cells, mut support) = (BTreeMap::new(), BTreeMap::new());
+        for p in products {
+            let (mut pc, mut ps) = (BTreeMap::new(), BTreeMap::new());
+            for d in &devs {
+                let screens: Vec<&str> = mapped.iter().filter(|m| &m.row_id == id && &&m.product == p).map(|m| m.screen.as_str()).collect();
+                let best = screens
+                    .iter()
+                    .flat_map(|s| set.evidence_of(p).filter(move |l| l.ev.screen == *s && l.ev.state == state && &l.ev.viewport == d))
+                    .filter(|l| !l.ev.unstable)
+                    .max_by_key(|l| pass_count_of(set, &l.ev));
+                let (cell, cls): (String, &'static str) = match best {
+                    Some(l) => {
+                        let c = l.ev.support.as_ref().map(|s| s.class.as_str()).unwrap_or("unknown");
+                        (format!("{}/{METRIC_COUNT} {c}", pass_count_of(set, &l.ev)), SUPPORT_CLASSES.iter().copied().find(|x| *x == c).unwrap_or("unknown"))
+                    }
+                    None => match screens.iter().find_map(|s| absent.get(&(p.to_string(), s.to_string(), d.clone()))) {
+                        Some(_) => ("n/a (absent)".to_string(), "absent"),
+                        None if set.unread.contains(p.as_str()) => ("?".to_string(), "unread"),
+                        None => ("-".to_string(), "none"),
+                    },
+                };
+                *counts.entry(p.to_string()).or_default().entry(d.clone()).or_default().entry(cls).or_default() += 1;
+                ps.insert(d.clone(), cls);
+                pc.insert(d.clone(), cell);
+            }
+            cells.insert(p.to_string(), pc);
+            support.insert(p.to_string(), ps);
+        }
+        rows.push(json!({ "row": id, "cells": cells, "support": support }));
+    }
+    let (rows, next, total) = o.page(&rows);
+    let out = json!({ "family": family, "state": state, "devices": devs, "products": products, "items": rows, "supportColumns": counts, "page": { "next": next, "total": total } });
+    Ok(set.finish(out, &lims))
+}
+fn class_rank(c: &str) -> usize {
+    DEVICE_CLASSES.iter().position(|x| *x == c).unwrap_or(0)
+}
+
 pub fn system(root: &Path, max_nodes: usize, product: &str) -> Result<Value> {
     need_token("product", product)?;
     let set = open(root, max_nodes, Some(&[product]), Want { evidence: true, systems: true, ..Default::default() })?;
@@ -710,7 +875,7 @@ pub fn system(root: &Path, max_nodes: usize, product: &str) -> Result<Value> {
         Some(Ok(s)) => ("system.json", s.clone(), 0),
         Some(Err(e)) => return Err(bad(format!("{product}/system.json: {e}"))),
         None => {
-            let all: Vec<&Style> = set.evidence_of(product).filter(|l| l.ev.viewport == DEFAULT_VIEWPORT).map(|l| &l.ev.style).collect();
+            let all: Vec<&Style> = set.evidence_of(product).filter(|l| is_default_viewport(&l.ev.viewport)).map(|l| &l.ev.style).collect();
             let s = union_styles(&all).ok_or_else(|| AppError::NotFound(format!("`{product}` has no system.json and no {DEFAULT_VIEWPORT} evidence to derive one from")))?;
             lims.push(Limitation::new("system_derived", format!("no {product}/system.json: derived as the union of {} {DEFAULT_VIEWPORT} captures", all.len())));
             ("derived", s, all.len())

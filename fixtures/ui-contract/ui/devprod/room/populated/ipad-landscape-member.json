@@ -1,0 +1,260 @@
+{
+  "archetype": "conversation",
+  "device": {
+    "class": "tablet",
+    "clippedNav": [],
+    "descriptor": "iPad Pro 11",
+    "deviceScaleFactor": 2,
+    "devicesVersion": "1",
+    "engine": "webkit",
+    "hasTouch": true,
+    "id": "ipad-landscape",
+    "isMobile": true,
+    "orientation": "landscape",
+    "overflowPx": 0,
+    "size": "1180x820"
+  },
+  "domHash": "e4427e86e57626b629ae5ab83126d07d04ad348d08b70184f1d5b810d85449e4",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "0000000000000000",
+    "file": "blobs/217742112754efa94f15ad99781531e8989561e0a98e0165ee1cf31db418b3f6.png",
+    "sha256": "217742112754efa94f15ad99781531e8989561e0a98e0165ee1cf31db418b3f6"
+  },
+  "key": "devprod@contract-1/room/populated/ipad-landscape/member/en-US/light",
+  "layout": {
+    "contentStart": null,
+    "primary": null,
+    "regions": [
+      {
+        "h": 187,
+        "kind": "main",
+        "w": 1180,
+        "x": 0,
+        "y": 21
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:55:17.224Z",
+    "url": "http://127.0.0.1:47831/dev-hover.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 2,
+      "pass": true,
+      "value": 0
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E4": {
+      "detail": [],
+      "limit": 14,
+      "pass": true,
+      "value": 1
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "none"
+      ],
+      "limit": 0.25,
+      "pass": false,
+      "value": null
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 745,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 4,
+      "path": "/dev-hover.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 0,
+      "domContentLoadedMs": 0,
+      "firstContentfulPaintMs": 0,
+      "loadMs": 0
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 2,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 820,
+        "width": 1180
+      }
+    },
+    "notes": [
+      "E8: no content-start element, counted 0",
+      "fallback used for E7: no [data-content-start] and no row-like element found"
+    ],
+    "version": "1"
+  },
+  "product": "devprod",
+  "route": "/dev-hover.html",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "member",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": null,
+      "background": {
+        "#c0c0c0": 1
+      },
+      "border": {
+        "#000000": 1,
+        "#c0c0c0": 1
+      },
+      "distinctColors": 3,
+      "lowContrast": [],
+      "text": {
+        "#000000": 2,
+        "#000000cc": 1
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0,
+      "textPerKpx": 0.03,
+      "whitespaceRatio": 0.83
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 2,
+      "radius": {},
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 5,
+      "onScale4": 0.4,
+      "values": {
+        "16px": 4,
+        "21.44px": 2,
+        "2px": 1,
+        "3px": 1,
+        "6px": 2
+      }
+    },
+    "type": {
+      "distinctSizes": 3,
+      "families": [
+        "Arial",
+        "MS Shell Dlg"
+      ],
+      "lineHeights": {
+        "normal": 3
+      },
+      "sizes": {
+        "13px": 1,
+        "16px": 1,
+        "32px": 1
+      },
+      "weights": {
+        "400": 2,
+        "700": 1
+      }
+    }
+  },
+  "support": {
+    "class": "full",
+    "reasons": []
+  },
+  "theme": "light",
+  "touch": {
+    "checked": 1,
+    "failing": [],
+    "failingCount": 0,
+    "hoverOnly": [
+      {
+        "element": "button.del",
+        "label": "Delete first",
+        "reveals": "opacity",
+        "rule": ".row:hover .del"
+      }
+    ],
+    "hoverOnlyCount": 1,
+    "minTargetPx": 44,
+    "smallText": 0
+  },
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "ipad-landscape"
+}

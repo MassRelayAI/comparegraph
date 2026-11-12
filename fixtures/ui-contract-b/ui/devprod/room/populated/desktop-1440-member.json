@@ -1,0 +1,252 @@
+{
+  "archetype": "conversation",
+  "device": {
+    "class": "desktop",
+    "clippedNav": [],
+    "descriptor": "Desktop Chrome",
+    "deviceScaleFactor": 1,
+    "devicesVersion": "1",
+    "engine": "chromium",
+    "hasTouch": false,
+    "id": "desktop-1440",
+    "isMobile": false,
+    "orientation": null,
+    "overflowPx": 0,
+    "size": "1440x900"
+  },
+  "domHash": "a1acad1c67615f57c81508860fc802142b448ad27a85a6fe71ff66ba07462cde",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "0000000000000000",
+    "file": "blobs/df94930d8d2989fd28cfbda5185f49dd32bfff73cd3f71563e441ccd4a4761eb.png",
+    "sha256": "df94930d8d2989fd28cfbda5185f49dd32bfff73cd3f71563e441ccd4a4761eb"
+  },
+  "key": "devprod@contract-1/room/populated/desktop-1440/member/en-US/light",
+  "layout": {
+    "contentStart": {
+      "how": "data-content-start",
+      "y": 104
+    },
+    "primary": {
+      "name": "New room",
+      "x": 20,
+      "y": 124
+    },
+    "regions": [
+      {
+        "h": 104,
+        "kind": "topbar",
+        "w": 1440,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "h": 153,
+        "kind": "main",
+        "w": 1440,
+        "x": 0,
+        "y": 104
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:55:37.272Z",
+    "url": "http://127.0.0.1:47831/dev-responsive.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 2,
+      "pass": true,
+      "value": 0
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [
+        "New room"
+      ],
+      "limit": 1,
+      "pass": true,
+      "value": 1
+    },
+    "E4": {
+      "detail": [],
+      "limit": 14,
+      "pass": true,
+      "value": 2
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "data-content-start"
+      ],
+      "limit": 0.25,
+      "pass": true,
+      "value": 0.12
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 776,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 1,
+      "path": "/dev-responsive.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 29,
+      "domContentLoadedMs": 5,
+      "firstContentfulPaintMs": 29,
+      "loadMs": 5
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 900,
+        "width": 1440
+      }
+    },
+    "notes": [],
+    "version": "1"
+  },
+  "product": "devprod",
+  "route": "/dev-responsive.html",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "member",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": "#0000ee",
+      "background": {
+        "#f0f0f0": 1
+      },
+      "border": {
+        "#000000": 1
+      },
+      "distinctColors": 4,
+      "lowContrast": [],
+      "text": {
+        "#000000": 1,
+        "#0000ee": 1,
+        "#1f2328": 1
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0,
+      "textPerKpx": 0.03,
+      "whitespaceRatio": 0.96
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 1,
+      "radius": {},
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 4,
+      "onScale4": 0.78,
+      "values": {
+        "16px": 6,
+        "1px": 2,
+        "4px": 8,
+        "6px": 2
+      }
+    },
+    "type": {
+      "distinctSizes": 1,
+      "families": [
+        "Arial"
+      ],
+      "lineHeights": {
+        "normal": 3
+      },
+      "sizes": {
+        "16px": 3
+      },
+      "weights": {
+        "400": 3
+      }
+    }
+  },
+  "support": {
+    "class": "full",
+    "reasons": []
+  },
+  "theme": "light",
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "desktop-1440"
+}

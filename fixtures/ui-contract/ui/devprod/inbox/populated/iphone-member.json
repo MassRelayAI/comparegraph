@@ -1,0 +1,247 @@
+{
+  "archetype": "inbox",
+  "device": {
+    "class": "phone",
+    "clippedNav": [],
+    "descriptor": "iPhone 14",
+    "deviceScaleFactor": 3,
+    "devicesVersion": "1",
+    "engine": "webkit",
+    "hasTouch": true,
+    "id": "iphone",
+    "isMobile": true,
+    "orientation": "portrait",
+    "overflowPx": 0,
+    "size": "390x844"
+  },
+  "domHash": "39d3cc303bc14be8f701563222940dac219a6f2a933c0af34507c89b6fbdc9d9",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "0000000000000000",
+    "file": "blobs/48aebee6f675581b9f9776218efa9dcd5ed88c82342983c0b5d4d1828bcc79c1.png",
+    "sha256": "48aebee6f675581b9f9776218efa9dcd5ed88c82342983c0b5d4d1828bcc79c1"
+  },
+  "key": "devprod@contract-1/inbox/populated/iphone/member/en-US/light",
+  "layout": {
+    "contentStart": null,
+    "primary": null,
+    "regions": [
+      {
+        "h": 94,
+        "kind": "main",
+        "w": 374,
+        "x": 8,
+        "y": 21
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:55:22.621Z",
+    "url": "http://127.0.0.1:47831/dev-block.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [
+        "actions=0 text=71"
+      ],
+      "limit": 0,
+      "pass": false,
+      "value": 1
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E4": {
+      "detail": [],
+      "limit": 8,
+      "pass": true,
+      "value": 0
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "none"
+      ],
+      "limit": 0.3,
+      "pass": false,
+      "value": null
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 446,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 3,
+      "path": "/dev-block.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 0,
+      "domContentLoadedMs": 0,
+      "firstContentfulPaintMs": 0,
+      "loadMs": 0
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 3,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    "notes": [
+      "E8: no content-start element, counted 0",
+      "fallback used for E7: no [data-content-start] and no row-like element found"
+    ],
+    "version": "1"
+  },
+  "product": "devprod",
+  "route": "/dev-block.html",
+  "schema": "ui-evidence/1",
+  "screen": "inbox",
+  "seat": "member",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": null,
+      "background": {},
+      "border": {},
+      "distinctColors": 1,
+      "lowContrast": [],
+      "text": {
+        "#000000": 2
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0.01,
+      "textPerKpx": 0.22,
+      "whitespaceRatio": 0.9
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 0,
+      "radius": {},
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 2,
+      "onScale4": 0.5,
+      "values": {
+        "16px": 2,
+        "21.44px": 2
+      }
+    },
+    "type": {
+      "distinctSizes": 2,
+      "families": [
+        "-webkit-standard"
+      ],
+      "lineHeights": {
+        "normal": 2
+      },
+      "sizes": {
+        "16px": 1,
+        "32px": 1
+      },
+      "weights": {
+        "400": 1,
+        "700": 1
+      }
+    }
+  },
+  "support": {
+    "class": "blocked",
+    "message": "Sorry This app is not available on mobile. Please use a desktop browser.",
+    "reasons": [
+      "the page says it is not available on this device"
+    ]
+  },
+  "theme": "light",
+  "touch": {
+    "checked": 0,
+    "failing": [],
+    "failingCount": 0,
+    "hoverOnly": [],
+    "hoverOnlyCount": 0,
+    "minTargetPx": 44,
+    "smallText": 0
+  },
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "iphone"
+}

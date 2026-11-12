@@ -59,7 +59,7 @@ fn every_ui_verb_reads_the_probes_own_output_without_invalid_evidence() {
     let p = clean(&["products"]);
     let items = p["data"]["items"].as_array().unwrap();
     let names: Vec<&str> = items.iter().map(|i| i["product"].as_str().unwrap()).collect();
-    assert_eq!(names, ["clean", "cluttered"]);
+    assert_eq!(names, ["clean", "cluttered", "devprod"]);
     assert_eq!((items[0]["evidenceFiles"].as_u64(), items[1]["evidenceFiles"].as_u64()), (Some(2), Some(4)));
     assert_eq!((items[0]["flows"].as_u64(), items[0]["navs"].as_u64(), items[1]["navs"].as_u64()), (Some(1), Some(1), Some(1)));
     assert_eq!((items[0]["system"].clone(), items[1]["system"].clone()), (Value::Bool(true), Value::Bool(true)));
@@ -78,6 +78,13 @@ fn every_ui_verb_reads_the_probes_own_output_without_invalid_evidence() {
     assert_eq!(green["data"]["pass"], 12, "the clean page passes every metric");
 
     clean(&["show", "cluttered", "room", "--viewport", "390x844"]);
+    // CMP-UI-1i: the device-keyed product (every support class once) reads clean through the same verbs
+    assert_eq!(items[2]["product"], "devprod");
+    assert_eq!(items[2]["evidenceFiles"].as_u64(), Some(8));
+    for dev in ["desktop-1440", "ipad-portrait", "ipad-landscape", "iphone", "android"] {
+        clean(&["show", "devprod", "room", "--viewport", dev]);
+    }
+    clean(&["matrix", "budgets", "--devices", "desktop-1440,iphone"]);
     clean(&["show", "cluttered", "room", "--state", "empty"]);
     let d = clean(&["diff", "room", "--ours", "cluttered", "--ref", "clean"]);
     assert!(!d["data"]["layoutDiff"].as_array().unwrap().is_empty(), "{d}");
@@ -172,7 +179,7 @@ fn the_design_lanes_real_coverage_files_are_read_with_zero_invalid_entries() {
     let m = clean(&["matrix", "budgets"]);
     let items = m["data"]["items"].as_array().unwrap();
     assert!(items.len() >= 3, "the budgets family has mapped rows: {m}");
-    assert_eq!(m["data"]["products"], serde_json::json!(["clean", "cluttered"]));
+    assert_eq!(m["data"]["products"], serde_json::json!(["clean", "cluttered", "devprod"]));
     let show = clean(&["show", "cluttered", "room"]);
     assert_eq!(show["data"]["archetype"], "conversation");
     assert!(show["data"]["metrics"][0]["archetypeLimit"].is_object(), "limits come from archetypes.json: {}", show["data"]["metrics"][0]);

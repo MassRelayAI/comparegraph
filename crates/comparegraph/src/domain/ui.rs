@@ -23,6 +23,25 @@ pub const RESERVED_DIRS: &[&str] = &["flows", "nav"];
 pub const METRIC_COUNT: usize = 12;
 pub const DEFAULT_STATE: &str = "populated";
 pub const DEFAULT_VIEWPORT: &str = "1440x900";
+/// The device profile that stands where `1440x900` stood (CMP-UI-1i): captures made from `tools/ui/devices.json` are keyed by the profile id.
+pub const DEFAULT_DEVICE: &str = "desktop-1440";
+/// The device classes of the archetype limits columns.
+pub const DEVICE_CLASSES: &[&str] = &["desktop", "tablet", "phone"];
+/// section 17b: what a person on this device gets.
+pub const SUPPORT_CLASSES: &[&str] = &["full", "degraded", "redirect", "blocked", "absent"];
+/// A viewport that is the default one (the legacy size or the default device).
+pub fn is_default_viewport(v: &str) -> bool {
+    v == DEFAULT_VIEWPORT || v == DEFAULT_DEVICE
+}
+/// The class of the device ids `tools/ui/devices.json` v1 defines (an evidence's own `device.class` wins).
+pub fn known_device_class(id: &str) -> Option<&'static str> {
+    match id {
+        "desktop-1440" | "laptop-1280" => Some("desktop"),
+        "ipad-portrait" | "ipad-landscape" => Some("tablet"),
+        "iphone" | "android" => Some("phone"),
+        _ => None,
+    }
+}
 /// Two captures are the same picture when their difference hashes are at most this far apart.
 pub const DHASH_MAX_DISTANCE: u32 = 4;
 
@@ -36,11 +55,19 @@ pub fn sha_ok(s: &str) -> bool {
 pub fn dhash_ok(s: &str) -> bool {
     s.len() == 16 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-pub fn viewport_ok(s: &str) -> bool {
+pub fn size_ok(s: &str) -> bool {
     s.split_once('x').is_some_and(|(w, h)| {
         let n = |p: &str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) && !p.starts_with('0');
         n(w) && n(h)
     })
+}
+/// A device profile id: lower-case words joined by `-` (`ipad-portrait`).
+pub fn device_id_ok(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 40 && s.starts_with(|c: char| c.is_ascii_lowercase()) && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+/// The viewport part of a key: `<width>x<height>` (before CMP-UI-1i) or a device profile id.
+pub fn viewport_ok(s: &str) -> bool {
+    size_ok(s) || device_id_ok(s)
 }
 /// `E1`..`E12` -> 1..=12.
 pub fn metric_no(id: &str) -> Option<usize> {
@@ -194,6 +221,83 @@ pub struct UiEvidence {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub net: Option<Net>,
     pub style: Style,
+    /// section 17: the device profile the capture ran on; absent in files from before CMP-UI-1i
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<Device>,
+    /// section 17b: what the person on this device gets; absent in files from before CMP-UI-1i
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub support: Option<Support>,
+    /// section 17: touch-target sizes, hover-only affordances, small text; present on touch devices only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub touch: Option<Touch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Device {
+    pub id: String,
+    /// desktop | tablet | phone: the column of the archetype limits this capture is judged by
+    pub class: String,
+    pub engine: String,
+    #[serde(default)]
+    pub descriptor: Option<String>,
+    /// `<width>x<height>` in CSS px; the key's viewport part is `id`, the size stays here
+    pub size: String,
+    pub device_scale_factor: f64,
+    pub has_touch: bool,
+    pub is_mobile: bool,
+    #[serde(default)]
+    pub orientation: Option<String>,
+    #[serde(default)]
+    pub devices_version: Option<String>,
+    #[serde(default)]
+    pub overflow_px: u64,
+    #[serde(default)]
+    pub clipped_nav: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Support {
+    /// full | degraded | redirect | blocked | absent
+    pub class: String,
+    #[serde(default)]
+    pub reasons: Vec<String>,
+    /// redirect: where the person landed (origin + path)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// blocked: the message the page shows
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TouchFail {
+    pub element: String,
+    #[serde(default)]
+    pub label: String,
+    pub w: u64,
+    pub h: u64,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HoverOnly {
+    pub element: String,
+    #[serde(default)]
+    pub label: String,
+    pub reveals: String,
+    #[serde(default)]
+    pub rule: String,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Touch {
+    pub min_target_px: u64,
+    pub checked: u64,
+    pub failing_count: u64,
+    pub failing: Vec<TouchFail>,
+    pub hover_only_count: u64,
+    pub hover_only: Vec<HoverOnly>,
+    pub small_text: u64,
 }
 
 /// One failed call: the status (0 = network error) and the PATH only - never a query string.
@@ -354,6 +458,33 @@ impl UiEvidence {
         }
         if let Some(n) = &self.net {
             p.extend(n.problems());
+        }
+        if let Some(d) = &self.device {
+            if !DEVICE_CLASSES.contains(&d.class.as_str()) {
+                p.push(format!("device.class `{}` must be one of {}", d.class, DEVICE_CLASSES.join("|")));
+            }
+            if d.id != self.viewport {
+                p.push(format!("device.id `{}` must be the key's viewport part `{}`", d.id, self.viewport));
+            }
+            if !size_ok(&d.size) {
+                p.push(format!("device.size `{}` must be <width>x<height>", d.size));
+            }
+            if self.touch.is_some() && !d.has_touch {
+                p.push("touch is recorded for a device without touch".into());
+            }
+        } else if self.touch.is_some() {
+            p.push("touch is recorded without a device".into());
+        }
+        if let Some(s) = &self.support {
+            if !SUPPORT_CLASSES.contains(&s.class.as_str()) {
+                p.push(format!("support.class `{}` must be one of {}", s.class, SUPPORT_CLASSES.join("|")));
+            }
+            if s.class == "redirect" && s.target.as_deref().is_none_or(str::is_empty) {
+                p.push("support.class redirect needs support.target (where the person landed)".into());
+            }
+            if s.class == "blocked" && s.message.as_deref().is_none_or(str::is_empty) {
+                p.push("support.class blocked needs support.message (what the page says)".into());
+            }
         }
         let unit = |v: f64| (0.0..=1.0).contains(&v);
         if !unit(self.style.space.on_scale4) || !unit(self.style.density.whitespace_ratio) {

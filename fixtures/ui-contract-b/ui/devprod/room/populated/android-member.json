@@ -1,0 +1,251 @@
+{
+  "archetype": "conversation",
+  "device": {
+    "class": "phone",
+    "clippedNav": [],
+    "descriptor": "Galaxy S8",
+    "deviceScaleFactor": 3,
+    "devicesVersion": "1",
+    "engine": "chromium",
+    "hasTouch": true,
+    "id": "android",
+    "isMobile": true,
+    "orientation": "portrait",
+    "overflowPx": 540,
+    "size": "360x800"
+  },
+  "domHash": "3993c04417718305549a390f1630bf83fb5380c2467477393c86eb2bea4840f8",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "0000000000000000",
+    "file": "blobs/200ea6344e19b46650dd7ae2d01c4b4759a7e548bdc4b1c268176bff57f5d47c.png",
+    "sha256": "200ea6344e19b46650dd7ae2d01c4b4759a7e548bdc4b1c268176bff57f5d47c"
+  },
+  "key": "devprod@contract-1/room/populated/android/member/en-US/light",
+  "layout": {
+    "contentStart": null,
+    "primary": null,
+    "regions": [
+      {
+        "h": 306,
+        "kind": "main",
+        "w": 360,
+        "x": 0,
+        "y": 21
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:55:45.139Z",
+    "url": "http://127.0.0.1:47831/dev-overflow.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 2,
+      "pass": true,
+      "value": 0
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E4": {
+      "detail": [],
+      "limit": 14,
+      "pass": true,
+      "value": 1
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "none"
+      ],
+      "limit": 0.25,
+      "pass": false,
+      "value": null
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 616,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 2,
+      "path": "/dev-overflow.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 25,
+      "domContentLoadedMs": 6,
+      "firstContentfulPaintMs": 25,
+      "loadMs": 7
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 3,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 800,
+        "width": 360
+      }
+    },
+    "notes": [
+      "E8: no content-start element, counted 0",
+      "fallback used for E7: no [data-content-start] and no row-like element found"
+    ],
+    "version": "1"
+  },
+  "product": "devprod",
+  "route": "/dev-overflow.html",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "member",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": "#ccddee",
+      "background": {
+        "#ccddee": 1,
+        "#f0f0f0": 1
+      },
+      "border": {
+        "#000000": 1
+      },
+      "distinctColors": 3,
+      "lowContrast": [],
+      "text": {
+        "#000000": 3
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0,
+      "textPerKpx": 0.02,
+      "whitespaceRatio": 0.89
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 1,
+      "radius": {},
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 3,
+      "onScale4": 0,
+      "values": {
+        "1px": 2,
+        "21.44px": 2,
+        "6px": 2
+      }
+    },
+    "type": {
+      "distinctSizes": 3,
+      "families": [
+        "Arial"
+      ],
+      "lineHeights": {
+        "normal": 3
+      },
+      "sizes": {
+        "13.3333px": 1,
+        "16px": 1,
+        "32px": 1
+      },
+      "weights": {
+        "400": 2,
+        "700": 1
+      }
+    }
+  },
+  "support": {
+    "class": "degraded",
+    "reasons": [
+      "horizontal overflow 540px"
+    ]
+  },
+  "theme": "light",
+  "touch": {
+    "checked": 1,
+    "failing": [],
+    "failingCount": 0,
+    "hoverOnly": [],
+    "hoverOnlyCount": 0,
+    "minTargetPx": 44,
+    "smallText": 0
+  },
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "android"
+}

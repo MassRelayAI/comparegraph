@@ -24,6 +24,7 @@
       "seat": "ref",
       "state": "populated",
       "status": "captured",
+      "support": "full",
       "viewport": "1440x900",
       "why": ""
     },
@@ -33,6 +34,7 @@
       "seat": "ref",
       "state": "populated",
       "status": "captured",
+      "support": "full",
       "viewport": "390x844",
       "why": ""
     },

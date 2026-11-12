@@ -1,5 +1,19 @@
 {
   "archetype": "conversation",
+  "device": {
+    "class": "desktop",
+    "clippedNav": [],
+    "descriptor": null,
+    "deviceScaleFactor": 1,
+    "devicesVersion": "1",
+    "engine": "chromium",
+    "hasTouch": false,
+    "id": "1440x900",
+    "isMobile": false,
+    "orientation": null,
+    "overflowPx": 0,
+    "size": "1440x900"
+  },
   "domHash": "9d23aa59b6d35acfd0f7f745d2889ade44baf38d53c5c6bf95338a87138192f5",
   "fixture": {
     "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
@@ -42,7 +56,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T09:18:20.799Z",
+    "capturedAt": "2026-11-12T09:55:33.539Z",
     "url": "http://127.0.0.1:47831/clean.html"
   },
   "metrics": {
@@ -138,15 +152,15 @@
     "failed": [],
     "requests": 1,
     "slowest": {
-      "ms": 1,
+      "ms": 2,
       "path": "/clean.html"
     },
     "thirdPartyHosts": 0,
     "timing": {
-      "contentStartVisibleMs": 31,
+      "contentStartVisibleMs": 26,
       "domContentLoadedMs": 5,
-      "firstContentfulPaintMs": 31,
-      "loadMs": 5
+      "firstContentfulPaintMs": 26,
+      "loadMs": 6
     }
   },
   "probe": {
@@ -231,6 +245,10 @@
         "700": 1
       }
     }
+  },
+  "support": {
+    "class": "full",
+    "reasons": []
   },
   "theme": "light",
   "unstable": false,

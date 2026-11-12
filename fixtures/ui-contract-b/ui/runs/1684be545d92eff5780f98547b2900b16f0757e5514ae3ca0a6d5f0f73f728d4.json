@@ -1,0 +1,45 @@
+{
+  "captures": {
+    "devprod@contract-1/inbox/populated/desktop-1440/member/en-US/light": "devprod/inbox/populated/desktop-1440-member.json",
+    "devprod@contract-1/inbox/populated/iphone/member/en-US/light": "devprod/inbox/populated/iphone-member.json",
+    "devprod@contract-1/room/populated/android/member/en-US/light": "devprod/room/populated/android-member.json",
+    "devprod@contract-1/room/populated/desktop-1440/member/en-US/light": "devprod/room/populated/desktop-1440-member.json",
+    "devprod@contract-1/room/populated/ipad-landscape/member/en-US/light": "devprod/room/populated/ipad-landscape-member.json",
+    "devprod@contract-1/room/populated/ipad-portrait/member/en-US/light": "devprod/room/populated/ipad-portrait-member.json",
+    "devprod@contract-1/room/populated/iphone/member/en-US/light": "devprod/room/populated/iphone-member.json",
+    "devprod@contract-1/settings/populated/android/member/en-US/light": "devprod/settings/populated/android-member.json"
+  },
+  "evidenceSha256": {
+    "devprod/inbox/populated/desktop-1440-member.json": "ca6e2cd9125049f643dbb950b7a79107fc483dd25c8e44428a98ce1326b7eea9",
+    "devprod/inbox/populated/iphone-member.json": "f050fccaa19d5c8b81b708ffd0351ae050ced4267ab5bb93d4f926c5f93851ac",
+    "devprod/room/populated/android-member.json": "43c37cc132da70581fec4cb448a9d67a0b85da5e0d3d97bf171c4c0bda4889aa",
+    "devprod/room/populated/desktop-1440-member.json": "b555ca415759097749caa6506f9a587b70ced3e440ff79f426dc6bbafa9095e8",
+    "devprod/room/populated/ipad-landscape-member.json": "09086245e30f8501ae3c9b1526d2055ff60917d8b607ab607d89852b8528f862",
+    "devprod/room/populated/ipad-portrait-member.json": "04859268f30dfd51620067f5d4d3947e4d6d080b57a1f2d0a72e68987e09c6e2",
+    "devprod/room/populated/iphone-member.json": "3ba31a26aced93d3bffa73c61a6d43a5f99b991a50b62a54e777c03270155e7a",
+    "devprod/settings/populated/android-member.json": "dfd18101c7c04bdc94dbaa50014c3e5ed8807433062d1c52eb31e7ae129a8d91"
+  },
+  "failed": [],
+  "inputs": {
+    "archetypesDigest": null,
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reducedMotion": "reduce",
+      "timezone": "UTC"
+    },
+    "fixtureHash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "planDigest": "05bba7231c6d20720cf880fa724ddebdcaf7f5e7fe557909037183920aaa52c2",
+    "probeVersion": "1",
+    "product": "devprod",
+    "registryDigest": "6bed3b9f7bb590225696ae415dc272d153b4362528a101730b7530e221581db3",
+    "registryVersion": "1",
+    "runLabel": "b",
+    "version": "contract-1"
+  },
+  "runId": "1684be545d92eff5780f98547b2900b16f0757e5514ae3ca0a6d5f0f73f728d4",
+  "schema": "ui-run/1",
+  "unstable": []
+}

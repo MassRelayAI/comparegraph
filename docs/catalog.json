@@ -639,7 +639,11 @@
           },
           "viewport": {
             "type": "string",
-            "description": "default 1440x900"
+            "description": "a device id (desktop-1440, ipad-portrait, iphone, ...) or <w>x<h>; default 1440x900 / desktop-1440"
+          },
+          "ref_viewport": {
+            "type": "string",
+            "description": "the reference's device; a different one is refused (cross-device)"
           },
           "seat": {
             "type": "string"
@@ -977,6 +981,10 @@
           "viewport": {
             "type": "string",
             "description": "default 1440x900"
+          },
+          "devices": {
+            "type": "string",
+            "description": "comma list of device ids or `all`: one column per device with the support class (full|degraded|redirect|blocked|absent)"
           },
           "net": {
             "type": "boolean",

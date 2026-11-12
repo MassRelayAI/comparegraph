@@ -275,6 +275,7 @@ comparegraph ui path ours room inbox --ui-root ./captures                 # shor
 comparegraph ui graph-diff --ours ours --ref target --ui-root ./captures  # against the intended graph built from target-nav.json
 comparegraph ui journey j1 --ui-root ./captures                           # who completes the goal, in how many clicks
 comparegraph ui matrix FAMILY --net --ui-root ./captures                  # also: captures with failed network calls
+comparegraph ui matrix FAMILY --devices desktop-1440,ipad-portrait,iphone,android --ui-root ./captures   # one column per device, each cell with its support class
 comparegraph ui verify --root-a ./run1 --root-b ./run2                    # the determinism gate: run twice (own root each), diff
 ```
 

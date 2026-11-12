@@ -120,7 +120,7 @@ fn a_root_with_two_runs_the_same_folder_and_mixed_forms_are_refused() {
     let (c, v) = verify_roots(full.path(), b.path());
     assert_eq!(c, 1, "{v}");
     assert_eq!(v["error"]["code"], "invalid_arguments");
-    assert!(v["error"]["message"].as_str().unwrap().contains("holds 2 runs"), "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("holds 3 runs"), "{v}");
     let (c, v) = verify_roots(a.path(), a.path());
     assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
     assert!(c != 0 && v["error"]["message"].as_str().unwrap().contains("same folder"), "{v}");

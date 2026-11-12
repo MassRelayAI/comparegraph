@@ -1,5 +1,19 @@
 {
   "archetype": "conversation",
+  "device": {
+    "class": "desktop",
+    "clippedNav": [],
+    "descriptor": null,
+    "deviceScaleFactor": 1,
+    "devicesVersion": "1",
+    "engine": "chromium",
+    "hasTouch": false,
+    "id": "1440x900",
+    "isMobile": false,
+    "orientation": null,
+    "overflowPx": 0,
+    "size": "1440x900"
+  },
   "domHash": "94120e1ca3201fd2fa847a1f23aad31fa6fdae48b807f34d178b58a8aca2ccab",
   "fixture": {
     "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
@@ -53,7 +67,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T09:18:02.969Z",
+    "capturedAt": "2026-11-12T09:55:00.204Z",
     "url": "http://127.0.0.1:47831/cluttered.html"
   },
   "metrics": {
@@ -175,10 +189,10 @@
     },
     "thirdPartyHosts": 0,
     "timing": {
-      "contentStartVisibleMs": 36,
-      "domContentLoadedMs": 5,
-      "firstContentfulPaintMs": 36,
-      "loadMs": 5
+      "contentStartVisibleMs": 40,
+      "domContentLoadedMs": 6,
+      "firstContentfulPaintMs": 40,
+      "loadMs": 6
     }
   },
   "probe": {
@@ -295,6 +309,10 @@
         "700": 1
       }
     }
+  },
+  "support": {
+    "class": "full",
+    "reasons": []
   },
   "theme": "light",
   "unstable": false,

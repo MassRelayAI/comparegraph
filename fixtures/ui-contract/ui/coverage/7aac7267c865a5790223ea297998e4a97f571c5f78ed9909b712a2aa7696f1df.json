@@ -6,6 +6,7 @@
       "seat": "member",
       "state": "empty",
       "status": "captured",
+      "support": "full",
       "viewport": "1440x900",
       "why": ""
     },
@@ -24,6 +25,7 @@
       "seat": "member",
       "state": "populated",
       "status": "captured",
+      "support": "full",
       "viewport": "1440x900",
       "why": ""
     },
@@ -33,6 +35,7 @@
       "seat": "member",
       "state": "populated",
       "status": "captured",
+      "support": "full",
       "viewport": "390x844",
       "why": ""
     },
@@ -114,6 +117,7 @@
       "seat": "member",
       "state": "populated",
       "status": "captured",
+      "support": "full",
       "viewport": "1440x900",
       "why": ""
     },

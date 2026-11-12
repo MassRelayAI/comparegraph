@@ -1,0 +1,800 @@
+{
+  "cells": [
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "support": "degraded",
+      "viewport": "android",
+      "why": ""
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "support": "full",
+      "viewport": "desktop-1440",
+      "why": ""
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "support": "full",
+      "viewport": "ipad-landscape",
+      "why": ""
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "support": "full",
+      "viewport": "ipad-portrait",
+      "why": ""
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "support": "degraded",
+      "viewport": "iphone",
+      "why": ""
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "long",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "long",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "long",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "long",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "room",
+      "seat": "member",
+      "state": "long",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "rooms-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "support": "full",
+      "viewport": "desktop-1440",
+      "why": ""
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "n/a (minimum set): the fixture plan skips it"
+    },
+    {
+      "product": "devprod",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "support": "blocked",
+      "viewport": "iphone",
+      "why": ""
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "meetings-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "router-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "empty",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "android",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "empty",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "desktop-1440",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "empty",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "ipad-landscape",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "empty",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "ipad-portrait",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "empty",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "iphone",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "populated",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "android",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "populated",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "desktop-1440",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "populated",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "ipad-landscape",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "populated",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "ipad-portrait",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "flows-list",
+      "seat": "member",
+      "source": "the fixture product has no flows page: its menu tree lists only room, inbox and settings",
+      "state": "populated",
+      "status": "n/a",
+      "support": "absent",
+      "viewport": "iphone",
+      "why": "absent: the fixture product has no flows page: its menu tree lists only room, inbox and settings"
+    },
+    {
+      "product": "devprod",
+      "screen": "settings",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "support": "redirect",
+      "viewport": "android",
+      "why": ""
+    },
+    {
+      "product": "devprod",
+      "screen": "settings",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "settings",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "settings",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "settings",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-overview",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "empty",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "android",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "desktop-1440",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-landscape",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "ipad-portrait",
+      "why": "the contract fixture serves a single page per product"
+    },
+    {
+      "product": "devprod",
+      "screen": "console-list",
+      "seat": "member",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "iphone",
+      "why": "the contract fixture serves a single page per product"
+    }
+  ],
+  "journeyCells": [],
+  "runId": "e4fa2f4093b4d250561b0f68f20b5f0ab7ff04dad6fd8d239f4131f43b0e32d1",
+  "schema": "ui-coverage/1"
+}

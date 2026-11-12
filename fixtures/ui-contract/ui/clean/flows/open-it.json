@@ -36,10 +36,10 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1545,
+        "settleMs": 1566,
         "stable": true,
         "wait": false,
-        "waitMs": 38
+        "waitMs": 52
       },
       "metrics": {
         "E1": {
@@ -105,15 +105,15 @@
         "failed": [],
         "requests": 1,
         "slowest": {
-          "ms": 1,
+          "ms": 2,
           "path": "/flow.html"
         },
         "thirdPartyHosts": 0,
         "timing": {
-          "contentStartVisibleMs": 122,
-          "domContentLoadedMs": 4,
-          "firstContentfulPaintMs": 122,
-          "loadMs": 16
+          "contentStartVisibleMs": 143,
+          "domContentLoadedMs": 5,
+          "firstContentfulPaintMs": 143,
+          "loadMs": 19
         }
       },
       "screen": "unknown",
@@ -134,10 +134,10 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1039,
+        "settleMs": 1043,
         "stable": true,
         "wait": false,
-        "waitMs": 15
+        "waitMs": 13
       },
       "metrics": {
         "E1": {
@@ -226,10 +226,10 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1035,
+        "settleMs": 1025,
         "stable": true,
         "wait": false,
-        "waitMs": 32
+        "waitMs": 41
       },
       "metrics": {
         "E1": {
@@ -318,7 +318,7 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1037,
+        "settleMs": 1019,
         "stable": true,
         "wait": false,
         "waitMs": 3
@@ -410,10 +410,10 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1029,
+        "settleMs": 1025,
         "stable": true,
         "wait": true,
-        "waitMs": 3015
+        "waitMs": 3003
       },
       "metrics": {
         "E1": {

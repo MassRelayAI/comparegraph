@@ -66,6 +66,9 @@ pub enum UiCmd {
         state: String,
         #[arg(long)]
         viewport: Option<String>,
+        /// the reference's device; a different one than --viewport is refused (cross-device)
+        #[arg(long)]
+        ref_viewport: Option<String>,
         #[arg(long)]
         seat: Option<String>,
         #[arg(long)]
@@ -78,6 +81,9 @@ pub enum UiCmd {
         state: String,
         #[arg(long)]
         viewport: Option<String>,
+        /// one column per device (`desktop-1440,iphone` or `all`): each cell is `pass/12 <support class>`, `-` or `n/a (absent)`; plus support-class counts per product and device
+        #[arg(long)]
+        devices: Option<String>,
         /// also list the captures with failed network calls (4xx/5xx/network error), from `net.failed`
         #[arg(long)]
         net: bool,
@@ -1330,10 +1336,10 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 UiCmd::Limits => crate::application::ui_limits::limits(),
                 UiCmd::Screens { product } => u::screens(ur, m, product, o)?,
                 UiCmd::Show { product, screen, state, viewport, seat } => u::show(ur, m, product, screen, st(state), vp(viewport), vp(seat), o)?,
-                UiCmd::Diff { target, ours, refp, state, viewport, seat, ref_seat } => {
-                    u::diff(ur, m, target, ours, refp, st(state), vp(viewport), vp(seat), vp(ref_seat), o)?
+                UiCmd::Diff { target, ours, refp, state, viewport, ref_viewport, seat, ref_seat } => {
+                    u::diff(ur, m, target, ours, refp, st(state), vp(viewport), vp(ref_viewport), vp(seat), vp(ref_seat), o)?
                 }
-                UiCmd::Matrix { family, state, viewport, net } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport), *net, o)?,
+                UiCmd::Matrix { family, state, viewport, devices, net } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport), vp(devices), *net, o)?,
                 UiCmd::System { product } => u::system(ur, m, product)?,
                 UiCmd::Flow { product, task } => u::flow(ur, m, product, task)?,
                 UiCmd::Nav { product, viewport, seat } => u::nav(ur, m, product, vp(viewport), vp(seat))?,

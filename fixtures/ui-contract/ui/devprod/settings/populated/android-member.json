@@ -1,0 +1,264 @@
+{
+  "archetype": "settings",
+  "device": {
+    "class": "phone",
+    "clippedNav": [],
+    "descriptor": "Galaxy S8",
+    "deviceScaleFactor": 3,
+    "devicesVersion": "1",
+    "engine": "chromium",
+    "hasTouch": true,
+    "id": "android",
+    "isMobile": true,
+    "orientation": "portrait",
+    "overflowPx": 0,
+    "size": "360x800"
+  },
+  "domHash": "446283f25579936022c84023552fd04a5db8411cb2a56ac674e8843fcccecb7a",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "c080e00000000000",
+    "file": "blobs/1dcb01e95cfb3266672247941b3785cc891f18a000d78221a702509599e479d4.png",
+    "sha256": "1dcb01e95cfb3266672247941b3785cc891f18a000d78221a702509599e479d4"
+  },
+  "key": "devprod@contract-1/settings/populated/android/member/en-US/light",
+  "layout": {
+    "contentStart": {
+      "how": "data-content-start",
+      "y": 104
+    },
+    "primary": {
+      "name": "New room",
+      "x": 20,
+      "y": 124
+    },
+    "regions": [
+      {
+        "h": 104,
+        "kind": "topbar",
+        "w": 360,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "h": 153,
+        "kind": "main",
+        "w": 360,
+        "x": 0,
+        "y": 104
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:55:24.400Z",
+    "url": "http://localhost:47831/dev-responsive.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [
+        "New room"
+      ],
+      "limit": 1,
+      "pass": true,
+      "value": 1
+    },
+    "E4": {
+      "detail": [],
+      "limit": 8,
+      "pass": true,
+      "value": 2
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "data-content-start"
+      ],
+      "limit": 0.3,
+      "pass": true,
+      "value": 0.13
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 2,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 964,
+    "failed": [],
+    "requests": 2,
+    "slowest": {
+      "ms": 2,
+      "path": "/redirect-out"
+    },
+    "thirdPartyHosts": 1,
+    "timing": {
+      "contentStartVisibleMs": 34,
+      "domContentLoadedMs": 9,
+      "firstContentfulPaintMs": 34,
+      "loadMs": 10
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 3,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 800,
+        "width": 360
+      }
+    },
+    "notes": [],
+    "version": "1"
+  },
+  "product": "devprod",
+  "route": "/redirect-out",
+  "schema": "ui-evidence/1",
+  "screen": "settings",
+  "seat": "member",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": "#0000ee",
+      "background": {
+        "#f0f0f0": 1
+      },
+      "border": {
+        "#000000": 1
+      },
+      "distinctColors": 4,
+      "lowContrast": [],
+      "text": {
+        "#000000": 1,
+        "#0000ee": 1,
+        "#1f2328": 1
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0.01,
+      "textPerKpx": 0.12,
+      "whitespaceRatio": 0.93
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 1,
+      "radius": {},
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 4,
+      "onScale4": 0.78,
+      "values": {
+        "16px": 6,
+        "1px": 2,
+        "4px": 8,
+        "6px": 2
+      }
+    },
+    "type": {
+      "distinctSizes": 1,
+      "families": [
+        "Arial"
+      ],
+      "lineHeights": {
+        "normal": 3
+      },
+      "sizes": {
+        "16px": 3
+      },
+      "weights": {
+        "400": 3
+      }
+    }
+  },
+  "support": {
+    "class": "redirect",
+    "reasons": [
+      "landed on another host"
+    ],
+    "target": "http://localhost:47831/dev-responsive.html"
+  },
+  "theme": "light",
+  "touch": {
+    "checked": 2,
+    "failing": [],
+    "failingCount": 0,
+    "hoverOnly": [],
+    "hoverOnlyCount": 0,
+    "minTargetPx": 44,
+    "smallText": 0
+  },
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "android"
+}

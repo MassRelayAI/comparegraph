@@ -338,9 +338,12 @@ mod cursors {
         let (_, v) = cg(d.path(), &["products", "--ui-root", ".", "--page-size", "1"]);
         assert_eq!(v["data"]["items"].as_array().unwrap().len(), 1, "{v}");
         assert_eq!(v["page"]["next"], "1", "{v}");
-        assert_eq!(v["page"]["total"], 2);
+        assert_eq!(v["page"]["total"], 3);
         let (_, v) = cg(d.path(), &["products", "--ui-root", ".", "--page-size", "1", "--cursor", "1"]);
         assert_eq!(v["data"]["items"][0]["product"], "cluttered", "{v}");
+        assert_eq!(v["page"]["next"], "2", "{v}");
+        let (_, v) = cg(d.path(), &["products", "--ui-root", ".", "--page-size", "1", "--cursor", "2"]);
+        assert_eq!(v["data"]["items"][0]["product"], "devprod", "{v}");
         assert!(v["page"]["next"].is_null());
         let (c, v) = cg(d.path(), &["products", "--ui-root", ".", "--cursor", "banana"]);
         assert_eq!((c, v["error"]["code"].as_str()), (1, Some("invalid_arguments")), "{v}");

@@ -4,8 +4,8 @@
     "clean@contract-1/room/populated/390x844/ref/en-US/light": "clean/room/populated/390x844-ref.json"
   },
   "evidenceSha256": {
-    "clean/room/populated/1440x900-ref.json": "2693d24079f256dfc1815889906664d39c7f851bb1effe23feb86dd76aa9d8ac",
-    "clean/room/populated/390x844-ref.json": "412085e35f60bdf6c53d3a4c50872dad4b1d7b85217c00b53b2e6a729b3cb4ac"
+    "clean/room/populated/1440x900-ref.json": "9125aaa24e4f542afc89ae0412db6f700b5ebc0d2ca3ec009462f9a2db8c36f8",
+    "clean/room/populated/390x844-ref.json": "965cb63dccd7a0e0c75f2408f2f3df013f90ff6b00522756a1d4b3ca1a0c314c"
   },
   "failed": [],
   "inputs": {

@@ -112,9 +112,9 @@ pub fn tools() -> Vec<Value> {
             "viewport":{"type":"string","description":"e.g. 1440x900 (preferred when omitted)"}, "seat":{"type":"string"} }), &["product", "screen"])),
         tool("comparegraph_ui_diff", "UI evidence: two products on the SAME screen, state and viewport (refused otherwise): side-by-side metric table, layout and style differences in words, both image paths. target is a screen id or a map.csv row id.", ui_schema(json!({
             "target":{"type":"string"}, "ours":{"type":"string"}, "ref":{"type":"string"}, "state":{"type":"string","description":"default populated"},
-            "viewport":{"type":"string","description":"default 1440x900"}, "seat":{"type":"string"}, "ref_seat":{"type":"string"} }), &["target", "ours", "ref"])),
+            "viewport":{"type":"string","description":"a device id (desktop-1440, ipad-portrait, iphone, ...) or <w>x<h>; default 1440x900 / desktop-1440"}, "ref_viewport":{"type":"string","description":"the reference's device; a different one is refused (cross-device)"}, "seat":{"type":"string"}, "ref_seat":{"type":"string"} }), &["target", "ours", "ref"])),
         tool("comparegraph_ui_matrix", "UI evidence: the rows of a family by products; each cell is pass count / 12 or `-` (not captured), via map.csv, for one state and viewport.", ui_schema(json!({
-            "family":{"type":"string"}, "state":{"type":"string","description":"default populated"}, "viewport":{"type":"string","description":"default 1440x900"}, "net":{"type":"boolean","description":"also list captures with failed network calls"} }), &["family"])),
+            "family":{"type":"string"}, "state":{"type":"string","description":"default populated"}, "viewport":{"type":"string","description":"default 1440x900"}, "devices":{"type":"string","description":"comma list of device ids or `all`: one column per device with the support class (full|degraded|redirect|blocked|absent)"}, "net":{"type":"boolean","description":"also list captures with failed network calls"} }), &["family"])),
         tool("comparegraph_ui_system", "UI evidence: a product's design system (type sizes, colours, spacing) from system.json or derived from its captures, against the targets.", ui_schema(json!({"product":{"type":"string"}}), &["product"])),
         tool("comparegraph_ui_flow", "UI evidence: one flow (ui-flow/1) of a product: steps, clicks, dead ends, step image paths.", ui_schema(json!({"product":{"type":"string"}, "task":{"type":"string"}}), &["product", "task"])),
         tool("comparegraph_ui_nav", "UI evidence: a product's menu tree (ui-nav/1) with derived numbers: places, depth, items per level and group, destinations, duplicates, dead items, overflow-only items.", ui_schema(json!({
@@ -205,8 +205,8 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             "comparegraph_ui_products" => &["ui_root", "max_nodes"],
             "comparegraph_ui_screens" | "comparegraph_ui_system" => &["product", "ui_root", "max_nodes"],
             "comparegraph_ui_show" => &["product", "screen", "state", "viewport", "seat", "ui_root", "max_nodes"],
-            "comparegraph_ui_diff" => &["target", "ours", "ref", "state", "viewport", "seat", "ref_seat", "ui_root", "max_nodes"],
-            "comparegraph_ui_matrix" => &["family", "state", "viewport", "net", "ui_root", "max_nodes"],
+            "comparegraph_ui_diff" => &["target", "ours", "ref", "state", "viewport", "ref_viewport", "seat", "ref_seat", "ui_root", "max_nodes"],
+            "comparegraph_ui_matrix" => &["family", "state", "viewport", "devices", "net", "ui_root", "max_nodes"],
             "comparegraph_ui_flow" => &["product", "task", "ui_root", "max_nodes"],
             "comparegraph_ui_nav" => &["product", "viewport", "seat", "ui_root", "max_nodes"],
             "comparegraph_ui_nav_diff" => &["ours", "ref", "viewport", "seat", "ref_seat", "ui_root", "max_nodes"],
@@ -355,9 +355,9 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 "comparegraph_ui_system" => UiCmd::System { product: req(a, "product")? },
                 "comparegraph_ui_show" => UiCmd::Show { product: req(a, "product")?, screen: req(a, "screen")?, state: state()?, viewport: s("viewport")?, seat: s("seat")? },
                 "comparegraph_ui_diff" => UiCmd::Diff {
-                    target: req(a, "target")?, ours: req(a, "ours")?, refp: req(a, "ref")?, state: state()?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")?,
+                    target: req(a, "target")?, ours: req(a, "ours")?, refp: req(a, "ref")?, state: state()?, viewport: s("viewport")?, ref_viewport: s("ref_viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")?,
                 },
-                "comparegraph_ui_matrix" => UiCmd::Matrix { family: req(a, "family")?, state: state()?, viewport: s("viewport")?, net: match a.get("net") { None | Some(Value::Null) => false, Some(Value::Bool(b)) => *b, Some(_) => return Err("net must be a boolean".into()) } },
+                "comparegraph_ui_matrix" => UiCmd::Matrix { family: req(a, "family")?, state: state()?, viewport: s("viewport")?, devices: s("devices")?, net: match a.get("net") { None | Some(Value::Null) => false, Some(Value::Bool(b)) => *b, Some(_) => return Err("net must be a boolean".into()) } },
                 "comparegraph_ui_flow" => UiCmd::Flow { product: req(a, "product")?, task: req(a, "task")? },
                 "comparegraph_ui_nav" => UiCmd::Nav { product: req(a, "product")?, viewport: s("viewport")?, seat: s("seat")? },
                 "comparegraph_ui_nav_diff" => UiCmd::NavDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")? },

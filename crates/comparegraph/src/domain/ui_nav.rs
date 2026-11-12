@@ -255,6 +255,12 @@ pub struct CoverageCell {
     pub status: String,
     #[serde(default)]
     pub why: String,
+    /// CMP-UI-1i: the support class of a captured cell, or `absent` for an n/a cell that says the product has no such thing
+    #[serde(default)]
+    pub support: Option<String>,
+    /// CMP-UI-1i: where the fact `absent` comes from
+    #[serde(default)]
+    pub source: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JourneyCell {

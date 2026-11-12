@@ -1,0 +1,263 @@
+{
+  "archetype": "conversation",
+  "device": {
+    "class": "tablet",
+    "clippedNav": [],
+    "descriptor": "iPad Pro 11",
+    "deviceScaleFactor": 2,
+    "devicesVersion": "1",
+    "engine": "webkit",
+    "hasTouch": true,
+    "id": "ipad-portrait",
+    "isMobile": true,
+    "orientation": "portrait",
+    "overflowPx": 0,
+    "size": "820x1180"
+  },
+  "domHash": "026c665bff83273580f391e1c4a565679b77e5a09d243ad796541333de71eccf",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "0000000000000000",
+    "file": "blobs/8e9e89f8a666a10a1b4f9a915e5f27b941eaac8c9d0f260dac36fe991448a380.png",
+    "sha256": "8e9e89f8a666a10a1b4f9a915e5f27b941eaac8c9d0f260dac36fe991448a380"
+  },
+  "key": "devprod@contract-1/room/populated/ipad-portrait/member/en-US/light",
+  "layout": {
+    "contentStart": {
+      "how": "data-content-start",
+      "y": 104
+    },
+    "primary": {
+      "name": "New room",
+      "x": 20,
+      "y": 124
+    },
+    "regions": [
+      {
+        "h": 104,
+        "kind": "topbar",
+        "w": 820,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "h": 153,
+        "kind": "main",
+        "w": 820,
+        "x": 0,
+        "y": 104
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:55:41.280Z",
+    "url": "http://127.0.0.1:47831/dev-responsive.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 2,
+      "pass": true,
+      "value": 0
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [
+        "New room"
+      ],
+      "limit": 1,
+      "pass": true,
+      "value": 1
+    },
+    "E4": {
+      "detail": [],
+      "limit": 14,
+      "pass": true,
+      "value": 2
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "data-content-start"
+      ],
+      "limit": 0.25,
+      "pass": true,
+      "value": 0.09
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 764,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 2,
+      "path": "/dev-responsive.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 0,
+      "domContentLoadedMs": 0,
+      "firstContentfulPaintMs": 0,
+      "loadMs": 0
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 2,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 1180,
+        "width": 820
+      }
+    },
+    "notes": [],
+    "version": "1"
+  },
+  "product": "devprod",
+  "route": "/dev-responsive.html",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "member",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": "#0000ee",
+      "background": {
+        "#c0c0c0": 1
+      },
+      "border": {
+        "#c0c0c0": 1
+      },
+      "distinctColors": 4,
+      "lowContrast": [],
+      "text": {
+        "#000000cc": 1,
+        "#0000ee": 1,
+        "#1f2328": 1
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0,
+      "textPerKpx": 0.04,
+      "whitespaceRatio": 0.97
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 1,
+      "radius": {},
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 5,
+      "onScale4": 0.78,
+      "values": {
+        "16px": 6,
+        "2px": 1,
+        "3px": 1,
+        "4px": 8,
+        "6px": 2
+      }
+    },
+    "type": {
+      "distinctSizes": 1,
+      "families": [
+        "Arial",
+        "MS Shell Dlg"
+      ],
+      "lineHeights": {
+        "normal": 3
+      },
+      "sizes": {
+        "16px": 3
+      },
+      "weights": {
+        "400": 3
+      }
+    }
+  },
+  "support": {
+    "class": "full",
+    "reasons": []
+  },
+  "theme": "light",
+  "touch": {
+    "checked": 2,
+    "failing": [],
+    "failingCount": 0,
+    "hoverOnly": [],
+    "hoverOnlyCount": 0,
+    "minTargetPx": 44,
+    "smallText": 0
+  },
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "ipad-portrait"
+}

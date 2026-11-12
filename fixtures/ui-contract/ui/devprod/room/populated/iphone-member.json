@@ -1,0 +1,259 @@
+{
+  "archetype": "conversation",
+  "device": {
+    "class": "phone",
+    "clippedNav": [],
+    "descriptor": "iPhone 14",
+    "deviceScaleFactor": 3,
+    "devicesVersion": "1",
+    "engine": "webkit",
+    "hasTouch": true,
+    "id": "iphone",
+    "isMobile": true,
+    "orientation": "portrait",
+    "overflowPx": 0,
+    "size": "390x844"
+  },
+  "domHash": "f161a95f9fb35c429a65fffe258ff0061239ab5ca91fb735b0bd673265062db9",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "0000000000000000",
+    "file": "blobs/90665cd3420f17e56224267a2752108bc067bdc52281700b924a6e6b96167c46.png",
+    "sha256": "90665cd3420f17e56224267a2752108bc067bdc52281700b924a6e6b96167c46"
+  },
+  "key": "devprod@contract-1/room/populated/iphone/member/en-US/light",
+  "layout": {
+    "contentStart": null,
+    "primary": null,
+    "regions": [
+      {
+        "h": 106,
+        "kind": "main",
+        "w": 390,
+        "x": 0,
+        "y": 21
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:55:13.224Z",
+    "url": "http://127.0.0.1:47831/dev-tap30.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E4": {
+      "detail": [],
+      "limit": 8,
+      "pass": true,
+      "value": 2
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "none"
+      ],
+      "limit": 0.3,
+      "pass": false,
+      "value": null
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 604,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 6,
+      "path": "/dev-tap30.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 0,
+      "domContentLoadedMs": 0,
+      "firstContentfulPaintMs": 0,
+      "loadMs": 0
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 3,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    "notes": [
+      "E8: no content-start element, counted 0",
+      "fallback used for E7: no [data-content-start] and no row-like element found"
+    ],
+    "version": "1"
+  },
+  "product": "devprod",
+  "route": "/dev-tap30.html",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "member",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": null,
+      "background": {
+        "#c0c0c0": 2
+      },
+      "border": {
+        "#c0c0c0": 2
+      },
+      "distinctColors": 3,
+      "lowContrast": [],
+      "text": {
+        "#000000": 1,
+        "#000000cc": 2
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0.01,
+      "textPerKpx": 0.04,
+      "whitespaceRatio": 0.93
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 2,
+      "radius": {},
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 4,
+      "onScale4": 0,
+      "values": {
+        "21.44px": 2,
+        "2px": 1,
+        "3px": 1,
+        "6px": 2
+      }
+    },
+    "type": {
+      "distinctSizes": 2,
+      "families": [
+        "Arial",
+        "MS Shell Dlg"
+      ],
+      "lineHeights": {
+        "normal": 3
+      },
+      "sizes": {
+        "13px": 2,
+        "32px": 1
+      },
+      "weights": {
+        "400": 2,
+        "700": 1
+      }
+    }
+  },
+  "support": {
+    "class": "degraded",
+    "reasons": [
+      "1 touch targets under 44px"
+    ]
+  },
+  "theme": "light",
+  "touch": {
+    "checked": 2,
+    "failing": [
+      {
+        "element": "button.small",
+        "h": 30,
+        "label": "Star",
+        "w": 30
+      }
+    ],
+    "failingCount": 1,
+    "hoverOnly": [],
+    "hoverOnlyCount": 0,
+    "minTargetPx": 44,
+    "smallText": 0
+  },
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "iphone"
+}
