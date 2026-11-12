@@ -245,6 +245,7 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
     let repo = store
         .repo_by_name(i.repo)?
         .ok_or_else(|| AppError::NotFound(format!("no repo named {}", i.repo)))?;
+    super::archive::refuse_if_archived(store, i.repo)?;
     let rid = repo.id.unwrap();
     let run = store
         .latest_done_run(rid)?
@@ -921,6 +922,10 @@ pub fn claims(
     history: bool,
 ) -> Result<Vec<ClaimOut>> {
     let store = Store::open_existing(root)?;
+    claims_in(&store, repo, family, feature, history)
+}
+/// As `claims`, on a store already open (a read-only one included).
+pub fn claims_in(store: &Store, repo: Option<&str>, family: Option<&str>, feature: Option<&str>, history: bool) -> Result<Vec<ClaimOut>> {
     let c = store.conn();
     let mut st = c.prepare(
         "SELECT c.id, r.name, fa.name, f.slug, c.run_id, c.verdict, c.confidence, c.author, c.created_at, c.supersedes_id, c.note, c.at_commit, c.out_of_subset, \

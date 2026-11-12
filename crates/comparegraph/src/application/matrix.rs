@@ -43,6 +43,9 @@ pub struct Matrix {
     /// comparators with no stored band (not in the data; the CLI lifts it into a limitation)
     #[serde(skip)]
     pub not_run: usize,
+    /// archived repos left out of the columns (the CLI lifts it into an `archived_skipped` limitation)
+    #[serde(skip)]
+    pub archived_skipped: usize,
 }
 
 fn no_reach(r: &[Option<String>]) -> bool {
@@ -83,6 +86,10 @@ pub fn matrix_reach(
         .prepare("SELECT id, name, role FROM repo")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<std::result::Result<_, _>>()?;
+    let archived = super::archive::archived_names(&store)?;
+    let before = repos.len();
+    repos.retain(|r| !archived.contains(&r.1));
+    let archived_skipped = before - repos.len();
     repos.sort_by(|a, b| ((a.2 != "root"), &a.1).cmp(&((b.2 != "root"), &b.1)));
     let has_root = repos.iter().any(|r| r.2 == "root");
     let comparators = repos.iter().filter(|r| r.2 != "root").count();
@@ -208,5 +215,6 @@ pub fn matrix_reach(
         columns,
         rows,
         not_run,
+        archived_skipped,
     })
 }

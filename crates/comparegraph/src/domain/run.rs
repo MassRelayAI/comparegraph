@@ -6,6 +6,10 @@ pub enum RunStatus {
     Running,
     Done,
     Failed,
+    /// `gc --stale-runs`: a run left `running` past the age limit by a writer that never finished it
+    Abandoned,
+    /// `restore-store` from a claims-only backup: the run row is back, its graph is not (rebuild the repo)
+    Restored,
 }
 impl RunStatus {
     pub fn as_str(self) -> &'static str {
@@ -13,6 +17,8 @@ impl RunStatus {
             Self::Running => "running",
             Self::Done => "done",
             Self::Failed => "failed",
+            Self::Abandoned => "abandoned",
+            Self::Restored => "restored",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -20,6 +26,8 @@ impl RunStatus {
             "running" => Self::Running,
             "done" => Self::Done,
             "failed" => Self::Failed,
+            "abandoned" => Self::Abandoned,
+            "restored" => Self::Restored,
             _ => return None,
         })
     }
@@ -65,7 +73,7 @@ mod tests {
     use super::*;
     #[test]
     fn status_round_trip() {
-        for s in [RunStatus::Running, RunStatus::Done, RunStatus::Failed] {
+        for s in [RunStatus::Running, RunStatus::Done, RunStatus::Failed, RunStatus::Abandoned, RunStatus::Restored] {
             assert_eq!(RunStatus::parse(s.as_str()), Some(s));
         }
     }

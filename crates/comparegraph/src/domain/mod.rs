@@ -1,6 +1,10 @@
+pub mod actionlog;
 pub mod evidence;
 pub mod graph;
 pub mod ids;
+pub mod licence;
+pub mod relevance;
+pub mod retention;
 pub mod run;
 pub mod ui;
 pub mod ui_graph;

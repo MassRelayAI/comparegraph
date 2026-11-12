@@ -4,8 +4,14 @@ use crate::domain::{
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 
+mod safety;
+pub use safety::{file_row_counts, quick_check, CacheVersion, LocationCheckRow, COUNTED, NON_REBUILDABLE};
+
 const SCHEMA: &str = include_str!("schema.sql");
 pub const SCHEMA_VERSION: i64 = 1;
+/// The page cache of every connection, in KiB (`PRAGMA cache_size = -N`): 64 MiB instead of SQLite's 2 MiB default,
+/// for a store of several GB (stack review item 8). Per connection; nothing is stored in the file.
+pub const CACHE_SIZE_KIB: i64 = -65_536;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -98,6 +104,16 @@ fn locked() -> StoreError {
 /// The other comparegraph processes that have this store open, from their `holders/` notes; a dead pid's note is
 /// removed. SQLite does not record which connection holds the write lock, so this lists candidates, never a guess.
 fn describe_holders(dir: &Path) -> String {
+    let found = live_holders(dir);
+    if found.is_empty() {
+        "holder unknown: no other comparegraph process has the store open, so another program holds it".into()
+    } else {
+        format!("store open in: {}; sqlite does not say which of them holds the lock", found.join(", "))
+    }
+}
+/// The other live comparegraph processes with a holder note in `dir/holders` (`<verb> (pid N)`), sorted; a dead pid's
+/// note is removed.
+fn live_holders(dir: &Path) -> Vec<String> {
     let me = std::process::id();
     let mut found: Vec<String> = std::fs::read_dir(dir.join("holders"))
         .into_iter()
@@ -118,11 +134,14 @@ fn describe_holders(dir: &Path) -> String {
         .collect();
     found.sort();
     found.dedup();
-    if found.is_empty() {
-        "holder unknown: no other comparegraph process has the store open, so another program holds it".into()
-    } else {
-        format!("store open in: {}; sqlite does not say which of them holds the lock", found.join(", "))
-    }
+    found
+}
+/// Leave a note naming this process and verb in `dir/holders`, so a writer that times out can say who has the store open.
+fn holder_note(dir: &Path) -> Option<PathBuf> {
+    let verb = std::env::var("COMPAREGRAPH_VERB").unwrap_or_else(|_| "comparegraph".into());
+    let seq = OPEN_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let h = dir.join("holders").join(format!("{}-{seq}", std::process::id()));
+    (std::fs::create_dir_all(h.parent().unwrap()).is_ok() && std::fs::write(&h, verb).is_ok()).then_some(h)
 }
 #[cfg(unix)]
 fn pid_alive(pid: u32) -> bool {
@@ -349,9 +368,16 @@ pub struct Store {
     path: PathBuf,
     /// this open's note in `.comparegraph/holders/` (`<pid>-<seq>`, content = the verb); removed on drop
     holder: Option<PathBuf>,
+    /// opened by a write verb (`Store::open`): `PRAGMA optimize` runs on close (never for a read verb, whose bytes stay)
+    writer: bool,
 }
 impl Drop for Store {
     fn drop(&mut self) {
+        if self.writer {
+            // bounded (analysis_limit) and never waiting for a lock another connection holds
+            let _ = self.conn.busy_timeout(std::time::Duration::ZERO);
+            let _ = self.conn.execute_batch("PRAGMA analysis_limit = 400; PRAGMA optimize;");
+        }
         if let Some(h) = &self.holder {
             let _ = std::fs::remove_file(h);
         }
@@ -422,8 +448,10 @@ impl Store {
         let read_only = conn.is_readonly(rusqlite::DatabaseName::Main).map_err(open_err)?;
         conn.execute_batch("PRAGMA foreign_keys = ON;").map_err(open_err)?;
         if !read_only {
-            conn.execute_batch("PRAGMA journal_mode = WAL;").map_err(open_err)?;
+            // NORMAL is the standard pairing with WAL: a commit may be lost on power loss, never the store (review item 8)
+            conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;").map_err(open_err)?;
         }
+        conn.execute_batch(&format!("PRAGMA cache_size = {CACHE_SIZE_KIB};")).map_err(open_err)?;
         // a store this binary cannot read is refused before anything in it is changed
         check_schema_version(&conn, &path)?;
         if needs_migration(&conn).map_err(open_err)? {
@@ -442,14 +470,8 @@ impl Store {
                 check_schema_version(&conn, &path)?;
             }
         }
-        // a note naming this process and verb, so a writer that times out can say who has the store open
-        let holder = {
-            let verb = std::env::var("COMPAREGRAPH_VERB").unwrap_or_else(|_| "comparegraph".into());
-            let seq = OPEN_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let h = dir.join("holders").join(format!("{}-{seq}", std::process::id()));
-            (std::fs::create_dir_all(h.parent().unwrap()).is_ok() && std::fs::write(&h, verb).is_ok()).then_some(h)
-        };
-        Ok(Store { conn, path, holder })
+        let holder = holder_note(&dir);
+        Ok(Store { conn, path, holder, writer: !reader && !read_only })
     }
     pub fn path(&self) -> &Path {
         &self.path

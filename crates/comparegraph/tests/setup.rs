@@ -861,3 +861,25 @@ fn a_bare_command_that_resolves_to_the_registered_binary_is_aligned() {
     let empty = tempfile::tempdir().unwrap();
     assert_eq!(state(&doctor_with_path(&e, empty.path())), "stale");
 }
+
+#[test]
+fn a_build_tree_under_any_target_dir_name_is_a_dev_build() {
+    use comparegraph::application::setup::is_dev_build;
+    let d = tempfile::tempdir().unwrap();
+    // cargo's profile dir under a CARGO_TARGET_DIR that is not called `target`
+    let prof = d.path().join("ssd-build/target-cg-x/debug");
+    std::fs::create_dir_all(prof.join("deps")).unwrap();
+    std::fs::create_dir_all(prof.join(".fingerprint")).unwrap();
+    assert!(is_dev_build(&prof.join("comparegraph")));
+    assert!(is_dev_build(&prof.join("deps/setup-0123abcd")), "a test binary in deps/");
+    // a cargo CACHEDIR.TAG two levels up marks the tree too
+    let tagged = d.path().join("tagged");
+    std::fs::create_dir_all(tagged.join("release")).unwrap();
+    std::fs::write(tagged.join("CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n").unwrap();
+    assert!(is_dev_build(&tagged.join("release/comparegraph")));
+    // an installed binary is not
+    let inst = d.path().join("opt/bin");
+    std::fs::create_dir_all(&inst).unwrap();
+    assert!(!is_dev_build(&inst.join("comparegraph")));
+    assert!(is_dev_build(std::path::Path::new("/x/target/release/comparegraph")));
+}

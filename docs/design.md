@@ -239,6 +239,42 @@ reader, which is not in `Cargo.lock` - reported as `snapshot_recompute_pending` 
 
 All are read verbs and MCP tools (`comparegraph_ui_*`); confidence is `derived` for the comparing verbs.
 
+## 9d. Store safety, scope and record (lane CG-STORE, 2026-11-12)
+A store holds two kinds of data: the graph and the parse cache, rebuildable from the clones; and the claims, locations,
+decisions and bands, which are not. The second kind is a few MB inside a file of several GB. These verbs protect it, keep the
+file from growing, and let a person take a repo out of scope without losing anything - with no `store/schema.sql` change and
+no new dependency (decisions.md, "Store safety").
+
+- **The store-safety verbs never migrate.** `Store::open_read_only` (SQLITE_OPEN_READ_ONLY) for the reads, `Store::open_guarded`
+  (read-write, no `ALTER TABLE`) for the writes; a store an older binary wrote is read through temp views and its column set is
+  left as it is, so that binary keeps reading it. The writes touch only what schema v1 already leaves writable: `meta` rows,
+  `location.stale`, `run.status`, `parse_cache` rows - each named `main.<table>` so a temp view is never the target.
+- **`check` is a read** (CLI and MCP). An unreadable clone is `clone_unavailable` (folder missing, or HEAD not the head its run
+  read) and nothing is written for it; real drift is reported; `--mark` writes flags and `--mark --recompute` clears the ones
+  whose lines hash as recorded again (the reset the sticky flag never had). The `store_hash` re-hash is `--deep`.
+- **`backup`**: `VACUUM INTO` (consistent snapshot, compacted) verified by `quick_check` and row counts, or a claims-only JSONL
+  read in one snapshot; `backup-manifest/1` beside it. **`restore-store`**: sha256 against the manifest, refused while the store is
+  in use, a pre-restore backup, the replaced files moved aside, never deleted.
+- **`gc`** (application/retain.rs, keep-rule `domain/retention.rs`): `--parse-cache` keeps the running provider version (n
+  newest with `--keep-versions`), then VACUUM; every build prunes, for the files it read, their rows of other versions.
+  `--stale-runs` marks a `running` row older than N hours `abandoned`. Dry-run by default; `--apply` refused while the store is
+  held. The graph tables keep their append-only triggers; dropping superseded runs waits for the schema ruling (plan phase C).
+- **`relevance`** (domain/relevance.rs pure; application/relevance.rs reads): the engine computes factor COUNTS only; weights,
+  thresholds, primaries and pins come from the user's `relevance-policy/1` file (unknown keys refused). No policy, no class
+  (`unrated`) - the roadmap ruling of 2026-10-13 ("a prioritization formula does NOT go in the tool") holds because the formula's
+  numbers live in the user's file. As-of is the newest timestamp in the store; inputs are hashed into the answer.
+- **`archive` / `restore`**: soft. Manifest first (`archive-manifest/1`, claims CSV, temp + fsync + rename + re-read), then the
+  `meta` flag `archived:<repo>` = the manifest's sha256 and the log entry, all under the store's write lock. Rows stay; the repo
+  leaves the default views, `check` never reads it, writes on it are refused (`repo_archived`). The root is never archivable;
+  primaries, pins, adopted repos and port sources need `--force-with-reason`.
+- **The action log** (`.comparegraph/actions.jsonl`, `action/1`, domain/actionlog.rs): every write verb appends one line, chained
+  by `hash = sha256(prev || canonical(entry))`; the head is also in `meta.actions_head`, so a file cut short disagrees with the
+  store. `governance verify` re-walks it with the archive flags and manifests; `check` and `doctor` show it.
+- **`repos --no-port`**: the licence lanes as one filter; the never-copy set (domain/licence.rs) is a constant a policy may
+  only extend.
+- **Connection settings**: `synchronous = NORMAL` under WAL, a 64 MiB page cache per connection, `PRAGMA optimize` (bounded by
+  `analysis_limit`, never waiting for a lock) when a write verb's store closes. Nothing is stored in the schema.
+
 ## 15. Standards honoured (so nothing here is a private format)
 MCP (tools/list, JSON Schema inputs and outputs, stdio transport) · JSON Schema 2020-12 for every contract · SPDX identifiers for
 licences · RFC 4180 CSV · JSON Lines for the plugin protocol · Obsidian conventions for the vault (YAML front matter, `[[wikilinks]]`,

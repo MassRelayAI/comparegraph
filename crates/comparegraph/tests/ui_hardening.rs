@@ -437,6 +437,24 @@ mod docs {
         let body = src.split("pub fn code(&self)").nth(1).unwrap().split("pub fn hint").next().unwrap();
         let mut used: Vec<String> = body.split('"').skip(1).step_by(2).map(String::from).collect();
         used.push("catalog_stale".into());
+        // and every code an `AppError::structured("<code>", ...)` in the source can carry
+        let re = regex::Regex::new(r#"structured\(\s*"([a-z_]+)""#).unwrap();
+        fn files(d: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for e in std::fs::read_dir(d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    files(&p, out);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    out.push(p);
+                }
+            }
+        }
+        let mut srcs = vec![];
+        files(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut srcs);
+        for f in srcs {
+            let t = std::fs::read_to_string(f).unwrap();
+            used.extend(re.captures_iter(&t).map(|c| c[1].to_string()));
+        }
         used.sort();
         used.dedup();
         let cat: serde_json::Value = serde_json::from_str(include_str!("../../../docs/catalog.json")).unwrap();

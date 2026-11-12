@@ -6,10 +6,12 @@ use std::path::Path;
 
 pub fn export_json(root: &Path, repo: Option<&str>) -> Result<Value> {
     let store = Store::open_existing(root)?;
+    // an archived repo is exported only when named
+    let archived = super::archive::archived_names(&store)?;
     let repos: Vec<_> = store
         .repos()?
         .into_iter()
-        .filter(|r| repo.map(|n| n == r.name).unwrap_or(true))
+        .filter(|r| repo.map(|n| n == r.name).unwrap_or_else(|| !archived.contains(&r.name)))
         .collect();
     if let Some(n) = repo {
         if repos.is_empty() {
@@ -104,6 +106,10 @@ pub fn export_csv(root: &Path, repo: Option<&str>, out: &Path) -> Result<Value> 
     let store = Store::open_existing(root)?;
     let mut repos = store.repos()?;
     repos.sort_by(|a, b| a.name.cmp(&b.name));
+    if repo.is_none() {
+        let archived = super::archive::archived_names(&store)?;
+        repos.retain(|r| !archived.contains(&r.name));
+    }
     if let Some(n) = repo {
         repos.retain(|r| r.name == n);
         if repos.is_empty() {

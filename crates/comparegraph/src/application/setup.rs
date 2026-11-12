@@ -109,11 +109,27 @@ pub struct Ctx {
     pub bin: String,
     /// the command came from `--bin` / COMPAREGRAPH_BIN rather than the running executable
     pub explicit_bin: bool,
-    /// the running executable sits under a `target/` directory (a build tree)
+    /// the running executable sits in a cargo build tree (see [`is_dev_build`])
     pub dev_build: bool,
     pub workspace: String,
     /// the `PATH` a bare command is resolved against (tests inject one)
     pub path_env: Option<String>,
+}
+/// True when `exe` runs from a cargo build tree, whatever the target directory is called (`CARGO_TARGET_DIR`): a path
+/// component named `target`, a `deps/` and `.fingerprint/` beside the executable (cargo's profile directory, also for a
+/// test binary in `deps/`), or a cargo `CACHEDIR.TAG` in an ancestor. The name alone missed `~/ssd-build/target-x`.
+pub fn is_dev_build(exe: &Path) -> bool {
+    if exe.components().any(|c| c.as_os_str() == "target") {
+        return true;
+    }
+    let Some(dir) = exe.parent() else { return false };
+    let profile = if dir.file_name().is_some_and(|n| n == "deps") { dir.parent().unwrap_or(dir) } else { dir };
+    if profile.join("deps").is_dir() && profile.join(".fingerprint").is_dir() {
+        return true;
+    }
+    profile.ancestors().take(4).any(|a| {
+        std::fs::read_to_string(a.join("CACHEDIR.TAG")).is_ok_and(|t| t.contains("created by cargo"))
+    })
 }
 impl Ctx {
     pub fn from_env(root: &Path, bin: Option<&str>) -> Ctx {
@@ -125,7 +141,7 @@ impl Ctx {
             .or_else(|| home.as_ref().map(|h| h.join(".config")));
         let explicit = bin.map(str::to_string).or_else(|| std::env::var("COMPAREGRAPH_BIN").ok().filter(|b| !b.is_empty()));
         let exe = std::env::current_exe().ok();
-        let dev_build = exe.as_ref().is_some_and(|p| p.components().any(|c| c.as_os_str() == "target"));
+        let dev_build = exe.as_ref().is_some_and(|p| is_dev_build(p));
         let explicit_bin = explicit.is_some();
         let bin = match explicit {
             Some(b) => absolutise(&b, &cwd),

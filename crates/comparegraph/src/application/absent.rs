@@ -723,6 +723,7 @@ pub(crate) fn pinned_run(store: &Store, repo: &str) -> Result<(i64, String)> {
     let r = store
         .repo_by_name(repo)?
         .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
+    super::archive::refuse_if_archived(store, repo)?;
     let run = store
         .latest_done_run_by_provider(r.id.unwrap(), "reference")?
         .ok_or_else(|| {

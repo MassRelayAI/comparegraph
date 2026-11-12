@@ -42,10 +42,12 @@ pub struct BuildReport {
     pub edges_copied: usize,
 }
 
-/// The workspace db as the provider's parse cache (its own connection; written only after the parse loop).
-struct StoreCache(Store);
+/// The workspace db as the provider's parse cache (its own connection; written only after the parse loop). It notes
+/// the file hashes the build asked for, so a finished build can prune their rows of other provider versions.
+struct StoreCache(Store, std::cell::RefCell<Vec<String>>);
 impl crate::providers::ParseCache for StoreCache {
     fn get(&self, h: &str, l: &str, v: &str) -> Option<Vec<u8>> {
+        self.1.borrow_mut().push(h.to_string());
         self.0.parse_cache_get(h, l, v)
     }
     fn put_many(&self, entries: &[(String, String, String, Vec<u8>)]) {
@@ -63,6 +65,7 @@ pub fn build_repo(
     let repo = store.repo_by_name(repo_name)?.ok_or_else(|| {
         AppError::NotFound(format!("no repo '{repo_name}'; run `comparegraph add` first"))
     })?;
+    super::archive::refuse_if_archived(&store, repo_name)?;
     let provider = by_name_in(root, provider_name)
         .ok_or_else(|| AppError::NotFound(format!("no provider '{provider_name}'")))?;
     // the subset: the build's own globs, else the repo's `add` defaults; checked before a run row exists
@@ -133,8 +136,11 @@ pub fn build_repo(
             prev_comms = Some(c);
         }
     }
+    let mut cache_handle: Option<std::rc::Rc<StoreCache>> = None;
     if !opts.full && opts.cache.is_none() {
-        opts.cache = Some(std::rc::Rc::new(StoreCache(Store::open(root)?)));
+        let c = std::rc::Rc::new(StoreCache(Store::open(root)?, Default::default()));
+        opts.cache = Some(c.clone() as std::rc::Rc<dyn crate::providers::ParseCache>);
+        cache_handle = Some(c);
     }
     if opts.progress {
         eprintln!("[progress] reading {} head={}", repo.path, super::git(Path::new(&repo.path), &["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "none".into()));
@@ -233,6 +239,14 @@ pub fn build_repo(
         crate::providers::reference::profile_line("store.store_hash", tp, 0);
         let secs = t.elapsed().as_secs_f64();
         store.finish_run(run, RunStatus::Done, secs, &out.limitations, Some(&hash))?;
+        // prune-on-build (lane CG-STORE A4): the files this build parsed lose their rows of other provider versions,
+        // so the cache stops growing at each engine version bump; best effort, the cache is an optimisation
+        if let Some(c) = &cache_handle {
+            let mut seen = c.1.borrow().clone();
+            seen.sort();
+            seen.dedup();
+            let _ = store.prune_parse_cache_files(&seen, &provider.version());
+        }
         Ok((nodes.len(), edges.len(), comms.len(), hash, secs))
     })();
     let (n_nodes, n_edges, n_comms, hash, secs) = match stored {

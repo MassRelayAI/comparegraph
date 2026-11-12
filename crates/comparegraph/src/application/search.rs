@@ -107,15 +107,17 @@ pub fn search(root: &Path, q: &SearchQuery) -> Result<SearchPage> {
     let store = Store::open_existing(root)?;
     let c = store.conn();
     let kind = q.kind.map(|k| k.as_str());
+    // an archived repo leaves the default listing; naming it with --repo still searches its stored graph
+    let where_ = format!("{WHERE} AND (?2 IS NOT NULL OR r.name NOT IN (SELECT substr(key, 10) FROM meta WHERE substr(key, 1, 9) = 'archived:'))");
     let total: i64 = c.query_row(
-        &format!("SELECT COUNT(*) {WHERE}"),
+        &format!("SELECT COUNT(*) {where_}"),
         params![m, q.repo, kind],
         |r| r.get(0),
     )?;
     let sql = format!(
         "SELECT r.name, n.qualified_name, n.kind, n.path, n.line_start, n.line_end, \
          {LABEL_SUBQUERY}, -bm25(node_fts) AS score \
-         {WHERE} ORDER BY score DESC, n.qualified_name ASC, n.id ASC LIMIT ?4 OFFSET ?5"
+         {where_} ORDER BY score DESC, n.qualified_name ASC, n.id ASC LIMIT ?4 OFFSET ?5"
     );
     let mut st = c.prepare(&sql)?;
     let items = st

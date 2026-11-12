@@ -240,7 +240,7 @@ fn editing_cited_lines_turns_the_cell_into_unknown_star_and_out_of_prevalence() 
     assert_eq!(row(&before, "routing.retry")["prevalence"], 1.0);
     // k = [r, c, b]; edit b's clone
     std::fs::write(k[2].path().join("a.py"), "changed\nlines\n").unwrap();
-    let chk = json(cc(ws.path()).arg("check").assert().failure());
+    let chk = json(cc(ws.path()).args(["check", "--mark", "--by", "t"]).assert().failure());
     assert_eq!(chk["data"]["downgraded_claims"], 1, "{chk}");
     let v = json(cc(ws.path()).args(["matrix", "fam"]).assert().success());
     let r = row(&v, "routing.retry");

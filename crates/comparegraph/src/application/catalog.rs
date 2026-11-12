@@ -4,15 +4,29 @@ use serde_json::{json, Value};
 
 /// Every code an envelope `error.code` can carry (`AppError::code` plus `catalog_stale`).
 pub const ERROR_CODES: &[&str] = &[
+    "already_archived",
+    "archive_refused",
+    "backup_mismatch",
     "below_floor",
+    "cannot_archive_root",
     "catalog_stale",
+    "chain_broken",
     "check_failed",
+    "clone_missing",
+    "clone_unavailable",
     "empty",
+    "head_mismatch",
+    "insufficient_space",
     "invalid_arguments",
+    "invalid_policy",
     "io_error",
+    "manifest_mismatch",
     "none_refused",
+    "not_archived",
     "not_found",
     "provider_unavailable",
+    "repo_archived",
+    "store_busy",
     "store_error",
 ];
 

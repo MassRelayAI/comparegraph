@@ -3,16 +3,18 @@
 The tools `comparegraph mcp` serves. [`catalog.json`](catalog.json) is the machine-readable source for the tool list and the error codes; `comparegraph catalog --check` fails when it drifts from the code.
 
 `comparegraph mcp` speaks JSON-RPC 2.0 over stdio, one object per line, protocol `2025-06-18`. Every tool returns the same
-envelope as the CLI. 34 tools: 33 read-only, one write (`comparegraph_claim`). The list is generated into
+envelope as the CLI. 36 tools: 35 read-only, one write (`comparegraph_claim`). The list is generated into
 [`docs/catalog.json`](catalog.json) and checked in CI by `comparegraph catalog --check`.
 
 | Tool | Answers | Key arguments |
 |---|---|---|
-| `comparegraph_repos` | Which repos, with licence, lane, role, head and latest run | `limit`, `cursor` |
+| `comparegraph_repos` | Which repos, with licence, lane, role, head and latest run; archived repos are left out unless asked; `no_port` lists the repos whose code must not be ported, each with why (`lane study`, `licence AGPL-3.0`, `licence unread`) | `limit`, `cursor`, `archived`, `all`, `no_port` |
 | `comparegraph_search` | Which symbols match these words | `query`, `repo`, `kind`, `limit`, `cursor` |
 | `comparegraph_show` | One symbol: callers, callees, community, licence lane | `repo`, `qualified_name`, `detail`, `max_callers` |
 | `comparegraph_communities` | Module clusters of a repo | `repo`, `limit`, `cursor` |
-| `comparegraph_check` | Is the store sound | none |
+| `comparegraph_check` | Is the store sound: schema, search index, citation locations, the action log. A true read: it writes no flag; a clone that is missing or at another head than its run read is `clone_unavailable` and its locations are not read | none |
+| `comparegraph_relevance` | Per repo: factor counts and, with the user's `relevance-policy/1` file, a score and a class (`unrated` without one); `explain` gives every term of one repo | `policy`, `family`, `explain`, `class`, `as_of`, `limit`, `cursor` |
+| `comparegraph_governance_verify` | Does the action log beside the store verify: each hash, a gapless seq, the head kept in the store, each archive flag against its manifest | none |
 | `comparegraph_families` | Which families, with feature counts | none |
 | `comparegraph_map` | Candidate symbols and communities per feature | `repo`, `family`, `feature`, `limit` |
 | `comparegraph_absent_check` | Four-channel absent check for one feature, plus the ranked `read_set` (top 10 candidates) a `none` must read (reads; it cannot record a claim) | `repo`, `family`, `feature`, `searched` (optional) |
@@ -43,7 +45,9 @@ envelope as the CLI. 34 tools: 33 read-only, one write (`comparegraph_claim`). T
 | `comparegraph_dead_code` | Dead-code candidates (never proof) | `repo`, `limit`, `cursor`, `min_confidence` |
 | `comparegraph_doctor` | Store and provider status | none |
 
-There is no `decide` tool: adopting or rejecting a clone is a human act on the CLI. `min_confidence` is `0.5` (default,
+There is no `decide` tool: adopting or rejecting a clone is a human act on the CLI. For the same reason the store-safety
+writes (`backup`, `restore-store`, `gc`, `archive`, `restore`, `check --mark`) have no tool: they are CLI only, dry-run by
+default where they change the store, and each appends one entry to the action log. `min_confidence` is `0.5` (default,
 includes guessed hops, labelled in `evidence`) or `1.0`. A name-only match is capped at `0.5` and never binds onto a method.
 Truncation (`depth`, `max_nodes`) is recorded in `evidence.limitations`. By hand, add this to `.mcp.json`:
 

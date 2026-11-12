@@ -3,7 +3,6 @@ use crate::adapters::envelope::Envelope;
 use crate::application::graph as g;
 use crate::application::{
     build::build_repo,
-    check::check,
     export::{export_csv, export_json},
     setup,
     search::{search, SearchQuery},
@@ -237,8 +236,129 @@ pub enum Cmd {
         #[arg(long, value_name = "GLOB")]
         exclude: Vec<String>,
     },
-    /// Verify: schema, determinism, locations
-    Check,
+    /// Verify: schema, search index, citation locations, the action log. Writes nothing unless --mark
+    Check {
+        /// write `stale = 1` on the locations found stale (CLI only; logged)
+        #[arg(long)]
+        mark: bool,
+        /// with --mark: also clear `stale` on locations whose cited lines hash as recorded again
+        #[arg(long, requires = "mark")]
+        recompute: bool,
+        /// also recompute every latest run's store_hash (reads every node and edge)
+        #[arg(long)]
+        deep: bool,
+        /// who asked (required with --mark; recorded in the action log)
+        #[arg(long)]
+        by: Option<String>,
+    },
+    /// Copy the store out: a consistent full copy (VACUUM INTO) or the non-rebuildable rows only; verified, with a manifest
+    Backup {
+        /// the folder the backup goes into (default .comparegraph/backups)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// only the rows that cannot be rebuilt (repos, families, features, runs without graph, claims, locations,
+        /// decisions, relatedness, meta) and the action log, as one JSONL
+        #[arg(long)]
+        claims_only: bool,
+        /// then remove the oldest backups of the same kind in --out beyond this many
+        #[arg(long)]
+        keep: Option<usize>,
+        /// who takes it (recorded in the action log)
+        #[arg(long)]
+        by: String,
+    },
+    /// Replace the store with a backup: a plan by default; --apply verifies it, refuses while the store is in use,
+    /// takes a pre-restore backup and moves the current store aside (never deleted)
+    RestoreStore {
+        backup: PathBuf,
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        by: Option<String>,
+    },
+    /// Store retention: prune the parse cache (--parse-cache) or mark stuck runs abandoned (--stale-runs); dry-run by default
+    Gc {
+        /// drop parse-cache rows of other provider versions, then VACUUM
+        #[arg(long, required_unless_present = "stale_runs", conflicts_with = "stale_runs")]
+        parse_cache: bool,
+        /// runs still `running` past --older-than-hours become `abandoned`
+        #[arg(long)]
+        stale_runs: bool,
+        /// keep this many provider versions (the running binary's first); default 1, or the policy's retention
+        #[arg(long, requires = "parse_cache")]
+        keep_versions: Option<usize>,
+        /// drop every cache row (the next build of each clone parses every file)
+        #[arg(long, requires = "parse_cache", conflicts_with = "keep_versions")]
+        all_cache: bool,
+        /// with --stale-runs: the age past which a `running` run is abandoned
+        #[arg(long, default_value_t = 24)]
+        older_than_hours: u64,
+        /// a relevance-policy/1 file whose retention.parse_cache_versions is the default keep
+        #[arg(long)]
+        policy: Option<PathBuf>,
+        #[arg(long)]
+        apply: bool,
+        /// who runs it (required with --apply; recorded in the action log)
+        #[arg(long)]
+        by: Option<String>,
+    },
+    /// Per repo: the factor counts and, with a relevance-policy/1 file, a score and a class; reads only
+    Relevance {
+        /// the policy (default .comparegraph/policy.json when present; none: every repo `unrated`)
+        #[arg(long)]
+        policy: Option<PathBuf>,
+        /// restrict every factor to one family
+        #[arg(long)]
+        family: Option<String>,
+        /// one repo with every term of its score
+        #[arg(long)]
+        explain: Option<String>,
+        /// only this class (ROOT, KEEP-PRIMARY, KEEP, KEEP-NEW, ARCHIVE, REMOVE-CANDIDATE, unrated)
+        #[arg(long)]
+        class: Option<String>,
+        /// the day ages are counted to (default: the newest timestamp in the store, not the clock)
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        as_of: Option<String>,
+        /// page size (1..=500)
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Soft-archive a repo: a manifest first, then a flag; its rows stay, it leaves the default views and `check`
+    Archive {
+        repo: String,
+        #[arg(long)]
+        why: String,
+        #[arg(long)]
+        by: String,
+        #[arg(long)]
+        policy: Option<PathBuf>,
+        #[arg(long)]
+        apply: bool,
+        /// archive a primary, a pinned, an adopted or a port-source repo anyway; the reason is recorded
+        #[arg(long, value_name = "REASON")]
+        force_with_reason: Option<String>,
+    },
+    /// Bring an archived repo back (by its manifest or its name)
+    Restore {
+        target: String,
+        #[arg(long)]
+        by: String,
+        /// the clone's folder now (default: the path at archive time)
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// the clone is at another head: build it as it is now
+        #[arg(long)]
+        rebuild: bool,
+        #[arg(long)]
+        apply: bool,
+    },
+    /// The action log: `governance verify` re-walks its hash chain against the store
+    Governance {
+        #[command(subcommand)]
+        what: GovernanceCmd,
+    },
     /// Export the graph
     Export {
         #[command(subcommand)]
@@ -379,13 +499,25 @@ pub enum Cmd {
         #[arg(long)]
         file: Option<PathBuf>,
     },
-    /// Registered repos with their latest run summary
+    /// Registered repos with their latest run summary (archived repos only with --archived or --all)
     Repos {
         /// page size (1..=500)
         #[arg(long, default_value_t = 50)]
         limit: usize,
         #[arg(long)]
         cursor: Option<String>,
+        /// only the archived repos
+        #[arg(long, conflicts_with = "all")]
+        archived: bool,
+        /// active and archived repos
+        #[arg(long)]
+        all: bool,
+        /// only the repos whose code must not be ported (lane not take, a never-copy licence, or no licence read), with why
+        #[arg(long)]
+        no_port: bool,
+        /// a relevance-policy/1 file whose licences.never_copy_extra extends the never-copy set
+        #[arg(long)]
+        policy: Option<PathBuf>,
     },
     /// Module clusters of a repo's latest run
     Communities {
@@ -562,6 +694,11 @@ pub enum Cmd {
     },
 }
 #[derive(Subcommand)]
+pub enum GovernanceCmd {
+    /// Re-walk the action log: every hash, a gapless seq, the head in the store, archive flags against their manifests
+    Verify,
+}
+#[derive(Subcommand)]
 pub enum FamilyCmd {
     /// Read a pack directory (rows.md) into the store; features it no longer lists become retired
     Add {
@@ -621,7 +758,14 @@ fn verb_of(c: &Cmd) -> &'static str {
     match c {
         Cmd::Add { .. } => "add",
         Cmd::Build { .. } => "build",
-        Cmd::Check => "check",
+        Cmd::Check { .. } => "check",
+        Cmd::Backup { .. } => "backup",
+        Cmd::RestoreStore { .. } => "restore-store",
+        Cmd::Gc { .. } => "gc",
+        Cmd::Relevance { .. } => "relevance",
+        Cmd::Archive { .. } => "archive",
+        Cmd::Restore { .. } => "restore",
+        Cmd::Governance { .. } => "governance-verify",
         Cmd::Export { .. } => "export",
         Cmd::Search { .. } => "search",
         Cmd::Show { .. } => "show",
@@ -889,7 +1033,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
         Ok(v) => {
             let conf = if matches!(
                 cli.cmd,
-                Cmd::Check | Cmd::Claims { .. } | Cmd::Matrix { .. }
+                Cmd::Check { .. } | Cmd::Claims { .. } | Cmd::Matrix { .. } | Cmd::Governance { .. }
                     | Cmd::Ui { what: UiCmd::Diff { .. } | UiCmd::Matrix { .. } | UiCmd::NavDiff { .. } | UiCmd::GraphDiff { .. } | UiCmd::Verify { .. }, .. }
             ) {
                 "derived"
@@ -1051,14 +1195,75 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             },
         )?)
         .unwrap(),
-        Cmd::Check => {
-            let r = check(&cli.root)?;
+        Cmd::Check { mark, recompute, deep, by } => {
+            let r = crate::application::check::check_with(
+                &cli.root,
+                &crate::application::check::CheckOptions { mark: *mark, recompute: *recompute, deep: *deep, by: by.clone() },
+            )?;
             let v = serde_json::to_value(&r).unwrap();
             if !r.ok() {
-                return Ok(Err((
-                    AppError::CheckFailed(format!("{} problem(s)", r.problems.len())),
-                    Some(v),
-                )));
+                let e = if r.only_unavailable() {
+                    AppError::structured(
+                        "clone_unavailable",
+                        format!("{} clone(s) could not be read as their runs read them; nothing was written for them", r.clone_unavailable.len()),
+                        Some("put the clone back at the head its run read (data.clone_unavailable), or `archive` the repo".into()),
+                        None,
+                    )
+                } else {
+                    AppError::CheckFailed(format!("{} problem(s)", r.problems.len()))
+                };
+                return Ok(Err((e, Some(v))));
+            }
+            v
+        }
+        Cmd::Backup { out, claims_only, keep, by } => {
+            let kind = if *claims_only { crate::application::backup::Kind::ClaimsOnly } else { crate::application::backup::Kind::Full };
+            crate::application::backup::backup(&cli.root, out.as_deref(), kind, *keep, by)?
+        }
+        Cmd::RestoreStore { backup, apply, by } => {
+            crate::application::backup::restore_store(&cli.root, backup, *apply, by.as_deref().unwrap_or(""))?
+        }
+        Cmd::Gc { parse_cache, stale_runs: _, keep_versions, all_cache, older_than_hours, policy, apply, by } => {
+            let by = by.as_deref().unwrap_or("");
+            if *parse_cache {
+                let policy_keep = crate::application::relevance::load_policy(&cli.root, policy.as_deref())?
+                    .and_then(|p| p.policy.retention.map(|r| r.parse_cache_versions));
+                crate::application::retain::gc_parse_cache(
+                    &cli.root,
+                    &crate::application::retain::CacheOpts { keep_versions: *keep_versions, all: *all_cache, apply: *apply, by, policy_keep },
+                )?
+            } else {
+                crate::application::retain::gc_stale_runs(&cli.root, *older_than_hours, *apply, by)?
+            }
+        }
+        Cmd::Relevance { policy, family, explain, class, as_of, limit, cursor } => crate::application::relevance::relevance(
+            &cli.root,
+            &crate::application::relevance::Opts {
+                policy: policy.as_deref(),
+                family: family.as_deref(),
+                explain: explain.as_deref(),
+                class: class.as_deref(),
+                as_of: as_of.as_deref(),
+                limit: *limit,
+                cursor: cursor.as_deref(),
+            },
+        )?,
+        Cmd::Archive { repo, why, by, policy, apply, force_with_reason } => crate::application::archive::archive(
+            &cli.root,
+            repo,
+            &crate::application::archive::ArchiveOpts { why, by, policy: policy.as_deref(), apply: *apply, force_with_reason: force_with_reason.as_deref() },
+        )?,
+        Cmd::Restore { target, by, path, rebuild, apply } => crate::application::archive::restore(
+            &cli.root,
+            target,
+            &crate::application::archive::RestoreOpts { by, path: path.as_deref(), rebuild: *rebuild, apply: *apply },
+        )?,
+        Cmd::Governance { what: GovernanceCmd::Verify } => {
+            let r = crate::application::governance::verify(&cli.root)?;
+            let v = serde_json::to_value(&r).unwrap();
+            if !r.ok() {
+                let at = r.broken_at.as_ref().map(|b| format!(" at line {}", b.line)).unwrap_or_default();
+                return Ok(Err((AppError::CheckFailed(format!("the action log does not verify{at}: {}", r.problems.join("; "))), Some(v))));
             }
             v
         }
@@ -1368,14 +1573,21 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         Cmd::Matrix { family, relate, reach } => {
             let m = crate::application::matrix::matrix_reach(&cli.root, family, *relate, reach.as_deref())?;
             let mut v = serde_json::to_value(&m).unwrap();
+            let mut lims = vec![];
             if m.not_run > 0 {
-                v["limitation_items"] = serde_json::json!([{
+                lims.push(serde_json::json!({
                     "code": "relate_not_run",
                     "detail": format!(
                         "relate has not been run for {} of {} comparators; run `comparegraph relate` (or `matrix --relate`)",
                         m.not_run, m.comparators
                     ),
-                }]);
+                }));
+            }
+            if m.archived_skipped > 0 {
+                lims.push(serde_json::json!({"code": "archived_skipped", "detail": format!("{} archived repo(s) are not columns", m.archived_skipped)}));
+            }
+            if !lims.is_empty() {
+                v["limitation_items"] = serde_json::json!(lims);
             }
             v
         }
@@ -1456,7 +1668,12 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             if !unmapped.is_empty() {
                 limitations.push(serde_json::json!({ "code": "unmapped_roots", "detail": format!("{} registered clone path(s) do not exist here; pass --root-map FROM=TO", unmapped.len()) }));
             }
-            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": repos.len(), "unmapped_roots": unmapped, "providers": providers, "external_providers": external, "clients": clients, "limitation_items": limitations })
+            // the action log and the archive count (governance verify, summarised)
+            let governance = match crate::application::governance::verify_with(&store, &cli.root) {
+                Ok(g) => serde_json::json!({ "actions": g.actions, "chain_ok": g.ok(), "broken_at": g.broken_at.map(|b| b.line), "archived": g.archived }),
+                Err(e) => serde_json::json!({ "error": e.to_string() }),
+            };
+            serde_json::json!({ "store": store.path(), "schema_version": store.schema_version()?, "repos": repos.len(), "unmapped_roots": unmapped, "providers": providers, "external_providers": external, "clients": clients, "governance": governance, "limitation_items": limitations })
         }
         Cmd::Setup { client, scope, apply, force, bin, no_rules, no_hook } => {
             let scope = match scope.as_str() {
@@ -1511,7 +1728,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             serde_json::json!({ "file": p, "stale": false })
         }
         Cmd::Mcp => unreachable!("mcp is served by run()"),
-        Cmd::Repos { limit, cursor } => {
+        Cmd::Repos { limit, cursor, archived, all, no_port, policy } => {
             let offset = match cursor {
                 Some(c) => c
                     .parse::<usize>()
@@ -1519,11 +1736,22 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 None => 0,
             };
             let limit = (*limit).clamp(1, 500);
+            let extra: Vec<String> = match crate::application::relevance::load_policy(&cli.root, policy.as_deref())? {
+                Some(p) => p.policy.licences.map(|l| l.never_copy_extra).unwrap_or_default(),
+                None => vec![],
+            };
             let store = Store::open_existing(&cli.root)?;
+            let arch = crate::application::archive::archived_names(&store)?;
             let mut out = Vec::new();
-            let all = store.repos()?;
-            let total = all.len();
-            for r in all.into_iter().skip(offset).take(limit) {
+            let every = store.repos()?;
+            let skipped = if *archived || *all { 0 } else { every.iter().filter(|r| arch.contains(&r.name)).count() };
+            let all_rows: Vec<_> = every
+                .into_iter()
+                .filter(|r| if *archived { arch.contains(&r.name) } else { *all || !arch.contains(&r.name) })
+                .filter(|r| !*no_port || !crate::domain::licence::no_port_reasons(r.licence.as_deref(), &r.lane, &extra).is_empty())
+                .collect();
+            let total = all_rows.len();
+            for r in all_rows.into_iter().skip(offset).take(limit) {
                 let run = match r.id {
                     Some(id) => store.latest_run(id)?,
                     None => None,
@@ -1541,14 +1769,25 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     }
                     None => serde_json::Value::Null,
                 };
-                out.push(serde_json::json!({
+                let mut row = serde_json::json!({
                     "name": r.name, "licence": r.licence, "lane": r.lane, "role": r.role,
                     "head": r.head, "source_commit": r.source_commit, "moved_to": r.moved_to,
                     "include": r.include, "exclude": r.exclude, "latest_run": latest,
-                }));
+                });
+                if *archived || *all {
+                    row["archived"] = serde_json::json!(arch.contains(&r.name));
+                }
+                if *no_port {
+                    row["no_port"] = serde_json::json!(crate::domain::licence::no_port_reasons(r.licence.as_deref(), &r.lane, &extra));
+                }
+                out.push(row);
             }
             let next = (offset + out.len() < total).then(|| (offset + out.len()).to_string());
-            serde_json::json!({ "items": out, "page": { "next": next, "total": total } })
+            let mut lims = vec![];
+            if skipped > 0 {
+                lims.push(serde_json::json!({"code": "archived_skipped", "detail": format!("{skipped} archived repo(s) not listed; --archived or --all lists them")}));
+            }
+            serde_json::json!({ "items": out, "page": { "next": next, "total": total }, "limitation_items": lims })
         }
         Cmd::Communities {
             repo,

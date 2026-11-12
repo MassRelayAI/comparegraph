@@ -89,6 +89,7 @@ fn latest_done(store: &Store, repo: &str) -> Result<(i64, i64)> {
     let r = store
         .repo_by_name(repo)?
         .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
+    super::archive::refuse_if_archived(store, repo)?;
     let rid = r.id.unwrap();
     let run = store
         .latest_done_run(rid)?
@@ -363,11 +364,13 @@ fn relate_pair(store: &Store, repo: &str, family: &str, rid: i64, run: i64, idx:
 /// refused (`not_found`) when named. Re-running on the same run returns the stored row.
 pub fn relate(root: &Path, repo: Option<&str>, family: Option<&str>) -> Result<Vec<Related>> {
     let store = Store::open(root)?;
+    let archived = super::archive::archived_names(&store)?;
     let repos: Vec<String> = match repo {
         Some(r) => vec![r.to_string()],
         None => store
             .repos()?
             .into_iter()
+            .filter(|r| !archived.contains(&r.name))
             .filter(|r| {
                 r.id.is_some_and(|id| store.latest_done_run(id).ok().flatten().is_some())
             })
@@ -402,6 +405,15 @@ pub fn latest_relatedness(
     family: Option<&str>,
 ) -> Result<Vec<Related>> {
     let store = Store::open_existing(root)?;
+    let mut rows = latest_relatedness_in(&store, repo, family)?;
+    if repo.is_none() {
+        let archived = super::archive::archived_names(&store)?;
+        rows.retain(|r| !archived.contains(&r.repo));
+    }
+    Ok(rows)
+}
+/// As `latest_relatedness`, on a store already open (a read-only one included).
+pub fn latest_relatedness_in(store: &Store, repo: Option<&str>, family: Option<&str>) -> Result<Vec<Related>> {
     let mut st = store.conn().prepare(
         "SELECT r.name, fa.name, x.run_id, x.score, x.band, x.basis_json, x.pack_hash FROM relatedness x \
          JOIN repo r ON r.id = x.repo_id JOIN family fa ON fa.id = x.family_id \
@@ -437,7 +449,7 @@ pub fn latest_relatedness(
         }
         let fam = rows[i].1.family.clone();
         if !hashes.contains_key(&fam) {
-            hashes.insert(fam.clone(), pack_hash(&store, &fam)?);
+            hashes.insert(fam.clone(), pack_hash(store, &fam)?);
         }
         let cur = &hashes[&fam];
         let pick = rows[i..j]

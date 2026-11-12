@@ -180,7 +180,7 @@ fn a_batch_rerun_over_a_stale_live_claim_writes_a_new_claim() {
     batch(ws.path(), &row);
     // `check` flags the location stale after an edit; the edit is then undone, so the hash agrees again
     std::fs::write(a.path().join("src/agent.py"), AGENT.replace("compact(msg)\n\ndef", "compact(msg[1:])\n\ndef")).unwrap();
-    let _ = cc(ws.path()).arg("check").output().unwrap();
+    let _ = cc(ws.path()).args(["check", "--mark", "--by", "t"]).output().unwrap();
     std::fs::write(a.path().join("src/agent.py"), AGENT).unwrap();
     let v = json(cc(ws.path()).args(["claims"]).assert().success());
     assert_eq!(v["data"]["items"][0]["locations"][0]["stale"], true, "{v}");
@@ -287,7 +287,7 @@ fn matrix_reach_treats_a_stale_cell_as_unknown() {
     };
     assert_eq!(rows("reached").len(), 1);
     std::fs::write(a.path().join("src/main.py"), MAIN.replace("msg.upper()", "msg.lower()")).unwrap();
-    let _ = cc(ws.path()).arg("check").output().unwrap();
+    let _ = cc(ws.path()).args(["check", "--mark", "--by", "t"]).output().unwrap();
     assert!(rows("reached").is_empty(), "a stale cell does not match --reach reached");
     let u = rows("unknown");
     assert_eq!(u.len(), 1, "{u:?}");

@@ -1,5 +1,5 @@
 //! MCP stdio server: JSON-RPC 2.0, one object per line. Tools run the same verbs as the CLI and return the same envelope.
-use crate::adapters::cli::{envelope_for, Cli, Cmd, FamilyCmd, UiCmd};
+use crate::adapters::cli::{envelope_for, Cli, Cmd, FamilyCmd, GovernanceCmd, UiCmd};
 use crate::adapters::envelope::Envelope;
 use crate::application::AppError;
 use serde_json::{json, Value};
@@ -45,20 +45,33 @@ pub fn tools() -> Vec<Value> {
         .as_object_mut()
         .unwrap()
         .extend(page_props().as_object().unwrap().clone());
+    let mut repos_props = json!({
+        "archived": {"type":"boolean","description":"only the archived repos"},
+        "all": {"type":"boolean","description":"active and archived repos"},
+        "no_port": {"type":"boolean","description":"only the repos whose code must not be ported: lane not take, a never-copy licence (AGPL, GPL, LGPL, SSPL, BUSL, fair-code ...) or no licence read; each row says why"} });
+    repos_props.as_object_mut().unwrap().extend(page_props().as_object().unwrap().clone());
     let mut comm_props = json!({ "repo": {"type":"string"} });
     comm_props
         .as_object_mut()
         .unwrap()
         .extend(page_props().as_object().unwrap().clone());
     vec![
-        tool("comparegraph_repos", "List registered repos (name, licence, lane, role, head) with the latest run summary (status, nodes, communities, store_hash). Returns a compact, paged envelope.", schema(page_props(), &[])),
+        tool("comparegraph_repos", "List registered repos (name, licence, lane, role, head) with the latest run summary (status, nodes, communities, store_hash). Archived repos are left out unless archived or all is true; no_port lists only the repos whose code must not be ported, with why. Returns a compact, paged envelope.", schema(repos_props, &[])),
         tool("comparegraph_search", "Full-text search over symbols of each repo's latest run. Returns a compact, paged envelope of hits with licence-lane labels.", schema(search_props, &["query"])),
         tool("comparegraph_show", "One symbol with callers, callees, community and licence lane. Compact by default; detail=full adds its current source lines.", schema(json!({
             "repo": {"type":"string"}, "qualified_name": {"type":"string"},
             "detail": {"type":"string","enum":["compact","full"]},
             "max_callers": {"type":"integer","minimum":1,"maximum":2000,"description":"cap on callers and callees listed, default 50; a truncated list is reported in limitations"} }), &["repo", "qualified_name"])),
         tool("comparegraph_communities", "Module clusters of a repo's latest run (label, keywords, cohesion, size). Returns a compact, paged envelope.", schema(comm_props, &["repo"])),
-        tool("comparegraph_check", "Verify the store: schema, determinism, locations. Returns a compact envelope listing problems, if any.", schema(json!({}), &[])),
+        tool("comparegraph_check", "Verify the store: schema, search index, citation locations, the action log. Reads only: it never writes a flag; a clone that is missing or at another head than its run read is reported clone_unavailable and its locations are not read. Returns a compact envelope listing problems, if any.", schema(json!({}), &[])),
+        tool("comparegraph_relevance", "Per repo: factor counts (live has/partial claims, pull rows, days since cited, best band, UI reference, size) and, with a relevance-policy/1 file, a score and a class (ROOT, KEEP-PRIMARY, KEEP, KEEP-NEW, ARCHIVE, REMOVE-CANDIDATE; `unrated` without a policy). Weights live only in the policy. Reads only; paged; explain gives one repo with every term.", schema(json!({
+            "policy": {"type":"string","description":"path of a relevance-policy/1 file (default .comparegraph/policy.json when present)"},
+            "family": {"type":"string","description":"restrict every factor to one family"},
+            "explain": {"type":"string","description":"one repo with every term of its score"},
+            "class": {"type":"string","description":"only this class"},
+            "as_of": {"type":"string","description":"YYYY-MM-DD ages are counted to (default: newest timestamp in the store)"},
+            "limit": {"type":"integer","minimum":1,"maximum":500,"description":"page size, default 50"}, "cursor": {"type":"string"} }), &[])),
+        tool("comparegraph_governance_verify", "Re-walk the action log beside the store (every write of backup, restore-store, gc, archive, restore, check --mark): each hash, a gapless seq, the head kept in the store, and each archive flag against its manifest. Fails (check_failed) naming the first broken line. Reads only.", schema(json!({}), &[])),
         tool("comparegraph_families", "Registered taxonomy families with feature counts. Returns a compact envelope.", schema(json!({}), &[])),
         tool("comparegraph_map", "Candidate symbols and communities per feature of a family in one clone. Candidates are never verdicts; writes nothing.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"},
@@ -181,7 +194,9 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
     const UI_COMMON: &[&str] = &["allow_input_drift", "cursor", "page_size", "locale", "theme"];
     let known: &[&str] = match name {
         "comparegraph_check" | "comparegraph_doctor" => &[],
-        "comparegraph_repos" => &["limit", "cursor"],
+        "comparegraph_repos" => &["limit", "cursor", "archived", "all", "no_port"],
+        "comparegraph_relevance" => &["policy", "family", "explain", "class", "as_of", "limit", "cursor"],
+        "comparegraph_governance_verify" => &[],
         "comparegraph_search" => &["query", "repo", "kind", "limit", "cursor"],
         "comparegraph_show" => &["repo", "qualified_name", "detail", "max_callers"],
         "comparegraph_communities" => &["repo", "limit", "cursor"],
@@ -233,11 +248,38 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         return Err(format!("unknown argument {k}"));
     }
     Ok(match name {
-        "comparegraph_repos" => Cmd::Repos {
+        "comparegraph_repos" => {
+            let flag = |k: &str| -> Result<bool, String> {
+                match a.get(k) {
+                    None | Some(Value::Null) => Ok(false),
+                    Some(Value::Bool(b)) => Ok(*b),
+                    Some(_) => Err(format!("{k} must be a boolean")),
+                }
+            };
+            if flag("archived")? && flag("all")? {
+                return Err("archived and all exclude each other".into());
+            }
+            Cmd::Repos {
+                limit: limit_arg(a)?,
+                cursor: str_arg(a, "cursor")?,
+                archived: flag("archived")?,
+                all: flag("all")?,
+                no_port: flag("no_port")?,
+                policy: None,
+            }
+        }
+        "comparegraph_relevance" => Cmd::Relevance {
+            policy: str_arg(a, "policy")?.map(PathBuf::from),
+            family: str_arg(a, "family")?,
+            explain: str_arg(a, "explain")?,
+            class: str_arg(a, "class")?,
+            as_of: str_arg(a, "as_of")?,
             limit: limit_arg(a)?,
             cursor: str_arg(a, "cursor")?,
         },
-        "comparegraph_check" => Cmd::Check,
+        "comparegraph_governance_verify" => Cmd::Governance { what: GovernanceCmd::Verify },
+        // the MCP check is a true read: never --mark
+        "comparegraph_check" => Cmd::Check { mark: false, recompute: false, deep: false, by: None },
         "comparegraph_doctor" => Cmd::Doctor { bin: None, brief: false },
         "comparegraph_search" => Cmd::Search {
             query: req(a, "query")?,

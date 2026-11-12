@@ -220,7 +220,7 @@ fn a_stale_location_shows_the_claim_as_unknown() {
     )
     .success();
     std::fs::write(a.path().join("src/net/a.py"), "changed\nlines\n").unwrap();
-    cc(ws.path()).arg("check").assert().failure();
+    cc(ws.path()).args(["check", "--mark", "--by", "t"]).assert().failure();
     let v = json(cc(ws.path()).args(["claims"]).assert().success());
     assert_eq!(v["data"]["items"][0]["confidence"], "unknown", "{v}");
 }
@@ -298,7 +298,7 @@ fn vault_shows_a_stale_claim_as_unknown_star() {
     )
     .success();
     std::fs::write(a.path().join("src/net/a.py"), "changed\nlines\n").unwrap();
-    cc(ws.path()).arg("check").assert().failure();
+    cc(ws.path()).args(["check", "--mark", "--by", "t"]).assert().failure();
     let out = tempfile::tempdir().unwrap();
     cc(ws.path())
         .args(["export", "vault", "--out"])

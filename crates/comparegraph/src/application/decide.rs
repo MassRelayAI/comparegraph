@@ -67,6 +67,7 @@ pub fn decide_on(
     let r = store
         .repo_by_name(repo)?
         .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
+    super::archive::refuse_if_archived(store, repo)?;
     let rid = r.id.unwrap().0;
     let fid = match feature {
         Some(f) => Some(lookup_feature(store, f, family)?.0),
