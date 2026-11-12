@@ -40,6 +40,9 @@ pub struct GraphTruncated {
     pub depth: bool,
     #[serde(default)]
     pub nodes: bool,
+    /// the probe's time budget ran out
+    #[serde(default)]
+    pub time: bool,
     #[serde(default)]
     pub unexpanded: Vec<String>,
 }

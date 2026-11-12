@@ -37,6 +37,9 @@ fn truncation(g: &UiGraph) -> Vec<Limitation> {
     if g.truncated.nodes {
         l.push(Limitation::new("graph_truncated", format!("the crawl stopped at {} nodes; screens beyond it are missing, so the orphan list is overstated", g.caps.nodes)));
     }
+    if g.truncated.time {
+        l.push(Limitation::new("graph_truncated", format!("the crawl ran out of its time budget with {} node(s) not expanded, so depths and the orphan list are incomplete", g.truncated.unexpanded.len())));
+    }
     l
 }
 fn summary(s: &GraphStats) -> Value {
