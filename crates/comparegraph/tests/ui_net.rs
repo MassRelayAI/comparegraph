@@ -226,3 +226,20 @@ fn a_truncated_capture_is_never_identical() {
     let d = v["data"]["differences"].as_array().unwrap();
     assert!(d.iter().any(|x| x["kind"] == "netIncomplete"), "{v}");
 }
+
+#[test]
+fn net_read_only_is_accepted_shown_with_its_blocked_count_and_never_compared() {
+    // loop 3 (E1): the probe writes net.readOnly {mode, blocked:[{method,host,path}]}; the engine used to reject it with `unknown field readOnly`
+    let d = net_fixture();
+    let ro = json!({ "mode": "get-only", "blocked": [{"method": "POST", "host": "example.test", "path": "/api/mutation"}, {"method": "WEBSOCKET", "host": "example.test", "path": "/ws"}] });
+    edit_evidence(d.path(), "cluttered/room/populated/1440x900-member.json", |e| e["net"]["readOnly"] = ro.clone());
+    let (c, s) = cg(d.path(), &["show", "cluttered", "room", "--ui-root", "."]);
+    assert_eq!(c, 0, "{s}");
+    assert!(!s.to_string().contains("invalid_evidence"), "{s}");
+    assert!(s["data"]["netLine"].as_str().unwrap().contains("read-only net (get-only): 2 blocked"), "{s}");
+    assert_eq!(s["data"]["net"]["readOnly"]["blocked"][0]["path"], "/api/mutation");
+    // a blocked entry with an unknown field is still invalid
+    edit_evidence(d.path(), "cluttered/room/populated/1440x900-member.json", |e| e["net"]["readOnly"]["blocked"][0]["body"] = json!("x"));
+    let (_, v) = cg(d.path(), &["products", "--ui-root", "."]);
+    assert!(v.to_string().contains("invalid_evidence") && v.to_string().contains("body"), "{v}");
+}

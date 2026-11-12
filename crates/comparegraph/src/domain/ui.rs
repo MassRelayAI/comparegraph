@@ -478,6 +478,21 @@ pub struct NetShape {
     pub digest: String,
     pub shape: Value,
 }
+/// `net.readOnly`: the probe ran with the write guard on; `blocked` lists the requests it aborted (method, host, path - no query, no body).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReadOnlyNet {
+    pub mode: String,
+    #[serde(default)]
+    pub blocked: Vec<BlockedRequest>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockedRequest {
+    pub method: String,
+    pub host: String,
+    pub path: String,
+}
 /// `net` of a ui-evidence/1 file (CMP-UI-1-lanes section 13).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -503,6 +518,9 @@ pub struct Net {
     /// opt-in `--shapes`; not echoed by `show`
     #[serde(default, skip_serializing)]
     pub shapes: Option<Vec<NetShape>>,
+    /// opt-in `--read-only-net`: the writes the probe refused (loop 3). Shown by `show`; never part of verify identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<ReadOnlyNet>,
 }
 impl Net {
     pub fn problems(&self) -> Vec<String> {
@@ -538,6 +556,9 @@ impl Net {
             parts.push(format!("slowest {} {} ms", s.path, s.ms));
         }
         parts.push(format!("{} third-party hosts", self.third_party_hosts));
+        if let Some(r) = &self.read_only {
+            parts.push(format!("read-only net ({}): {} blocked", r.mode, r.blocked.len()));
+        }
         if let Some(t) = &self.timing {
             parts.push(format!("load {} ms, content visible {} ms", t.load_ms, t.content_start_visible_ms));
         }

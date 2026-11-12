@@ -16,7 +16,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(
     name = "comparegraph",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), "+", env!("COMPAREGRAPH_GIT_SHA")),
     about = "Many clones, one taxonomy, evidence on every cell"
 )]
 pub struct Cli {

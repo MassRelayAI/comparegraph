@@ -26,3 +26,14 @@ fn manifests_repeat_the_crate_version() {
     assert!(changelog.contains(&format!("\n## [{v}] - ")), "CHANGELOG.md has no dated section for {v}");
     assert!(changelog.contains(&format!("[{v}]: https://github.com/MassRelayAI/comparegraph/releases/tag/v{v}")), "CHANGELOG.md link for {v}");
 }
+
+#[test]
+fn version_flag_names_the_commit_it_was_built_from() {
+    // loop 3 (E2): `--version` printed 0.1.3 for every commit
+    let out = assert_cmd::Command::cargo_bin("comparegraph").unwrap().arg("--version").output().unwrap();
+    let s = String::from_utf8(out.stdout).unwrap();
+    let v = s.trim().strip_prefix("comparegraph ").unwrap_or(&s);
+    let (base, sha) = v.split_once('+').unwrap_or_else(|| panic!("no +<sha> in `{v}`"));
+    assert_eq!(base, env!("CARGO_PKG_VERSION"));
+    assert!(sha == "unknown" || (sha.len() >= 7 && sha.bytes().all(|b| b.is_ascii_hexdigit())), "{v}");
+}
