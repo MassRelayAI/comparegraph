@@ -25,7 +25,9 @@
         "capturedShare": "100%"
       }
     ],
-    "blankCells": []
+    "blankCells": [],
+    "plannedNa": 0,
+    "plannedNaReasons": []
   },
   "evidence": {
     "confidence": "observed",
@@ -33,6 +35,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 254
+    "bytes": 290
   }
 }

@@ -145,20 +145,20 @@ fn flow_lists_steps_clicks_and_dead_ends() {
 fn nav_derives_the_numbers_and_nav_diff_says_them_in_words() {
     let v = golden("nav-cluttered", &["nav", "cluttered"], 0);
     let s = &v["data"]["stats"];
-    assert_eq!((s["places"].as_u64(), s["maxDepth"].as_u64(), s["nodes"].as_u64()), (Some(4), Some(2), Some(9)));
+    assert_eq!((s["places"].as_u64(), s["maxDepth"].as_u64(), s["nodes"].as_u64()), (Some(3), Some(2), Some(9)), "the group header Work is not a place");
     assert_eq!(s["itemsPerLevel"], json!({ "1": 4, "2": 5 }));
     assert_eq!(s["itemsPerGroup"], json!({ "Work": 3 }));
     assert_eq!(
         (s["destinations"].as_u64(), s["duplicateDestinations"].as_u64(), s["deadItems"].as_u64(), s["overflowOnlyItems"].as_u64()),
-        (Some(5), Some(1), Some(2), Some(1))
+        (Some(5), Some(1), Some(1), Some(1))
     );
     assert_eq!(v["data"]["tree"][0]["label"], "Home");
     let d = golden("nav-diff", &["nav-diff", "--ours", "cluttered", "--ref", "clean"], 0);
     assert_eq!(
         words(&d["data"]["diff"]),
         [
-            "places 4 vs 3", "max depth 2 vs 1", "nodes 9 vs 3", "items at level 1 4 vs 3", "items at level 2 5 vs 0", "destinations 5 vs 3",
-            "duplicate destinations 1 vs 0", "dead items 2 vs 0", "items only via overflow 1 vs 0", "screens only in ours: billing, flows"
+            "max depth 2 vs 1", "nodes 9 vs 3", "items at level 1 4 vs 3", "items at level 2 5 vs 0", "destinations 5 vs 3",
+            "duplicate destinations 1 vs 0", "dead items 1 vs 0", "items only via overflow 1 vs 0", "screens only in ours: billing, flows"
         ]
     );
     assert_eq!(ui(&["nav", "cluttered", "--viewport", "390x844"]).1["error"]["code"], "not_found");

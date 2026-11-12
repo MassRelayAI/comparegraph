@@ -43,220 +43,252 @@
       "ref": 11,
       "of": 12
     },
+    "unmeasured": {
+      "ours": 0,
+      "ref": 0
+    },
+    "structuralFindings": {
+      "ours": [],
+      "ref": []
+    },
     "metrics": [
       {
         "id": "E1",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 3,
           "limit": 2,
           "pass": false,
-          "probePass": false,
-          "limitSource": "probe-default"
+          "status": "fail",
+          "probePass": false
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 2,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": 2
       },
       {
         "id": "E2",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "probe-default"
+          "status": "pass",
+          "probePass": true
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": null
       },
       {
         "id": "E3",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 0,
           "limit": 1,
           "pass": false,
-          "probePass": false,
-          "limitSource": "probe-default"
+          "status": "fail",
+          "probePass": false
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 1,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": 1
       },
       {
         "id": "E4",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "probe-default"
+          "status": "pass",
+          "probePass": true
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": null
       },
       {
         "id": "E5",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": false,
-          "probePass": false,
-          "limitSource": "probe-default"
+          "status": "fail",
+          "probePass": false
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": null
       },
       {
         "id": "E6",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "probe-default"
+          "status": "pass",
+          "probePass": true
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": null
       },
       {
         "id": "E7",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 352,
           "limit": 200,
           "pass": false,
-          "probePass": false,
-          "limitSource": "probe-default"
+          "status": "fail",
+          "probePass": false
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 120,
           "limit": 200,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": 200
       },
       {
         "id": "E8",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": false,
-          "probePass": false,
-          "limitSource": "probe-default"
+          "status": "fail",
+          "probePass": false
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": null
       },
       {
         "id": "E9",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "probe-default"
+          "status": "pass",
+          "probePass": true
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": null
       },
       {
         "id": "E10",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": false,
-          "probePass": false,
-          "limitSource": "probe-default"
+          "status": "fail",
+          "probePass": false
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": false,
-          "probePass": false,
-          "limitSource": "reference-seat"
+          "status": "fail",
+          "probePass": false
         },
         "archetypeLimit": null
       },
       {
         "id": "E11",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "probe-default"
+          "status": "pass",
+          "probePass": true
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": null
       },
       {
         "id": "E12",
         "ours": {
+          "limitSource": "probe-default:conversation",
           "value": 1,
           "limit": 5,
           "pass": false,
-          "probePass": false,
-          "limitSource": "probe-default"
+          "status": "fail",
+          "probePass": false
         },
         "ref": {
+          "limitSource": "reference-seat",
           "value": 1,
           "limit": 5,
           "pass": true,
-          "probePass": true,
-          "limitSource": "reference-seat"
+          "status": "pass",
+          "probePass": true
         },
         "archetypeLimit": null
       }
@@ -294,6 +326,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 4001
+    "bytes": 4615
   }
 }

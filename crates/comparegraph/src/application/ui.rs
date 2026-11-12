@@ -408,11 +408,20 @@ pub(super) fn select<'a>(set: &'a UiSet, product: &str, screen: &str, state: &st
     Ok(c[0])
 }
 
-fn archetype_limits(set: &UiSet, screen: &str) -> (Option<String>, BTreeMap<String, Value>) {
+/// The archetype of a screen and its limits. The registry's screen -> archetype map wins; a run root that carries no registry (the probe records
+/// only its digest, not the file) falls back to the `archetype` the capture itself names, with no limits (those live in archetypes.json).
+fn archetype_limits(set: &UiSet, screen: &str, own: Option<&str>) -> (Option<String>, BTreeMap<String, Value>) {
     match set.registry.as_ref().and_then(|r| r.archetype_of(screen).map(|a| (a.to_string(), r.archetypes.get(a).cloned().unwrap_or_default()))) {
         Some((a, l)) => (Some(a), l),
-        None => (None, BTreeMap::new()),
+        None => match own {
+            Some(a) => (Some(a.to_string()), set.registry.as_ref().and_then(|r| r.archetypes.get(a).cloned()).unwrap_or_default()),
+            None => (None, BTreeMap::new()),
+        },
     }
+}
+/// The archetype a screen's captures name (the first that names one), for the fallback above.
+fn own_archetype<'a>(set: &'a UiSet, screen: &str) -> Option<&'a str> {
+    set.evidence.iter().find(|l| l.ev.screen == screen && l.ev.archetype.is_some()).and_then(|l| l.ev.archetype.as_deref())
 }
 /// The device class (the column of the archetype limits) of a capture: its own `device.class`, else the class of a known device id, else the width of a legacy "WxH".
 pub(super) fn class_of(ev: &UiEvidence) -> &'static str {
@@ -453,39 +462,66 @@ fn parse_limit(s: &str) -> Option<(&'static str, f64)> {
 pub struct Judged {
     pub pass: bool,
     pub limit: Value,
-    pub source: &'static str,
+    /// where the limit came from, and the archetype it was read for: `registry:conversation`, `tablet-default:inbox`, `probe-default:settings`, `reference-seat` ...
+    pub source: String,
     pub probe_pass: bool,
+    /// the probe could not measure it (value null): neither a pass nor a fail, never counted
+    pub unmeasured: bool,
+}
+impl Judged {
+    pub fn status(&self) -> &'static str {
+        if self.unmeasured {
+            "unmeasured"
+        } else if self.pass {
+            "pass"
+        } else {
+            "fail"
+        }
+    }
+}
+/// The metric as one JSON object for show/diff: an unmeasured metric has `pass: null` and says why.
+fn judged_json(id: &str, m: &Metric, j: &Judged) -> Value {
+    let mut v = json!({ "id": id, "value": m.value, "limit": j.limit, "pass": if j.unmeasured { Value::Null } else { json!(j.pass) }, "status": j.status(), "probePass": j.probe_pass, "limitSource": j.source });
+    if j.unmeasured {
+        v["unmeasuredReason"] = json!(if m.detail.is_empty() { "value null: not measurable".to_string() } else { m.detail.join("; ") });
+    }
+    v
 }
 /// ONE owner of pass/fail (REA lesson F): the probe records the VALUE; the engine judges it against the registry's archetype limit for the capture's
 /// device class. Where no numeric registry limit applies (no registry, a reference seat, or a rule written in prose) the probe's verdict stands and the source says so.
 fn judge(set: &UiSet, ev: &UiEvidence, id: &str, m: &Metric) -> Judged {
-    let probe = |source| Judged { pass: m.pass, limit: m.limit.clone(), source, probe_pass: m.pass };
+    let unmeasured = m.value.is_null();
+    let (arch, lim) = archetype_limits(set, &ev.screen, ev.archetype.as_deref().or_else(|| own_archetype(set, &ev.screen)));
+    let named = |tag: &str| match &arch {
+        Some(a) => format!("{tag}:{a}"),
+        None => tag.to_string(),
+    };
+    let probe = |source: String| Judged { pass: m.pass && !unmeasured, limit: m.limit.clone(), source, probe_pass: m.pass, unmeasured };
     if ev.seat == "ref" {
-        return probe("reference-seat");
+        return probe("reference-seat".into());
     }
     if set.state_rules.contains(&(ev.state.clone(), id.to_string())) {
-        return probe("state-rule");
+        return probe("state-rule".into());
     }
     if set.seat_rules.contains(&(ev.seat.clone(), id.to_string())) {
-        return probe("seat-rule");
+        return probe("seat-rule".into());
     }
-    let (_, lim) = archetype_limits(set, &ev.screen);
     let class = class_of(ev);
     let column = lim.get(id).and_then(|e| e.get(class)).and_then(|v| v.as_str()).map(str::to_string);
     // a tablet with no `tablet` column is judged by the tablet defaults for E1/E4/E7 (named in limitSource), by the desktop column for the rest
     let (text, source) = match column {
-        Some(t) => (t, "registry"),
+        Some(t) => (t, named("registry")),
         None => match (class == "tablet").then(|| tablet_default(id)).flatten() {
-            Some(t) => (t, "tablet-default"),
+            Some(t) => (t, named("tablet-default")),
             None => match lim.get(id).and_then(|e| e.get("desktop")).and_then(|v| v.as_str()) {
-                Some(t) => (t.to_string(), "registry"),
-                None => return probe("probe-default"),
+                Some(t) => (t.to_string(), named("registry")),
+                None => return probe(named("probe-default")),
             },
         },
     };
     let text = text.as_str();
     let Some((op, n)) = parse_limit(text) else {
-        return probe("probe-default");
+        return probe(named("probe-default"));
     };
     let pass = m.value.as_f64().is_some_and(|v| match op {
         "<=" => v <= n,
@@ -494,17 +530,46 @@ fn judge(set: &UiSet, ev: &UiEvidence, id: &str, m: &Metric) -> Judged {
         ">" => v > n,
         _ => (v - n).abs() < 1e-9,
     });
-    Judged { pass, limit: json!(text), source, probe_pass: m.pass }
+    Judged { pass: pass && !unmeasured, limit: json!(text), source, probe_pass: m.pass, unmeasured }
 }
 /// Metrics passed under the engine's verdict.
 fn pass_count_of(set: &UiSet, ev: &UiEvidence) -> usize {
     ev.metrics.iter().filter(|(id, m)| judge(set, ev, id, m).pass).count()
 }
+/// Metrics the probe could not measure (value null): reported beside the pass count, never inside it.
+fn unmeasured_count_of(ev: &UiEvidence) -> usize {
+    ev.metrics.values().filter(|m| m.value.is_null()).count()
+}
+/// The number of metric keys a capture carries (12 before probe loop 1, 14 after): the denominator of its pass count.
+fn of_count(ev: &UiEvidence) -> usize {
+    ev.metrics.len().clamp(1, METRIC_COUNT)
+}
+/// "5/14", and " (2 unmeasured)" after it only when some are.
+fn pass_cell(set: &UiSet, ev: &UiEvidence) -> String {
+    match unmeasured_count_of(ev) {
+        0 => format!("{}/{}", pass_count_of(set, ev), of_count(ev)),
+        n => format!("{}/{} ({n} unmeasured)", pass_count_of(set, ev), of_count(ev)),
+    }
+}
+fn redirect_of(ev: &UiEvidence) -> Option<&str> {
+    ev.support.as_ref().filter(|s| s.class == "redirect").map(|s| s.target.as_deref().unwrap_or("?"))
+}
+/// Structure defects the metrics cannot state as a value. `no_main_landmark`: E1 (navigation columns before content) is unmeasurable because the page has no
+/// `<main>`, yet the layout shows navigation columns - a missing landmark (accessibility and structure), not a made-up E1.
+fn structural_findings(ev: &UiEvidence) -> Vec<Value> {
+    let mut v = vec![];
+    if let Some(e1) = ev.metrics.get("E1").filter(|m| m.value.is_null()) {
+        if nav_columns(&ev.layout) >= 1 && e1.detail.iter().any(|d| d.contains("no <main>")) {
+            v.push(json!({ "id": "no_main_landmark", "kind": "structure", "navColumns": nav_columns(&ev.layout), "detail": "no <main> landmark although the page shows navigation columns; E1 is unmeasured" }));
+        }
+    }
+    v
+}
 fn registry_limits(set: &UiSet, screen: &str) -> Vec<Limitation> {
     let mut v = vec![];
     if set.registry.is_none() {
-        v.push(Limitation::new("registry_missing", "ui/registry.json is absent or invalid: no archetype and no per-archetype limits"));
-    } else if archetype_limits(set, screen).0.is_none() {
+        v.push(Limitation::new("registry_missing", "ui/registry.json is absent or invalid: no per-archetype limits (the archetype is the one each capture names, when it names one)"));
+    } else if archetype_limits(set, screen, own_archetype(set, screen)).0.is_none() {
         v.push(Limitation::new("screen_not_in_registry", format!("screen `{screen}` is not in ui/registry.json")));
     }
     v
@@ -544,12 +609,12 @@ pub fn screens(root: &Path, max_nodes: usize, product: &str, o: &Opts) -> Result
     let mut items = vec![];
     for s in screens_of(&set, product) {
         let files: Vec<&Loaded> = set.evidence_of(product).filter(|l| l.ev.screen == s).collect();
-        let (arch, _) = archetype_limits(&set, s);
+        let (arch, _) = archetype_limits(&set, s, files[0].ev.archetype.as_deref());
         let states: BTreeSet<&str> = files.iter().map(|l| l.ev.state.as_str()).collect();
         let best = files.iter().filter(|l| !l.ev.unstable).map(|l| pass_count_of(&set, &l.ev)).max().unwrap_or(0);
         items.push(json!({
             "screen": s, "archetype": arch, "route": files[0].ev.route, "states": states,
-            "captures": files.iter().map(|l| format!("{}/{}", l.ev.state, l.ev.stem())).collect::<Vec<_>>(), "bestPass": best, "of": METRIC_COUNT,
+            "captures": files.iter().map(|l| format!("{}/{}", l.ev.state, l.ev.stem())).collect::<Vec<_>>(), "bestPass": best, "of": files.iter().map(|l| of_count(&l.ev)).max().unwrap_or(METRIC_COUNT),
         }));
     }
     let (items, next, total) = o.page(&items);
@@ -574,20 +639,22 @@ pub fn show(root: &Path, max_nodes: usize, product: &str, screen: &str, state: &
     let set = open(root, max_nodes, Some(&[product]), EV)?;
     let l = select(&set, product, screen, state, viewport, seat, o)?;
     let e = &l.ev;
-    let (arch, lim) = archetype_limits(&set, screen);
+    let (arch, lim) = archetype_limits(&set, screen, e.archetype.as_deref());
     let metrics: Vec<Value> = metric_ids_sorted(e, None)
         .iter()
         .map(|id| {
             let m = &e.metrics[id];
-            let j = judge(&set, e, id, m);
-            json!({ "id": id, "value": m.value, "limit": j.limit, "pass": j.pass, "probePass": j.probe_pass, "limitSource": j.source, "detail": m.detail, "archetypeLimit": lim.get(id) })
+            let mut x = judged_json(id, m, &judge(&set, e, id, m));
+            x["detail"] = json!(m.detail);
+            x["archetypeLimit"] = json!(lim.get(id));
+            x
         })
         .collect();
     let others: Vec<String> = set.evidence_of(product).filter(|x| x.ev.screen == screen).map(|x| format!("{}/{}", x.ev.state, x.ev.stem())).collect();
     let v = json!({
         "key": e.capture_key(), "product": e.product, "version": e.version, "screen": e.screen, "archetype": arch, "state": e.state, "route": e.route,
         "viewport": e.viewport, "seat": e.seat, "locale": e.locale, "theme": e.theme, "domHash": e.dom_hash,
-        "pass": pass_count_of(&set, e), "unstable": e.unstable, "of": METRIC_COUNT, "metrics": metrics,
+        "pass": pass_count_of(&set, e), "unmeasured": unmeasured_count_of(e), "unstable": e.unstable, "of": of_count(e), "metrics": metrics, "structuralFindings": structural_findings(e),
         "layout": { "summary": layout_summary(&e.layout), "navColumns": nav_columns(&e.layout), "regions": e.layout.regions, "primary": e.layout.primary, "contentStart": e.layout.content_start },
         "style": { "summary": style_summary(&e.style), "style": e.style },
         "image": set.image(&e.image), "captures": others,
@@ -648,6 +715,11 @@ pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str,
     let vp_want = viewport.or(ref_viewport);
     let (a, b) = (select(&set, ours, &so, state, vp_want, seat, o)?, select(&set, refp, &sr, state, vp_want, ref_seat, o)?);
     let (ea, eb) = (&a.ev, &b.ev);
+    for (who, e) in [(ours, ea), (refp, eb)] {
+        if let Some(t) = redirect_of(e) {
+            return Err(bad(format!("refused: {who}'s `{so}` is a redirect -> {t}; the capture shows the landing page, not the requested screen, so it is not compared (capture the target route as its own screen)")));
+        }
+    }
     let vp = ea.viewport.as_str();
     let same_device = ea.viewport == eb.viewport || (is_default_viewport(&ea.viewport) && is_default_viewport(&eb.viewport));
     if !same_device || class_of(ea) != class_of(eb) {
@@ -657,18 +729,26 @@ pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str,
     if !drift.is_empty() && !o.allow_drift {
         return Err(drift_error(&drift, "the two captures"));
     }
-    let (arch, lim) = archetype_limits(&set, &so);
+    let (arch, lim) = archetype_limits(&set, &so, ea.archetype.as_deref().or(eb.archetype.as_deref()));
     let metrics: Vec<Value> = metric_ids_sorted(ea, Some(eb))
         .iter()
         .map(|id| {
-            let side = |e: &UiEvidence| e.metrics.get(id).map(|m| { let j = judge(&set, e, id, m); json!({ "value": m.value, "limit": j.limit, "pass": j.pass, "probePass": j.probe_pass, "limitSource": j.source }) });
+            let side = |e: &UiEvidence| {
+                e.metrics.get(id).map(|m| {
+                    let mut x = judged_json(id, m, &judge(&set, e, id, m));
+                    x.as_object_mut().map(|o| o.remove("id"));
+                    x
+                })
+            };
             json!({ "id": id, "ours": side(ea), "ref": side(eb), "archetypeLimit": lim.get(id) })
         })
         .collect();
     let v = json!({
         "target": target, "screen": so, "archetype": arch, "state": state, "viewport": vp,
         "ours": one_side(&set, a), "ref": one_side(&set, b),
-        "pass": { "ours": pass_count_of(&set, ea), "ref": pass_count_of(&set, eb), "of": METRIC_COUNT },
+        "pass": { "ours": pass_count_of(&set, ea), "ref": pass_count_of(&set, eb), "of": of_count(ea).max(of_count(eb)) },
+        "unmeasured": { "ours": unmeasured_count_of(ea), "ref": unmeasured_count_of(eb) },
+        "structuralFindings": { "ours": structural_findings(ea), "ref": structural_findings(eb) },
         "metrics": metrics,
         "layoutDiff": layout_diff(&ea.layout, &eb.layout),
         "styleDiff": style_diff(&ea.style, &eb.style),
@@ -727,14 +807,18 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
                 mapped
                     .iter()
                     .filter(|m| &m.row_id == id && &&m.product == p)
-                    .filter_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state && (if viewport.is_some() { l.ev.viewport == vp } else { is_default_viewport(&l.ev.viewport) }) && l.ev.unstable != stable).map(|l| pass_count_of(&set, &l.ev)).max())
-                    .max()
+                    .filter_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state && (if viewport.is_some() { l.ev.viewport == vp } else { is_default_viewport(&l.ev.viewport) }) && l.ev.unstable != stable && redirect_of(&l.ev).is_none()).map(|l| (pass_count_of(&set, &l.ev), pass_cell(&set, &l.ev))).max_by_key(|(n, _)| *n))
+                    .max_by_key(|(n, _)| *n)
+            };
+            let redirect_cell = |p: &str, id: &str| -> Option<String> {
+                mapped.iter().filter(|m| m.row_id == id && m.product == p).find_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state).find_map(|l| redirect_of(&l.ev)).map(|t| format!("redirect -> {t}")))
             };
             // `?` = the product was not read (file cap), never confused with `-` (read, nothing captured); unstable captures are not scored
             let cell = match of_cell(true) {
-                Some(n) => format!("{n}/{METRIC_COUNT}"),
+                Some((_, text)) => text,
                 None if set.unread.contains(p.as_str()) => "?".to_string(),
                 None if of_cell(false).is_some() => "unstable".to_string(),
+                None if redirect_cell(p, id).is_some() => redirect_cell(p, id).unwrap_or_default(),
                 None => "-".to_string(),
             };
             cells.insert(p.to_string(), cell);
@@ -836,13 +920,15 @@ fn matrix_devices(set: &UiSet, ui_root: &Path, max_nodes: usize, family: &str, s
                 let best = screens
                     .iter()
                     .flat_map(|s| set.evidence_of(p).filter(move |l| l.ev.screen == *s && l.ev.state == state && &l.ev.viewport == d))
-                    .filter(|l| !l.ev.unstable)
+                    .filter(|l| !l.ev.unstable && redirect_of(&l.ev).is_none())
                     .max_by_key(|l| pass_count_of(set, &l.ev));
+                let redirected = screens.iter().find_map(|s| set.evidence_of(p).filter(move |l| l.ev.screen == *s && l.ev.state == state && &l.ev.viewport == d).find_map(|l| redirect_of(&l.ev)));
                 let (cell, cls): (String, &'static str) = match best {
                     Some(l) => {
                         let c = l.ev.support.as_ref().map(|s| s.class.as_str()).unwrap_or("unknown");
-                        (format!("{}/{METRIC_COUNT} {c}", pass_count_of(set, &l.ev)), SUPPORT_CLASSES.iter().copied().find(|x| *x == c).unwrap_or("unknown"))
+                        (format!("{} {c}", pass_cell(set, &l.ev)), SUPPORT_CLASSES.iter().copied().find(|x| *x == c).unwrap_or("unknown"))
                     }
+                    None if redirected.is_some() => (format!("redirect -> {}", redirected.unwrap_or("?")), "redirect"),
                     None => match screens.iter().find_map(|s| absent.get(&(p.to_string(), s.to_string(), d.clone()))) {
                         Some(_) => ("n/a (absent)".to_string(), "absent"),
                         None if set.unread.contains(p.as_str()) => ("?".to_string(), "unread"),
@@ -912,6 +998,49 @@ fn select_nav<'a>(set: &'a UiSet, product: &str, viewport: &str, seat: Option<&s
 }
 const NAVS: Want = Want { evidence: false, flows: false, navs: true, systems: false, graphs: false };
 
+fn nav_limits(s: &NavStats) -> Vec<Limitation> {
+    if s.unresolved_targets {
+        vec![Limitation::new("nav_targets_unresolved", "every item's target is `unknown`: the probe wrote no screen for any item, so deadItems and destinations count unresolved items, not proven dead ends")]
+    } else {
+        vec![]
+    }
+}
+/// The viewport/seat a nav-diff side uses when none was given: the viewport both products have (the default viewport first), else a refusal listing the choices.
+fn nav_defaults(set: &UiSet, ours: &str, refp: &str, viewport: Option<&str>) -> Result<String> {
+    if let Some(v) = viewport {
+        return Ok(v.to_string());
+    }
+    let vps = |p: &str| -> BTreeSet<String> { set.navs.iter().filter(|(_, n)| n.product == p).map(|(_, n)| n.viewport.clone()).collect() };
+    let (a, b) = (vps(ours), vps(refp));
+    let both: Vec<&String> = a.intersection(&b).collect();
+    if both.iter().any(|v| v.as_str() == DEFAULT_VIEWPORT) {
+        return Ok(DEFAULT_VIEWPORT.to_string());
+    }
+    // the desktop device id counts as the default viewport (`desktop-1440` is what the probe names the 1440x900 desktop)
+    if let Some(v) = both.iter().find(|v| is_default_viewport(v)) {
+        return Ok((*v).clone());
+    }
+    match both.as_slice() {
+        [one] => Ok((*one).clone()),
+        [] => Err(bad(format!("no viewport has a nav for both products (`{ours}`: {}; `{refp}`: {}); capture the same viewport on both sides", join_set(&a), join_set(&b)))),
+        many => Err(bad(format!("both `{ours}` and `{refp}` have navs for several viewports ({}); pass --viewport", many.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")))),
+    }
+}
+fn join_set(s: &BTreeSet<String>) -> String {
+    if s.is_empty() { "none".into() } else { s.iter().cloned().collect::<Vec<_>>().join(", ") }
+}
+/// The seat of one side when none was given: its only seat at that viewport, else the seat the other side chose when this side has it, else a refusal listing the seats.
+fn nav_seat(set: &UiSet, product: &str, viewport: &str, given: Option<&str>, other: Option<&str>) -> Result<Option<String>> {
+    if let Some(s) = given {
+        return Ok(Some(s.to_string()));
+    }
+    let seats: BTreeSet<String> = set.navs.iter().filter(|(_, n)| n.product == product && n.viewport == viewport).map(|(_, n)| n.seat.clone()).collect();
+    match seats.len() {
+        0 | 1 => Ok(seats.into_iter().next()),
+        _ if other.is_some_and(|o| seats.contains(o)) => Ok(other.map(String::from)),
+        _ => Err(bad(format!("`{product}` has navs for several seats at {viewport} ({}); pass --seat / --ref-seat", join_set(&seats)))),
+    }
+}
 pub fn nav(root: &Path, max_nodes: usize, product: &str, viewport: Option<&str>, seat: Option<&str>) -> Result<Value> {
     need_token("product", product)?;
     let set = open(root, max_nodes, Some(&[product]), NAVS)?;
@@ -921,16 +1050,23 @@ pub fn nav(root: &Path, max_nodes: usize, product: &str, viewport: Option<&str>,
         .iter()
         .map(|x| json!({ "order": x.order, "level": x.level, "kind": x.kind, "label": x.label, "target": x.target, "hiddenBehind": x.hidden_behind, "icon": x.icon, "badge": x.badge }))
         .collect();
-    let v = json!({ "product": product, "version": n.version, "viewport": n.viewport, "seat": n.seat, "stats": nav_stats(n), "tree": tree });
-    Ok(set.finish(v, &[]))
+    let stats = nav_stats(n);
+    let lims = nav_limits(&stats);
+    let v = json!({ "product": product, "version": n.version, "viewport": n.viewport, "seat": n.seat, "stats": stats, "tree": tree });
+    Ok(set.finish(v, &lims))
 }
 
 pub fn nav_diff_verb(root: &Path, max_nodes: usize, ours: &str, refp: &str, viewport: Option<&str>, seat: Option<&str>, ref_seat: Option<&str>) -> Result<Value> {
     need_token("--ours", ours)?;
     need_token("--ref", refp)?;
     let set = open(root, max_nodes, Some(&[ours, refp]), NAVS)?;
-    let vp = viewport.unwrap_or(DEFAULT_VIEWPORT);
-    let (a, b) = (select_nav(&set, ours, vp, seat)?, select_nav(&set, refp, vp, ref_seat)?);
+    need_product_pub(&set, ours)?;
+    need_product_pub(&set, refp)?;
+    let vp = nav_defaults(&set, ours, refp, viewport)?;
+    let vp = vp.as_str();
+    let ours_seat = nav_seat(&set, ours, vp, seat, ref_seat)?;
+    let ref_seat_pick = nav_seat(&set, refp, vp, ref_seat, ours_seat.as_deref())?;
+    let (a, b) = (select_nav(&set, ours, vp, ours_seat.as_deref())?, select_nav(&set, refp, vp, ref_seat_pick.as_deref())?);
     let (sa, sb) = (nav_stats(a), nav_stats(b));
     let v = json!({
         "viewport": vp,
@@ -938,7 +1074,8 @@ pub fn nav_diff_verb(root: &Path, max_nodes: usize, ours: &str, refp: &str, view
         "ref": { "product": refp, "version": b.version, "seat": b.seat, "stats": sb },
         "diff": nav_diff(&sa, &sb),
     });
-    Ok(set.finish(v, &[]))
+    let lims: Vec<Limitation> = nav_limits(&sa).into_iter().chain(nav_limits(&sb)).collect();
+    Ok(set.finish(v, &lims))
 }
 
 pub fn journey(root: &Path, journey: &str, products: &[String], o: &Opts) -> Result<Value> {
@@ -986,7 +1123,7 @@ pub fn coverage(root: &Path, run: &str) -> Result<Value> {
     if !p.is_empty() {
         return Err(bad(format!("coverage/{run}.json: {}", p.join("; "))));
     }
-    let (table, blanks) = coverage_table(&c);
+    let (table, blanks, planned) = coverage_resolve(&c);
     let rows: Vec<Value> = table
         .iter()
         .map(|(prod, t)| {
@@ -1000,7 +1137,9 @@ pub fn coverage(root: &Path, run: &str) -> Result<Value> {
     if !complete {
         lims.push(Limitation::new("incomplete_run", format!("{} blank cells (a missing cell must be explained): {}", blanks.len(), blanks.iter().take(MAX_BLANK_LISTED).cloned().collect::<Vec<_>>().join(", "))));
     }
-    Ok(json!({ "runId": run, "complete": complete, "table": rows, "blankCells": blanks, "limitation_items": lims }))
+    let planned_total: usize = planned.iter().map(|(_, n)| n).sum();
+    let planned_json: Vec<Value> = planned.iter().map(|(why, n)| json!({ "why": why, "cells": n })).collect();
+    Ok(json!({ "runId": run, "complete": complete, "table": rows, "blankCells": blanks, "plannedNa": planned_total, "plannedNaReasons": planned_json, "limitation_items": lims }))
 }
 
 type Failure = (AppError, Option<Value>);

@@ -16,6 +16,7 @@
     "theme": "light",
     "domHash": "68c45344596f0ece230d3035a79633eb40c75d4ee8935e720170a914e43e118b",
     "pass": 7,
+    "unmeasured": 0,
     "unstable": false,
     "of": 12,
     "metrics": [
@@ -24,8 +25,9 @@
         "value": 3,
         "limit": 2,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": 2
       },
@@ -34,8 +36,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -44,8 +47,9 @@
         "value": 0,
         "limit": 1,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": 1
       },
@@ -54,8 +58,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -64,8 +69,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -74,8 +80,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -84,8 +91,9 @@
         "value": 352,
         "limit": 200,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": 200
       },
@@ -94,8 +102,9 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -104,8 +113,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -114,8 +124,9 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -124,8 +135,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -134,12 +146,14 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       }
     ],
+    "structuralFindings": [],
     "layout": {
       "summary": "regions: bottombar 1, main 1; no primary; content starts y 200 (fallback:first-row)",
       "navColumns": 0,
@@ -300,6 +314,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 3732
+    "bytes": 4119
   }
 }

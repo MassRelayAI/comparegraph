@@ -284,7 +284,7 @@ mod owned_pass {
         let (c, v) = cg(d.path(), &["show", "cluttered", "room", "--ui-root", "."]);
         assert_eq!(c, 0, "{v}");
         let (e1, before) = (metric(&v, "E1").clone(), v["data"]["pass"].as_u64().unwrap());
-        assert_eq!((e1["pass"].clone(), e1["limitSource"].clone(), e1["limit"].clone()), (json!(false), json!("registry"), json!("<=2")), "{e1}");
+        assert_eq!((e1["pass"].clone(), e1["limitSource"].clone(), e1["limit"].clone()), (json!(false), json!("registry:conversation"), json!("<=2")), "{e1}");
         // loosen the registry: E1 (navigation columns before content) may now be 5 on desktop; the page has 3, the probe's own limit said 2
         edit(&d.path().join("ui/archetypes.json"), |a| a["archetypes"]["conversation"]["limits"]["E1"]["desktop"] = json!("<=5"));
         let (_, v) = cg(d.path(), &["show", "cluttered", "room", "--ui-root", "."]);
@@ -299,7 +299,7 @@ mod owned_pass {
         edit(&d.path().join("ui/archetypes.json"), |a| a["archetypes"]["conversation"]["limits"]["E1"]["phone"] = json!("<=9"));
         let (_, v) = cg(d.path(), &["show", "cluttered", "room", "--ui-root", ".", "--viewport", "390x844"]);
         let e1 = metric(&v, "E1");
-        assert_eq!((e1["limit"].clone(), e1["limitSource"].clone()), (json!("<=9"), json!("registry")), "{e1}");
+        assert_eq!((e1["limit"].clone(), e1["limitSource"].clone()), (json!("<=9"), json!("registry:conversation")), "{e1}");
         let (_, v) = cg(d.path(), &["show", "cluttered", "room", "--ui-root", "."]);
         assert_eq!(metric(&v, "E1")["limit"], "<=2", "desktop keeps its own column");
     }

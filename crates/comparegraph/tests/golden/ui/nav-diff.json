@@ -10,7 +10,7 @@
       "seat": "member",
       "stats": {
         "nodes": 9,
-        "places": 4,
+        "places": 3,
         "maxDepth": 2,
         "itemsPerLevel": {
           "1": 4,
@@ -21,7 +21,7 @@
         },
         "destinations": 5,
         "duplicateDestinations": 1,
-        "deadItems": 2,
+        "deadItems": 1,
         "overflowOnlyItems": 1
       }
     },
@@ -44,14 +44,13 @@
       }
     },
     "diff": [
-      "places 4 vs 3",
       "max depth 2 vs 1",
       "nodes 9 vs 3",
       "items at level 1 4 vs 3",
       "items at level 2 5 vs 0",
       "destinations 5 vs 3",
       "duplicate destinations 1 vs 0",
-      "dead items 2 vs 0",
+      "dead items 1 vs 0",
       "items only via overflow 1 vs 0",
       "screens only in ours: billing, flows"
     ]
@@ -62,6 +61,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 752
+    "bytes": 736
   }
 }

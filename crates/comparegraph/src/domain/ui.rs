@@ -20,7 +20,7 @@ pub const ARCHETYPES: &[&str] = &[
 ];
 /// Directory names under a product that are not screens.
 pub const RESERVED_DIRS: &[&str] = &["flows", "nav"];
-pub const METRIC_COUNT: usize = 12;
+pub const METRIC_COUNT: usize = 14;
 pub const DEFAULT_STATE: &str = "populated";
 pub const DEFAULT_VIEWPORT: &str = "1440x900";
 /// The device profile that stands where `1440x900` stood (CMP-UI-1i): captures made from `tools/ui/devices.json` are keyed by the profile id.
@@ -69,7 +69,7 @@ pub fn device_id_ok(s: &str) -> bool {
 pub fn viewport_ok(s: &str) -> bool {
     size_ok(s) || device_id_ok(s)
 }
-/// `E1`..`E12` -> 1..=12.
+/// `E1`..`E14` -> 1..=14 (E13/E14 came with probe loop 1; a capture may carry 12 or 14 keys).
 pub fn metric_no(id: &str) -> Option<usize> {
     let n: usize = id.strip_prefix('E')?.parse().ok()?;
     ((1..=METRIC_COUNT).contains(&n) && id == format!("E{n}")).then_some(n)
@@ -1087,9 +1087,9 @@ mod tests {
             ("image.sha256", Box::new(|e| e.image.sha256 = "ABC".into())),
             ("domHash", Box::new(|e| e.dom_hash = "xyz".into())),
             ("dhash", Box::new(|e| e.image.dhash = Some("12".into()))),
-            ("E13", Box::new(|e| {
+            ("E15", Box::new(|e| {
                 let m = e.metrics["E1"].clone();
-                e.metrics.insert("E13".into(), m);
+                e.metrics.insert("E15".into(), m);
             })),
             ("latest", Box::new(|e| e.version = "latest".into())),
         ];

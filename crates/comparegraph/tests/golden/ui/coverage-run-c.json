@@ -28,7 +28,9 @@
     "blankCells": [
       "clean/inbox/populated/1440x900-ref",
       "clean/room/populated/1440x900-ref"
-    ]
+    ],
+    "plannedNa": 0,
+    "plannedNaReasons": []
   },
   "evidence": {
     "confidence": "observed",
@@ -41,6 +43,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 324
+    "bytes": 360
   }
 }

@@ -16,6 +16,7 @@
     "theme": "light",
     "domHash": "df65cbb7cc5e1e9b92129ce86a31fd3336708efab35448be41f0115206036ad9",
     "pass": 5,
+    "unmeasured": 0,
     "unstable": false,
     "of": 12,
     "metrics": [
@@ -24,8 +25,9 @@
         "value": 3,
         "limit": 2,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": 2
       },
@@ -34,8 +36,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -44,8 +47,9 @@
         "value": 0,
         "limit": 1,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": 1
       },
@@ -54,8 +58,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -64,8 +69,9 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -74,8 +80,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -84,8 +91,9 @@
         "value": 352,
         "limit": 200,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": 200
       },
@@ -94,8 +102,9 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -104,8 +113,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -114,8 +124,9 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -124,8 +135,9 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "status": "pass",
         "probePass": true,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       },
@@ -134,12 +146,14 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "status": "fail",
         "probePass": false,
-        "limitSource": "probe-default",
+        "limitSource": "probe-default:conversation",
         "detail": [],
         "archetypeLimit": null
       }
     ],
+    "structuralFindings": [],
     "layout": {
       "summary": "regions: list 1, main 1, rail 1, sidebar 1; no primary; content starts y 352 (fallback:first-row)",
       "navColumns": 3,
@@ -314,6 +328,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 3841
+    "bytes": 4228
   }
 }

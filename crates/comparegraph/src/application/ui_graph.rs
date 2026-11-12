@@ -39,6 +39,12 @@ fn truncation(g: &UiGraph) -> Vec<Limitation> {
     if g.truncated.time {
         l.push(Limitation::new("graph_truncated", format!("the crawl ran out of its time budget with {} node(s) not expanded, so depths and the orphan list are incomplete", g.truncated.unexpanded.len())));
     }
+    if g.truncated.actions {
+        l.push(Limitation::new("graph_truncated", format!("the crawl stopped after {} click attempts; actions past it were never tried, so dead actions, edges and the orphan list are incomplete", g.caps.actions)));
+    }
+    if !g.truncated.screen_actions.is_empty() {
+        l.push(Limitation::new("graph_truncated", format!("the per-screen action cap ({}) cut the actions of: {}; their edges are missing", g.caps.screen_actions, g.truncated.screen_actions.join(", "))));
+    }
     l
 }
 fn summary(s: &GraphStats) -> Value {
@@ -55,7 +61,7 @@ pub fn graph(root: &Path, max_nodes: usize, product: &str, viewport: Option<&str
     let g = select_graph(&set, product, viewport.unwrap_or(DEFAULT_VIEWPORT), seat)?;
     let s = graph_stats(g);
     let v = json!({
-        "product": product, "version": g.version, "viewport": g.viewport, "seat": g.seat, "start": g.start, "caps": g.caps, "truncated": g.truncated,
+        "product": product, "version": g.version, "viewport": g.viewport, "seat": g.seat, "start": g.start, "caps": g.caps, "truncated": g.truncated, "complete": !g.truncated.any(),
         "summary": summary(&s), "orphans": s.orphans, "unreachable": s.unreachable, "deadActions": s.dead_actions, "duplicatePaths": s.duplicate_paths,
         "actionsPerScreen": s.actions_per_screen, "depth": s.depth,
     });

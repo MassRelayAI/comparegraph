@@ -97,7 +97,7 @@ mod tablet {
             set_value(d.path(), "ipad-portrait-member", id, ok);
             let v = clean(d.path(), &["show", "devprod", "room", "--viewport", "ipad-portrait"]);
             let m = metric(&v, id);
-            assert_eq!((m["pass"].clone(), m["limitSource"].as_str()), (json!(true), Some("tablet-default")), "{id} at {ok}: {m}");
+            assert_eq!((m["pass"].clone(), m["limitSource"].as_str()), (json!(true), Some("tablet-default:conversation")), "{id} at {ok}: {m}");
             set_value(d.path(), "ipad-portrait-member", id, bad);
             let v = clean(d.path(), &["show", "devprod", "room", "--viewport", "ipad-portrait"]);
             let m = metric(&v, id);
@@ -110,7 +110,7 @@ mod tablet {
         let d = root();
         set_value(d.path(), "desktop-1440-member", "E1", 2.0);
         let m = metric(&clean(d.path(), &["show", "devprod", "room", "--viewport", "desktop-1440"]), "E1").clone();
-        assert_eq!((m["pass"].clone(), m["limitSource"].as_str(), m["limit"].as_str()), (json!(true), Some("registry"), Some("<=2")), "{m}");
+        assert_eq!((m["pass"].clone(), m["limitSource"].as_str(), m["limit"].as_str()), (json!(true), Some("registry:conversation"), Some("<=2")), "{m}");
     }
     #[test]
     fn an_archetype_tablet_column_wins_over_the_default_and_other_metrics_use_the_desktop_column() {
@@ -119,9 +119,9 @@ mod tablet {
         edit(&d.path().join("ui/archetypes.json"), |a| a["archetypes"]["conversation"]["limits"]["E1"]["tablet"] = json!("<=5"));
         let v = clean(d.path(), &["show", "devprod", "room", "--viewport", "ipad-portrait"]);
         let m = metric(&v, "E1");
-        assert_eq!((m["pass"].clone(), m["limitSource"].as_str(), m["limit"].as_str()), (json!(true), Some("registry"), Some("<=5")), "{m}");
+        assert_eq!((m["pass"].clone(), m["limitSource"].as_str(), m["limit"].as_str()), (json!(true), Some("registry:conversation"), Some("<=5")), "{m}");
         let e2 = metric(&v, "E2");
-        assert_eq!((e2["limitSource"].as_str(), e2["limit"].as_str()), (Some("registry"), Some("=0")), "E2 has no tablet default: the desktop column: {e2}");
+        assert_eq!((e2["limitSource"].as_str(), e2["limit"].as_str()), (Some("registry:conversation"), Some("=0")), "E2 has no tablet default: the desktop column: {e2}");
     }
 }
 
@@ -195,10 +195,10 @@ mod matrix {
         let rows = v["data"]["items"].as_array().unwrap();
         let cell = |row: &str, dev: &str| rows.iter().find(|r| r["row"] == row).unwrap()["cells"]["devprod"][dev].as_str().unwrap().to_string();
         let sup = |row: &str, dev: &str| rows.iter().find(|r| r["row"] == row).unwrap()["support"]["devprod"][dev].as_str().unwrap().to_string();
-        assert!(cell("r-room", "iphone").ends_with("/12 degraded"), "{}", cell("r-room", "iphone"));
+        assert!(cell("r-room", "iphone").contains("/12") && cell("r-room", "iphone").ends_with(" degraded"), "{}", cell("r-room", "iphone"));
         assert!(cell("r-room", "desktop-1440").ends_with("/12 full"));
-        assert!(cell("r-inbox", "iphone").ends_with("/12 blocked"));
-        assert!(cell("r-settings", "android").ends_with("/12 redirect"));
+        assert!(cell("r-inbox", "iphone").ends_with(" blocked"));
+        assert!(cell("r-settings", "android").starts_with("redirect -> "), "a redirect is shown as redirect -> target, not scored as the requested screen: {}", cell("r-settings", "android"));
         assert_eq!(cell("r-inbox", "ipad-portrait"), "-", "nothing captured and not absent");
         assert_eq!(cell("r-flows", "iphone"), "n/a (absent)");
         assert_eq!(sup("r-flows", "desktop-1440"), "absent");

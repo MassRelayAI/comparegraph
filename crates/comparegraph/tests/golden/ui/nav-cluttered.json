@@ -9,7 +9,7 @@
     "seat": "member",
     "stats": {
       "nodes": 9,
-      "places": 4,
+      "places": 3,
       "maxDepth": 2,
       "itemsPerLevel": {
         "1": 4,
@@ -20,7 +20,7 @@
       },
       "destinations": 5,
       "duplicateDestinations": 1,
-      "deadItems": 2,
+      "deadItems": 1,
       "overflowOnlyItems": 1
     },
     "tree": [

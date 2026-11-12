@@ -98,6 +98,9 @@ pub struct NavStats {
     pub dead_items: usize,
     /// nodes whose screen is reachable only through an overflow menu
     pub overflow_only_items: usize,
+    /// true when no item has a resolved target (every one is `unknown`): `dead_items` then counts items the probe did not resolve, not proven dead ends
+    #[serde(skip)]
+    pub unresolved_targets: bool,
     #[serde(skip)]
     pub screens: BTreeSet<String>,
 }
@@ -124,13 +127,16 @@ pub fn nav_stats(nav: &UiNav) -> NavStats {
     let overflow_only = nodes.iter().filter(|n| is_screen(&n.target) && n.hidden_behind.as_deref() == Some("overflow") && !open.contains(n.target.as_str())).count();
     NavStats {
         nodes: nodes.len(),
-        places: nodes.iter().filter(|n| n.level == 1).count(),
+        // a place is a level-1 destination; a group header is not one (it has no destination) and a tab is a view inside a place
+        places: nodes.iter().filter(|n| n.level == 1 && !matches!(n.kind.as_str(), "group" | "tab")).count(),
         max_depth: nodes.iter().map(|n| n.level).max().unwrap_or(0),
         items_per_level: per_level,
         items_per_group: per_group,
         destinations: counts.len(),
         duplicate_destinations: counts.values().map(|c| c - 1).sum(),
-        dead_items: nodes.iter().filter(|n| n.target == "unknown").count(),
+        // a group header has no destination to be dead; `unknown` on anything else is an item the probe could not resolve to a screen
+        dead_items: nodes.iter().filter(|n| n.kind != "group" && n.target == "unknown").count(),
+        unresolved_targets: nodes.iter().any(|n| n.kind != "group") && nodes.iter().filter(|n| n.kind != "group").all(|n| n.target == "unknown"),
         overflow_only_items: overflow_only,
         screens: counts.keys().map(|s| s.to_string()).collect(),
     }
@@ -280,6 +286,35 @@ pub struct UiCoverage {
     pub cells: Vec<CoverageCell>,
     #[serde(default)]
     pub journey_cells: Vec<JourneyCell>,
+    /// the run plan's own statements about cells it did not plan (CMP-UI-LOOP-1)
+    #[serde(default)]
+    pub plan: Option<CoveragePlan>,
+}
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CoveragePlan {
+    #[serde(default)]
+    pub na: Vec<PlanNa>,
+}
+/// `plan.na`: every blank cell whose state is in `states` (and, when given, whose product/screen/seat/viewport match) is n/a for `why`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlanNa {
+    pub states: Vec<String>,
+    #[serde(default)]
+    pub products: Vec<String>,
+    #[serde(default)]
+    pub screens: Vec<String>,
+    #[serde(default)]
+    pub seats: Vec<String>,
+    #[serde(default)]
+    pub viewports: Vec<String>,
+    #[serde(default)]
+    pub why: String,
+}
+impl PlanNa {
+    fn matches(&self, x: &CoverageCell) -> bool {
+        let any = |l: &Vec<String>, v: &str| l.is_empty() || l.iter().any(|e| e == v);
+        self.states.iter().any(|s| s == &x.state) && any(&self.products, &x.product) && any(&self.screens, &x.screen) && any(&self.seats, &x.seat) && any(&self.viewports, &x.viewport)
+    }
 }
 impl UiCoverage {
     pub fn problems(&self, stem: &str) -> Vec<String> {
@@ -290,6 +325,14 @@ impl UiCoverage {
         if self.run_id != stem {
             p.push(format!("runId `{}` does not match the file name `{stem}`", self.run_id));
         }
+        for (i, r) in self.plan.iter().flat_map(|p| p.na.iter()).enumerate() {
+            if r.why.trim().is_empty() {
+                p.push(format!("plan.na[{i}] has no `why`: a state-level n/a must carry its reason"));
+            }
+            if r.states.is_empty() {
+                p.push(format!("plan.na[{i}] names no state"));
+            }
+        }
         p
     }
 }
@@ -299,6 +342,14 @@ pub fn cell_blank(status: &str, why: &str) -> bool {
 }
 /// Per-product counts and the sorted list of blank cells.
 pub fn coverage_table(c: &UiCoverage) -> (BTreeMap<String, BTreeMap<&'static str, usize>>, Vec<String>) {
+    let (t, b, _) = coverage_resolve(c);
+    (t, b)
+}
+/// As `coverage_table`, and the cells a `plan.na` rule explained, as (reason, count) in rule order. A rule only ever explains a BLANK cell.
+pub type CoverageTable = BTreeMap<String, BTreeMap<&'static str, usize>>;
+pub fn coverage_resolve(c: &UiCoverage) -> (CoverageTable, Vec<String>, Vec<(String, usize)>) {
+    let rules: &[PlanNa] = c.plan.as_ref().map_or(&[], |p| &p.na);
+    let mut planned: Vec<(String, usize)> = rules.iter().map(|r| (r.why.trim().to_string(), 0)).collect();
     let mut table: BTreeMap<String, BTreeMap<&'static str, usize>> = BTreeMap::new();
     let mut blanks = vec![];
     let mut add = |product: &str, status: &str, why: &str, label: String| {
@@ -316,13 +367,22 @@ pub fn coverage_table(c: &UiCoverage) -> (BTreeMap<String, BTreeMap<&'static str
         }
     };
     for x in &c.cells {
-        add(&x.product, &x.status, &x.why, format!("{}/{}/{}/{}-{}", x.product, x.screen, x.state, x.viewport, x.seat));
+        let label = format!("{}/{}/{}/{}-{}", x.product, x.screen, x.state, x.viewport, x.seat);
+        if cell_blank(&x.status, &x.why) {
+            if let Some(i) = rules.iter().position(|r| r.matches(x)) {
+                planned[i].1 += 1;
+                add(&x.product, "n/a", &rules[i].why, label);
+                continue;
+            }
+        }
+        add(&x.product, &x.status, &x.why, label);
     }
     for x in &c.journey_cells {
         add(&x.product, &x.status, &x.why, format!("{}/journey {}/step {}", x.product, x.journey, x.step));
     }
     blanks.sort();
-    (table, blanks)
+    planned.retain(|(_, n)| *n > 0);
+    (table, blanks, planned)
 }
 /// Percent as the sweep report writes it.
 pub fn share(n: usize, of: usize) -> String {
@@ -355,10 +415,10 @@ mod tests {
     #[test]
     fn derived_numbers() {
         let s = nav_stats(&tree());
-        assert_eq!((s.places, s.max_depth, s.nodes), (2, 2, 6));
+        assert_eq!((s.places, s.max_depth, s.nodes), (1, 2, 6), "a level-1 group header is not a place");
         assert_eq!(s.items_per_level[&2], 4);
         assert_eq!(s.items_per_group["Work"], 4);
-        assert_eq!((s.destinations, s.duplicate_destinations, s.dead_items, s.overflow_only_items), (3, 1, 2, 1));
+        assert_eq!((s.destinations, s.duplicate_destinations, s.dead_items, s.overflow_only_items), (3, 1, 1, 1), "a group header is not a dead item; Old is");
     }
     #[test]
     fn nav_rules_go_red() {

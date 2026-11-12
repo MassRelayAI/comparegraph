@@ -45,6 +45,17 @@ pub struct GraphTruncated {
     pub time: bool,
     #[serde(default)]
     pub unexpanded: Vec<String>,
+    /// the per-crawl click-attempt cap was hit
+    #[serde(default)]
+    pub actions: bool,
+    /// screens whose own action list was cut by the per-screen cap
+    #[serde(default, rename = "screenActions")]
+    pub screen_actions: Vec<String>,
+}
+impl GraphTruncated {
+    pub fn any(&self) -> bool {
+        self.depth || self.nodes || self.time || self.actions || !self.screen_actions.is_empty()
+    }
 }
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GraphCaps {
@@ -52,6 +63,12 @@ pub struct GraphCaps {
     pub depth: u32,
     #[serde(default)]
     pub nodes: u32,
+    #[serde(default)]
+    pub actions: u32,
+    #[serde(default, rename = "screenActions")]
+    pub screen_actions: u32,
+    #[serde(default, rename = "clickTimeoutMs")]
+    pub click_timeout_ms: u32,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
