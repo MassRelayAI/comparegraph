@@ -298,7 +298,7 @@
   ],
   "locale": "en-US",
   "meta": {
-    "capturedAt": "2026-11-12T09:54:21.699Z",
+    "capturedAt": "2026-11-12T11:36:42.941Z",
     "url": "http://127.0.0.1:47831/g/home"
   },
   "nodes": [
@@ -311,14 +311,14 @@
     },
     {
       "depth": 0,
-      "domHash": "53b7a7a8f1fb69e309d4e6ab351a19441dde39d9d8e439bd4568819605b2528c",
+      "domHash": "aa0d02b58c5ecaccdac910ef553c0572078cd035d11fdd7c6ed413337d53c46f",
       "id": "room",
       "route": "/g/home",
       "state": "populated"
     },
     {
       "depth": 1,
-      "domHash": "a9ce639555745cf24ff7a7ea974bf0775127b2a57413496a8c4e7f6905b867c2",
+      "domHash": "d0f333cfb74ac3cc0a33ffa4ca4edb66d7f1767752a41dd7fc053df20607a1d5",
       "id": "room#dialog:Details",
       "route": "/g/home",
       "state": "populated",
@@ -326,7 +326,7 @@
     },
     {
       "depth": 1,
-      "domHash": "f0003a9795ed5fdfa930fd280f117dde3636f6ae2cb29124b3b26fb5d21bf157",
+      "domHash": "ec354e11deb9bb47bb427519a0ae30851085c6ea8bd0eca1c2bc8306b9ce2657",
       "id": "room#panel:More",
       "route": "/g/home",
       "state": "populated",

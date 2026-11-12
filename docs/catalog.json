@@ -34,6 +34,180 @@
           "feature"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "absent-check"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "family",
+                  "feature",
+                  "absent",
+                  "reason",
+                  "read_set"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "family": {
+                    "type": "string"
+                  },
+                  "feature": {
+                    "type": "string"
+                  },
+                  "absent": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "read_set": {
+                    "type": "object"
+                  },
+                  "channels": {
+                    "type": "object"
+                  },
+                  "terms": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -45,6 +219,171 @@
         "properties": {},
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "check"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repos",
+                  "schema_ok",
+                  "problems"
+                ],
+                "properties": {
+                  "repos": {
+                    "type": "integer"
+                  },
+                  "schema_ok": {
+                    "type": "boolean"
+                  },
+                  "chain_ok": {
+                    "type": "boolean"
+                  },
+                  "problems": {
+                    "type": "array"
+                  },
+                  "notes": {
+                    "type": "array"
+                  },
+                  "clone_unavailable": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -106,6 +445,197 @@
           "author"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "claim"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "repo",
+                  "feature",
+                  "verdict",
+                  "author"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  },
+                  "repo": {
+                    "type": "string"
+                  },
+                  "feature": {
+                    "type": "string"
+                  },
+                  "verdict": {
+                    "type": "string"
+                  },
+                  "author": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "string"
+                  },
+                  "family": {
+                    "type": "string"
+                  },
+                  "run_id": {
+                    "type": "integer"
+                  },
+                  "created_at": {
+                    "type": "string"
+                  },
+                  "supersedes_id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "locations": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -130,6 +660,154 @@
         },
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "claims"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -157,6 +835,154 @@
           "repo"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "communities"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -189,6 +1015,158 @@
           "repo"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "dead-code"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "items"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -200,6 +1178,171 @@
         "properties": {},
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "doctor"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "store",
+                  "schema_version",
+                  "providers"
+                ],
+                "properties": {
+                  "store": {
+                    "type": "string"
+                  },
+                  "schema_version": {
+                    "type": "integer"
+                  },
+                  "repos": {
+                    "type": "integer"
+                  },
+                  "providers": {
+                    "type": "array"
+                  },
+                  "governance": {
+                    "type": "object"
+                  },
+                  "clients": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -232,6 +1375,158 @@
           "repo"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "entry-points"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "items"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -243,6 +1538,154 @@
         "properties": {},
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "family"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -254,6 +1697,186 @@
         "properties": {},
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "governance-verify"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "actions",
+                  "chain_ok",
+                  "problems"
+                ],
+                "properties": {
+                  "actions": {
+                    "type": "integer"
+                  },
+                  "chain_ok": {
+                    "type": "boolean"
+                  },
+                  "problems": {
+                    "type": "array"
+                  },
+                  "head": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "store_head": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "broken_at": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "file": {
+                    "type": "string"
+                  },
+                  "archived": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -306,6 +1929,177 @@
           "repo"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "impact"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "summary",
+                  "items",
+                  "truncated",
+                  "total",
+                  "tests"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "object"
+                  },
+                  "items": {
+                    "type": "array"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "total": {
+                    "type": "integer"
+                  },
+                  "targets": {
+                    "type": "array"
+                  },
+                  "tests": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -337,6 +2131,165 @@
           "family"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "map"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "family",
+                  "features"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "family": {
+                    "type": "string"
+                  },
+                  "features": {
+                    "type": "array"
+                  },
+                  "entry_points": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -367,6 +2320,165 @@
           "family"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "matrix"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "family",
+                  "columns",
+                  "rows"
+                ],
+                "properties": {
+                  "family": {
+                    "type": "string"
+                  },
+                  "columns": {
+                    "type": "array"
+                  },
+                  "rows": {
+                    "type": "array"
+                  },
+                  "comparators": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -385,6 +2497,154 @@
         },
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "relate"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -426,6 +2686,163 @@
         },
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "relevance"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  },
+                  "classes": {
+                    "type": "object"
+                  },
+                  "as_of": {
+                    "type": "string"
+                  },
+                  "inputs": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -460,6 +2877,154 @@
         },
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "repos"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -495,6 +3060,154 @@
           "query"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "search"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -529,6 +3242,192 @@
           "qualified_name"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "show"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "node",
+                  "callers",
+                  "callers_total",
+                  "callees",
+                  "callees_total"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "licence": {
+                    "type": "string"
+                  },
+                  "lane": {
+                    "type": "string"
+                  },
+                  "node": {
+                    "type": "object"
+                  },
+                  "community": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "callers": {
+                    "type": "array"
+                  },
+                  "callers_total": {
+                    "type": "integer"
+                  },
+                  "callees": {
+                    "type": "array"
+                  },
+                  "callees_total": {
+                    "type": "integer"
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "confidence": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -571,6 +3470,174 @@
           "qualified_name"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "tests-for"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "symbol",
+                  "summary",
+                  "items",
+                  "truncated",
+                  "total"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "object"
+                  },
+                  "items": {
+                    "type": "array"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "total": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -630,6 +3697,174 @@
           "qualified_name"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "traverse"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "start",
+                  "summary",
+                  "items",
+                  "truncated",
+                  "total"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "object"
+                  },
+                  "items": {
+                    "type": "array"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "total": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -679,6 +3914,165 @@
           "run"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-coverage"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "runId",
+                  "complete",
+                  "table"
+                ],
+                "properties": {
+                  "runId": {
+                    "type": "string"
+                  },
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "table": {
+                    "type": "array"
+                  },
+                  "blankCells": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -754,6 +4148,191 @@
           "ref"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-diff"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "target",
+                  "screen",
+                  "state",
+                  "viewport",
+                  "ours",
+                  "ref",
+                  "pass",
+                  "metrics"
+                ],
+                "properties": {
+                  "target": {
+                    "type": "string"
+                  },
+                  "screen": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "viewport": {
+                    "type": "string"
+                  },
+                  "ours": {
+                    "type": "object"
+                  },
+                  "ref": {
+                    "type": "object"
+                  },
+                  "pass": {
+                    "type": "object"
+                  },
+                  "metrics": {
+                    "type": "array"
+                  },
+                  "layoutDiff": {
+                    "type": "array"
+                  },
+                  "styleDiff": {
+                    "type": "array"
+                  },
+                  "images": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -807,6 +4386,172 @@
           "task"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-flow"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "product",
+                  "task",
+                  "stepCount",
+                  "steps"
+                ],
+                "properties": {
+                  "product": {
+                    "type": "string"
+                  },
+                  "task": {
+                    "type": "string"
+                  },
+                  "stepCount": {
+                    "type": "integer"
+                  },
+                  "clicks": {
+                    "type": "integer"
+                  },
+                  "steps": {
+                    "type": "array"
+                  },
+                  "deadEnds": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -863,6 +4608,183 @@
           "product"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-graph"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "product",
+                  "viewport",
+                  "summary"
+                ],
+                "properties": {
+                  "product": {
+                    "type": "string"
+                  },
+                  "viewport": {
+                    "type": "string"
+                  },
+                  "seat": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "object"
+                  },
+                  "orphans": {
+                    "type": "array"
+                  },
+                  "unreachable": {
+                    "type": "array"
+                  },
+                  "deadActions": {
+                    "type": "array"
+                  },
+                  "depth": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -929,6 +4851,166 @@
           "ref"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-graph-diff"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "viewport",
+                  "ours",
+                  "ref",
+                  "diff"
+                ],
+                "properties": {
+                  "viewport": {
+                    "type": "string"
+                  },
+                  "ours": {
+                    "type": "object"
+                  },
+                  "ref": {
+                    "type": "object"
+                  },
+                  "diff": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -982,6 +5064,170 @@
           "journey"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-journey"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "journey",
+                  "items"
+                ],
+                "properties": {
+                  "journey": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array"
+                  },
+                  "pairwise": {
+                    "type": "array"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "goalArchetype": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1026,6 +5272,157 @@
         },
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-limits"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  },
+                  "probe": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1091,6 +5488,169 @@
           "family"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-matrix"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "family",
+                  "state",
+                  "products",
+                  "items"
+                ],
+                "properties": {
+                  "family": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "viewport": {
+                    "type": "string"
+                  },
+                  "products": {
+                    "type": "array"
+                  },
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1147,6 +5707,169 @@
           "product"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-nav"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "product",
+                  "viewport",
+                  "stats",
+                  "tree"
+                ],
+                "properties": {
+                  "product": {
+                    "type": "string"
+                  },
+                  "viewport": {
+                    "type": "string"
+                  },
+                  "seat": {
+                    "type": "string"
+                  },
+                  "stats": {
+                    "type": "object"
+                  },
+                  "tree": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1209,6 +5932,400 @@
           "ref"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-nav-diff"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "viewport",
+                  "ours",
+                  "ref",
+                  "diff"
+                ],
+                "properties": {
+                  "viewport": {
+                    "type": "string"
+                  },
+                  "ours": {
+                    "type": "object"
+                  },
+                  "ref": {
+                    "type": "object"
+                  },
+                  "diff": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "comparegraph_ui_net_diff",
+      "description": "UI evidence: the network behaviour of two products on the same screen, state and device: requests added, removed, changed (status or response shape) by normalised method + path (ids become :n :uuid :hex :token, query dropped). Reads net-behaviour/1 when both captures have it, else the `net` block (failed calls and totals). Omit screen/state/device to compare every shared capture (bounded).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ours": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "screen": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "device": {
+            "type": "string",
+            "description": "a device id or <w>x<h>"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
+          }
+        },
+        "required": [
+          "ours",
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-net-diff"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "ours",
+                  "ref",
+                  "source",
+                  "status",
+                  "summary",
+                  "captures"
+                ],
+                "properties": {
+                  "ours": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "normalisation": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "object"
+                  },
+                  "captures": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1277,6 +6394,178 @@
           "to"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-path"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "product",
+                  "from",
+                  "to",
+                  "found"
+                ],
+                "properties": {
+                  "product": {
+                    "type": "string"
+                  },
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  },
+                  "found": {
+                    "type": "boolean"
+                  },
+                  "clicks": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "steps": {
+                    "type": "array"
+                  },
+                  "maxLen": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1321,6 +6610,154 @@
         },
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-products"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1370,6 +6807,158 @@
           "product"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-screens"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "product",
+                  "items"
+                ],
+                "properties": {
+                  "product": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1441,6 +7030,196 @@
           "screen"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-show"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "product",
+                  "screen",
+                  "state",
+                  "viewport",
+                  "pass",
+                  "of",
+                  "metrics"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "product": {
+                    "type": "string"
+                  },
+                  "screen": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "viewport": {
+                    "type": "string"
+                  },
+                  "seat": {
+                    "type": "string"
+                  },
+                  "pass": {
+                    "type": "integer"
+                  },
+                  "of": {
+                    "type": "integer"
+                  },
+                  "metrics": {
+                    "type": "array"
+                  },
+                  "layout": {
+                    "type": "object"
+                  },
+                  "style": {
+                    "type": "object"
+                  },
+                  "image": {
+                    "type": "object"
+                  },
+                  "captures": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1490,6 +7269,167 @@
           "product"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-system"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "product",
+                  "source"
+                ],
+                "properties": {
+                  "product": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "style": {
+                    "type": "object"
+                  },
+                  "targets": {
+                    "type": "array"
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1552,6 +7492,174 @@
         },
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "ui-verify"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "compared",
+                  "identical",
+                  "differences"
+                ],
+                "properties": {
+                  "compared": {
+                    "type": "integer"
+                  },
+                  "identical": {
+                    "type": "boolean"
+                  },
+                  "differences": {
+                    "type": "array"
+                  },
+                  "total": {
+                    "type": "integer"
+                  },
+                  "onlyInA": {
+                    "type": "array"
+                  },
+                  "onlyInB": {
+                    "type": "array"
+                  },
+                  "unstable": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
       }
     }
   ],
@@ -1580,5 +7688,125 @@
     "repo_archived",
     "store_busy",
     "store_error"
-  ]
+  ],
+  "error_recovery": {
+    "already_archived": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "repos --archived"
+    },
+    "archive_refused": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "relevance"
+    },
+    "backup_mismatch": {
+      "kind": "run_command",
+      "retryable": false,
+      "operation": "backup"
+    },
+    "below_floor": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "relate"
+    },
+    "cannot_archive_root": {
+      "kind": "none",
+      "retryable": false
+    },
+    "catalog_stale": {
+      "kind": "run_command",
+      "retryable": false,
+      "operation": "catalog"
+    },
+    "chain_broken": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "governance verify"
+    },
+    "check_failed": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "check"
+    },
+    "clone_missing": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "doctor"
+    },
+    "clone_unavailable": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "check"
+    },
+    "empty": {
+      "kind": "run_command",
+      "retryable": false,
+      "operation": "build"
+    },
+    "head_mismatch": {
+      "kind": "run_command",
+      "retryable": false,
+      "operation": "build"
+    },
+    "insufficient_space": {
+      "kind": "retry",
+      "retryable": true,
+      "operation": "gc"
+    },
+    "invalid_arguments": {
+      "kind": "fix_arguments",
+      "retryable": false,
+      "operation": "catalog"
+    },
+    "invalid_policy": {
+      "kind": "fix_arguments",
+      "retryable": false,
+      "operation": "relevance"
+    },
+    "io_error": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "doctor"
+    },
+    "manifest_mismatch": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "governance verify"
+    },
+    "none_refused": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "absent-check"
+    },
+    "not_archived": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "repos --archived"
+    },
+    "not_found": {
+      "kind": "choose_candidate",
+      "retryable": false,
+      "operation": "search"
+    },
+    "provider_unavailable": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "doctor"
+    },
+    "repo_archived": {
+      "kind": "run_command",
+      "retryable": false,
+      "operation": "restore"
+    },
+    "store_busy": {
+      "kind": "retry",
+      "retryable": true
+    },
+    "store_error": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "check"
+    }
+  }
 }

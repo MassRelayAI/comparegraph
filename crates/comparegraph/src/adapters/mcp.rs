@@ -30,7 +30,7 @@ fn ui_schema(props: Value, required: &[&str]) -> Value {
     schema(p, required)
 }
 fn tool(name: &str, desc: &str, input: Value) -> Value {
-    json!({ "name": name, "description": desc, "inputSchema": input })
+    json!({ "name": name, "description": desc, "inputSchema": input, "outputSchema": crate::application::output_schema::output_schema(name) })
 }
 fn page_props() -> Value {
     json!({ "limit": {"type":"integer","minimum":1,"maximum":500,"description":"page size, default 50"},
@@ -134,6 +134,8 @@ pub fn tools() -> Vec<Value> {
             "product":{"type":"string"}, "viewport":{"type":"string","description":"default 1440x900"}, "seat":{"type":"string"} }), &["product"])),
         tool("comparegraph_ui_nav_diff", "UI evidence: two menu trees compared in words (same viewport): places, depth, items per level, duplicates, dead items, items only via overflow, screens only on one side.", ui_schema(json!({
             "ours":{"type":"string"}, "ref":{"type":"string"}, "viewport":{"type":"string"}, "seat":{"type":"string"}, "ref_seat":{"type":"string"} }), &["ours", "ref"])),
+        tool("comparegraph_ui_net_diff", "UI evidence: the network behaviour of two products on the same screen, state and device: requests added, removed, changed (status or response shape) by normalised method + path (ids become :n :uuid :hex :token, query dropped). Reads net-behaviour/1 when both captures have it, else the `net` block (failed calls and totals). Omit screen/state/device to compare every shared capture (bounded).", ui_schema(json!({
+            "ours":{"type":"string"}, "ref":{"type":"string"}, "screen":{"type":"string"}, "state":{"type":"string"}, "device":{"type":"string","description":"a device id or <w>x<h>"} }), &["ours", "ref"])),
         tool("comparegraph_ui_graph", "UI evidence: a product's interaction graph (ui-graph/1): reachable screens, depth from the start, orphans vs the registry, dead actions, duplicate paths, cycles, actions per screen. Read-only crawl evidence.", ui_schema(json!({
             "product":{"type":"string"}, "viewport":{"type":"string","description":"default 1440x900"}, "seat":{"type":"string"} }), &["product"])),
         tool("comparegraph_ui_path", "UI evidence: the shortest click path between two screens (or dialogs) of a product's interaction graph, bounded by max_len (default 8, max 20).", ui_schema(json!({
@@ -225,6 +227,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             "comparegraph_ui_flow" => &["product", "task", "ui_root", "max_nodes"],
             "comparegraph_ui_nav" => &["product", "viewport", "seat", "ui_root", "max_nodes"],
             "comparegraph_ui_nav_diff" => &["ours", "ref", "viewport", "seat", "ref_seat", "ui_root", "max_nodes"],
+            "comparegraph_ui_net_diff" => &["ours", "ref", "screen", "state", "device", "ui_root", "max_nodes"],
             "comparegraph_ui_graph" => &["product", "viewport", "seat", "ui_root", "max_nodes"],
             "comparegraph_ui_path" => &["product", "from", "to", "viewport", "seat", "max_len", "ui_root", "max_nodes"],
             "comparegraph_ui_graph_diff" => &["ours", "ref", "viewport", "seat", "ref_seat", "tree", "ui_root", "max_nodes"],
@@ -403,6 +406,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 "comparegraph_ui_flow" => UiCmd::Flow { product: req(a, "product")?, task: req(a, "task")? },
                 "comparegraph_ui_nav" => UiCmd::Nav { product: req(a, "product")?, viewport: s("viewport")?, seat: s("seat")? },
                 "comparegraph_ui_nav_diff" => UiCmd::NavDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")? },
+                "comparegraph_ui_net_diff" => UiCmd::NetDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, screen: s("screen")?, state: s("state")?, device: s("device")? },
                 "comparegraph_ui_graph" => UiCmd::Graph { product: req(a, "product")?, viewport: s("viewport")?, seat: s("seat")? },
                 "comparegraph_ui_path" => UiCmd::Path { product: req(a, "product")?, from: req(a, "from")?, to: req(a, "to")?, viewport: s("viewport")?, seat: s("seat")?, max_len: uint_arg(a, "max_len", 8)? },
                 "comparegraph_ui_graph_diff" => UiCmd::GraphDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")?, tree: s("tree")? },
@@ -498,13 +502,12 @@ fn call(root: &Path, params: &Value) -> Value {
         None | Some(Value::Null) => &empty,
         Some(v) => v,
     };
-    let (text, is_error) = match command(name, args) {
+    let (text, is_error, structured) = match command(name, args) {
         Err(m) => {
             let verb = name.strip_prefix("comparegraph_").unwrap_or("mcp");
-            (
-                Envelope::err(verb, &AppError::InvalidArguments(m)).to_json(),
-                true,
-            )
+            let text = Envelope::err(verb, &AppError::InvalidArguments(m)).to_json();
+            let structured = serde_json::from_str::<Value>(&text).ok();
+            (text, true, structured)
         }
         Ok(cmd) => {
             let env = envelope_for(&Cli {
@@ -515,10 +518,13 @@ fn call(root: &Path, params: &Value) -> Value {
                 wait: None,
                 cmd,
             });
-            (env.to_json(), !env.ok)
+            let text = env.to_json();
+            let structured = serde_json::from_str::<Value>(&text).ok();
+            (text, !env.ok, structured)
         }
     };
-    json!({ "content": [{"type":"text","text":text}], "isError": is_error })
+    // structuredContent is the very envelope the text carries (MCP 2025-06-18): the outputSchema describes it
+    json!({ "content": [{"type":"text","text":text}], "structuredContent": structured, "isError": is_error })
 }
 
 fn err(id: Value, code: i64, message: &str) -> Value {

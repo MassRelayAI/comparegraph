@@ -1,25 +1,54 @@
 {
   "captures": {
     "devprod@contract-1/inbox/populated/desktop-1440/member/en-US/light": "devprod/inbox/populated/desktop-1440-member.json",
-    "devprod@contract-1/inbox/populated/iphone/member/en-US/light": "devprod/inbox/populated/iphone-member.json",
     "devprod@contract-1/room/populated/android/member/en-US/light": "devprod/room/populated/android-member.json",
     "devprod@contract-1/room/populated/desktop-1440/member/en-US/light": "devprod/room/populated/desktop-1440-member.json",
-    "devprod@contract-1/room/populated/ipad-landscape/member/en-US/light": "devprod/room/populated/ipad-landscape-member.json",
-    "devprod@contract-1/room/populated/ipad-portrait/member/en-US/light": "devprod/room/populated/ipad-portrait-member.json",
-    "devprod@contract-1/room/populated/iphone/member/en-US/light": "devprod/room/populated/iphone-member.json",
     "devprod@contract-1/settings/populated/android/member/en-US/light": "devprod/settings/populated/android-member.json"
   },
   "evidenceSha256": {
-    "devprod/inbox/populated/desktop-1440-member.json": "0f028267c2906c2bfe6cc12f3886f2d48506b38eea1bd8d4cf3e810afb362b02",
-    "devprod/inbox/populated/iphone-member.json": "9745e4246d9dcabc9598af3129fd9137786956c8aa68f8a1ee70f1cb77a2a4d5",
-    "devprod/room/populated/android-member.json": "5027e729ba06d44f79434a50848e15c2c1fa7afec79296b460bc4d8cefb6a709",
-    "devprod/room/populated/desktop-1440-member.json": "a5319e63de8f57e2e3a617eae02911c6788253407eb771d39d60f3ffb8c0a1bb",
-    "devprod/room/populated/ipad-landscape-member.json": "b4821788ff08e9b9e6eb620775fe1d6562f2a5a55e54e64a110e3ad82e6297f2",
-    "devprod/room/populated/ipad-portrait-member.json": "84e96b947be69e8823a2fc481613ee52a7902b116ccfd0d55da96fa26aef6904",
-    "devprod/room/populated/iphone-member.json": "1738dc80832c9a76a1b224c9ddd1e6aeed5c900ac87d6106293c6fff4147beed",
-    "devprod/settings/populated/android-member.json": "4ff4eb3c1891d9c8d926f490a06bcb0e7e6cadfd7628eda566b76d7fe5b3cef5"
+    "devprod/inbox/populated/desktop-1440-member.json": "6dc2e9526e8a8dd5284b478001525869ceabd59514fdbb8ec668c239086245df",
+    "devprod/room/populated/android-member.json": "5f62932181871319ad754e58e8d85c346d84650e06ab35b01029961b312add92",
+    "devprod/room/populated/desktop-1440-member.json": "798ea4bc2ddbb4c0b41b14212c01d27202515a252f3310f9470d95f619a435f5",
+    "devprod/settings/populated/android-member.json": "84f8e233bafae6fbf3050e6e1cab3f16188e03abff959cbb7686197b765c081e"
   },
-  "failed": [],
+  "failed": [
+    {
+      "error": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh",
+      "kind": "error",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "viewport": "iphone",
+      "why": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh"
+    },
+    {
+      "error": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh",
+      "kind": "error",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "viewport": "ipad-landscape",
+      "why": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh"
+    },
+    {
+      "error": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh",
+      "kind": "error",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "viewport": "ipad-portrait",
+      "why": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh"
+    },
+    {
+      "error": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh",
+      "kind": "error",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "viewport": "iphone",
+      "why": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh"
+    }
+  ],
   "inputs": {
     "archetypesDigest": null,
     "env": {

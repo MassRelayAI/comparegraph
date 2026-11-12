@@ -14,16 +14,16 @@
     "overflowPx": 0,
     "size": "360x800"
   },
-  "domHash": "446283f25579936022c84023552fd04a5db8411cb2a56ac674e8843fcccecb7a",
+  "domHash": "30d548afa989c9fe77b7d521e1cf47c4699d2ce5de182b4a051a68459b5463fd",
   "fixture": {
     "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
     "status": "seeded"
   },
   "flow": null,
   "image": {
-    "dhash": "c080e00000000000",
-    "file": "blobs/1dcb01e95cfb3266672247941b3785cc891f18a000d78221a702509599e479d4.png",
-    "sha256": "1dcb01e95cfb3266672247941b3785cc891f18a000d78221a702509599e479d4"
+    "dhash": "8080e00000000000",
+    "file": "blobs/a840f340f063ca3612d16d874bb160c8dc1069b51dcb2faa7f6c446083b1c706.png",
+    "sha256": "a840f340f063ca3612d16d874bb160c8dc1069b51dcb2faa7f6c446083b1c706"
   },
   "key": "devprod@contract-1/settings/populated/android/member/en-US/light",
   "layout": {
@@ -56,7 +56,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T09:55:50.445Z",
+    "capturedAt": "2026-11-12T11:37:44.530Z",
     "url": "http://localhost:47831/dev-responsive.html"
   },
   "metrics": {
@@ -147,18 +147,39 @@
       "xhr": 0
     },
     "bytes": 964,
+    "completeness": {
+      "attach_limited_sections": [],
+      "conditions": [
+        "complete_within_window"
+      ],
+      "dropped_events": {
+        "console_events": 0,
+        "network_requests": 0,
+        "scripts": 0,
+        "timeline_events": 0,
+        "total": 0,
+        "webmcp_tools": 0,
+        "websocket_connections": 0,
+        "websocket_frames": 0
+      },
+      "excluded": [],
+      "policy_filtered_sections": [],
+      "status": "complete_within_window",
+      "truncated_sections": [],
+      "unavailable_sections": []
+    },
     "failed": [],
     "requests": 2,
     "slowest": {
-      "ms": 2,
-      "path": "/redirect-out"
+      "ms": 5,
+      "path": "/dev-responsive.html"
     },
     "thirdPartyHosts": 1,
     "timing": {
-      "contentStartVisibleMs": 31,
-      "domContentLoadedMs": 9,
-      "firstContentfulPaintMs": 31,
-      "loadMs": 10
+      "contentStartVisibleMs": 24,
+      "domContentLoadedMs": 12,
+      "firstContentfulPaintMs": 24,
+      "loadMs": 12
     }
   },
   "probe": {
@@ -189,7 +210,7 @@
     "color": {
       "accent": "#0000ee",
       "background": {
-        "#f0f0f0": 1
+        "#efefef": 1
       },
       "border": {
         "#000000": 1

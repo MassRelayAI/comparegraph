@@ -199,3 +199,30 @@ fn the_probes_contract_fixture_carries_net_and_show_prints_it() {
     assert_eq!(s["data"]["net"]["failed"], json!([]));
     assert!(!s.to_string().contains("invalid_evidence"), "{s}");
 }
+
+
+#[test]
+fn a_truncated_capture_is_never_identical() {
+    let comp = |dropped: u64| {
+        let status = if dropped > 0 { "truncated" } else { "complete_within_window" };
+        json!({ "status": status, "conditions": [status], "policy_filtered_sections": [], "attach_limited_sections": [],
+                "truncated_sections": if dropped > 0 { json!(["network_requests"]) } else { json!([]) }, "unavailable_sections": [], "excluded": [],
+                "dropped_events": {"scripts": 0, "network_requests": dropped, "console_events": 0, "websocket_connections": 0, "websocket_frames": 0, "webmcp_tools": 0, "timeline_events": 0, "total": dropped} })
+    };
+    let (a, b) = (one_run_root("a"), one_run_root("b"));
+    for r in [&a, &b] {
+        edit_evidence(r.path(), ROOM, |e| {
+            let mut n = net(json!([]), 100, 5000);
+            n["completeness"] = comp(0);
+            e["net"] = n;
+        });
+    }
+    let (c, v) = verify_roots(a.path(), b.path());
+    assert_eq!(c, 0, "complete on both sides is identical: {v}");
+    edit_evidence(b.path(), ROOM, |e| e["net"]["completeness"] = comp(3));
+    let (c, v) = verify_roots(a.path(), b.path());
+    assert_eq!(c, 1, "{v}");
+    assert_eq!(v["data"]["identical"], false);
+    let d = v["data"]["differences"].as_array().unwrap();
+    assert!(d.iter().any(|x| x["kind"] == "netIncomplete"), "{v}");
+}

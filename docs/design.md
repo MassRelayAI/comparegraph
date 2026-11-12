@@ -275,6 +275,13 @@ no new dependency (decisions.md, "Store safety").
 - **Connection settings**: `synchronous = NORMAL` under WAL, a 64 MiB page cache per connection, `PRAGMA optimize` (bounded by
   `analysis_limit`, never waiting for a lock) when a write verb's store closes. Nothing is stored in the schema.
 
+## 9e. REA parity (lane REA-CG, 2026-11-12)
+
+Against REA (MIT, commit a016743; massrelay `REA-ADOPTION-MAP.md` section 0) CompareGraph had three gaps that mattered:
+- **Output schemas.** Every MCP tool advertises a compact `outputSchema` (the envelope with the tool's `verb` and typed `data` keys, a widening of the real answer) and answers with `structuredContent`. See `docs/mcp-tools.md`; `catalog --check` covers them; `tests/output_schema.rs` validates the real answer of all 37 tools.
+- **Error recovery.** `error.recovery = {kind, operation?, retryable}` for every error code (`RECOVERY`), listed in the catalog as `error_recovery`.
+- **Network behaviour.** `ui net-diff` compares the probe's `net.behaviour` (`net-behaviour/1`: fingerprinted transactions), `net.shapes` and `net.completeness` (the REA completeness ledger). `ui verify` treats a truncated capture as an incomplete comparison.
+
 ## 15. Standards honoured (so nothing here is a private format)
 MCP (tools/list, JSON Schema inputs and outputs, stdio transport) · JSON Schema 2020-12 for every contract · SPDX identifiers for
 licences · RFC 4180 CSV · JSON Lines for the plugin protocol · Obsidian conventions for the vault (YAML front matter, `[[wikilinks]]`,

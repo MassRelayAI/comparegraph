@@ -112,6 +112,19 @@ pub enum UiCmd {
         #[arg(long)]
         ref_seat: Option<String>,
     },
+    /// Two products' network behaviour on the same screen, state and device: requests added, removed, changed by normalised method + path + response shape
+    NetDiff {
+        #[arg(long)]
+        ours: String,
+        #[arg(long = "ref")]
+        refp: String,
+        #[arg(long)]
+        screen: Option<String>,
+        #[arg(long)]
+        state: Option<String>,
+        #[arg(long)]
+        device: Option<String>,
+    },
     /// The interaction graph of a product (ui-graph/1): reachable screens, depth, orphans, dead actions, cycles, actions per screen
     Graph {
         product: String,
@@ -655,7 +668,7 @@ pub enum Cmd {
         #[arg(long)]
         reach: Option<String>,
     },
-    /// Read and compare UI evidence files (screens, menus, journeys, runs): `ui products|screens|show|diff|matrix|system|flow|nav|nav-diff|journey|coverage|verify`
+    /// Read and compare UI evidence files (screens, menus, journeys, runs): `ui products|screens|show|diff|matrix|system|flow|nav|nav-diff|net-diff|journey|coverage|verify`
     Ui {
         /// the directory holding `ui/` (default: --root)
         #[arg(long, global = true)]
@@ -800,6 +813,7 @@ fn verb_of(c: &Cmd) -> &'static str {
             UiCmd::Flow { .. } => "ui-flow",
             UiCmd::Nav { .. } => "ui-nav",
             UiCmd::NavDiff { .. } => "ui-nav-diff",
+            UiCmd::NetDiff { .. } => "ui-net-diff",
             UiCmd::Graph { .. } => "ui-graph",
             UiCmd::Path { .. } => "ui-path",
             UiCmd::GraphDiff { .. } => "ui-graph-diff",
@@ -1034,7 +1048,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
             let conf = if matches!(
                 cli.cmd,
                 Cmd::Check { .. } | Cmd::Claims { .. } | Cmd::Matrix { .. } | Cmd::Governance { .. }
-                    | Cmd::Ui { what: UiCmd::Diff { .. } | UiCmd::Matrix { .. } | UiCmd::NavDiff { .. } | UiCmd::GraphDiff { .. } | UiCmd::Verify { .. }, .. }
+                    | Cmd::Ui { what: UiCmd::Diff { .. } | UiCmd::Matrix { .. } | UiCmd::NavDiff { .. } | UiCmd::NetDiff { .. } | UiCmd::GraphDiff { .. } | UiCmd::Verify { .. }, .. }
             ) {
                 "derived"
             } else if matches!(cli.cmd, Cmd::Claim { .. }) {
@@ -1082,6 +1096,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
                 if let Some(b) = env.error.as_mut() {
                     b.code = "catalog_stale";
                     b.hint = Some("run `comparegraph catalog > docs/catalog.json`".into());
+                    b.recovery = Some(crate::application::catalog::recovery("catalog_stale"));
                 }
             }
             if let Some(d) = data {
@@ -1549,6 +1564,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 UiCmd::Flow { product, task } => u::flow(ur, m, product, task)?,
                 UiCmd::Nav { product, viewport, seat } => u::nav(ur, m, product, vp(viewport), vp(seat))?,
                 UiCmd::NavDiff { ours, refp, viewport, seat, ref_seat } => u::nav_diff_verb(ur, m, ours, refp, vp(viewport), vp(seat), vp(ref_seat))?,
+                UiCmd::NetDiff { ours, refp, screen, state, device } => crate::application::ui_net::net_diff(ur, m, ours, refp, vp(screen), vp(state), vp(device), o)?,
                 UiCmd::Graph { product, viewport, seat } => crate::application::ui_graph::graph(ur, m, product, vp(viewport), vp(seat))?,
                 UiCmd::Path { product, from, to, viewport, seat, max_len } => crate::application::ui_graph::path(ur, m, product, from, to, vp(viewport), vp(seat), *max_len)?,
                 UiCmd::GraphDiff { ours, refp, viewport, seat, ref_seat, tree } => crate::application::ui_graph::graph_diff(ur, m, ours, refp, vp(viewport), vp(seat), vp(ref_seat), vp(tree))?,

@@ -359,7 +359,7 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
     }
     Ok(set)
 }
-const EV: Want = Want { evidence: true, flows: false, navs: false, systems: false, graphs: false };
+pub(super) const EV: Want = Want { evidence: true, flows: false, navs: false, systems: false, graphs: false };
 
 fn screens_of<'a>(set: &'a UiSet, product: &str) -> BTreeSet<&'a str> {
     set.evidence_of(product).map(|l| l.ev.screen.as_str()).collect()
@@ -379,7 +379,7 @@ pub(super) fn seat_rank(seat: &str) -> usize {
     SEAT_PREFERENCE.iter().position(|s| *s == seat).unwrap_or(SEAT_PREFERENCE.len())
 }
 /// The one evidence file for product/screen/state; `viewport` None prefers 1440x900. Never crosses state.
-fn select<'a>(set: &'a UiSet, product: &str, screen: &str, state: &str, viewport: Option<&str>, seat: Option<&str>, o: &Opts) -> Result<&'a Loaded> {
+pub(super) fn select<'a>(set: &'a UiSet, product: &str, screen: &str, state: &str, viewport: Option<&str>, seat: Option<&str>, o: &Opts) -> Result<&'a Loaded> {
     need_product_pub(set, product)?;
     // locale and theme are part of the key: the default is en-US/light, never "whichever file sorts first"
     let of_screen: Vec<&Loaded> = set.evidence_of(product).filter(|l| l.ev.screen == screen && l.ev.locale == o.locale && l.ev.theme == o.theme).collect();
@@ -415,7 +415,7 @@ fn archetype_limits(set: &UiSet, screen: &str) -> (Option<String>, BTreeMap<Stri
     }
 }
 /// The device class (the column of the archetype limits) of a capture: its own `device.class`, else the class of a known device id, else the width of a legacy "WxH".
-fn class_of(ev: &UiEvidence) -> &'static str {
+pub(super) fn class_of(ev: &UiEvidence) -> &'static str {
     let named = ev.device.as_ref().map(|d| d.class.as_str()).or_else(|| known_device_class(&ev.viewport));
     match named {
         Some("tablet") => "tablet",
@@ -556,7 +556,7 @@ pub fn screens(root: &Path, max_nodes: usize, product: &str, o: &Opts) -> Result
     Ok(set.finish(json!({ "product": product, "items": items, "page": { "next": next, "total": total } }), &[Limitation::new("snapshot_recompute_pending", SNAPSHOT_NOTE)]))
 }
 
-fn one_side(set: &UiSet, l: &Loaded) -> Value {
+pub(super) fn one_side(set: &UiSet, l: &Loaded) -> Value {
     let e = &l.ev;
     let mut v = json!({ "product": e.product, "version": e.version, "seat": e.seat, "route": e.route, "domHash": e.dom_hash, "pass": pass_count_of(set, e), "unstable": e.unstable, "image": set.image(&e.image) });
     if e.device.is_some() || e.support.is_some() {
@@ -616,7 +616,7 @@ pub fn show(root: &Path, max_nodes: usize, product: &str, screen: &str, state: &
 }
 
 /// Resolve a diff target (a screen id, or a map.csv row id) to the screen of one product.
-fn resolve_screen(set: &UiSet, product: &str, target: &str) -> Result<String> {
+pub(super) fn resolve_screen(set: &UiSet, product: &str, target: &str) -> Result<String> {
     if screens_of(set, product).contains(target) {
         return Ok(target.to_string());
     }
@@ -1060,13 +1060,13 @@ fn evidence_inputs(e: &UiEvidence) -> Vec<(&'static str, Value)> {
         ("theme", json!(e.theme)),
     ]
 }
-fn evidence_drift(a: &UiEvidence, b: &UiEvidence) -> Vec<Value> {
+pub(super) fn evidence_drift(a: &UiEvidence, b: &UiEvidence) -> Vec<Value> {
     evidence_inputs(a).into_iter().zip(evidence_inputs(b)).filter(|((_, x), (_, y))| x != y).map(|((f, x), (_, y))| json!({ "field": f, "a": x, "b": y })).collect()
 }
 fn drift_fields(drift: &[Value]) -> String {
     drift.iter().filter_map(|d| d["field"].as_str()).collect::<Vec<_>>().join(", ")
 }
-fn drift_error(drift: &[Value], what: &str) -> AppError {
+pub(super) fn drift_error(drift: &[Value], what: &str) -> AppError {
     AppError::structured(
         "check_failed",
         format!("refused: {what} were made from different inputs ({}); a comparison across different inputs proves nothing", drift_fields(drift)),
@@ -1074,7 +1074,7 @@ fn drift_error(drift: &[Value], what: &str) -> AppError {
         Some(json!({ "inputDrift": drift })),
     )
 }
-fn drift_limitation(drift: &[Value]) -> Limitation {
+pub(super) fn drift_limitation(drift: &[Value]) -> Limitation {
     Limitation::new("input_drift_allowed", format!("--allow-input-drift: the inputs differ ({}); equal results do not prove the two sides are comparable", drift_fields(drift))).with_data(json!({ "inputDrift": drift }))
 }
 
@@ -1213,6 +1213,12 @@ fn compare(dir_a: &Path, ra: &UiRun, dir_b: &Path, rb: &UiRun, ids: (&str, &str)
             }
             (None, None) => {}
             _ => net_missing += 1,
+        }
+        // REA-A: a capture that dropped events or lost a section to a cap cannot make a comparison "identical"
+        let cut = |e: &UiEvidence| e.net.as_ref().and_then(|n| n.completeness.as_ref()).filter(|c| c.truncated()).map(|c| json!({ "status": c.status, "dropped": c.dropped_events.total, "truncatedSections": c.truncated_sections }));
+        let (ca, cb) = (cut(&ea), cut(&eb));
+        if ca.is_some() || cb.is_some() {
+            diffs.push(json!({ "key": k, "kind": "netIncomplete", "a": ca, "b": cb }));
         }
     }
     let only_a: Vec<&String> = keys_a.difference(&keys_b).copied().collect();

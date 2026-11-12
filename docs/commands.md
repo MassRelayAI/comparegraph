@@ -79,7 +79,8 @@ by an older binary: they open it without adding columns (read through temp views
 | `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family`, `--batch <jsonl\|->` (rows like `{"repo":"a","disposition":"park","why":"...","by":"me"}`; output as for `claim`) |
 | `decisions` | Latest decision per scope. | `--repo`, `--history` |
 | `matrix <FAMILY>` | Features against every clone: verdicts, prevalence, gaps, differentiators. A clone with no stored relatedness band shows `relatedness: "not run"`, and the envelope's `limitations` says how many comparators lack one. | `--relate` (score the comparators with no band first, then build the matrix; this writes relatedness rows), `--reach reached\|unreached\|unknown` (keep only the rows with a cell whose latest claim has that reach; a stale cell, shown `unknown*`, counts as `unknown` for the filter; each row carries `reach`, parallel to `cells`, when any of its claims has one, with a stale cell's stored reach still shown) |
-| `ui <products\|screens\|show\|diff\|matrix\|system\|flow\|nav\|nav-diff\|journey\|coverage\|verify>` | Read and compare UI evidence files under `--ui-root` (default `--root`); see design.md section 9c. Comparisons are only within the same screen, state and viewport. | `--ui-root`, `--max-nodes` (default 200, max 2000), `--state`, `--viewport`, `--seat` `--net` (matrix: also list failed network calls). `verify` takes `RUN_A RUN_B` (one root; refused when the runs share an evidence file) or `--root-a DIR --root-b DIR` (one run per ui root, matched without the version); `show`/`diff` print a `netLine`. |
+| `ui <products\|screens\|show\|diff\|matrix\|system\|flow\|nav\|nav-diff\|net-diff\|journey\|coverage\|verify>` | Read and compare UI evidence files under `--ui-root` (default `--root`); see design.md section 9c. Comparisons are only within the same screen, state and viewport. | `--ui-root`, `--max-nodes` (default 200, max 2000), `--state`, `--viewport`, `--seat` `--net` (matrix: also list failed network calls). `verify` takes `RUN_A RUN_B` (one root; refused when the runs share an evidence file) or `--root-a DIR --root-b DIR` (one run per ui root, matched without the version); `show`/`diff` print a `netLine`. |
+| `ui net-diff --ours P --ref P [--screen S] [--state T] [--device D]` | The requests two products make on the same screen, state and device. Primary input: `net.behaviour` (`net-behaviour/1`, probe `--net-behaviour`) on both sides, compared as multisets of transaction fingerprints; leftovers with the same request key (`METHOD path [type]`) are `changed` (outcome). `net.shapes` (probe `--shapes`) add `shape` items. Without `net.behaviour` on both sides it compares the failed calls of the `net` block. `net.completeness` is always read: a capture that dropped events can show a difference but its status is `unknown`, never `unchanged`. Without `--screen/--state/--device` every shared capture is compared (bounded: 200 items per capture). | `--ui-root`, `--max-nodes`, `--allow-input-drift` |
 
 ## Exports and agents
 
@@ -93,3 +94,11 @@ by an older binary: they open it without adding columns (read through temp views
 
 
 [Back to README](../README.md)
+
+## Error recovery
+
+Every error envelope carries `error.recovery = {kind, operation?, retryable}` next to the prose `hint`: `kind` is `fix_arguments` (re-read the tool's inputSchema), `retry`
+(the same call can succeed later), `run_command` (a write verb has to run first), `inspect` (a read verb shows what is wrong), `choose_candidate`
+(`error.data.candidates` lists the valid values) or `none`. `operation` is a `comparegraph` subcommand line. The table is `RECOVERY` in
+`crates/comparegraph/src/application/catalog.rs`, one row per error code (a test fails on a code without a row or an operation that is not a subcommand), and
+`docs/catalog.json` lists it as `error_recovery`. `ui verify` fails (`netIncomplete`) when a compared capture's `net.completeness` is truncated or dropped events.

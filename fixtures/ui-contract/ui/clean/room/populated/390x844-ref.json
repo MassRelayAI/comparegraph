@@ -22,8 +22,8 @@
   "flow": null,
   "image": {
     "dhash": "0c0c000000000000",
-    "file": "blobs/4e1604e438f0a7523b9a7c815ae2474045bbebb4a1fd5d5c7920780579dd4a41.png",
-    "sha256": "4e1604e438f0a7523b9a7c815ae2474045bbebb4a1fd5d5c7920780579dd4a41"
+    "file": "blobs/ba5aa7577df21d1de9d80f7bda884b978f3c5e869cf5bc4f52915c40f45b7c36.png",
+    "sha256": "ba5aa7577df21d1de9d80f7bda884b978f3c5e869cf5bc4f52915c40f45b7c36"
   },
   "key": "clean@contract-1/room/populated/390x844/ref/en-US/light",
   "layout": {
@@ -49,7 +49,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T09:55:09.270Z",
+    "capturedAt": "2026-11-12T11:37:17.410Z",
     "url": "http://127.0.0.1:47831/clean.html"
   },
   "metrics": {
@@ -140,18 +140,39 @@
       "xhr": 0
     },
     "bytes": 1089,
+    "completeness": {
+      "attach_limited_sections": [],
+      "conditions": [
+        "complete_within_window"
+      ],
+      "dropped_events": {
+        "console_events": 0,
+        "network_requests": 0,
+        "scripts": 0,
+        "timeline_events": 0,
+        "total": 0,
+        "webmcp_tools": 0,
+        "websocket_connections": 0,
+        "websocket_frames": 0
+      },
+      "excluded": [],
+      "policy_filtered_sections": [],
+      "status": "complete_within_window",
+      "truncated_sections": [],
+      "unavailable_sections": []
+    },
     "failed": [],
     "requests": 1,
     "slowest": {
-      "ms": 2,
+      "ms": 4,
       "path": "/clean.html"
     },
     "thirdPartyHosts": 0,
     "timing": {
-      "contentStartVisibleMs": 32,
-      "domContentLoadedMs": 5,
-      "firstContentfulPaintMs": 32,
-      "loadMs": 6
+      "contentStartVisibleMs": 24,
+      "domContentLoadedMs": 8,
+      "firstContentfulPaintMs": 24,
+      "loadMs": 9
     }
   },
   "probe": {

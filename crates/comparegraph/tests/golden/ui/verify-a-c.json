@@ -66,6 +66,11 @@
   "error": {
     "code": "check_failed",
     "message": "runs run-a and run-c differ: 3 differences over 2 compared keys",
-    "hint": "fix the differences, or re-capture the run that disagrees"
+    "hint": "fix the differences, or re-capture the run that disagrees",
+    "recovery": {
+      "kind": "inspect",
+      "retryable": false,
+      "operation": "check"
+    }
   }
 }
