@@ -1,7 +1,7 @@
 <h1 align="center">CompareGraph</h1>
 
 <p align="center">
-  <b>Compare many code repositories feature by feature: which one has what, with the file and lines that show it.</b>
+  <b>Compare products, not only code: feature by feature and screen by screen, which one has what, with the lines or the capture that show it.</b>
 </p>
 
 <p align="center">
@@ -280,6 +280,24 @@ comparegraph ui verify --root-a ./run1 --root-b ./run2                    # the 
 ```
 
 The file formats are in [`docs/decisions.md`](docs/decisions.md); `fixtures/ui-contract/` is a real probe output that the tests read with every verb.
+
+## Keeping the store safe
+
+Claims are the part of a store that cannot be rebuilt from the clones, so the verbs that touch the store are careful by default:
+every write verb is a dry run until `--apply --by <who>`, and every write lands in a hash-chained action log.
+
+```bash
+comparegraph backup --by me                       # VACUUM INTO a verified full copy, with a manifest (or --claims-only, one JSONL)
+comparegraph check                                # read-only: schema, index, citations, the action log; --mark --recompute repairs flags
+comparegraph gc --parse-cache                     # what pruning the parse cache would free; --apply --by me to prune and VACUUM
+comparegraph relevance --policy policy.json       # rate every repo with YOUR weights (the engine ships none): KEEP, ARCHIVE, ...
+comparegraph archive old-repo --why "..." --by me # soft archive: a manifest and a flag, nothing deleted; `restore` undoes it
+comparegraph governance verify                    # re-walk the action log: every hash, no gaps, head matches the store
+```
+
+Primaries, pinned repos, repos a decision adopts and repos an open port row names are refused by `archive` unless you give
+`--force-with-reason`. Every flag is in [Commands](docs/commands.md#store-safety-scope-and-record-lane-cg-store); an example policy is
+`docs/examples/relevance-policy.d405.json`.
 
 ---
 
