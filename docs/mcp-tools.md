@@ -19,6 +19,18 @@ envelope as the CLI. Eighteen tools: seventeen read-only, one write (`comparegra
 | `comparegraph_relate` | Stored relatedness band per clone and family (reads, does not compute) | `repo`, `family` |
 | `comparegraph_claims` | Latest claim per clone and feature, with citations | `repo`, `family`, `feature`, `history` |
 | `comparegraph_matrix` | Features against clones, prevalence, gaps, differentiators; `relatedness` is `not run` until relate has scored the clone | `family`; optional `relate` (bool, default false: score unscored comparators first) |
+| `comparegraph_ui_products` | UI evidence: products with screens, evidence files, states, flows, menus | optional `ui_root`, `max_nodes` |
+| `comparegraph_ui_screens` | UI evidence: the screens of a product with archetype and captures | `product` |
+| `comparegraph_ui_show` | UI evidence: one capture with E1..E12 pass/fail, layout, style, image path | `product`, `screen`; optional `state`, `viewport`, `seat` |
+| `comparegraph_ui_diff` | UI evidence: two products on the same screen, state and viewport, in words and numbers | `target`, `ours`, `ref`; optional `state`, `viewport`, `seat`, `ref_seat` |
+| `comparegraph_ui_matrix` | UI evidence: family rows x products, cell = pass / 12 or `-` | `family`; optional `state`, `viewport` |
+| `comparegraph_ui_system` | UI evidence: a product's design system against the targets | `product` |
+| `comparegraph_ui_flow` | UI evidence: one flow's steps and dead ends | `product`, `task` |
+| `comparegraph_ui_nav` | UI evidence: a product's menu tree and derived numbers | `product`; optional `viewport`, `seat` |
+| `comparegraph_ui_nav_diff` | UI evidence: two menu trees compared in words | `ours`, `ref`; optional `viewport`, `seat`, `ref_seat` |
+| `comparegraph_ui_journey` | UI evidence: a journey per product (completed / partial / n/a) | `journey`; optional `products` |
+| `comparegraph_ui_coverage` | UI evidence: coverage table of a run, blank cells reported | `run` |
+| `comparegraph_ui_verify` | UI evidence: the determinism gate between two runs | `run_a`, `run_b` |
 | `comparegraph_claim` | **Write.** Record a claim | `repo`, `feature`, `family`, `verdict`, `author`, `at[]`, `searched`, `read_hits[]` (the `read_set.candidates` names, after opening each), `note` |
 | `comparegraph_traverse` | Reachable nodes, summary first, then one page by path confidence | `repo`, `qualified_name`, `direction`, `depth` (max 10), `max_nodes` (max 2000), `kinds`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_impact` | Blast radius: summary (`by_hop`, `by_kind`, `tests_total`), then one page, plus the tests that reach it (capped at `limit`) | `repo`, `qualified_name` or `files[]`, `depth`, `max_nodes`, `min_confidence`, `limit`, `cursor` |

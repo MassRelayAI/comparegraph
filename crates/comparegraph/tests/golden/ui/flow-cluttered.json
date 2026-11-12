@@ -1,0 +1,73 @@
+{
+  "ok": true,
+  "verb": "ui-flow",
+  "schema": 1,
+  "data": {
+    "product": "cluttered",
+    "task": "create-workflow",
+    "stepCount": 6,
+    "clicks": 5,
+    "steps": [
+      {
+        "n": 1,
+        "action": "click",
+        "target": "Work",
+        "screen": "room",
+        "state": null,
+        "image": "./ui/blobs/82a863b49326dda66ddebb1e9822598c95d60a07792cdc9c07b0f1e196f8ee49.png"
+      },
+      {
+        "n": 2,
+        "action": "click",
+        "target": "More",
+        "screen": "room",
+        "state": null,
+        "image": "./ui/blobs/82a863b49326dda66ddebb1e9822598c95d60a07792cdc9c07b0f1e196f8ee49.png"
+      },
+      {
+        "n": 3,
+        "action": "click",
+        "target": "Automations",
+        "screen": "inbox",
+        "state": null,
+        "image": "./ui/blobs/570e5588d7ca48a083c7a9f83a922fd4c50cc442e2c0a9c85e95e5653d0e439d.png"
+      },
+      {
+        "n": 4,
+        "action": "click",
+        "target": "Old flows",
+        "screen": "inbox",
+        "state": null,
+        "image": "./ui/blobs/570e5588d7ca48a083c7a9f83a922fd4c50cc442e2c0a9c85e95e5653d0e439d.png"
+      },
+      {
+        "n": 5,
+        "action": "click",
+        "target": "Create",
+        "screen": "inbox",
+        "state": null,
+        "image": "./ui/blobs/570e5588d7ca48a083c7a9f83a922fd4c50cc442e2c0a9c85e95e5653d0e439d.png"
+      },
+      {
+        "n": 6,
+        "action": "type",
+        "target": "Name",
+        "screen": "inbox",
+        "state": null,
+        "image": "./ui/blobs/570e5588d7ca48a083c7a9f83a922fd4c50cc442e2c0a9c85e95e5653d0e439d.png"
+      }
+    ],
+    "deadEnds": [
+      "Old flows -> 404",
+      "Create -> empty modal"
+    ]
+  },
+  "evidence": {
+    "confidence": "observed",
+    "limitations": []
+  },
+  "cost": {
+    "rows": 1,
+    "bytes": 1116
+  }
+}

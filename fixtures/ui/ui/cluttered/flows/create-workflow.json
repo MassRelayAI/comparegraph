@@ -1,0 +1,66 @@
+{
+  "deadEnds": [
+    "Old flows -> 404",
+    "Create -> empty modal"
+  ],
+  "product": "cluttered",
+  "schema": "ui-flow/1",
+  "stepCount": 6,
+  "steps": [
+    {
+      "action": "click",
+      "image": {
+        "sha256": "82a863b49326dda66ddebb1e9822598c95d60a07792cdc9c07b0f1e196f8ee49"
+      },
+      "n": 1,
+      "screen": "room",
+      "target": "Work"
+    },
+    {
+      "action": "click",
+      "image": {
+        "sha256": "82a863b49326dda66ddebb1e9822598c95d60a07792cdc9c07b0f1e196f8ee49"
+      },
+      "n": 2,
+      "screen": "room",
+      "target": "More"
+    },
+    {
+      "action": "click",
+      "image": {
+        "sha256": "570e5588d7ca48a083c7a9f83a922fd4c50cc442e2c0a9c85e95e5653d0e439d"
+      },
+      "n": 3,
+      "screen": "inbox",
+      "target": "Automations"
+    },
+    {
+      "action": "click",
+      "image": {
+        "sha256": "570e5588d7ca48a083c7a9f83a922fd4c50cc442e2c0a9c85e95e5653d0e439d"
+      },
+      "n": 4,
+      "screen": "inbox",
+      "target": "Old flows"
+    },
+    {
+      "action": "click",
+      "image": {
+        "sha256": "570e5588d7ca48a083c7a9f83a922fd4c50cc442e2c0a9c85e95e5653d0e439d"
+      },
+      "n": 5,
+      "screen": "inbox",
+      "target": "Create"
+    },
+    {
+      "action": "type",
+      "image": {
+        "sha256": "570e5588d7ca48a083c7a9f83a922fd4c50cc442e2c0a9c85e95e5653d0e439d"
+      },
+      "n": 6,
+      "screen": "inbox",
+      "target": "Name"
+    }
+  ],
+  "task": "create-workflow"
+}

@@ -567,6 +567,409 @@
         ],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "comparegraph_ui_coverage",
+      "description": "UI evidence: the coverage table of a run (captured / n/a / failed per product); a blank cell makes the run incomplete and is listed.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "run": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "run"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_diff",
+      "description": "UI evidence: two products on the SAME screen, state and viewport (refused otherwise): side-by-side metric table, layout and style differences in words, both image paths. target is a screen id or a map.csv row id.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "ours": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "default populated"
+          },
+          "viewport": {
+            "type": "string",
+            "description": "default 1440x900"
+          },
+          "seat": {
+            "type": "string"
+          },
+          "ref_seat": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "target",
+          "ours",
+          "ref"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_flow",
+      "description": "UI evidence: one flow (ui-flow/1) of a product: steps, clicks, dead ends, step image paths.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "product",
+          "task"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_journey",
+      "description": "UI evidence: a journey per product: completed, partial at step N, or n/a with the reason, and screens, clicks, decisions, waits, dead ends, time to first useful thing.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "journey": {
+            "type": "string"
+          },
+          "products": {
+            "type": "string",
+            "description": "comma list"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "journey"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_matrix",
+      "description": "UI evidence: the rows of a family by products; each cell is pass count / 12 or `-` (not captured), via map.csv, for one state and viewport.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "family": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "default populated"
+          },
+          "viewport": {
+            "type": "string",
+            "description": "default 1440x900"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "family"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_nav",
+      "description": "UI evidence: a product's menu tree (ui-nav/1) with derived numbers: places, depth, items per level and group, destinations, duplicates, dead items, overflow-only items.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "viewport": {
+            "type": "string",
+            "description": "default 1440x900"
+          },
+          "seat": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "product"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_nav_diff",
+      "description": "UI evidence: two menu trees compared in words (same viewport): places, depth, items per level, duplicates, dead items, items only via overflow, screens only on one side.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ours": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "viewport": {
+            "type": "string"
+          },
+          "seat": {
+            "type": "string"
+          },
+          "ref_seat": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "ours",
+          "ref"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_products",
+      "description": "UI evidence: products with screens, evidence files, states, flows, menu trees. Reads files under ui_root/ui only.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_screens",
+      "description": "UI evidence: the screens of a product with archetype, states and captures.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "product"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_show",
+      "description": "UI evidence: one capture (product, screen, state, viewport, seat) with metrics E1..E12 pass/fail against the archetype limits, layout and style summaries and the image path.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "screen": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "populated",
+              "error",
+              "loading-skeleton",
+              "long"
+            ],
+            "description": "default populated"
+          },
+          "viewport": {
+            "type": "string",
+            "description": "e.g. 1440x900 (preferred when omitted)"
+          },
+          "seat": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "product",
+          "screen"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_system",
+      "description": "UI evidence: a product's design system (type sizes, colours, spacing) from system.json or derived from its captures, against the targets.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "product"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_verify",
+      "description": "UI evidence: the determinism gate. For every capture key present in both runs, domHash and metrics must be equal and the image dHash within 4 bits; every difference is reported (check_failed with the list in data when any).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "run_a": {
+            "type": "string"
+          },
+          "run_b": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "run_a",
+          "run_b"
+        ],
+        "additionalProperties": false
+      }
     }
   ],
   "error_codes": [

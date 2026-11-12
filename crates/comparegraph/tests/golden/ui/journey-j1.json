@@ -1,0 +1,70 @@
+{
+  "ok": true,
+  "verb": "ui-journey",
+  "schema": 1,
+  "data": {
+    "journey": "j1",
+    "title": "New person to first useful answer",
+    "goalArchetype": "conversation",
+    "items": [
+      {
+        "product": "clean",
+        "outcome": "completed",
+        "result": {
+          "status": "completed",
+          "failedStep": null,
+          "why": null,
+          "screens": 3,
+          "clicks": 4,
+          "decisions": 1,
+          "waits": 0,
+          "deadEnds": 0,
+          "firstUseful": 3
+        }
+      },
+      {
+        "product": "cluttered",
+        "outcome": "partial at step 3: the first room cannot be created without an admin",
+        "result": {
+          "status": "partial",
+          "failedStep": 3,
+          "why": "the first room cannot be created without an admin",
+          "screens": 6,
+          "clicks": 9,
+          "decisions": 4,
+          "waits": 2,
+          "deadEnds": 2,
+          "firstUseful": null
+        }
+      },
+      {
+        "product": "legacy",
+        "outcome": "n/a: no rooms",
+        "result": {
+          "status": "n/a",
+          "failedStep": null,
+          "why": "no rooms",
+          "screens": 0,
+          "clicks": 0,
+          "decisions": 0,
+          "waits": 0,
+          "deadEnds": 0,
+          "firstUseful": null
+        }
+      }
+    ],
+    "pairwise": []
+  },
+  "evidence": {
+    "confidence": "observed",
+    "limitations": []
+  },
+  "page": {
+    "next": null,
+    "total": 3
+  },
+  "cost": {
+    "rows": 3,
+    "bytes": 768
+  }
+}

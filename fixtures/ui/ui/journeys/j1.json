@@ -1,0 +1,32 @@
+{
+  "goalArchetype": "conversation",
+  "journey": "j1",
+  "results": {
+    "clean": {
+      "clicks": 4,
+      "deadEnds": 0,
+      "decisions": 1,
+      "firstUseful": 3,
+      "screens": 3,
+      "status": "completed",
+      "waits": 0
+    },
+    "cluttered": {
+      "clicks": 9,
+      "deadEnds": 2,
+      "decisions": 4,
+      "failedStep": 3,
+      "firstUseful": null,
+      "screens": 6,
+      "status": "partial",
+      "waits": 2,
+      "why": "the first room cannot be created without an admin"
+    },
+    "legacy": {
+      "status": "n/a",
+      "why": "no rooms"
+    }
+  },
+  "schema": "ui-journey/1",
+  "title": "New person to first useful answer"
+}

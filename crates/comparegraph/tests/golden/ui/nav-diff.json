@@ -1,0 +1,67 @@
+{
+  "ok": true,
+  "verb": "ui-nav-diff",
+  "schema": 1,
+  "data": {
+    "viewport": "1440x900",
+    "ours": {
+      "product": "cluttered",
+      "version": "9f3c2a1",
+      "seat": "member",
+      "stats": {
+        "nodes": 9,
+        "places": 4,
+        "maxDepth": 2,
+        "itemsPerLevel": {
+          "1": 4,
+          "2": 5
+        },
+        "itemsPerGroup": {
+          "Work": 3
+        },
+        "destinations": 5,
+        "duplicateDestinations": 1,
+        "deadItems": 2,
+        "overflowOnlyItems": 1
+      }
+    },
+    "ref": {
+      "product": "clean",
+      "version": "d41d8cd",
+      "seat": "ref",
+      "stats": {
+        "nodes": 3,
+        "places": 3,
+        "maxDepth": 1,
+        "itemsPerLevel": {
+          "1": 3
+        },
+        "itemsPerGroup": {},
+        "destinations": 3,
+        "duplicateDestinations": 0,
+        "deadItems": 0,
+        "overflowOnlyItems": 0
+      }
+    },
+    "diff": [
+      "places 4 vs 3",
+      "max depth 2 vs 1",
+      "nodes 9 vs 3",
+      "items at level 1 4 vs 3",
+      "items at level 2 5 vs 0",
+      "destinations 5 vs 3",
+      "duplicate destinations 1 vs 0",
+      "dead items 2 vs 0",
+      "items only via overflow 1 vs 0",
+      "screens only in ours: billing, flows"
+    ]
+  },
+  "evidence": {
+    "confidence": "derived",
+    "limitations": []
+  },
+  "cost": {
+    "rows": 1,
+    "bytes": 752
+  }
+}

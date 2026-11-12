@@ -1,0 +1,213 @@
+{
+  "domHash": "a41749da8e04fb47d28b2b3fe1540e6d6dfe8ead01ac956d309401d34708d268",
+  "flow": null,
+  "image": {
+    "dhash": "00ff00ff00ff00ff",
+    "file": "blobs/4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940.png",
+    "sha256": "4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940"
+  },
+  "layout": {
+    "contentStart": {
+      "how": "data-content-start",
+      "y": 120
+    },
+    "primary": {
+      "name": "New room",
+      "x": 1163,
+      "y": 24
+    },
+    "regions": [
+      {
+        "h": 900,
+        "kind": "sidebar",
+        "w": 240,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "h": 64,
+        "kind": "topbar",
+        "w": 1200,
+        "x": 240,
+        "y": 0
+      },
+      {
+        "h": 836,
+        "kind": "main",
+        "w": 1200,
+        "x": 240,
+        "y": 64
+      }
+    ]
+  },
+  "locale": "en-US",
+  "meta": {
+    "capturedAt": "2026-11-12T10:00:00Z",
+    "url": "https://example.test/c/1"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [],
+      "limit": 2,
+      "pass": true,
+      "value": 1
+    },
+    "E10": {
+      "detail": [],
+      "limit": 5,
+      "pass": false,
+      "value": 1
+    },
+    "E11": {
+      "detail": [],
+      "limit": 5,
+      "pass": true,
+      "value": 1
+    },
+    "E12": {
+      "detail": [],
+      "limit": 5,
+      "pass": true,
+      "value": 1
+    },
+    "E2": {
+      "detail": [],
+      "limit": 5,
+      "pass": true,
+      "value": 1
+    },
+    "E3": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 1
+    },
+    "E4": {
+      "detail": [],
+      "limit": 5,
+      "pass": true,
+      "value": 1
+    },
+    "E5": {
+      "detail": [],
+      "limit": 5,
+      "pass": true,
+      "value": 1
+    },
+    "E6": {
+      "detail": [],
+      "limit": 5,
+      "pass": true,
+      "value": 1
+    },
+    "E7": {
+      "detail": [],
+      "limit": 200,
+      "pass": true,
+      "value": 120
+    },
+    "E8": {
+      "detail": [],
+      "limit": 5,
+      "pass": true,
+      "value": 1
+    },
+    "E9": {
+      "detail": [],
+      "limit": 5,
+      "pass": true,
+      "value": 1
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00Z",
+      "tz": "UTC"
+    },
+    "notes": [],
+    "version": "1"
+  },
+  "product": "clean",
+  "route": "/c/1",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "ref",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": "#0969da",
+      "background": {
+        "#24447c": 3,
+        "#2d559b": 3,
+        "#3666ba": 3,
+        "#3f77d9": 3
+      },
+      "border": {
+        "#4888f8": 2,
+        "#519917": 2,
+        "#5aaa36": 2,
+        "#63bb55": 2
+      },
+      "distinctColors": 12,
+      "lowContrast": [],
+      "text": {
+        "#000000": 5,
+        "#09111f": 5,
+        "#12223e": 5,
+        "#1b335d": 5
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0.9,
+      "textPerKpx": 1.8,
+      "whitespaceRatio": 0.42
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 61,
+      "radius": {
+        "2px": 10,
+        "4px": 10
+      },
+      "shadows": 1
+    },
+    "space": {
+      "distinctValues": 6,
+      "onScale4": 0.96,
+      "values": {
+        "12px": 12,
+        "16px": 13,
+        "20px": 14,
+        "24px": 15,
+        "4px": 10,
+        "8px": 11
+      }
+    },
+    "type": {
+      "distinctSizes": 6,
+      "families": [
+        "Inter"
+      ],
+      "lineHeights": {
+        "20px": 300
+      },
+      "sizes": {
+        "10px": 40,
+        "11px": 39,
+        "12px": 38,
+        "13px": 37,
+        "14px": 36,
+        "15px": 35
+      },
+      "weights": {
+        "400": 300,
+        "600": 40
+      }
+    }
+  },
+  "theme": "light",
+  "version": "d41d8cd",
+  "viewport": "1440x900"
+}

@@ -1,0 +1,113 @@
+{
+  "product": "cluttered",
+  "schema": "ui-system/1",
+  "style": {
+    "color": {
+      "accent": "#0969da",
+      "background": {
+        "#3f77d9": 3,
+        "#4888f8": 3,
+        "#519917": 3,
+        "#5aaa36": 3,
+        "#63bb55": 3,
+        "#6ccc74": 3,
+        "#75dd93": 3,
+        "#7eeeb2": 3
+      },
+      "border": {
+        "#87ffd1": 2,
+        "#9010f0": 2,
+        "#99210f": 2,
+        "#a2322e": 2,
+        "#ab434d": 2,
+        "#b4546c": 2,
+        "#bd658b": 2,
+        "#c676aa": 2
+      },
+      "distinctColors": 23,
+      "lowContrast": [
+        {
+          "ratio": 3.1,
+          "text": "Last updated 0"
+        },
+        {
+          "ratio": 3.1,
+          "text": "Last updated 1"
+        },
+        {
+          "ratio": 3.1,
+          "text": "Last updated 2"
+        }
+      ],
+      "text": {
+        "#000000": 5,
+        "#09111f": 5,
+        "#12223e": 5,
+        "#1b335d": 5,
+        "#24447c": 5,
+        "#2d559b": 5,
+        "#3666ba": 5
+      }
+    },
+    "density": {
+      "elementsPerKpx": 2.4,
+      "textPerKpx": 1.8,
+      "whitespaceRatio": 0.18
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 61,
+      "radius": {
+        "10px": 10,
+        "2px": 10,
+        "4px": 10,
+        "6px": 10,
+        "8px": 10
+      },
+      "shadows": 4
+    },
+    "space": {
+      "distinctValues": 9,
+      "onScale4": 0.71,
+      "values": {
+        "12px": 12,
+        "16px": 13,
+        "20px": 14,
+        "24px": 15,
+        "28px": 16,
+        "32px": 17,
+        "36px": 18,
+        "4px": 10,
+        "8px": 11
+      }
+    },
+    "type": {
+      "distinctSizes": 11,
+      "families": [
+        "Inter"
+      ],
+      "lineHeights": {
+        "20px": 300
+      },
+      "sizes": {
+        "10px": 40,
+        "11px": 39,
+        "12px": 38,
+        "13px": 37,
+        "14px": 36,
+        "15px": 35,
+        "16px": 34,
+        "17px": 33,
+        "18px": 32,
+        "19px": 31,
+        "20px": 30
+      },
+      "weights": {
+        "400": 300,
+        "600": 40
+      }
+    }
+  }
+}

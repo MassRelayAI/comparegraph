@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "verb": "ui-coverage",
+  "schema": 1,
+  "data": {
+    "runId": "run-a",
+    "complete": true,
+    "table": [
+      {
+        "product": "clean",
+        "captured": 2,
+        "n/a": 1,
+        "failed": 0,
+        "blank": 0,
+        "cells": 3,
+        "capturedShare": "66.7%"
+      },
+      {
+        "product": "cluttered",
+        "captured": 2,
+        "n/a": 0,
+        "failed": 0,
+        "blank": 0,
+        "cells": 2,
+        "capturedShare": "100%"
+      }
+    ],
+    "blankCells": []
+  },
+  "evidence": {
+    "confidence": "observed",
+    "limitations": []
+  },
+  "cost": {
+    "rows": 1,
+    "bytes": 254
+  }
+}

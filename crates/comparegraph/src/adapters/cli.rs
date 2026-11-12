@@ -38,6 +38,85 @@ pub struct Cli {
     pub cmd: Cmd,
 }
 #[derive(Subcommand)]
+pub enum UiCmd {
+    /// Products with evidence, and what each has
+    Products,
+    /// The screens of a product with archetype and captures
+    Screens { product: String },
+    /// One capture: metrics with pass/fail, layout, style, image path
+    Show {
+        product: String,
+        screen: String,
+        #[arg(long, default_value = "populated")]
+        state: String,
+        #[arg(long)]
+        viewport: Option<String>,
+        #[arg(long)]
+        seat: Option<String>,
+    },
+    /// Two products on the same screen, state and viewport: metrics, layout and style in words, both image paths
+    Diff {
+        /// a screen id or a map.csv row id
+        target: String,
+        #[arg(long)]
+        ours: String,
+        #[arg(long = "ref")]
+        refp: String,
+        #[arg(long, default_value = "populated")]
+        state: String,
+        #[arg(long)]
+        viewport: Option<String>,
+        #[arg(long)]
+        seat: Option<String>,
+        #[arg(long)]
+        ref_seat: Option<String>,
+    },
+    /// Rows of a family by products, each cell pass count / 12 or `-`, via map.csv
+    Matrix {
+        family: String,
+        #[arg(long, default_value = "populated")]
+        state: String,
+        #[arg(long)]
+        viewport: Option<String>,
+    },
+    /// A product's design system (system.json, else derived) against the targets
+    System { product: String },
+    /// One flow (ui-flow/1) of a product
+    Flow { product: String, task: String },
+    /// The menu tree of a product and its derived numbers
+    Nav {
+        product: String,
+        #[arg(long)]
+        viewport: Option<String>,
+        #[arg(long)]
+        seat: Option<String>,
+    },
+    /// Two menu trees compared: places, depth, items per level, duplicates, dead items, overflow-only items
+    NavDiff {
+        #[arg(long)]
+        ours: String,
+        #[arg(long = "ref")]
+        refp: String,
+        #[arg(long)]
+        viewport: Option<String>,
+        #[arg(long)]
+        seat: Option<String>,
+        #[arg(long)]
+        ref_seat: Option<String>,
+    },
+    /// A journey per product: completed / partial at step N / n/a, and its numbers
+    Journey {
+        journey: String,
+        /// comma list of products
+        #[arg(long)]
+        products: Option<String>,
+    },
+    /// The coverage table of a run; a blank cell makes it incomplete
+    Coverage { run: String },
+    /// The determinism gate: two runs must agree on domHash, metrics and image dHash (<= 4 bits) for every shared key
+    Verify { run_a: String, run_b: String },
+}
+#[derive(Subcommand)]
 pub enum Cmd {
     /// Register a clone (read, never run); with --name and no path, amend a registered repo's notes
     Add {
@@ -383,6 +462,17 @@ pub enum Cmd {
         #[arg(long)]
         reach: Option<String>,
     },
+    /// Read and compare UI evidence files (screens, menus, journeys, runs): `ui products|screens|show|diff|matrix|system|flow|nav|nav-diff|journey|coverage|verify`
+    Ui {
+        /// the directory holding `ui/` (default: --root)
+        #[arg(long, global = true)]
+        ui_root: Option<PathBuf>,
+        /// files read at most (default 200, max 2000); a truncated answer says so in evidence.limitations
+        #[arg(long, global = true, default_value_t = 200)]
+        max_nodes: usize,
+        #[command(subcommand)]
+        what: UiCmd,
+    },
     /// Taxonomy packs: add, list, show
     Family {
         #[command(subcommand)]
@@ -480,6 +570,20 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::Decide { .. } => "decide",
         Cmd::Decisions { .. } => "decisions",
         Cmd::Matrix { .. } => "matrix",
+        Cmd::Ui { what, .. } => match what {
+            UiCmd::Products => "ui-products",
+            UiCmd::Screens { .. } => "ui-screens",
+            UiCmd::Show { .. } => "ui-show",
+            UiCmd::Diff { .. } => "ui-diff",
+            UiCmd::Matrix { .. } => "ui-matrix",
+            UiCmd::System { .. } => "ui-system",
+            UiCmd::Flow { .. } => "ui-flow",
+            UiCmd::Nav { .. } => "ui-nav",
+            UiCmd::NavDiff { .. } => "ui-nav-diff",
+            UiCmd::Journey { .. } => "ui-journey",
+            UiCmd::Coverage { .. } => "ui-coverage",
+            UiCmd::Verify { .. } => "ui-verify",
+        },
     }
 }
 
@@ -706,6 +810,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
             let conf = if matches!(
                 cli.cmd,
                 Cmd::Check | Cmd::Claims { .. } | Cmd::Matrix { .. }
+                    | Cmd::Ui { what: UiCmd::Diff { .. } | UiCmd::Matrix { .. } | UiCmd::NavDiff { .. } | UiCmd::Verify { .. }, .. }
             ) {
                 "derived"
             } else if matches!(cli.cmd, Cmd::Claim { .. }) {
@@ -1133,6 +1238,39 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 crate::application::decide::decisions(&cli.root, repo.as_deref(), *history)?;
             let total = items.len();
             serde_json::json!({ "items": items, "page": { "next": null, "total": total } })
+        }
+        Cmd::Ui { ui_root, max_nodes, what } => {
+            use crate::application::ui as u;
+            let ur = ui_root.clone().unwrap_or_else(|| cli.root.clone());
+            let (ur, m) = (ur.as_path(), *max_nodes);
+            fn vp(o: &Option<String>) -> Option<&str> {
+                o.as_deref()
+            }
+            fn st(s: &str) -> &str {
+                s
+            }
+            match what {
+                UiCmd::Products => u::products(ur, m)?,
+                UiCmd::Screens { product } => u::screens(ur, m, product)?,
+                UiCmd::Show { product, screen, state, viewport, seat } => u::show(ur, m, product, screen, st(state), vp(viewport), vp(seat))?,
+                UiCmd::Diff { target, ours, refp, state, viewport, seat, ref_seat } => {
+                    u::diff(ur, m, target, ours, refp, st(state), vp(viewport), vp(seat), vp(ref_seat))?
+                }
+                UiCmd::Matrix { family, state, viewport } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport))?,
+                UiCmd::System { product } => u::system(ur, m, product)?,
+                UiCmd::Flow { product, task } => u::flow(ur, m, product, task)?,
+                UiCmd::Nav { product, viewport, seat } => u::nav(ur, m, product, vp(viewport), vp(seat))?,
+                UiCmd::NavDiff { ours, refp, viewport, seat, ref_seat } => u::nav_diff_verb(ur, m, ours, refp, vp(viewport), vp(seat), vp(ref_seat))?,
+                UiCmd::Journey { journey, products } => {
+                    let ps: Vec<String> = products.as_deref().map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default();
+                    u::journey(ur, journey, &ps)?
+                }
+                UiCmd::Coverage { run } => u::coverage(ur, run)?,
+                UiCmd::Verify { run_a, run_b } => match u::verify(ur, m, run_a, run_b) {
+                    Ok(v) => v,
+                    Err(f) => return Ok(Err(f)),
+                },
+            }
         }
         Cmd::Matrix { family, relate, reach } => {
             let m = crate::application::matrix::matrix_reach(&cli.root, family, *relate, reach.as_deref())?;

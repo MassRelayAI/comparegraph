@@ -1,0 +1,280 @@
+{
+  "ok": true,
+  "verb": "ui-show",
+  "schema": 1,
+  "data": {
+    "key": "cluttered@9f3c2a1/room/populated/390x844/member/en-US/light",
+    "product": "cluttered",
+    "version": "9f3c2a1",
+    "screen": "room",
+    "archetype": "conversation",
+    "state": "populated",
+    "route": "/rooms/1",
+    "viewport": "390x844",
+    "seat": "member",
+    "locale": "en-US",
+    "theme": "light",
+    "domHash": "68c45344596f0ece230d3035a79633eb40c75d4ee8935e720170a914e43e118b",
+    "pass": 7,
+    "of": 12,
+    "metrics": [
+      {
+        "id": "E1",
+        "value": 3,
+        "limit": 2,
+        "pass": true,
+        "detail": [],
+        "archetypeLimit": 2
+      },
+      {
+        "id": "E2",
+        "value": 1,
+        "limit": 5,
+        "pass": true,
+        "detail": [],
+        "archetypeLimit": null
+      },
+      {
+        "id": "E3",
+        "value": 0,
+        "limit": 1,
+        "pass": false,
+        "detail": [],
+        "archetypeLimit": 1
+      },
+      {
+        "id": "E4",
+        "value": 1,
+        "limit": 5,
+        "pass": true,
+        "detail": [],
+        "archetypeLimit": null
+      },
+      {
+        "id": "E5",
+        "value": 1,
+        "limit": 5,
+        "pass": true,
+        "detail": [],
+        "archetypeLimit": null
+      },
+      {
+        "id": "E6",
+        "value": 1,
+        "limit": 5,
+        "pass": true,
+        "detail": [],
+        "archetypeLimit": null
+      },
+      {
+        "id": "E7",
+        "value": 352,
+        "limit": 200,
+        "pass": false,
+        "detail": [],
+        "archetypeLimit": 200
+      },
+      {
+        "id": "E8",
+        "value": 1,
+        "limit": 5,
+        "pass": false,
+        "detail": [],
+        "archetypeLimit": null
+      },
+      {
+        "id": "E9",
+        "value": 1,
+        "limit": 5,
+        "pass": true,
+        "detail": [],
+        "archetypeLimit": null
+      },
+      {
+        "id": "E10",
+        "value": 1,
+        "limit": 5,
+        "pass": false,
+        "detail": [],
+        "archetypeLimit": null
+      },
+      {
+        "id": "E11",
+        "value": 1,
+        "limit": 5,
+        "pass": true,
+        "detail": [],
+        "archetypeLimit": null
+      },
+      {
+        "id": "E12",
+        "value": 1,
+        "limit": 5,
+        "pass": false,
+        "detail": [],
+        "archetypeLimit": null
+      }
+    ],
+    "layout": {
+      "summary": "regions: bottombar 1, main 1; no primary; content starts y 200 (fallback:first-row)",
+      "navColumns": 0,
+      "regions": [
+        {
+          "kind": "main",
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844
+        },
+        {
+          "kind": "bottombar",
+          "x": 0,
+          "y": 780,
+          "w": 390,
+          "h": 64
+        }
+      ],
+      "primary": null,
+      "contentStart": {
+        "y": 200,
+        "how": "fallback:first-row"
+      }
+    },
+    "style": {
+      "summary": "type sizes 11, weights 2, colours 23, low-contrast 3, space values 9, onScale4 0.71, radii 5, shadows 4, density 2.4 elements/kpx, whitespace 0.18",
+      "style": {
+        "type": {
+          "sizes": {
+            "10px": 40,
+            "11px": 39,
+            "12px": 38,
+            "13px": 37,
+            "14px": 36,
+            "15px": 35,
+            "16px": 34,
+            "17px": 33,
+            "18px": 32,
+            "19px": 31,
+            "20px": 30
+          },
+          "distinctSizes": 11,
+          "weights": {
+            "400": 300,
+            "600": 40
+          },
+          "families": [
+            "Inter"
+          ],
+          "lineHeights": {
+            "20px": 300
+          }
+        },
+        "color": {
+          "text": {
+            "#000000": 5,
+            "#09111f": 5,
+            "#12223e": 5,
+            "#1b335d": 5,
+            "#24447c": 5,
+            "#2d559b": 5,
+            "#3666ba": 5
+          },
+          "background": {
+            "#3f77d9": 3,
+            "#4888f8": 3,
+            "#519917": 3,
+            "#5aaa36": 3,
+            "#63bb55": 3,
+            "#6ccc74": 3,
+            "#75dd93": 3,
+            "#7eeeb2": 3
+          },
+          "border": {
+            "#87ffd1": 2,
+            "#9010f0": 2,
+            "#99210f": 2,
+            "#a2322e": 2,
+            "#ab434d": 2,
+            "#b4546c": 2,
+            "#bd658b": 2,
+            "#c676aa": 2
+          },
+          "distinctColors": 23,
+          "accent": "#0969da",
+          "lowContrast": [
+            {
+              "text": "Last updated 0",
+              "ratio": 3.1
+            },
+            {
+              "text": "Last updated 1",
+              "ratio": 3.1
+            },
+            {
+              "text": "Last updated 2",
+              "ratio": 3.1
+            }
+          ]
+        },
+        "space": {
+          "values": {
+            "12px": 12,
+            "16px": 13,
+            "20px": 14,
+            "24px": 15,
+            "28px": 16,
+            "32px": 17,
+            "36px": 18,
+            "4px": 10,
+            "8px": 11
+          },
+          "distinctValues": 9,
+          "onScale4": 0.71
+        },
+        "shape": {
+          "radius": {
+            "10px": 10,
+            "2px": 10,
+            "4px": 10,
+            "6px": 10,
+            "8px": 10
+          },
+          "shadows": 4,
+          "borders": 61
+        },
+        "density": {
+          "textPerKpx": 1.8,
+          "elementsPerKpx": 2.4,
+          "whitespaceRatio": 0.18
+        },
+        "motion": {
+          "transitions": 0
+        }
+      }
+    },
+    "image": {
+      "sha256": "7cd09a6d81e8f0ca970206cfde4b13c7850806df96f6a343a62058ec35c74d84",
+      "dhash": "f0f0f0f0f0f0f0f0",
+      "path": "./ui/blobs/7cd09a6d81e8f0ca970206cfde4b13c7850806df96f6a343a62058ec35c74d84.png",
+      "present": true
+    },
+    "captures": [
+      "empty/1440x900-member",
+      "populated/1440x900-member",
+      "populated/390x844-member"
+    ]
+  },
+  "evidence": {
+    "confidence": "observed",
+    "limitations": [
+      {
+        "code": "snapshot_recompute_pending",
+        "detail": "metrics, layout and style are read from the evidence JSON as written; recomputing them from ui/snapshots/<domHash>.json.gz is pending a dependency ruling (no gzip reader in Cargo.lock)"
+      }
+    ]
+  },
+  "cost": {
+    "rows": 1,
+    "bytes": 3146
+  }
+}

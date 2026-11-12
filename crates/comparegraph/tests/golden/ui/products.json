@@ -1,0 +1,44 @@
+{
+  "ok": true,
+  "verb": "ui-products",
+  "schema": 1,
+  "data": {
+    "items": [
+      {
+        "product": "clean",
+        "screens": 1,
+        "evidenceFiles": 1,
+        "states": [
+          "populated"
+        ],
+        "flows": 1,
+        "navs": 1,
+        "system": false
+      },
+      {
+        "product": "cluttered",
+        "screens": 2,
+        "evidenceFiles": 4,
+        "states": [
+          "empty",
+          "populated"
+        ],
+        "flows": 1,
+        "navs": 1,
+        "system": true
+      }
+    ]
+  },
+  "evidence": {
+    "confidence": "observed",
+    "limitations": []
+  },
+  "page": {
+    "next": null,
+    "total": 2
+  },
+  "cost": {
+    "rows": 2,
+    "bytes": 236
+  }
+}

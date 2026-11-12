@@ -1,0 +1,32 @@
+{
+  "archetypes": {
+    "conversation": {
+      "E1": 2,
+      "E3": 1,
+      "E7": 200
+    },
+    "inbox": {
+      "E1": 2,
+      "E7": 240
+    }
+  },
+  "schema": "ui-registry/1",
+  "screens": [
+    {
+      "archetype": "inbox",
+      "id": "inbox",
+      "states": [
+        "populated"
+      ]
+    },
+    {
+      "archetype": "conversation",
+      "id": "room",
+      "states": [
+        "empty",
+        "populated"
+      ]
+    }
+  ],
+  "version": "1"
+}

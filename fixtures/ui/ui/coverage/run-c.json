@@ -1,0 +1,34 @@
+{
+  "cells": [
+    {
+      "product": "cluttered",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "viewport": "1440x900",
+      "why": ""
+    },
+    {
+      "product": "clean",
+      "screen": "room",
+      "seat": "ref",
+      "state": "populated",
+      "status": "",
+      "viewport": "1440x900",
+      "why": ""
+    },
+    {
+      "product": "clean",
+      "screen": "inbox",
+      "seat": "ref",
+      "state": "populated",
+      "status": "failed",
+      "viewport": "1440x900",
+      "why": ""
+    }
+  ],
+  "journeyCells": [],
+  "runId": "run-c",
+  "schema": "ui-coverage/1"
+}

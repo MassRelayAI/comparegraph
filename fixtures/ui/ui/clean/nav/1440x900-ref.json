@@ -1,0 +1,39 @@
+{
+  "nodes": [
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Rooms",
+      "level": 1,
+      "order": 1,
+      "target": "room"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Inbox",
+      "level": 1,
+      "order": 2,
+      "target": "inbox"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Settings",
+      "level": 1,
+      "order": 3,
+      "target": "settings"
+    }
+  ],
+  "product": "clean",
+  "schema": "ui-nav/1",
+  "seat": "ref",
+  "version": "d41d8cd",
+  "viewport": "1440x900"
+}

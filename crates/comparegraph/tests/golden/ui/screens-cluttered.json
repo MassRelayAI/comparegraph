@@ -1,0 +1,56 @@
+{
+  "ok": true,
+  "verb": "ui-screens",
+  "schema": 1,
+  "data": {
+    "product": "cluttered",
+    "items": [
+      {
+        "screen": "inbox",
+        "archetype": "inbox",
+        "route": "/inbox",
+        "states": [
+          "populated"
+        ],
+        "captures": [
+          "populated/1440x900-member"
+        ],
+        "bestPass": 5,
+        "of": 12
+      },
+      {
+        "screen": "room",
+        "archetype": "conversation",
+        "route": "/rooms/1",
+        "states": [
+          "empty",
+          "populated"
+        ],
+        "captures": [
+          "empty/1440x900-member",
+          "populated/1440x900-member",
+          "populated/390x844-member"
+        ],
+        "bestPass": 7,
+        "of": 12
+      }
+    ]
+  },
+  "evidence": {
+    "confidence": "observed",
+    "limitations": [
+      {
+        "code": "snapshot_recompute_pending",
+        "detail": "metrics, layout and style are read from the evidence JSON as written; recomputing them from ui/snapshots/<domHash>.json.gz is pending a dependency ruling (no gzip reader in Cargo.lock)"
+      }
+    ]
+  },
+  "page": {
+    "next": null,
+    "total": 2
+  },
+  "cost": {
+    "rows": 2,
+    "bytes": 382
+  }
+}

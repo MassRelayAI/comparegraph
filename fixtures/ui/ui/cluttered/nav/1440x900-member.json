@@ -1,0 +1,99 @@
+{
+  "nodes": [
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Home",
+      "level": 1,
+      "order": 1,
+      "target": "room"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Inbox",
+      "level": 1,
+      "order": 2,
+      "target": "inbox"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "group",
+      "label": "Work",
+      "level": 1,
+      "order": 3,
+      "target": "unknown"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "item",
+      "label": "Flows",
+      "level": 2,
+      "order": 4,
+      "target": "flows"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "item",
+      "label": "Flows again",
+      "level": 2,
+      "order": 5,
+      "target": "flows"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": "collapsed",
+      "icon": false,
+      "kind": "item",
+      "label": "Old flows",
+      "level": 2,
+      "order": 6,
+      "target": "unknown"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": null,
+      "icon": false,
+      "kind": "place",
+      "label": "Settings",
+      "level": 1,
+      "order": 7,
+      "target": "settings"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": "overflow",
+      "icon": false,
+      "kind": "menuitem",
+      "label": "Billing",
+      "level": 2,
+      "order": 8,
+      "target": "billing"
+    },
+    {
+      "badge": false,
+      "hiddenBehind": "overflow",
+      "icon": false,
+      "kind": "menuitem",
+      "label": "Docs",
+      "level": 2,
+      "order": 9,
+      "target": "external"
+    }
+  ],
+  "product": "cluttered",
+  "schema": "ui-nav/1",
+  "seat": "member",
+  "version": "9f3c2a1",
+  "viewport": "1440x900"
+}

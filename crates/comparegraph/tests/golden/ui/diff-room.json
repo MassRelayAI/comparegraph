@@ -1,0 +1,249 @@
+{
+  "ok": true,
+  "verb": "ui-diff",
+  "schema": 1,
+  "data": {
+    "target": "room",
+    "screen": "room",
+    "archetype": "conversation",
+    "state": "populated",
+    "viewport": "1440x900",
+    "ours": {
+      "product": "cluttered",
+      "version": "9f3c2a1",
+      "seat": "member",
+      "route": "/rooms/1",
+      "domHash": "df65cbb7cc5e1e9b92129ce86a31fd3336708efab35448be41f0115206036ad9",
+      "pass": 5,
+      "image": {
+        "sha256": "82a863b49326dda66ddebb1e9822598c95d60a07792cdc9c07b0f1e196f8ee49",
+        "dhash": "ffff0000ffff0000",
+        "path": "./ui/blobs/82a863b49326dda66ddebb1e9822598c95d60a07792cdc9c07b0f1e196f8ee49.png",
+        "present": true
+      }
+    },
+    "ref": {
+      "product": "clean",
+      "version": "d41d8cd",
+      "seat": "ref",
+      "route": "/c/1",
+      "domHash": "a41749da8e04fb47d28b2b3fe1540e6d6dfe8ead01ac956d309401d34708d268",
+      "pass": 11,
+      "image": {
+        "sha256": "4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940",
+        "dhash": "00ff00ff00ff00ff",
+        "path": "./ui/blobs/4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940.png",
+        "present": true
+      }
+    },
+    "pass": {
+      "ours": 5,
+      "ref": 11,
+      "of": 12
+    },
+    "metrics": [
+      {
+        "id": "E1",
+        "ours": {
+          "value": 3,
+          "limit": 2,
+          "pass": false
+        },
+        "ref": {
+          "value": 1,
+          "limit": 2,
+          "pass": true
+        },
+        "archetypeLimit": 2
+      },
+      {
+        "id": "E2",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "archetypeLimit": null
+      },
+      {
+        "id": "E3",
+        "ours": {
+          "value": 0,
+          "limit": 1,
+          "pass": false
+        },
+        "ref": {
+          "value": 1,
+          "limit": 1,
+          "pass": true
+        },
+        "archetypeLimit": 1
+      },
+      {
+        "id": "E4",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "archetypeLimit": null
+      },
+      {
+        "id": "E5",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": false
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "archetypeLimit": null
+      },
+      {
+        "id": "E6",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "archetypeLimit": null
+      },
+      {
+        "id": "E7",
+        "ours": {
+          "value": 352,
+          "limit": 200,
+          "pass": false
+        },
+        "ref": {
+          "value": 120,
+          "limit": 200,
+          "pass": true
+        },
+        "archetypeLimit": 200
+      },
+      {
+        "id": "E8",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": false
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "archetypeLimit": null
+      },
+      {
+        "id": "E9",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "archetypeLimit": null
+      },
+      {
+        "id": "E10",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": false
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": false
+        },
+        "archetypeLimit": null
+      },
+      {
+        "id": "E11",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "archetypeLimit": null
+      },
+      {
+        "id": "E12",
+        "ours": {
+          "value": 1,
+          "limit": 5,
+          "pass": false
+        },
+        "ref": {
+          "value": 1,
+          "limit": 5,
+          "pass": true
+        },
+        "archetypeLimit": null
+      }
+    ],
+    "layoutDiff": [
+      "nav columns 3 vs 1",
+      "primaries 0 vs 1",
+      "topbar regions 0 vs 1",
+      "content start y 352 vs 120"
+    ],
+    "styleDiff": [
+      "type sizes 11 vs 6",
+      "colours 23 vs 12",
+      "low-contrast text 3 vs 0",
+      "space values 9 vs 6",
+      "onScale4 0.71 vs 0.96",
+      "radii 5 vs 2",
+      "shadows 4 vs 1",
+      "elements per kpx 2.4 vs 0.9",
+      "whitespace 0.18 vs 0.42"
+    ],
+    "images": {
+      "ours": "./ui/blobs/82a863b49326dda66ddebb1e9822598c95d60a07792cdc9c07b0f1e196f8ee49.png",
+      "ref": "./ui/blobs/4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940.png"
+    }
+  },
+  "evidence": {
+    "confidence": "derived",
+    "limitations": [
+      {
+        "code": "snapshot_recompute_pending",
+        "detail": "metrics, layout and style are read from the evidence JSON as written; recomputing them from ui/snapshots/<domHash>.json.gz is pending a dependency ruling (no gzip reader in Cargo.lock)"
+      }
+    ]
+  },
+  "cost": {
+    "rows": 1,
+    "bytes": 2819
+  }
+}

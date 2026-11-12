@@ -1,0 +1,9 @@
+{
+  "captures": {
+    "clean@d41d8cd/room/populated/1440x900/ref/en-US/light": "runs/run-c.d/1.json",
+    "cluttered@9f3c2a1/room/empty/1440x900/member/en-US/light": "cluttered/room/empty/1440x900-member.json",
+    "cluttered@9f3c2a1/room/populated/1440x900/member/en-US/light": "runs/run-c.d/0.json"
+  },
+  "runId": "run-c",
+  "schema": "ui-run/1"
+}

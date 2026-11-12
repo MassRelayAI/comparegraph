@@ -1,0 +1,49 @@
+{
+  "ok": true,
+  "verb": "ui-matrix",
+  "schema": 1,
+  "data": {
+    "family": "surfaces",
+    "state": "populated",
+    "viewport": "1440x900",
+    "products": [
+      "clean",
+      "cluttered"
+    ],
+    "items": [
+      {
+        "row": "surfaces.inbox",
+        "cells": {
+          "clean": "-",
+          "cluttered": "5/12"
+        }
+      },
+      {
+        "row": "surfaces.room",
+        "cells": {
+          "clean": "11/12",
+          "cluttered": "5/12"
+        }
+      },
+      {
+        "row": "surfaces.router-overview",
+        "cells": {
+          "clean": "-",
+          "cluttered": "-"
+        }
+      }
+    ]
+  },
+  "evidence": {
+    "confidence": "derived",
+    "limitations": []
+  },
+  "page": {
+    "next": null,
+    "total": 3
+  },
+  "cost": {
+    "rows": 3,
+    "bytes": 314
+  }
+}

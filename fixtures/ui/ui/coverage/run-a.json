@@ -1,0 +1,51 @@
+{
+  "cells": [
+    {
+      "product": "cluttered",
+      "screen": "room",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "viewport": "1440x900",
+      "why": ""
+    },
+    {
+      "product": "cluttered",
+      "screen": "inbox",
+      "seat": "member",
+      "state": "populated",
+      "status": "captured",
+      "viewport": "1440x900",
+      "why": ""
+    },
+    {
+      "product": "clean",
+      "screen": "room",
+      "seat": "ref",
+      "state": "populated",
+      "status": "captured",
+      "viewport": "1440x900",
+      "why": ""
+    },
+    {
+      "product": "clean",
+      "screen": "inbox",
+      "seat": "ref",
+      "state": "populated",
+      "status": "n/a",
+      "viewport": "1440x900",
+      "why": "the reference has no inbox"
+    }
+  ],
+  "journeyCells": [
+    {
+      "journey": "j1",
+      "product": "clean",
+      "status": "captured",
+      "step": 1,
+      "why": ""
+    }
+  ],
+  "runId": "run-a",
+  "schema": "ui-coverage/1"
+}

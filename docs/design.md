@@ -208,6 +208,35 @@ Schemas as the catalog (`docs/catalog.json`, generated from `contracts/`), so Cl
 Hermes or a shell script read the same shape. A refusal is `{"ok":false,"error":{"code":"no_resolving_location","message":"…","hint":"…"}}`
 with a stable `code` list in the catalog.
 
+## 9c. UI evidence - files, not schema (CMP-UI-1, 2026-11-12)
+A product's screens, menus and journeys are compared as files under a root directory (`--ui-root`, default `--root`); the store and
+`store/schema.sql` are untouched and nothing is added to `Cargo.toml`. A capture lives elsewhere (a Playwright probe); the engine only
+READS, validates, sorts and compares. Formats are the lanes file `CMP-UI-1-lanes.md` (ui-evidence/1 with the `style` block, ui-flow/1,
+ui-run/1, ui-registry/1, ui-nav/1, ui-journey/1, ui-coverage/1, `map.csv`); layout under `<ROOT>/ui/`:
+`registry.json`, `<product>/<screen>/<state>/<viewport>-<seat>.json`, `<product>/flows/<task>.json`, `<product>/nav/<viewport>-<seat>.json`,
+`<product>/system.json`, `runs/<runId>.json`, `coverage/<runId>.json`, `journeys/<journey>.json`, `blobs/<sha256>.png`, `map.csv`.
+Rules: the capture key is product@version/screen/state/viewport/seat/locale/theme; **comparison only within the same screen + state +
+viewport** (a mismatch is refused with a message, never bridged); each screen's archetype and the per-archetype metric limits come from
+the registry; an invalid file is skipped and named in `evidence.limitations` (`invalid_evidence`), never fatal; every listing is sorted and
+bounded by `--max-nodes` (default 200, max 2000) with `truncated` stated; screenshots are context (paths and dHash), never compared by bytes.
+Metrics, layout and style are read from the evidence JSON as written; recomputing them from `snapshots/<domHash>.json.gz` needs a gzip
+reader, which is not in `Cargo.lock` - reported as `snapshot_recompute_pending` until a dependency ruling.
+
+| verb | answers |
+|---|---|
+| `ui products` / `ui screens <product>` | what exists: screens, archetype, states, captures, flows, menus |
+| `ui show <product> <screen> [--state --viewport --seat]` | E1..E12 pass/fail against the archetype limits, layout and style summary, image path |
+| `ui diff <screen-or-row> --ours P --ref Q [--state --viewport --seat --ref-seat]` | metric table side by side, layout and style difference in words ("nav columns 3 vs 1; primaries 0 vs 1", "type sizes 11 vs 6, colours 23 vs 12, onScale4 0.71 vs 0.96"), both image paths |
+| `ui matrix <family> [--state --viewport]` | family rows x products, cell = pass count / 12 or `-`, through `map.csv` |
+| `ui system <product>` | design system (`system.json`, else the union of its 1440x900 captures) against <= 6 type sizes, <= 12 colours, >= 0.95 on the 4px scale |
+| `ui flow <product> <task>` | steps, clicks, dead ends |
+| `ui nav <product>` / `ui nav-diff --ours P --ref Q` | the menu tree and its numbers (places, depth, items per level and group, destinations, duplicates, dead items, items only via overflow); the tree difference in words |
+| `ui journey <journey> [--products a,b]` | per product: completed / partial at step N / n/a with the reason, and the journey numbers |
+| `ui coverage <runId>` | captured / n/a / failed per product; a blank cell makes the run incomplete and is listed |
+| `ui verify <runA> <runB>` | the determinism gate: for every key in both runs domHash equal, metrics equal, image dHash within 4 bits; every difference reported, exit 1 (`check_failed`, list in `data`) when any |
+
+All are read verbs and MCP tools (`comparegraph_ui_*`); confidence is `derived` for the comparing verbs.
+
 ## 15. Standards honoured (so nothing here is a private format)
 MCP (tools/list, JSON Schema inputs and outputs, stdio transport) · JSON Schema 2020-12 for every contract · SPDX identifiers for
 licences · RFC 4180 CSV · JSON Lines for the plugin protocol · Obsidian conventions for the vault (YAML front matter, `[[wikilinks]]`,

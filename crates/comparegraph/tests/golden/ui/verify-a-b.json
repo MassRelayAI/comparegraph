@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "verb": "ui-verify",
+  "schema": 1,
+  "data": {
+    "runA": "run-a",
+    "runB": "run-b",
+    "compared": 3,
+    "identical": true,
+    "differences": [],
+    "onlyInA": [],
+    "onlyInB": []
+  },
+  "evidence": {
+    "confidence": "derived",
+    "limitations": [
+      {
+        "code": "snapshot_recompute_pending",
+        "detail": "metrics, layout and style are read from the evidence JSON as written; recomputing them from ui/snapshots/<domHash>.json.gz is pending a dependency ruling (no gzip reader in Cargo.lock)"
+      }
+    ]
+  },
+  "cost": {
+    "rows": 1,
+    "bytes": 104
+  }
+}

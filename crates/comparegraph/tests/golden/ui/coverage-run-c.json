@@ -1,0 +1,46 @@
+{
+  "ok": true,
+  "verb": "ui-coverage",
+  "schema": 1,
+  "data": {
+    "runId": "run-c",
+    "complete": false,
+    "table": [
+      {
+        "product": "clean",
+        "captured": 0,
+        "n/a": 0,
+        "failed": 0,
+        "blank": 2,
+        "cells": 2,
+        "capturedShare": "0%"
+      },
+      {
+        "product": "cluttered",
+        "captured": 1,
+        "n/a": 0,
+        "failed": 0,
+        "blank": 0,
+        "cells": 1,
+        "capturedShare": "100%"
+      }
+    ],
+    "blankCells": [
+      "clean/inbox/populated/1440x900-ref",
+      "clean/room/populated/1440x900-ref"
+    ]
+  },
+  "evidence": {
+    "confidence": "observed",
+    "limitations": [
+      {
+        "code": "incomplete_run",
+        "detail": "2 blank cells (a missing cell must be explained): clean/inbox/populated/1440x900-ref, clean/room/populated/1440x900-ref"
+      }
+    ]
+  },
+  "cost": {
+    "rows": 1,
+    "bytes": 324
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "ok": false,
+  "verb": "ui-verify",
+  "schema": 1,
+  "data": {
+    "runA": "run-a",
+    "runB": "run-c",
+    "compared": 2,
+    "identical": false,
+    "differences": [
+      {
+        "key": "cluttered@9f3c2a1/room/populated/1440x900/member/en-US/light",
+        "kind": "domHash",
+        "a": "df65cbb7cc5e1e9b92129ce86a31fd3336708efab35448be41f0115206036ad9",
+        "b": "77fd62c107cba0e4b15f0840cb924f777fc7e2dae20b6563016c14593cb6e932"
+      },
+      {
+        "key": "cluttered@9f3c2a1/room/populated/1440x900/member/en-US/light",
+        "kind": "metric",
+        "metric": "E5",
+        "a": {
+          "value": 1,
+          "limit": 5,
+          "pass": false,
+          "detail": []
+        },
+        "b": {
+          "value": 1,
+          "limit": 5,
+          "pass": true,
+          "detail": []
+        }
+      },
+      {
+        "key": "cluttered@9f3c2a1/room/populated/1440x900/member/en-US/light",
+        "kind": "image",
+        "distance": 64,
+        "limit": 4,
+        "a": "ffff0000ffff0000",
+        "b": "0000ffff0000ffff"
+      }
+    ],
+    "onlyInA": [
+      "cluttered@9f3c2a1/inbox/populated/1440x900/member/en-US/light"
+    ],
+    "onlyInB": [
+      "cluttered@9f3c2a1/room/empty/1440x900/member/en-US/light"
+    ],
+    "limitation_items": [
+      {
+        "code": "snapshot_recompute_pending",
+        "detail": "metrics, layout and style are read from the evidence JSON as written; recomputing them from ui/snapshots/<domHash>.json.gz is pending a dependency ruling (no gzip reader in Cargo.lock)"
+      }
+    ]
+  },
+  "evidence": {
+    "confidence": "unknown",
+    "limitations": []
+  },
+  "cost": {
+    "rows": 1,
+    "bytes": 1068
+  },
+  "error": {
+    "code": "check_failed",
+    "message": "runs run-a and run-c differ: 3 differences over 2 shared keys"
+  }
+}

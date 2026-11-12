@@ -60,6 +60,7 @@ is changed. A read-only store (the file not writable) that predates those column
 | `decide <REPO> <DISPOSITION>` | Record `adopt`, `reject` or `park`. Append-only. | `--why`, `--by` (both required), `--feature`, `--family`, `--batch <jsonl\|->` (rows like `{"repo":"a","disposition":"park","why":"...","by":"me"}`; output as for `claim`) |
 | `decisions` | Latest decision per scope. | `--repo`, `--history` |
 | `matrix <FAMILY>` | Features against every clone: verdicts, prevalence, gaps, differentiators. A clone with no stored relatedness band shows `relatedness: "not run"`, and the envelope's `limitations` says how many comparators lack one. | `--relate` (score the comparators with no band first, then build the matrix; this writes relatedness rows), `--reach reached\|unreached\|unknown` (keep only the rows with a cell whose latest claim has that reach; a stale cell, shown `unknown*`, counts as `unknown` for the filter; each row carries `reach`, parallel to `cells`, when any of its claims has one, with a stale cell's stored reach still shown) |
+| `ui <products\|screens\|show\|diff\|matrix\|system\|flow\|nav\|nav-diff\|journey\|coverage\|verify>` | Read and compare UI evidence files under `--ui-root` (default `--root`); see design.md section 9c. Comparisons are only within the same screen, state and viewport. | `--ui-root`, `--max-nodes` (default 200, max 2000), `--state`, `--viewport`, `--seat` |
 
 ## Exports and agents
 

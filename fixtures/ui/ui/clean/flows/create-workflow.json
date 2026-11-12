@@ -1,0 +1,36 @@
+{
+  "deadEnds": [],
+  "product": "clean",
+  "schema": "ui-flow/1",
+  "stepCount": 3,
+  "steps": [
+    {
+      "action": "click",
+      "image": {
+        "sha256": "4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940"
+      },
+      "n": 1,
+      "screen": "room",
+      "target": "New room"
+    },
+    {
+      "action": "type",
+      "image": {
+        "sha256": "4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940"
+      },
+      "n": 2,
+      "screen": "room",
+      "target": "Name"
+    },
+    {
+      "action": "click",
+      "image": {
+        "sha256": "4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940"
+      },
+      "n": 3,
+      "screen": "room",
+      "target": "Create"
+    }
+  ],
+  "task": "create-workflow"
+}
