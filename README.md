@@ -261,7 +261,7 @@ Screenshots are context for people and for a judge, kept by content hash and com
 - **Frozen environment.** Clock, time zone, locale, scale, motion, fonts and a three-read stability check are fixed; a page that will not settle is marked `unstable`, not kept silently.
 - **Seeded data.** Every state (empty, populated, error, long) is made from a versioned fixture, not read live.
 - **Two hashes.** `domHash` identifies what was shown, exactly; the image hash identifies the picture, within 4 bits.
-- **Run twice.** `ui verify` compares two runs of the same inputs and fails on any difference.
+- **Run twice, each run in its own root.** `ui verify --root-a DIR --root-b DIR` compares two runs and fails on any difference, including a changed list of failed network calls (`net.failed`); timings are shown, never compared. Two runs written into one root share evidence paths, so the one-root form (`ui verify RUN_A RUN_B`) refuses runs that share a file.
 
 Quick start, against a folder that holds a `ui/` tree (`--ui-root`):
 
@@ -271,7 +271,8 @@ comparegraph ui diff room --ours ours --ref theirs --ui-root ./captures   # layo
 comparegraph ui matrix FAMILY --ui-root ./captures                        # one family's rows against every product
 comparegraph ui nav-diff --ours ours --ref theirs --ui-root ./captures    # menu tree against menu tree
 comparegraph ui journey j1 --ui-root ./captures                           # who completes the goal, in how many clicks
-comparegraph ui verify RUN_A RUN_B --ui-root ./captures                   # the determinism gate: run twice, diff
+comparegraph ui matrix FAMILY --net --ui-root ./captures                  # also: captures with failed network calls
+comparegraph ui verify --root-a ./run1 --root-b ./run2                    # the determinism gate: run twice (own root each), diff
 ```
 
 The file formats are in [`docs/decisions.md`](docs/decisions.md); `fixtures/ui-contract/` is a real probe output that the tests read with every verb.

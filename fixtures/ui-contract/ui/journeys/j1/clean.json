@@ -15,6 +15,12 @@
     "timeToFirstUseful": 1,
     "totalClicks": 1
   },
+  "net": {
+    "bytes": 506,
+    "failed": 0,
+    "requests": 1,
+    "waits": 0
+  },
   "product": "clean",
   "schema": "ui-journey/1",
   "seat": "ref",
@@ -35,7 +41,8 @@
       },
       "meta": {
         "stable": true,
-        "waitMs": 1652
+        "wait": false,
+        "waitMs": 1727
       },
       "metrics": {
         "E1": {
@@ -88,6 +95,30 @@
         }
       },
       "n": 1,
+      "net": {
+        "byType": {
+          "doc": 1,
+          "font": 0,
+          "image": 0,
+          "other": 0,
+          "script": 0,
+          "xhr": 0
+        },
+        "bytes": 506,
+        "failed": [],
+        "requests": 1,
+        "slowest": {
+          "ms": 1,
+          "path": "/flow.html"
+        },
+        "thirdPartyHosts": 0,
+        "timing": {
+          "contentStartVisibleMs": 21,
+          "domContentLoadedMs": 4,
+          "firstContentfulPaintMs": 21,
+          "loadMs": 16
+        }
+      },
       "screen": "room",
       "status": "ok",
       "target": "http://127.0.0.1:47831/flow.html"
@@ -107,7 +138,8 @@
       },
       "meta": {
         "stable": true,
-        "waitMs": 1106
+        "wait": false,
+        "waitMs": 1158
       },
       "metrics": {
         "E1": {
@@ -160,6 +192,24 @@
         }
       },
       "n": 2,
+      "net": {
+        "byType": {
+          "doc": 0,
+          "font": 0,
+          "image": 0,
+          "other": 0,
+          "script": 0,
+          "xhr": 0
+        },
+        "bytes": 0,
+        "failed": [],
+        "requests": 0,
+        "slowest": {
+          "ms": 0,
+          "path": ""
+        },
+        "thirdPartyHosts": 0
+      },
       "screen": "room",
       "status": "ok",
       "target": "Name"
@@ -179,7 +229,8 @@
       },
       "meta": {
         "stable": true,
-        "waitMs": 1121
+        "wait": false,
+        "waitMs": 1181
       },
       "metrics": {
         "E1": {
@@ -232,6 +283,24 @@
         }
       },
       "n": 3,
+      "net": {
+        "byType": {
+          "doc": 0,
+          "font": 0,
+          "image": 0,
+          "other": 0,
+          "script": 0,
+          "xhr": 0
+        },
+        "bytes": 0,
+        "failed": [],
+        "requests": 0,
+        "slowest": {
+          "ms": 0,
+          "path": ""
+        },
+        "thirdPartyHosts": 0
+      },
       "screen": "room",
       "status": "ok",
       "target": "button/Open"

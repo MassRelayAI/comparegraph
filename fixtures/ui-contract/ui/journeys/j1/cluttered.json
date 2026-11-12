@@ -22,6 +22,12 @@
     "timeToFirstUseful": 1,
     "totalClicks": 2
   },
+  "net": {
+    "bytes": 506,
+    "failed": 0,
+    "requests": 1,
+    "waits": 1
+  },
   "product": "cluttered",
   "schema": "ui-journey/1",
   "seat": "member",
@@ -42,7 +48,8 @@
       },
       "meta": {
         "stable": true,
-        "waitMs": 1644
+        "wait": false,
+        "waitMs": 1704
       },
       "metrics": {
         "E1": {
@@ -95,6 +102,30 @@
         }
       },
       "n": 1,
+      "net": {
+        "byType": {
+          "doc": 1,
+          "font": 0,
+          "image": 0,
+          "other": 0,
+          "script": 0,
+          "xhr": 0
+        },
+        "bytes": 506,
+        "failed": [],
+        "requests": 1,
+        "slowest": {
+          "ms": 1,
+          "path": "/flow.html"
+        },
+        "thirdPartyHosts": 0,
+        "timing": {
+          "contentStartVisibleMs": 35,
+          "domContentLoadedMs": 4,
+          "firstContentfulPaintMs": 35,
+          "loadMs": 16
+        }
+      },
       "screen": "room",
       "status": "ok",
       "target": "http://127.0.0.1:47831/flow.html"
@@ -114,7 +145,8 @@
       },
       "meta": {
         "stable": true,
-        "waitMs": 1090
+        "wait": false,
+        "waitMs": 1176
       },
       "metrics": {
         "E1": {
@@ -167,6 +199,24 @@
         }
       },
       "n": 2,
+      "net": {
+        "byType": {
+          "doc": 0,
+          "font": 0,
+          "image": 0,
+          "other": 0,
+          "script": 0,
+          "xhr": 0
+        },
+        "bytes": 0,
+        "failed": [],
+        "requests": 0,
+        "slowest": {
+          "ms": 0,
+          "path": ""
+        },
+        "thirdPartyHosts": 0
+      },
       "screen": "room",
       "status": "ok",
       "target": "Name"
@@ -186,7 +236,8 @@
       },
       "meta": {
         "stable": true,
-        "waitMs": 1136
+        "wait": false,
+        "waitMs": 1177
       },
       "metrics": {
         "E1": {
@@ -239,6 +290,24 @@
         }
       },
       "n": 3,
+      "net": {
+        "byType": {
+          "doc": 0,
+          "font": 0,
+          "image": 0,
+          "other": 0,
+          "script": 0,
+          "xhr": 0
+        },
+        "bytes": 0,
+        "failed": [],
+        "requests": 0,
+        "slowest": {
+          "ms": 0,
+          "path": ""
+        },
+        "thirdPartyHosts": 0
+      },
       "screen": "room",
       "status": "ok",
       "target": "button/Open"
@@ -258,7 +327,8 @@
       },
       "meta": {
         "stable": true,
-        "waitMs": 4079
+        "wait": true,
+        "waitMs": 4152
       },
       "metrics": {
         "E1": {
@@ -311,6 +381,24 @@
         }
       },
       "n": 4,
+      "net": {
+        "byType": {
+          "doc": 0,
+          "font": 0,
+          "image": 0,
+          "other": 0,
+          "script": 0,
+          "xhr": 0
+        },
+        "bytes": 0,
+        "failed": [],
+        "requests": 0,
+        "slowest": {
+          "ms": 0,
+          "path": ""
+        },
+        "thirdPartyHosts": 0
+      },
       "screen": "room",
       "status": "dead-end",
       "target": "button/Missing"

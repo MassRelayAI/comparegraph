@@ -397,6 +397,11 @@ pub fn show(root: &Path, max_nodes: usize, product: &str, screen: &str, state: &
         "style": { "summary": style_summary(&e.style), "style": e.style },
         "image": set.image(&e.image), "captures": others,
     });
+    let mut v = v;
+    if let Some(n) = &e.net {
+        v["net"] = json!(n);
+        v["netLine"] = json!(n.line());
+    }
     let mut lims = registry_limits(&set, screen);
     lims.push(Limitation::new("snapshot_recompute_pending", SNAPSHOT_NOTE));
     Ok(set.finish(v, &lims))
@@ -446,6 +451,12 @@ pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str,
         "styleDiff": style_diff(&ea.style, &eb.style),
         "images": { "ours": set.blob_path(&ea.image.file), "ref": set.blob_path(&eb.image.file) },
     });
+    let mut v = v;
+    if ea.net.is_some() || eb.net.is_some() {
+        let side = |e: &UiEvidence| e.net.as_ref().map_or("no net recorded".to_string(), |n| n.line());
+        v["net"] = json!({ "ours": ea.net, "ref": eb.net });
+        v["netLine"] = json!(format!("ours: {} | ref: {}", side(ea), side(eb)));
+    }
     let mut lims = registry_limits(&set, &so);
     lims.push(Limitation::new("snapshot_recompute_pending", SNAPSHOT_NOTE));
     Ok(set.finish(v, &lims))
@@ -464,7 +475,7 @@ fn family_rows(ui_root: &Path, root: &Path, family: &str) -> Option<Vec<String>>
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state: &str, viewport: Option<&str>) -> Result<Value> {
+pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state: &str, viewport: Option<&str>, net: bool) -> Result<Value> {
     need_token("family", family)?;
     let set = open(ui_root, max_nodes, None, EV)?;
     let vp = viewport.unwrap_or(DEFAULT_VIEWPORT);
@@ -493,7 +504,24 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
         rows.push(json!({ "row": id, "cells": cells }));
     }
     let total = rows.len();
-    Ok(set.finish(json!({ "family": family, "state": state, "viewport": vp, "products": products, "items": rows, "page": { "next": null, "total": total } }), &lims))
+    let mut out = json!({ "family": family, "state": state, "viewport": vp, "products": products, "items": rows, "page": { "next": null, "total": total } });
+    if net {
+        // `--net`: every capture of the products with failed calls (all states and viewports), so a 5xx on a screen cannot hide in a green cell
+        let mut failing: Vec<Value> = vec![];
+        for p in &products {
+            for l in set.evidence_of(p) {
+                if let Some(n) = l.ev.net.as_ref().filter(|n| !n.failed.is_empty()) {
+                    failing.push(json!({ "product": l.ev.product, "screen": l.ev.screen, "state": l.ev.state, "viewport": l.ev.viewport, "seat": l.ev.seat, "failed": n.failed }));
+                }
+            }
+        }
+        let with_net = products.iter().map(|p| set.evidence_of(p).filter(|l| l.ev.net.is_some()).count()).sum::<usize>();
+        if with_net == 0 {
+            lims.push(Limitation::new("net_missing", "no capture records `net`: nothing to list (captured before CMP-UI-1e?)"));
+        }
+        out["failedCalls"] = json!(failing);
+    }
+    Ok(set.finish(out, &lims))
 }
 
 pub fn system(root: &Path, max_nodes: usize, product: &str) -> Result<Value> {
@@ -635,31 +663,99 @@ pub fn coverage(root: &Path, run: &str) -> Result<Value> {
 
 type Failure = (AppError, Option<Value>);
 
-/// The determinism gate: for every capture key present in both runs, domHash equal, metrics equal, image dHash within 4 bits.
+/// A run manifest read from `<dir>/runs/<id>.json`.
+fn load_run(dir: &Path, id: &str) -> Result<UiRun> {
+    let r: UiRun = read_json(&dir.join("runs").join(format!("{id}.json"))).map_err(|e| AppError::NotFound(format!("run `{id}`: {e}")))?;
+    let p = r.problems(id);
+    if p.is_empty() { Ok(r) } else { Err(bad(format!("runs/{id}.json: {}", p.join("; ")))) }
+}
+fn ui_dir(root: &Path) -> PathBuf {
+    if root.join("ui").is_dir() { root.join("ui") } else { root.to_path_buf() }
+}
+/// `product@version/rest` -> `product/rest`: two roots may hold different versions of the same product, and that is what they are compared for.
+fn key_without_version(k: &str) -> String {
+    match (k.find('@'), k.find('/')) {
+        (Some(at), Some(sl)) if at < sl => format!("{}{}", &k[..at], &k[sl..]),
+        _ => k.to_string(),
+    }
+}
+/// The one run a root holds (a root given to `--root-a/--root-b` must hold exactly one).
+fn only_run(root: &Path, which: &str) -> Result<(PathBuf, String)> {
+    let dir = ui_dir(root);
+    if !dir.is_dir() {
+        return Err(AppError::NotFound(format!("{which}: no ui directory at {}", root.display())));
+    }
+    let mut ids = vec![];
+    if let Ok(rd) = std::fs::read_dir(dir.join("runs")) {
+        for e in rd.flatten() {
+            if let Some(stem) = e.file_name().to_str().and_then(|n| n.strip_suffix(".json")) {
+                if e.file_type().is_ok_and(|t| t.is_file()) {
+                    ids.push(stem.to_string());
+                }
+            }
+        }
+    }
+    ids.sort();
+    match ids.len() {
+        1 => Ok((dir, ids.remove(0))),
+        0 => Err(AppError::NotFound(format!("{which}: {} holds no run (runs/<runId>.json)", root.display()))),
+        n => Err(bad(format!("{which}: {} holds {n} runs; give each run its own ui root (probe: --out <dir>/<runLabel>) so a verify cannot compare a run with itself", root.display()))),
+    }
+}
+
+/// The determinism gate across two ui roots, each holding ONE run. Captures are matched on the key without its version.
+pub fn verify_roots(root_a: &Path, root_b: &Path, max_nodes: usize) -> std::result::Result<Value, Failure> {
+    let f = |e: AppError| (e, None);
+    check_max(max_nodes).map_err(f)?;
+    if let (Ok(a), Ok(b)) = (std::fs::canonicalize(root_a), std::fs::canonicalize(root_b)) {
+        if a == b {
+            return Err(f(bad("--root-a and --root-b are the same folder: that compares a run with itself".into())));
+        }
+    }
+    let ((da, ia), (db, ib)) = (only_run(root_a, "--root-a").map_err(f)?, only_run(root_b, "--root-b").map_err(f)?);
+    let (ra, rb) = (load_run(&da, &ia).map_err(f)?, load_run(&db, &ib).map_err(f)?);
+    compare(&da, &ra, &db, &rb, (&ia, &ib), max_nodes, true)
+}
+
+/// The determinism gate between two runs of ONE root. Only correct when the two runs wrote different evidence files; a shared file is refused.
 pub fn verify(root: &Path, max_nodes: usize, run_a: &str, run_b: &str) -> std::result::Result<Value, Failure> {
     let f = |e: AppError| (e, None);
     check_max(max_nodes).map_err(f)?;
     need_token("run id", run_a).map_err(f)?;
     need_token("run id", run_b).map_err(f)?;
-    let dir = if root.join("ui").is_dir() { root.join("ui") } else { root.to_path_buf() };
-    let load_run = |id: &str| -> Result<UiRun> {
-        let r: UiRun = read_json(&dir.join("runs").join(format!("{id}.json"))).map_err(|e| AppError::NotFound(format!("run `{id}`: {e}")))?;
-        let p = r.problems(id);
-        if p.is_empty() { Ok(r) } else { Err(bad(format!("runs/{id}.json: {}", p.join("; ")))) }
-    };
-    let (ra, rb) = (load_run(run_a).map_err(f)?, load_run(run_b).map_err(f)?);
-    let load_ev = |rel: &str| -> std::result::Result<UiEvidence, String> {
+    let dir = ui_dir(root);
+    let (ra, rb) = (load_run(&dir, run_a).map_err(f)?, load_run(&dir, run_b).map_err(f)?);
+    let same: Vec<String> = ra.captures.iter().filter(|(k, file)| rb.captures.get(*k) == Some(*file)).map(|(k, file)| format!("{k} -> {file}")).collect();
+    if !same.is_empty() {
+        return Err(f(bad(format!(
+            "runs {run_a} and {run_b} point at the same evidence file for {} key(s) (e.g. {}): one root keeps one file per capture, so this would compare the file with itself. Write each run into its own root and use `ui verify --root-a <dirA> --root-b <dirB>`",
+            same.len(),
+            same[0]
+        ))));
+    }
+    compare(&dir, &ra, &dir, &rb, (run_a, run_b), max_nodes, false)
+}
+
+/// domHash equal, metrics equal, image dHash within 4 bits and `net.failed` equal for every shared capture key. Timings and byte counts are never compared.
+#[allow(clippy::too_many_arguments)]
+fn compare(dir_a: &Path, ra: &UiRun, dir_b: &Path, rb: &UiRun, ids: (&str, &str), max_nodes: usize, ignore_version: bool) -> std::result::Result<Value, Failure> {
+    let (run_a, run_b) = ids;
+    let load_ev = |dir: &Path, rel: &str| -> std::result::Result<UiEvidence, String> {
         let e: UiEvidence = read_json(&dir.join(rel))?;
         let p = e.problems();
         if p.is_empty() { Ok(e) } else { Err(p.join("; ")) }
     };
-    let keys_a: BTreeSet<&String> = ra.captures.keys().collect();
-    let keys_b: BTreeSet<&String> = rb.captures.keys().collect();
+    let norm = |k: &String| if ignore_version { key_without_version(k) } else { k.clone() };
+    let map_a: BTreeMap<String, &String> = ra.captures.iter().map(|(k, f)| (norm(k), f)).collect();
+    let map_b: BTreeMap<String, &String> = rb.captures.iter().map(|(k, f)| (norm(k), f)).collect();
+    let keys_a: BTreeSet<&String> = map_a.keys().collect();
+    let keys_b: BTreeSet<&String> = map_b.keys().collect();
     let both: Vec<&String> = keys_a.intersection(&keys_b).copied().take(max_nodes).collect();
     let truncated = keys_a.intersection(&keys_b).count() > both.len();
     let mut diffs: Vec<Value> = vec![];
+    let mut net_missing = 0usize;
     for k in &both {
-        let (ea, eb) = (load_ev(&ra.captures[*k]), load_ev(&rb.captures[*k]));
+        let (ea, eb) = (load_ev(dir_a, map_a[*k]), load_ev(dir_b, map_b[*k]));
         let (ea, eb) = match (ea, eb) {
             (Ok(a), Ok(b)) => (a, b),
             (a, b) => {
@@ -687,6 +783,18 @@ pub fn verify(root: &Path, max_nodes: usize, run_a: &str, run_b: &str) -> std::r
             }
             (x, y) => diffs.push(json!({ "key": k, "kind": "image", "detail": "image.dhash missing", "a": x, "b": y })),
         }
+        match (&ea.net, &eb.net) {
+            (Some(x), Some(y)) => {
+                let (mut fa, mut fb) = (x.failed.clone(), y.failed.clone());
+                fa.sort();
+                fb.sort();
+                if fa != fb {
+                    diffs.push(json!({ "key": k, "kind": "netFailed", "a": fa, "b": fb }));
+                }
+            }
+            (None, None) => {}
+            _ => net_missing += 1,
+        }
     }
     let only_a: Vec<&String> = keys_a.difference(&keys_b).copied().collect();
     let only_b: Vec<&String> = keys_b.difference(&keys_a).copied().collect();
@@ -694,12 +802,21 @@ pub fn verify(root: &Path, max_nodes: usize, run_a: &str, run_b: &str) -> std::r
     if truncated {
         lims.push(Limitation::new("truncated", format!("compared the first {} shared keys (--max-nodes)", both.len())));
     }
+    if net_missing > 0 {
+        lims.push(Limitation::new("net_missing", format!("{net_missing} shared captures have `net` on one side only: their failed calls were not compared")));
+    }
+    if ignore_version {
+        lims.push(Limitation::new("versions_ignored", "captures are matched on product/screen/state/viewport/seat/locale/theme; the version in the key may differ between the roots"));
+    }
     lims.push(Limitation::new("snapshot_recompute_pending", SNAPSHOT_NOTE));
     let data = json!({
         "runA": run_a, "runB": run_b, "compared": both.len(), "identical": diffs.is_empty(), "differences": diffs,
         "onlyInA": only_a, "onlyInB": only_b,
         "limitation_items": lims,
     });
+    if both.is_empty() && ignore_version {
+        return Err((AppError::CheckFailed(format!("roots share no capture key: {} only in A, {} only in B (nothing was compared)", only_a.len(), only_b.len())), Some(data)));
+    }
     if data["identical"] == Value::Bool(true) {
         Ok(data)
     } else {

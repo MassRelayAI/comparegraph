@@ -73,9 +73,9 @@ fn every_ui_verb_reads_the_probes_own_output_without_invalid_evidence() {
     for product in ["cluttered", "clean"] {
         let (a, b) = (run_id(product, "a"), run_id(product, "b"));
         assert_ne!(a, b);
-        let v = clean(&["verify", &a, &b]);
-        assert_eq!(v["data"]["identical"], true);
-        assert!(v["data"]["compared"].as_u64().unwrap() >= 2);
+        // the two probe runs share evidence files (one path per capture), so the one-root form must refuse; tests/ui_net.rs verifies them as two roots
+        let (c, _, v) = ui(&["verify", &a, &b]);
+        assert_eq!((c, v["error"]["code"].as_str()), (1, Some("invalid_arguments")), "{v}");
         let cov = clean(&["coverage", &a]);
         assert_eq!(cov["data"]["complete"], true, "every coverage cell is explained: {cov}");
     }

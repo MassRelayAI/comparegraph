@@ -42,7 +42,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T06:06:52.744Z",
+    "capturedAt": "2026-11-12T06:31:27.565Z",
     "url": "http://127.0.0.1:47831/clean.html"
   },
   "metrics": {
@@ -123,6 +123,30 @@
       "limit": 1,
       "pass": true,
       "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 1089,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 1,
+      "path": "/clean.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 19,
+      "domContentLoadedMs": 5,
+      "firstContentfulPaintMs": 19,
+      "loadMs": 5
     }
   },
   "probe": {

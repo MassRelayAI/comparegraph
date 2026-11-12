@@ -190,7 +190,84 @@ pub struct UiEvidence {
     pub probe: Value,
     #[serde(default)]
     pub meta: Value,
+    /// section 13: requests, bytes, failed calls, slowest call, timings; absent in files from before CMP-UI-1e
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub net: Option<Net>,
     pub style: Style,
+}
+
+/// One failed call: the status (0 = network error) and the PATH only - never a query string.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetFailed {
+    pub status: u16,
+    pub path: String,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetSlowest {
+    pub path: String,
+    pub ms: u64,
+}
+/// Timings vary run to run: shown, never compared by `verify`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NetTiming {
+    pub dom_content_loaded_ms: u64,
+    pub load_ms: u64,
+    pub first_contentful_paint_ms: u64,
+    pub content_start_visible_ms: u64,
+}
+/// `net` of a ui-evidence/1 file (CMP-UI-1-lanes section 13).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Net {
+    pub requests: u64,
+    pub bytes: u64,
+    #[serde(default)]
+    pub by_type: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub failed: Vec<NetFailed>,
+    #[serde(default)]
+    pub slowest: Option<NetSlowest>,
+    #[serde(default)]
+    pub third_party_hosts: u64,
+    #[serde(default)]
+    pub timing: Option<NetTiming>,
+}
+impl Net {
+    pub fn problems(&self) -> Vec<String> {
+        let mut p = vec![];
+        let path_ok = |s: &str| (s.starts_with('/') || (s.starts_with('(') && s.ends_with(')'))) && !s.contains('?') && !s.contains('#');
+        for f in &self.failed {
+            if !path_ok(&f.path) {
+                p.push(format!("net.failed path `{}` must be a path without query or fragment", f.path));
+            }
+        }
+        if let Some(s) = &self.slowest {
+            if !s.path.is_empty() && !path_ok(&s.path) {
+                p.push(format!("net.slowest.path `{}` must be a path without query or fragment", s.path));
+            }
+        }
+        p
+    }
+    /// One line for `show` and `diff`.
+    pub fn line(&self) -> String {
+        let mut parts = vec![format!("{} requests, {} KB", self.requests, (self.bytes + 512) / 1024)];
+        if self.failed.is_empty() {
+            parts.push("0 failed".into());
+        } else {
+            parts.push(format!("{} failed ({})", self.failed.len(), self.failed.iter().map(|f| format!("{} {}", f.status, f.path)).collect::<Vec<_>>().join(", ")));
+        }
+        if let Some(s) = self.slowest.as_ref().filter(|s| s.ms > 0) {
+            parts.push(format!("slowest {} {} ms", s.path, s.ms));
+        }
+        parts.push(format!("{} third-party hosts", self.third_party_hosts));
+        if let Some(t) = &self.timing {
+            parts.push(format!("load {} ms, content visible {} ms", t.load_ms, t.content_start_visible_ms));
+        }
+        parts.join(", ")
+    }
 }
 
 impl UiEvidence {
@@ -274,6 +351,9 @@ impl UiEvidence {
             if !REGION_KINDS.contains(&r.kind.as_str()) {
                 p.push(format!("region kind `{}` must be one of {}", r.kind, REGION_KINDS.join("|")));
             }
+        }
+        if let Some(n) = &self.net {
+            p.extend(n.problems());
         }
         let unit = |v: f64| (0.0..=1.0).contains(&v);
         if !unit(self.style.space.on_scale4) || !unit(self.style.density.whitespace_ratio) {

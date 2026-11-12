@@ -108,7 +108,7 @@ pub fn tools() -> Vec<Value> {
             "target":{"type":"string"}, "ours":{"type":"string"}, "ref":{"type":"string"}, "state":{"type":"string","description":"default populated"},
             "viewport":{"type":"string","description":"default 1440x900"}, "seat":{"type":"string"}, "ref_seat":{"type":"string"} }), &["target", "ours", "ref"])),
         tool("comparegraph_ui_matrix", "UI evidence: the rows of a family by products; each cell is pass count / 12 or `-` (not captured), via map.csv, for one state and viewport.", ui_schema(json!({
-            "family":{"type":"string"}, "state":{"type":"string","description":"default populated"}, "viewport":{"type":"string","description":"default 1440x900"} }), &["family"])),
+            "family":{"type":"string"}, "state":{"type":"string","description":"default populated"}, "viewport":{"type":"string","description":"default 1440x900"}, "net":{"type":"boolean","description":"also list captures with failed network calls"} }), &["family"])),
         tool("comparegraph_ui_system", "UI evidence: a product's design system (type sizes, colours, spacing) from system.json or derived from its captures, against the targets.", ui_schema(json!({"product":{"type":"string"}}), &["product"])),
         tool("comparegraph_ui_flow", "UI evidence: one flow (ui-flow/1) of a product: steps, clicks, dead ends, step image paths.", ui_schema(json!({"product":{"type":"string"}, "task":{"type":"string"}}), &["product", "task"])),
         tool("comparegraph_ui_nav", "UI evidence: a product's menu tree (ui-nav/1) with derived numbers: places, depth, items per level and group, destinations, duplicates, dead items, overflow-only items.", ui_schema(json!({
@@ -118,7 +118,7 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_ui_journey", "UI evidence: a journey per product: completed, partial at step N, or n/a with the reason, and screens, clicks, decisions, waits, dead ends, time to first useful thing.", ui_schema(json!({
             "journey":{"type":"string"}, "products":{"type":"string","description":"comma list"} }), &["journey"])),
         tool("comparegraph_ui_coverage", "UI evidence: the coverage table of a run (captured / n/a / failed per product); a blank cell makes the run incomplete and is listed.", ui_schema(json!({"run":{"type":"string"}}), &["run"])),
-        tool("comparegraph_ui_verify", "UI evidence: the determinism gate. For every capture key present in both runs, domHash and metrics must be equal and the image dHash within 4 bits; every difference is reported (check_failed with the list in data when any).", ui_schema(json!({"run_a":{"type":"string"}, "run_b":{"type":"string"}}), &["run_a", "run_b"])),
+        tool("comparegraph_ui_verify", "UI evidence: the determinism gate. For every capture key present in both runs, domHash and metrics must be equal, the image dHash within 4 bits and net.failed equal; every difference is reported (check_failed with the list in data when any). Give run_a and run_b (two runs of one root; refused when they share evidence files) or root_a and root_b (two ui roots holding one run each, matched without the version).", ui_schema(json!({"run_a":{"type":"string"}, "run_b":{"type":"string"}, "root_a":{"type":"string","description":"ui root holding one run"}, "root_b":{"type":"string","description":"ui root holding one run"}}), &[])),
         tool("comparegraph_doctor", "Report the store and every provider. Returns a compact envelope.", schema(json!({}), &[])),
     ]
 }
@@ -192,13 +192,13 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             "comparegraph_ui_screens" | "comparegraph_ui_system" => &["product", "ui_root", "max_nodes"],
             "comparegraph_ui_show" => &["product", "screen", "state", "viewport", "seat", "ui_root", "max_nodes"],
             "comparegraph_ui_diff" => &["target", "ours", "ref", "state", "viewport", "seat", "ref_seat", "ui_root", "max_nodes"],
-            "comparegraph_ui_matrix" => &["family", "state", "viewport", "ui_root", "max_nodes"],
+            "comparegraph_ui_matrix" => &["family", "state", "viewport", "net", "ui_root", "max_nodes"],
             "comparegraph_ui_flow" => &["product", "task", "ui_root", "max_nodes"],
             "comparegraph_ui_nav" => &["product", "viewport", "seat", "ui_root", "max_nodes"],
             "comparegraph_ui_nav_diff" => &["ours", "ref", "viewport", "seat", "ref_seat", "ui_root", "max_nodes"],
             "comparegraph_ui_journey" => &["journey", "products", "ui_root", "max_nodes"],
             "comparegraph_ui_coverage" => &["run", "ui_root", "max_nodes"],
-            "comparegraph_ui_verify" => &["run_a", "run_b", "ui_root", "max_nodes"],
+            "comparegraph_ui_verify" => &["run_a", "run_b", "root_a", "root_b", "ui_root", "max_nodes"],
             _ => return Err(format!("unknown tool {name}")),
         },
         "comparegraph_claim" => &[
@@ -338,13 +338,13 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 "comparegraph_ui_diff" => UiCmd::Diff {
                     target: req(a, "target")?, ours: req(a, "ours")?, refp: req(a, "ref")?, state: state()?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")?,
                 },
-                "comparegraph_ui_matrix" => UiCmd::Matrix { family: req(a, "family")?, state: state()?, viewport: s("viewport")? },
+                "comparegraph_ui_matrix" => UiCmd::Matrix { family: req(a, "family")?, state: state()?, viewport: s("viewport")?, net: match a.get("net") { None | Some(Value::Null) => false, Some(Value::Bool(b)) => *b, Some(_) => return Err("net must be a boolean".into()) } },
                 "comparegraph_ui_flow" => UiCmd::Flow { product: req(a, "product")?, task: req(a, "task")? },
                 "comparegraph_ui_nav" => UiCmd::Nav { product: req(a, "product")?, viewport: s("viewport")?, seat: s("seat")? },
                 "comparegraph_ui_nav_diff" => UiCmd::NavDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")? },
                 "comparegraph_ui_journey" => UiCmd::Journey { journey: req(a, "journey")?, products: s("products")? },
                 "comparegraph_ui_coverage" => UiCmd::Coverage { run: req(a, "run")? },
-                _ => UiCmd::Verify { run_a: req(a, "run_a")?, run_b: req(a, "run_b")? },
+                _ => UiCmd::Verify { run_a: s("run_a")?, run_b: s("run_b")?, root_a: s("root_a")?.map(PathBuf::from), root_b: s("root_b")?.map(PathBuf::from) },
             };
             Cmd::Ui { ui_root: s("ui_root")?.map(PathBuf::from), max_nodes: uint_arg(a, "max_nodes", 200)?, what }
         }

@@ -78,6 +78,9 @@ pub enum UiCmd {
         state: String,
         #[arg(long)]
         viewport: Option<String>,
+        /// also list the captures with failed network calls (4xx/5xx/network error), from `net.failed`
+        #[arg(long)]
+        net: bool,
     },
     /// A product's design system (system.json, else derived) against the targets
     System { product: String },
@@ -113,8 +116,18 @@ pub enum UiCmd {
     },
     /// The coverage table of a run; a blank cell makes it incomplete
     Coverage { run: String },
-    /// The determinism gate: two runs must agree on domHash, metrics and image dHash (<= 4 bits) for every shared key
-    Verify { run_a: String, run_b: String },
+    /// The determinism gate: two runs must agree on domHash, metrics, image dHash (<= 4 bits) and failed network calls for every shared key.
+    /// Give each run its own ui root and compare with --root-a/--root-b; the two-run-id form only works when the runs wrote different evidence files.
+    Verify {
+        run_a: Option<String>,
+        run_b: Option<String>,
+        /// ui root holding one run (instead of run ids)
+        #[arg(long, requires = "root_b", conflicts_with_all = ["run_a", "run_b"])]
+        root_a: Option<PathBuf>,
+        /// ui root holding one run (instead of run ids)
+        #[arg(long, requires = "root_a")]
+        root_b: Option<PathBuf>,
+    },
 }
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -1256,7 +1269,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 UiCmd::Diff { target, ours, refp, state, viewport, seat, ref_seat } => {
                     u::diff(ur, m, target, ours, refp, st(state), vp(viewport), vp(seat), vp(ref_seat))?
                 }
-                UiCmd::Matrix { family, state, viewport } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport))?,
+                UiCmd::Matrix { family, state, viewport, net } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport), *net)?,
                 UiCmd::System { product } => u::system(ur, m, product)?,
                 UiCmd::Flow { product, task } => u::flow(ur, m, product, task)?,
                 UiCmd::Nav { product, viewport, seat } => u::nav(ur, m, product, vp(viewport), vp(seat))?,
@@ -1266,10 +1279,17 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     u::journey(ur, journey, &ps)?
                 }
                 UiCmd::Coverage { run } => u::coverage(ur, run)?,
-                UiCmd::Verify { run_a, run_b } => match u::verify(ur, m, run_a, run_b) {
-                    Ok(v) => v,
-                    Err(f) => return Ok(Err(f)),
-                },
+                UiCmd::Verify { run_a, run_b, root_a, root_b } => {
+                    let r = match (run_a, run_b, root_a, root_b) {
+                        (None, None, Some(a), Some(b)) => u::verify_roots(a, b, m),
+                        (Some(a), Some(b), None, None) => u::verify(ur, m, a, b),
+                        _ => return Err(AppError::InvalidArguments("ui verify takes two run ids (RUN_A RUN_B) or --root-a DIR --root-b DIR, not a mix".into())),
+                    };
+                    match r {
+                        Ok(v) => v,
+                        Err(f) => return Ok(Err(f)),
+                    }
+                }
             }
         }
         Cmd::Matrix { family, relate, reach } => {

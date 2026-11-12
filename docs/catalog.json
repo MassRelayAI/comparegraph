@@ -724,6 +724,10 @@
             "type": "string",
             "description": "default 1440x900"
           },
+          "net": {
+            "type": "boolean",
+            "description": "also list captures with failed network calls"
+          },
           "ui_root": {
             "type": "string",
             "description": "directory holding ui/ (default: the server root)"
@@ -942,7 +946,7 @@
     },
     {
       "name": "comparegraph_ui_verify",
-      "description": "UI evidence: the determinism gate. For every capture key present in both runs, domHash and metrics must be equal and the image dHash within 4 bits; every difference is reported (check_failed with the list in data when any).",
+      "description": "UI evidence: the determinism gate. For every capture key present in both runs, domHash and metrics must be equal, the image dHash within 4 bits and net.failed equal; every difference is reported (check_failed with the list in data when any). Give run_a and run_b (two runs of one root; refused when they share evidence files) or root_a and root_b (two ui roots holding one run each, matched without the version).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -952,6 +956,14 @@
           },
           "run_b": {
             "type": "string"
+          },
+          "root_a": {
+            "type": "string",
+            "description": "ui root holding one run"
+          },
+          "root_b": {
+            "type": "string",
+            "description": "ui root holding one run"
           },
           "ui_root": {
             "type": "string",
@@ -964,10 +976,7 @@
             "description": "files read at most, default 200; truncation is reported in limitations"
           }
         },
-        "required": [
-          "run_a",
-          "run_b"
-        ],
+        "required": [],
         "additionalProperties": false
       }
     }
