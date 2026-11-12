@@ -43,7 +43,7 @@
       "state": "long",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -52,7 +52,7 @@
       "state": "long",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -61,7 +61,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -70,7 +70,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -79,7 +79,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -88,7 +88,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -133,7 +133,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -142,7 +142,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -151,7 +151,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -160,7 +160,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -169,7 +169,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -178,7 +178,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -187,7 +187,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -196,7 +196,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -205,7 +205,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -214,7 +214,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -223,7 +223,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -232,7 +232,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -241,7 +241,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -250,7 +250,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -259,7 +259,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -268,7 +268,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -277,7 +277,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -286,7 +286,7 @@
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -295,7 +295,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
       "product": "clean",
@@ -304,7 +304,7 @@
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     }
   ],
   "journeyCells": [
@@ -330,6 +330,6 @@
       "why": ""
     }
   ],
-  "runId": "18446aee2facdd2e952f99b4046ffa19c8f136ec88db89e1af8810eca5de81a0",
+  "runId": "1a3b620a7cc2535c61da764b90f02c90f9fe2672b9500fcc869a405f3f876c55",
   "schema": "ui-coverage/1"
 }

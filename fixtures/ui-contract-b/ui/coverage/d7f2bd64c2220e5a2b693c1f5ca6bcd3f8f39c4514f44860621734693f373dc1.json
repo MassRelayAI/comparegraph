@@ -1,342 +1,313 @@
 {
   "cells": [
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "room",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
-      "status": "captured",
+      "status": "n/a",
       "viewport": "1440x900",
-      "why": ""
+      "why": "the fixture page has no empty state"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "room",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the fixture page has no empty state"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "room",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "captured",
       "viewport": "1440x900",
       "why": ""
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "room",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "captured",
       "viewport": "390x844",
       "why": ""
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "room",
-      "seat": "member",
+      "seat": "ref",
       "state": "long",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "room",
-      "seat": "member",
+      "seat": "ref",
       "state": "long",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "rooms-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "rooms-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "rooms-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "rooms-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "inbox",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "the fixture page has no empty inbox"
+      "why": "the fixture product has no inbox"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "inbox",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "the fixture page has no empty inbox"
+      "why": "the fixture product has no inbox"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "inbox",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
-      "status": "captured",
+      "status": "n/a",
       "viewport": "1440x900",
-      "why": ""
+      "why": "the fixture product has no inbox"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "inbox",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the fixture product has no inbox"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "meetings-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "meetings-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "meetings-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "meetings-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "router-overview",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "router-overview",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "router-overview",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "router-overview",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "flows-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "flows-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "flows-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "flows-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "settings",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "settings",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "console-overview",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "console-overview",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "console-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "console-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "empty",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "console-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "1440x900",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     },
     {
-      "product": "cluttered",
+      "product": "clean",
       "screen": "console-list",
-      "seat": "member",
+      "seat": "ref",
       "state": "populated",
       "status": "n/a",
       "viewport": "390x844",
-      "why": "not in this run's plan"
+      "why": "the contract fixture serves a single page per product"
     }
   ],
-  "journeyCells": [
-    {
-      "journey": "j1",
-      "product": "cluttered",
-      "status": "captured",
-      "step": 1,
-      "why": ""
-    },
-    {
-      "journey": "j1",
-      "product": "cluttered",
-      "status": "captured",
-      "step": 2,
-      "why": ""
-    },
-    {
-      "journey": "j1",
-      "product": "cluttered",
-      "status": "captured",
-      "step": 3,
-      "why": ""
-    },
-    {
-      "journey": "j1",
-      "product": "cluttered",
-      "status": "failed",
-      "step": 4,
-      "why": "dead end: click button/Missing"
-    }
-  ],
-  "runId": "2395601c6bd56862668ce31174fa21cd9689ffdda81b62832f3169d08d65e1ea",
+  "journeyCells": [],
+  "runId": "d7f2bd64c2220e5a2b693c1f5ca6bcd3f8f39c4514f44860621734693f373dc1",
   "schema": "ui-coverage/1"
 }

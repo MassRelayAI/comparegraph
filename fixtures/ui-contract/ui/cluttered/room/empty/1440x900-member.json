@@ -53,7 +53,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T07:04:26.829Z",
+    "capturedAt": "2026-11-12T09:18:06.484Z",
     "url": "http://127.0.0.1:47831/cluttered.html"
   },
   "metrics": {
@@ -175,9 +175,9 @@
     },
     "thirdPartyHosts": 0,
     "timing": {
-      "contentStartVisibleMs": 19,
-      "domContentLoadedMs": 3,
-      "firstContentfulPaintMs": 19,
+      "contentStartVisibleMs": 26,
+      "domContentLoadedMs": 4,
+      "firstContentfulPaintMs": 26,
       "loadMs": 4
     }
   },

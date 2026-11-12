@@ -1,0 +1,239 @@
+{
+  "archetype": "conversation",
+  "domHash": "9d23aa59b6d35acfd0f7f745d2889ade44baf38d53c5c6bf95338a87138192f5",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "80c0000000000000",
+    "file": "blobs/cf5cb463c22910e26ab97c19e2070e717ecc1db1587e317fc66cacc9587617fa.png",
+    "sha256": "cf5cb463c22910e26ab97c19e2070e717ecc1db1587e317fc66cacc9587617fa"
+  },
+  "key": "clean@contract-1/room/populated/1440x900/ref/en-US/light",
+  "layout": {
+    "contentStart": {
+      "how": "data-content-start",
+      "y": 114
+    },
+    "primary": {
+      "name": "New room",
+      "x": 224,
+      "y": 68
+    },
+    "regions": [
+      {
+        "h": 900,
+        "kind": "sidebar",
+        "w": 200,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "h": 900,
+        "kind": "main",
+        "w": 1240,
+        "x": 200,
+        "y": 0
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:18:20.799Z",
+    "url": "http://127.0.0.1:47831/clean.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [
+        "nav[Main]"
+      ],
+      "limit": 2,
+      "pass": true,
+      "value": 1
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E2": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [
+        "New room"
+      ],
+      "limit": 1,
+      "pass": true,
+      "value": 1
+    },
+    "E4": {
+      "detail": [],
+      "limit": 14,
+      "pass": true,
+      "value": 1
+    },
+    "E5": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E6": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E7": {
+      "detail": [
+        "data-content-start"
+      ],
+      "limit": 0.25,
+      "pass": true,
+      "value": 0.13
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 1089,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 1,
+      "path": "/clean.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 31,
+      "domContentLoadedMs": 5,
+      "firstContentfulPaintMs": 31,
+      "loadMs": 5
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 900,
+        "width": 1440
+      }
+    },
+    "notes": [],
+    "version": "1"
+  },
+  "product": "clean",
+  "route": "/clean.html",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "ref",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": "#0000ee",
+      "background": {
+        "#0969da": 1,
+        "#f6f8fa": 1
+      },
+      "border": {},
+      "distinctColors": 5,
+      "lowContrast": [],
+      "text": {
+        "#0000ee": 2,
+        "#1f2328": 3,
+        "#ffffff": 1
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0.01,
+      "textPerKpx": 0.07,
+      "whitespaceRatio": 0.9
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 0,
+      "radius": {
+        "6px": 1
+      },
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 4,
+      "onScale4": 0.89,
+      "values": {
+        "14px": 2,
+        "16px": 7,
+        "24px": 4,
+        "8px": 6
+      }
+    },
+    "type": {
+      "distinctSizes": 2,
+      "families": [
+        "Arial"
+      ],
+      "lineHeights": {
+        "normal": 6
+      },
+      "sizes": {
+        "14px": 5,
+        "24px": 1
+      },
+      "weights": {
+        "400": 5,
+        "700": 1
+      }
+    }
+  },
+  "theme": "light",
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "1440x900"
+}

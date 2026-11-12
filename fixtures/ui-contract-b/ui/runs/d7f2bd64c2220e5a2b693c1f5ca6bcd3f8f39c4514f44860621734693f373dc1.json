@@ -3,8 +3,13 @@
     "clean@contract-1/room/populated/1440x900/ref/en-US/light": "clean/room/populated/1440x900-ref.json",
     "clean@contract-1/room/populated/390x844/ref/en-US/light": "clean/room/populated/390x844-ref.json"
   },
+  "evidenceSha256": {
+    "clean/room/populated/1440x900-ref.json": "2693d24079f256dfc1815889906664d39c7f851bb1effe23feb86dd76aa9d8ac",
+    "clean/room/populated/390x844-ref.json": "412085e35f60bdf6c53d3a4c50872dad4b1d7b85217c00b53b2e6a729b3cb4ac"
+  },
   "failed": [],
   "inputs": {
+    "archetypesDigest": null,
     "env": {
       "clock": "2026-01-15T10:00:00.000Z",
       "colorScheme": "light",
@@ -14,12 +19,15 @@
       "timezone": "UTC"
     },
     "fixtureHash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "planDigest": "b7cc93fb4c7a20d24d533e69e59b3bfa3b54793c6f5a51081d79d7409e1efb2b",
     "probeVersion": "1",
     "product": "clean",
+    "registryDigest": "6bed3b9f7bb590225696ae415dc272d153b4362528a101730b7530e221581db3",
     "registryVersion": "1",
-    "runLabel": "a",
+    "runLabel": "b",
     "version": "contract-1"
   },
-  "runId": "957de9888ba7ada498296670842ed3548409d9070e477a989756eff3f49f3812",
-  "schema": "ui-run/1"
+  "runId": "d7f2bd64c2220e5a2b693c1f5ca6bcd3f8f39c4514f44860621734693f373dc1",
+  "schema": "ui-run/1",
+  "unstable": []
 }

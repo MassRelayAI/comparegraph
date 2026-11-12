@@ -5,8 +5,15 @@
     "cluttered@contract-1/room/populated/1440x900/member/en-US/light": "cluttered/room/populated/1440x900-member.json",
     "cluttered@contract-1/room/populated/390x844/member/en-US/light": "cluttered/room/populated/390x844-member.json"
   },
+  "evidenceSha256": {
+    "cluttered/inbox/populated/1440x900-member.json": "8639f2500b67f8d60e87e99f392a0738e1b7ae508acd4b0c6125dc98012b13a3",
+    "cluttered/room/empty/1440x900-member.json": "9a7c65174360ffbecd1ef3a255fea7e7577cd77250fae62ecd3b1ac22633af6c",
+    "cluttered/room/populated/1440x900-member.json": "cbe701a79484c76b8f7bac110d0109eac1b0bd666756187329869160c727512e",
+    "cluttered/room/populated/390x844-member.json": "6aea7146736a1b5af256a69bee6fca9021f60eb4b5d65b39accbd34c4ff63115"
+  },
   "failed": [],
   "inputs": {
+    "archetypesDigest": null,
     "env": {
       "clock": "2026-01-15T10:00:00.000Z",
       "colorScheme": "light",
@@ -16,12 +23,15 @@
       "timezone": "UTC"
     },
     "fixtureHash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "planDigest": "f2efdf4729977ddc87f2e6a263862c10a6eb799a4fbb629433809a6ead4a58bc",
     "probeVersion": "1",
     "product": "cluttered",
+    "registryDigest": "6bed3b9f7bb590225696ae415dc272d153b4362528a101730b7530e221581db3",
     "registryVersion": "1",
     "runLabel": "b",
     "version": "contract-1"
   },
-  "runId": "2395601c6bd56862668ce31174fa21cd9689ffdda81b62832f3169d08d65e1ea",
-  "schema": "ui-run/1"
+  "runId": "4e1ddd15ce5eacde3587f68c86950f1f162f6cd145bcfd82ae0f10b0aef7b122",
+  "schema": "ui-run/1",
+  "unstable": []
 }

@@ -19,7 +19,7 @@
       "firstUseful": 1,
       "screens": 1,
       "status": "partial",
-      "waits": 2,
+      "waits": 1,
       "why": "click button/Missing: target absent"
     }
   },

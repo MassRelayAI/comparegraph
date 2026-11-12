@@ -1,649 +1,649 @@
 {
-  "schema": "ui-nav/1",
   "product": "target",
-  "version": "2026-11-12",
+  "schema": "ui-nav/1",
   "seat": "admin-dev",
-  "viewport": "1440x900",
   "source": "docs/design/ia/2026-11-12-ia-reset.md section B1 (app), B3 (Router, Developer view), B4 (operator console); hand-written. Targets not yet in the screen registry are provisional ids.",
   "trees": {
     "app": {
-      "nodes": [
-        {
-          "label": "Home",
-          "kind": "place",
-          "level": 1,
-          "order": 0,
-          "target": "home",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Assistant",
-          "kind": "tab",
-          "level": 2,
-          "order": 1,
-          "target": "home",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Progress",
-          "kind": "tab",
-          "level": 2,
-          "order": 2,
-          "target": "home",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Knowledge",
-          "kind": "tab",
-          "level": 2,
-          "order": 3,
-          "target": "home",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Skills",
-          "kind": "tab",
-          "level": 2,
-          "order": 4,
-          "target": "home",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Rooms",
-          "kind": "place",
-          "level": 1,
-          "order": 5,
-          "target": "rooms-list",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Find people and services",
-          "kind": "item",
-          "level": 2,
-          "order": 6,
-          "target": "rooms-list",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Inbox",
-          "kind": "place",
-          "level": 1,
-          "order": 7,
-          "target": "inbox",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "For me",
-          "kind": "tab",
-          "level": 2,
-          "order": 8,
-          "target": "inbox",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Waiting on others",
-          "kind": "tab",
-          "level": 2,
-          "order": 9,
-          "target": "inbox",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "All",
-          "kind": "tab",
-          "level": 2,
-          "order": 10,
-          "target": "inbox",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Meetings",
-          "kind": "place",
-          "level": 1,
-          "order": 11,
-          "target": "meetings-list",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Tasks",
-          "kind": "place",
-          "level": 1,
-          "order": 12,
-          "target": "tasks",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Running",
-          "kind": "item",
-          "level": 2,
-          "order": 13,
-          "target": "tasks",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Scheduled",
-          "kind": "item",
-          "level": 2,
-          "order": 14,
-          "target": "tasks",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Done",
-          "kind": "item",
-          "level": 2,
-          "order": 15,
-          "target": "tasks",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Settings",
-          "kind": "place",
-          "level": 1,
-          "order": 16,
-          "target": "settings",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Personal",
-          "kind": "group",
-          "level": 2,
-          "order": 17,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Workspace",
-          "kind": "group",
-          "level": 2,
-          "order": 18,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        }
-      ],
       "derived": {
-        "rows": 6,
-        "places": 6,
-        "maxDepth": 2,
         "itemsPerLevel": {
           "1": 6,
           "2": 13
-        }
-      }
-    },
-    "router": {
-      "nodes": [
-        {
-          "label": "Overview",
-          "kind": "place",
-          "level": 1,
-          "order": 0,
-          "target": "router-overview",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
         },
-        {
-          "label": "Use",
-          "kind": "group",
-          "level": 1,
-          "order": 1,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Models",
-          "kind": "item",
-          "level": 2,
-          "order": 2,
-          "target": "router-models",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Keys and endpoints",
-          "kind": "item",
-          "level": 2,
-          "order": 3,
-          "target": "router-keys",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Observe",
-          "kind": "group",
-          "level": 1,
-          "order": 4,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Logs",
-          "kind": "item",
-          "level": 2,
-          "order": 5,
-          "target": "router-logs",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Usage",
-          "kind": "item",
-          "level": 2,
-          "order": 6,
-          "target": "router-usage",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Health",
-          "kind": "item",
-          "level": 2,
-          "order": 7,
-          "target": "router-health",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Control",
-          "kind": "group",
-          "level": 1,
-          "order": 8,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Routing",
-          "kind": "item",
-          "level": 2,
-          "order": 9,
-          "target": "router-routing",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Budgets and quotas",
-          "kind": "item",
-          "level": 2,
-          "order": 10,
-          "target": "router-budgets",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Providers",
-          "kind": "item",
-          "level": 2,
-          "order": 11,
-          "target": "router-providers",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Admin",
-          "kind": "group",
-          "level": 1,
-          "order": 12,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Settings",
-          "kind": "item",
-          "level": 2,
-          "order": 13,
-          "target": "router-settings",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Docs",
-          "kind": "item",
-          "level": 2,
-          "order": 14,
-          "target": "router-docs",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        }
-      ],
-      "derived": {
-        "rows": 11,
-        "places": 1,
         "maxDepth": 2,
-        "itemsPerLevel": {
-          "1": 5,
-          "2": 10
-        }
-      }
-    },
-    "console": {
+        "places": 6,
+        "rows": 6
+      },
       "nodes": [
         {
-          "label": "Overview",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
           "kind": "place",
+          "label": "Home",
           "level": 1,
           "order": 0,
-          "target": "console-overview",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "home"
         },
         {
-          "label": "Customers",
-          "kind": "group",
-          "level": 1,
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "tab",
+          "label": "Assistant",
+          "level": 2,
           "order": 1,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "home"
         },
         {
-          "label": "Workspaces",
-          "kind": "item",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "tab",
+          "label": "Progress",
           "level": 2,
           "order": 2,
-          "target": "console-list",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "home"
         },
         {
-          "label": "People",
-          "kind": "item",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "tab",
+          "label": "Knowledge",
           "level": 2,
           "order": 3,
-          "target": "console-people",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "home"
         },
         {
-          "label": "Waiting list",
-          "kind": "item",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "tab",
+          "label": "Skills",
           "level": 2,
           "order": 4,
-          "target": "console-waitlist",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "home"
         },
         {
-          "label": "Partners",
-          "kind": "item",
-          "level": 2,
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "place",
+          "label": "Rooms",
+          "level": 1,
           "order": 5,
-          "target": "console-partners",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "rooms-list"
         },
         {
-          "label": "Abuse",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
           "kind": "item",
+          "label": "Find people and services",
           "level": 2,
           "order": 6,
-          "target": "console-abuse",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "rooms-list"
         },
         {
-          "label": "Money",
-          "kind": "group",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "place",
+          "label": "Inbox",
           "level": 1,
           "order": 7,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "inbox"
         },
         {
-          "label": "Revenue",
-          "kind": "item",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "tab",
+          "label": "For me",
           "level": 2,
           "order": 8,
-          "target": "console-revenue",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "inbox"
         },
         {
-          "label": "Billing",
-          "kind": "item",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "tab",
+          "label": "Waiting on others",
           "level": 2,
           "order": 9,
-          "target": "console-billing",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "inbox"
         },
         {
-          "label": "Plans and pricing",
-          "kind": "item",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "tab",
+          "label": "All",
           "level": 2,
           "order": 10,
-          "target": "console-plans",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "inbox"
         },
         {
-          "label": "Models and routing",
-          "kind": "group",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "place",
+          "label": "Meetings",
           "level": 1,
           "order": 11,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "meetings-list"
         },
         {
-          "label": "Catalog",
-          "kind": "item",
-          "level": 2,
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "place",
+          "label": "Tasks",
+          "level": 1,
           "order": 12,
-          "target": "console-catalog",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "tasks"
         },
         {
-          "label": "Keys and providers",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
           "kind": "item",
+          "label": "Running",
           "level": 2,
           "order": 13,
-          "target": "console-keys",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "tasks"
         },
         {
-          "label": "Routing",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
           "kind": "item",
+          "label": "Scheduled",
           "level": 2,
           "order": 14,
-          "target": "console-routing",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "tasks"
         },
         {
-          "label": "Calls",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
           "kind": "item",
+          "label": "Done",
           "level": 2,
           "order": 15,
-          "target": "console-calls",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "tasks"
         },
         {
-          "label": "Quality",
-          "kind": "item",
-          "level": 2,
-          "order": 16,
-          "target": "console-quality",
-          "icon": false,
           "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Growth",
-          "kind": "group",
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "place",
+          "label": "Settings",
           "level": 1,
-          "order": 17,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "order": 16,
+          "target": "settings"
         },
         {
-          "label": "Funnel",
-          "kind": "item",
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Personal",
+          "level": 2,
+          "order": 17,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Workspace",
           "level": 2,
           "order": 18,
-          "target": "console-funnel",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Demand",
-          "kind": "item",
-          "level": 2,
-          "order": 19,
-          "target": "console-demand",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Analytics",
-          "kind": "item",
-          "level": 2,
-          "order": 20,
-          "target": "console-analytics",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "System",
-          "kind": "group",
-          "level": 1,
-          "order": 21,
-          "target": "unknown",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Health",
-          "kind": "item",
-          "level": 2,
-          "order": 22,
-          "target": "console-health",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Access",
-          "kind": "item",
-          "level": 2,
-          "order": 23,
-          "target": "console-access",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Audit",
-          "kind": "item",
-          "level": 2,
-          "order": 24,
-          "target": "console-audit",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
-        },
-        {
-          "label": "Settings",
-          "kind": "item",
-          "level": 2,
-          "order": 25,
-          "target": "console-settings",
-          "icon": false,
-          "badge": false,
-          "hiddenBehind": null
+          "target": "unknown"
         }
-      ],
+      ]
+    },
+    "console": {
       "derived": {
-        "rows": 21,
-        "places": 1,
-        "maxDepth": 2,
         "itemsPerLevel": {
           "1": 6,
           "2": 20
+        },
+        "maxDepth": 2,
+        "places": 1,
+        "rows": 21
+      },
+      "nodes": [
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "place",
+          "label": "Overview",
+          "level": 1,
+          "order": 0,
+          "target": "ops-overview"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Customers",
+          "level": 1,
+          "order": 1,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Workspaces",
+          "level": 2,
+          "order": 2,
+          "target": "ops-workspaces"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "People",
+          "level": 2,
+          "order": 3,
+          "target": "ops-people"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Waiting list",
+          "level": 2,
+          "order": 4,
+          "target": "ops-waiting-list"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Partners",
+          "level": 2,
+          "order": 5,
+          "target": "ops-partners"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Abuse",
+          "level": 2,
+          "order": 6,
+          "target": "ops-abuse"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Money",
+          "level": 1,
+          "order": 7,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Revenue",
+          "level": 2,
+          "order": 8,
+          "target": "ops-revenue"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Billing",
+          "level": 2,
+          "order": 9,
+          "target": "ops-billing"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Plans and pricing",
+          "level": 2,
+          "order": 10,
+          "target": "ops-plans-pricing"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Models and routing",
+          "level": 1,
+          "order": 11,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Catalog",
+          "level": 2,
+          "order": 12,
+          "target": "ops-catalog"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Keys and providers",
+          "level": 2,
+          "order": 13,
+          "target": "ops-keys-providers"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Routing",
+          "level": 2,
+          "order": 14,
+          "target": "ops-routing"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Calls",
+          "level": 2,
+          "order": 15,
+          "target": "ops-calls"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Quality",
+          "level": 2,
+          "order": 16,
+          "target": "ops-quality"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Growth",
+          "level": 1,
+          "order": 17,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Funnel",
+          "level": 2,
+          "order": 18,
+          "target": "ops-funnel"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Demand",
+          "level": 2,
+          "order": 19,
+          "target": "ops-demand"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Analytics",
+          "level": 2,
+          "order": 20,
+          "target": "ops-analytics"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "System",
+          "level": 1,
+          "order": 21,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Health",
+          "level": 2,
+          "order": 22,
+          "target": "ops-health"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Access",
+          "level": 2,
+          "order": 23,
+          "target": "ops-access"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Audit",
+          "level": 2,
+          "order": 24,
+          "target": "ops-audit"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Settings",
+          "level": 2,
+          "order": 25,
+          "target": "ops-settings"
         }
-      }
+      ]
+    },
+    "router": {
+      "derived": {
+        "itemsPerLevel": {
+          "1": 5,
+          "2": 10
+        },
+        "maxDepth": 2,
+        "places": 1,
+        "rows": 11
+      },
+      "nodes": [
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "place",
+          "label": "Overview",
+          "level": 1,
+          "order": 0,
+          "target": "router-overview"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Use",
+          "level": 1,
+          "order": 1,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Models",
+          "level": 2,
+          "order": 2,
+          "target": "router-models"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Keys and endpoints",
+          "level": 2,
+          "order": 3,
+          "target": "router-keys"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Observe",
+          "level": 1,
+          "order": 4,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Logs",
+          "level": 2,
+          "order": 5,
+          "target": "router-logs"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Usage",
+          "level": 2,
+          "order": 6,
+          "target": "router-usage"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Health",
+          "level": 2,
+          "order": 7,
+          "target": "router-health"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Control",
+          "level": 1,
+          "order": 8,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Routing",
+          "level": 2,
+          "order": 9,
+          "target": "router-routing"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Budgets and quotas",
+          "level": 2,
+          "order": 10,
+          "target": "router-budgets"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Providers",
+          "level": 2,
+          "order": 11,
+          "target": "router-providers"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "group",
+          "label": "Admin",
+          "level": 1,
+          "order": 12,
+          "target": "unknown"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Settings",
+          "level": 2,
+          "order": 13,
+          "target": "router-settings"
+        },
+        {
+          "badge": false,
+          "hiddenBehind": null,
+          "icon": false,
+          "kind": "item",
+          "label": "Docs",
+          "level": 2,
+          "order": 14,
+          "target": "router-docs"
+        }
+      ]
     }
-  }
+  },
+  "version": "2026-11-12",
+  "viewport": "1440x900"
 }

@@ -1,0 +1,303 @@
+{
+  "archetype": "conversation",
+  "domHash": "94120e1ca3201fd2fa847a1f23aad31fa6fdae48b807f34d178b58a8aca2ccab",
+  "fixture": {
+    "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
+    "status": "seeded"
+  },
+  "flow": null,
+  "image": {
+    "dhash": "4040404040404040",
+    "file": "blobs/ff96e940a0b5560b646fca1fd5c1b572e603c30c7bc4d81a1930e021d32d0cd9.png",
+    "sha256": "ff96e940a0b5560b646fca1fd5c1b572e603c30c7bc4d81a1930e021d32d0cd9"
+  },
+  "key": "cluttered@contract-1/room/populated/1440x900/member/en-US/light",
+  "layout": {
+    "contentStart": null,
+    "primary": {
+      "name": "One",
+      "x": 488,
+      "y": 82
+    },
+    "regions": [
+      {
+        "h": 900,
+        "kind": "rail",
+        "w": 56,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "h": 900,
+        "kind": "sidebar",
+        "w": 200,
+        "x": 56,
+        "y": 0
+      },
+      {
+        "h": 900,
+        "kind": "sidebar",
+        "w": 220,
+        "x": 256,
+        "y": 0
+      },
+      {
+        "h": 900,
+        "kind": "main",
+        "w": 964,
+        "x": 476,
+        "y": 0
+      }
+    ]
+  },
+  "locale": "en-US",
+  "masks": [],
+  "meta": {
+    "capturedAt": "2026-11-12T09:18:13.720Z",
+    "url": "http://127.0.0.1:47831/cluttered.html"
+  },
+  "metrics": {
+    "E1": {
+      "detail": [
+        "nav.a",
+        "aside.b",
+        "nav.c"
+      ],
+      "limit": 2,
+      "pass": false,
+      "value": 3
+    },
+    "E10": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E11": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E12": {
+      "detail": [
+        "nav.item.x.label"
+      ],
+      "limit": 0,
+      "pass": false,
+      "value": 1
+    },
+    "E2": {
+      "detail": [],
+      "limit": 0,
+      "pass": true,
+      "value": 0
+    },
+    "E3": {
+      "detail": [
+        "One",
+        "Two",
+        "Three",
+        "Four"
+      ],
+      "limit": 1,
+      "pass": false,
+      "value": 4
+    },
+    "E4": {
+      "detail": [],
+      "limit": 14,
+      "pass": true,
+      "value": 4
+    },
+    "E5": {
+      "detail": [
+        "dotted: nav.item.x.label",
+        "hex: 0305e82c3301",
+        "json: {\"user.id\":",
+        "uuid: 3f2504e0-4f89-11d3-",
+        "word:payload: payload"
+      ],
+      "limit": 0,
+      "pass": false,
+      "value": 5
+    },
+    "E6": {
+      "detail": [
+        "clipped: A very long label that is clipped"
+      ],
+      "limit": 0,
+      "pass": false,
+      "value": 1
+    },
+    "E7": {
+      "detail": [
+        "none"
+      ],
+      "limit": 0.25,
+      "pass": false,
+      "value": null
+    },
+    "E8": {
+      "detail": [],
+      "limit": 1,
+      "pass": true,
+      "value": 0
+    },
+    "E9": {
+      "detail": [
+        "div.box: —",
+        "div.box: —",
+        "div.box: —",
+        "div.box: —",
+        "div.box: —"
+      ],
+      "limit": 1,
+      "pass": false,
+      "value": 5
+    }
+  },
+  "net": {
+    "byType": {
+      "doc": 1,
+      "font": 0,
+      "image": 0,
+      "other": 0,
+      "script": 0,
+      "xhr": 0
+    },
+    "bytes": 2213,
+    "failed": [],
+    "requests": 1,
+    "slowest": {
+      "ms": 1,
+      "path": "/cluttered.html"
+    },
+    "thirdPartyHosts": 0,
+    "timing": {
+      "contentStartVisibleMs": 42,
+      "domContentLoadedMs": 5,
+      "firstContentfulPaintMs": 42,
+      "loadMs": 5
+    }
+  },
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reads": 3,
+      "reducedMotion": "reduce",
+      "stable": true,
+      "timezone": "UTC",
+      "viewport": {
+        "height": 900,
+        "width": 1440
+      }
+    },
+    "notes": [
+      "E8: no content-start element, counted 0",
+      "fallback used for E7: no [data-content-start] and no row-like element found"
+    ],
+    "version": "1"
+  },
+  "product": "cluttered",
+  "route": "/cluttered.html",
+  "schema": "ui-evidence/1",
+  "screen": "room",
+  "seat": "member",
+  "state": "populated",
+  "style": {
+    "color": {
+      "accent": "#0000ee",
+      "background": {
+        "#111111": 1,
+        "#dddddd": 1,
+        "#eeeeee": 1,
+        "#f0f0f0": 5
+      },
+      "border": {
+        "#000000": 5,
+        "#888888": 5
+      },
+      "distinctColors": 7,
+      "lowContrast": [
+        {
+          "ratio": 2.01,
+          "text": "I"
+        },
+        {
+          "ratio": 2.01,
+          "text": "M"
+        },
+        {
+          "ratio": 2.01,
+          "text": "R"
+        }
+      ],
+      "text": {
+        "#000000": 23,
+        "#0000ee": 8
+      }
+    },
+    "density": {
+      "elementsPerKpx": 0.04,
+      "textPerKpx": 0.15,
+      "whitespaceRatio": 0.78
+    },
+    "motion": {
+      "transitions": 0
+    },
+    "shape": {
+      "borders": 10,
+      "radius": {},
+      "shadows": 0
+    },
+    "space": {
+      "distinctValues": 8,
+      "onScale4": 0.59,
+      "values": {
+        "12px": 4,
+        "14px": 10,
+        "18.76px": 2,
+        "1px": 10,
+        "40px": 3,
+        "4px": 20,
+        "6px": 10,
+        "8px": 20
+      }
+    },
+    "type": {
+      "distinctSizes": 12,
+      "families": [
+        "Arial"
+      ],
+      "lineHeights": {
+        "normal": 31
+      },
+      "sizes": {
+        "10px": 1,
+        "11px": 1,
+        "12px": 1,
+        "13.3333px": 5,
+        "13px": 1,
+        "14px": 16,
+        "15px": 1,
+        "16px": 1,
+        "18px": 1,
+        "20px": 1,
+        "28px": 1,
+        "9px": 1
+      },
+      "weights": {
+        "400": 30,
+        "700": 1
+      }
+    }
+  },
+  "theme": "light",
+  "unstable": false,
+  "version": "contract-1",
+  "viewport": "1440x900"
+}
