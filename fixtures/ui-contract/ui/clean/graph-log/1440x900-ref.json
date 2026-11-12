@@ -260,6 +260,7 @@
   "seat": "ref",
   "summary": {
     "actions": 21,
+    "beacons": 0,
     "blockedWrites": 1,
     "clicked": 11,
     "mutatingClicked": 0,

@@ -152,6 +152,7 @@
   "seat": "member",
   "summary": {
     "actions": 12,
+    "beacons": 0,
     "blockedWrites": 1,
     "clicked": 8,
     "mutatingClicked": 0,
