@@ -17,7 +17,12 @@ fn ui_schema(props: Value, required: &[&str]) -> Value {
     let mut p = props;
     p.as_object_mut().unwrap().extend(
         json!({ "ui_root": {"type":"string","description":"directory holding ui/ (default: the server root)"},
-                "max_nodes": {"type":"integer","minimum":1,"maximum":2000,"description":"files read at most, default 200; truncation is reported in limitations"} })
+                "max_nodes": {"type":"integer","minimum":1,"maximum":2000,"description":"files read at most, default 200; truncation is reported in limitations"},
+                "allow_input_drift": {"type":"boolean","description":"compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"},
+                "cursor": {"type":"string","description":"the page.next of a previous answer (listing tools)"},
+                "page_size": {"type":"integer","minimum":1,"maximum":500,"description":"items per page of a listing, default 50"},
+                "locale": {"type":"string","description":"locale of the capture to select, default en-US"},
+                "theme": {"type":"string","description":"theme of the capture to select, default light"} })
         .as_object()
         .unwrap()
         .clone(),
@@ -99,6 +104,7 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_dead_code", "Dead-code CANDIDATES (confidence unknown: dynamic dispatch is invisible). Paged.", schema(json!({
             "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500}, "cursor": {"type":"string"},
             "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
+        tool("comparegraph_ui_limits", "UI evidence: every cap the ui tools apply (max_nodes, file size, page size, path length) with its unit, control and what is reported when it is hit. Reads nothing.", ui_schema(json!({}), &[])),
         tool("comparegraph_ui_products", "UI evidence: products with screens, evidence files, states, flows, menu trees. Reads files under ui_root/ui only.", ui_schema(json!({}), &[])),
         tool("comparegraph_ui_screens", "UI evidence: the screens of a product with archetype, states and captures.", ui_schema(json!({"product":{"type":"string"}}), &["product"])),
         tool("comparegraph_ui_show", "UI evidence: one capture (product, screen, state, viewport, seat) with metrics E1..E12 pass/fail against the archetype limits, layout and style summaries and the image path.", ui_schema(json!({
@@ -124,7 +130,7 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_ui_journey", "UI evidence: a journey per product: completed, partial at step N, or n/a with the reason, and screens, clicks, decisions, waits, dead ends, time to first useful thing.", ui_schema(json!({
             "journey":{"type":"string"}, "products":{"type":"string","description":"comma list"} }), &["journey"])),
         tool("comparegraph_ui_coverage", "UI evidence: the coverage table of a run (captured / n/a / failed per product); a blank cell makes the run incomplete and is listed.", ui_schema(json!({"run":{"type":"string"}}), &["run"])),
-        tool("comparegraph_ui_verify", "UI evidence: the determinism gate. For every capture key present in both runs, domHash and metrics must be equal, the image dHash within 4 bits and net.failed equal; every difference is reported (check_failed with the list in data when any). Give run_a and run_b (two runs of one root; refused when they share evidence files) or root_a and root_b (two ui roots holding one run each, matched without the version).", ui_schema(json!({"run_a":{"type":"string"}, "run_b":{"type":"string"}, "root_a":{"type":"string","description":"ui root holding one run"}, "root_b":{"type":"string","description":"ui root holding one run"}}), &[])),
+        tool("comparegraph_ui_verify", "UI evidence: the determinism gate. FAILS (check_failed) on any difference, a partial comparison, a key on one side only, an unstable capture, inputs that differ (unless allow_input_drift) or, with integrity, a changed file. For every capture key present in both runs, domHash and metrics must be equal, the image dHash within 4 bits and net.failed equal; every difference is reported (check_failed with the list in data when any). Give run_a and run_b (two runs of one root; refused when they share evidence files) or root_a and root_b (two ui roots holding one run each, matched without the version).", ui_schema(json!({"run_a":{"type":"string"}, "run_b":{"type":"string"}, "root_a":{"type":"string","description":"ui root holding one run"}, "root_b":{"type":"string","description":"ui root holding one run"}, "integrity":{"type":"boolean","description":"also re-hash every evidence file and image blob of both runs against the digests the probe recorded"}}), &[])),
         tool("comparegraph_doctor", "Report the store and every provider. Returns a compact envelope.", schema(json!({}), &[])),
     ]
 }
@@ -171,6 +177,8 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
     if !a.is_object() {
         return Err("arguments must be an object".into());
     }
+    // the arguments every ui tool shares (ui_schema)
+    const UI_COMMON: &[&str] = &["allow_input_drift", "cursor", "page_size", "locale", "theme"];
     let known: &[&str] = match name {
         "comparegraph_check" | "comparegraph_doctor" => &[],
         "comparegraph_repos" => &["limit", "cursor"],
@@ -207,7 +215,8 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             "comparegraph_ui_graph_diff" => &["ours", "ref", "viewport", "seat", "ref_seat", "tree", "ui_root", "max_nodes"],
             "comparegraph_ui_journey" => &["journey", "products", "ui_root", "max_nodes"],
             "comparegraph_ui_coverage" => &["run", "ui_root", "max_nodes"],
-            "comparegraph_ui_verify" => &["run_a", "run_b", "root_a", "root_b", "ui_root", "max_nodes"],
+            "comparegraph_ui_verify" => &["run_a", "run_b", "root_a", "root_b", "integrity", "ui_root", "max_nodes"],
+            "comparegraph_ui_limits" => &["ui_root", "max_nodes"],
             _ => return Err(format!("unknown tool {name}")),
         },
         "comparegraph_claim" => &[
@@ -219,7 +228,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         .as_object()
         .unwrap()
         .keys()
-        .find(|k| !known.contains(&k.as_str()))
+        .find(|k| !known.contains(&k.as_str()) && !(name.starts_with("comparegraph_ui_") && UI_COMMON.contains(&k.as_str())))
     {
         return Err(format!("unknown argument {k}"));
     }
@@ -338,6 +347,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         },
         n if n.starts_with("comparegraph_ui_") => {
             let s = |k: &str| str_arg(a, k);
+            let flag = |k: &str| -> Result<bool, String> { match a.get(k) { None | Some(Value::Null) => Ok(false), Some(Value::Bool(b)) => Ok(*b), Some(_) => Err(format!("{k} must be a boolean")) } };
             let state = || -> Result<String, String> { Ok(s("state")?.unwrap_or_else(|| "populated".into())) };
             let what = match n {
                 "comparegraph_ui_products" => UiCmd::Products,
@@ -356,9 +366,19 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 "comparegraph_ui_graph_diff" => UiCmd::GraphDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")?, tree: s("tree")? },
                 "comparegraph_ui_journey" => UiCmd::Journey { journey: req(a, "journey")?, products: s("products")? },
                 "comparegraph_ui_coverage" => UiCmd::Coverage { run: req(a, "run")? },
-                _ => UiCmd::Verify { run_a: s("run_a")?, run_b: s("run_b")?, root_a: s("root_a")?.map(PathBuf::from), root_b: s("root_b")?.map(PathBuf::from) },
+                "comparegraph_ui_limits" => UiCmd::Limits,
+                _ => UiCmd::Verify { run_a: s("run_a")?, run_b: s("run_b")?, root_a: s("root_a")?.map(PathBuf::from), root_b: s("root_b")?.map(PathBuf::from), integrity: flag("integrity")? },
             };
-            Cmd::Ui { ui_root: s("ui_root")?.map(PathBuf::from), max_nodes: uint_arg(a, "max_nodes", 200)?, what }
+            Cmd::Ui {
+                ui_root: s("ui_root")?.map(PathBuf::from),
+                max_nodes: uint_arg(a, "max_nodes", 200)?,
+                allow_input_drift: flag("allow_input_drift")?,
+                cursor: s("cursor")?,
+                page_size: match a.get("page_size") { None | Some(Value::Null) => None, Some(_) => Some(uint_arg(a, "page_size", 50)?) },
+                locale: s("locale")?,
+                theme: s("theme")?,
+                what,
+            }
         }
         "comparegraph_matrix" => Cmd::Matrix {
             family: req(a, "family")?,

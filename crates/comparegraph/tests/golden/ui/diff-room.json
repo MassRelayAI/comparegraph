@@ -15,6 +15,7 @@
       "route": "/rooms/1",
       "domHash": "df65cbb7cc5e1e9b92129ce86a31fd3336708efab35448be41f0115206036ad9",
       "pass": 5,
+      "unstable": false,
       "image": {
         "sha256": "82a863b49326dda66ddebb1e9822598c95d60a07792cdc9c07b0f1e196f8ee49",
         "dhash": "ffff0000ffff0000",
@@ -29,6 +30,7 @@
       "route": "/c/1",
       "domHash": "a41749da8e04fb47d28b2b3fe1540e6d6dfe8ead01ac956d309401d34708d268",
       "pass": 11,
+      "unstable": false,
       "image": {
         "sha256": "4d33ec8256fec83820159ed5fd54c7c58bb1b5fde5892fb61e902004927fc940",
         "dhash": "00ff00ff00ff00ff",
@@ -47,12 +49,16 @@
         "ours": {
           "value": 3,
           "limit": 2,
-          "pass": false
+          "pass": false,
+          "probePass": false,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 2,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": 2
       },
@@ -61,12 +67,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       },
@@ -75,12 +85,16 @@
         "ours": {
           "value": 0,
           "limit": 1,
-          "pass": false
+          "pass": false,
+          "probePass": false,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 1,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": 1
       },
@@ -89,12 +103,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       },
@@ -103,12 +121,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": false
+          "pass": false,
+          "probePass": false,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       },
@@ -117,12 +139,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       },
@@ -131,12 +157,16 @@
         "ours": {
           "value": 352,
           "limit": 200,
-          "pass": false
+          "pass": false,
+          "probePass": false,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 120,
           "limit": 200,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": 200
       },
@@ -145,12 +175,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": false
+          "pass": false,
+          "probePass": false,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       },
@@ -159,12 +193,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       },
@@ -173,12 +211,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": false
+          "pass": false,
+          "probePass": false,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": false
+          "pass": false,
+          "probePass": false,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       },
@@ -187,12 +229,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       },
@@ -201,12 +247,16 @@
         "ours": {
           "value": 1,
           "limit": 5,
-          "pass": false
+          "pass": false,
+          "probePass": false,
+          "limitSource": "probe-default"
         },
         "ref": {
           "value": 1,
           "limit": 5,
-          "pass": true
+          "pass": true,
+          "probePass": true,
+          "limitSource": "reference-seat"
         },
         "archetypeLimit": null
       }
@@ -244,6 +294,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 2819
+    "bytes": 4001
   }
 }

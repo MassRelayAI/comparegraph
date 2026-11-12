@@ -79,7 +79,7 @@ impl Envelope {
             error: Some(ErrorBody {
                 code: e.code(),
                 message: e.to_string(),
-                hint: None,
+                hint: e.hint(),
                 data: e.data(),
             }),
         }

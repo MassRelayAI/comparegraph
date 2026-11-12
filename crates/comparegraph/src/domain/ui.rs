@@ -422,8 +422,30 @@ pub struct UiRun {
     pub schema: String,
     pub run_id: String,
     pub captures: BTreeMap<String, String>,
+    /// what the run was made from (probe version, registry/archetypes/fixture digests, env ...); absent in runs from before CMP-UI-1h
+    #[serde(default)]
+    pub inputs: Option<Value>,
+    /// evidence file (relative to `ui/`) -> sha256 of its bytes, written by the probe when it wrote the file
+    #[serde(default)]
+    pub evidence_sha256: BTreeMap<String, String>,
+    /// capture keys of this run whose stability check failed
+    #[serde(default)]
+    pub unstable: Vec<String>,
 }
+/// The `inputs` of a run that must be equal for two runs to be comparable.
+pub const RUN_INPUT_FIELDS: &[&str] = &["probeVersion", "registryVersion", "registryDigest", "archetypesDigest", "fixtureHash", "env"];
 impl UiRun {
+    /// Fields of `inputs` that differ (or that either run never recorded): `[{field, a, b}]`. Empty means comparable.
+    pub fn input_drift(&self, other: &UiRun) -> Vec<Value> {
+        let get = |r: &UiRun, f: &str| r.inputs.as_ref().and_then(|i| i.get(f)).cloned();
+        RUN_INPUT_FIELDS
+            .iter()
+            .filter_map(|f| {
+                let (a, b) = (get(self, f), get(other, f));
+                (a.is_none() || b.is_none() || a != b).then(|| serde_json::json!({ "field": f, "a": a.unwrap_or_else(|| serde_json::json!("not recorded")), "b": b.unwrap_or_else(|| serde_json::json!("not recorded")) }))
+            })
+            .collect()
+    }
     pub fn problems(&self, stem: &str) -> Vec<String> {
         let mut p = vec![];
         if self.schema != RUN_SCHEMA {
@@ -435,6 +457,11 @@ impl UiRun {
         for (k, f) in &self.captures {
             if !safe_rel(f) || !f.ends_with(".json") {
                 p.push(format!("capture `{k}` names an unsafe file `{f}`"));
+            }
+        }
+        for (f, h) in &self.evidence_sha256 {
+            if !safe_rel(f) || !sha_ok(h) {
+                p.push(format!("evidenceSha256 `{f}` is not a safe path with a 64-hex digest"));
             }
         }
         p
@@ -496,6 +523,12 @@ pub struct ArchetypeEntry {
 pub struct UiArchetypes {
     pub schema: String,
     pub archetypes: BTreeMap<String, ArchetypeEntry>,
+    /// per state: metric -> a rule written in prose; where one exists, the probe's verdict stands (the numeric limit is not applied)
+    #[serde(default, rename = "stateRules")]
+    pub state_rules: BTreeMap<String, Value>,
+    /// per seat: metric -> a rule written in prose (reference seats are never gated)
+    #[serde(default, rename = "seatOverrides")]
+    pub seat_overrides: BTreeMap<String, Value>,
 }
 impl UiArchetypes {
     pub fn problems(&self) -> Vec<String> {

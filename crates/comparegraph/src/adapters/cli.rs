@@ -164,7 +164,12 @@ pub enum UiCmd {
         /// ui root holding one run (instead of run ids)
         #[arg(long, requires = "root_a")]
         root_b: Option<PathBuf>,
+        /// also re-hash every evidence file and image blob of both runs against the digests the probe recorded (integrity_mismatch when one changed)
+        #[arg(long)]
+        integrity: bool,
     },
+    /// Every cap the UI verbs apply (max-nodes, file size, page size, path length ...) with its unit and what is reported when it is hit
+    Limits,
 }
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -520,6 +525,21 @@ pub enum Cmd {
         /// files read at most (default 200, max 2000); a truncated answer says so in evidence.limitations
         #[arg(long, global = true, default_value_t = 200)]
         max_nodes: usize,
+        /// compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is then stated in limitations
+        #[arg(long, global = true)]
+        allow_input_drift: bool,
+        /// the cursor of the next page (the `page.next` of a previous answer) for the listing verbs
+        #[arg(long, global = true)]
+        cursor: Option<String>,
+        /// items per page of a listing (default 50, max 500)
+        #[arg(long, global = true)]
+        page_size: Option<usize>,
+        /// the locale of the capture to select (default en-US)
+        #[arg(long, global = true)]
+        locale: Option<String>,
+        /// the theme of the capture to select (default light)
+        #[arg(long, global = true)]
+        theme: Option<String>,
         #[command(subcommand)]
         what: UiCmd,
     },
@@ -636,6 +656,7 @@ fn verb_of(c: &Cmd) -> &'static str {
             UiCmd::Journey { .. } => "ui-journey",
             UiCmd::Coverage { .. } => "ui-coverage",
             UiCmd::Verify { .. } => "ui-verify",
+            UiCmd::Limits => "ui-limits",
         },
     }
 }
@@ -1292,8 +1313,10 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             let total = items.len();
             serde_json::json!({ "items": items, "page": { "next": null, "total": total } })
         }
-        Cmd::Ui { ui_root, max_nodes, what } => {
+        Cmd::Ui { ui_root, max_nodes, allow_input_drift, cursor, page_size, locale, theme, what } => {
             use crate::application::ui as u;
+            let o = u::Opts::from_flags(*allow_input_drift, cursor.as_deref(), *page_size, locale.as_deref(), theme.as_deref())?;
+            let o = &o;
             let ur = ui_root.clone().unwrap_or_else(|| cli.root.clone());
             let (ur, m) = (ur.as_path(), *max_nodes);
             fn vp(o: &Option<String>) -> Option<&str> {
@@ -1303,13 +1326,14 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 s
             }
             match what {
-                UiCmd::Products => u::products(ur, m)?,
-                UiCmd::Screens { product } => u::screens(ur, m, product)?,
-                UiCmd::Show { product, screen, state, viewport, seat } => u::show(ur, m, product, screen, st(state), vp(viewport), vp(seat))?,
+                UiCmd::Products => u::products(ur, m, o)?,
+                UiCmd::Limits => crate::application::ui_limits::limits(),
+                UiCmd::Screens { product } => u::screens(ur, m, product, o)?,
+                UiCmd::Show { product, screen, state, viewport, seat } => u::show(ur, m, product, screen, st(state), vp(viewport), vp(seat), o)?,
                 UiCmd::Diff { target, ours, refp, state, viewport, seat, ref_seat } => {
-                    u::diff(ur, m, target, ours, refp, st(state), vp(viewport), vp(seat), vp(ref_seat))?
+                    u::diff(ur, m, target, ours, refp, st(state), vp(viewport), vp(seat), vp(ref_seat), o)?
                 }
-                UiCmd::Matrix { family, state, viewport, net } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport), *net)?,
+                UiCmd::Matrix { family, state, viewport, net } => u::matrix(&cli.root, ur, m, family, st(state), vp(viewport), *net, o)?,
                 UiCmd::System { product } => u::system(ur, m, product)?,
                 UiCmd::Flow { product, task } => u::flow(ur, m, product, task)?,
                 UiCmd::Nav { product, viewport, seat } => u::nav(ur, m, product, vp(viewport), vp(seat))?,
@@ -1319,13 +1343,13 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 UiCmd::GraphDiff { ours, refp, viewport, seat, ref_seat, tree } => crate::application::ui_graph::graph_diff(ur, m, ours, refp, vp(viewport), vp(seat), vp(ref_seat), vp(tree))?,
                 UiCmd::Journey { journey, products } => {
                     let ps: Vec<String> = products.as_deref().map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default();
-                    u::journey(ur, journey, &ps)?
+                    u::journey(ur, journey, &ps, o)?
                 }
                 UiCmd::Coverage { run } => u::coverage(ur, run)?,
-                UiCmd::Verify { run_a, run_b, root_a, root_b } => {
+                UiCmd::Verify { run_a, run_b, root_a, root_b, integrity } => {
                     let r = match (run_a, run_b, root_a, root_b) {
-                        (None, None, Some(a), Some(b)) => u::verify_roots(a, b, m),
-                        (Some(a), Some(b), None, None) => u::verify(ur, m, a, b),
+                        (None, None, Some(a), Some(b)) => u::verify_roots(a, b, m, o, *integrity),
+                        (Some(a), Some(b), None, None) => u::verify(ur, m, a, b, o, *integrity),
                         _ => return Err(AppError::InvalidArguments("ui verify takes two run ids (RUN_A RUN_B) or --root-a DIR --root-b DIR, not a mix".into())),
                     };
                     match r {

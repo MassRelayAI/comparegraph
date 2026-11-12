@@ -587,6 +587,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -634,6 +656,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -666,6 +710,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -701,6 +767,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -744,6 +832,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -776,11 +886,77 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
           "journey"
         ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_limits",
+      "description": "UI evidence: every cap the ui tools apply (max_nodes, file size, page size, path length) with its unit, control and what is reported when it is hit. Reads nothing.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
+          }
+        },
+        "required": [],
         "additionalProperties": false
       }
     },
@@ -815,6 +991,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -849,6 +1047,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -888,6 +1108,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -933,6 +1175,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -959,6 +1223,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [],
@@ -984,6 +1270,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -1032,6 +1340,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -1060,6 +1390,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [
@@ -1070,7 +1422,7 @@
     },
     {
       "name": "comparegraph_ui_verify",
-      "description": "UI evidence: the determinism gate. For every capture key present in both runs, domHash and metrics must be equal, the image dHash within 4 bits and net.failed equal; every difference is reported (check_failed with the list in data when any). Give run_a and run_b (two runs of one root; refused when they share evidence files) or root_a and root_b (two ui roots holding one run each, matched without the version).",
+      "description": "UI evidence: the determinism gate. FAILS (check_failed) on any difference, a partial comparison, a key on one side only, an unstable capture, inputs that differ (unless allow_input_drift) or, with integrity, a changed file. For every capture key present in both runs, domHash and metrics must be equal, the image dHash within 4 bits and net.failed equal; every difference is reported (check_failed with the list in data when any). Give run_a and run_b (two runs of one root; refused when they share evidence files) or root_a and root_b (two ui roots holding one run each, matched without the version).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1089,6 +1441,10 @@
             "type": "string",
             "description": "ui root holding one run"
           },
+          "integrity": {
+            "type": "boolean",
+            "description": "also re-hash every evidence file and image blob of both runs against the digests the probe recorded"
+          },
           "ui_root": {
             "type": "string",
             "description": "directory holding ui/ (default: the server root)"
@@ -1098,6 +1454,28 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "files read at most, default 200; truncation is reported in limitations"
+          },
+          "allow_input_drift": {
+            "type": "boolean",
+            "description": "compare runs/captures made from different inputs (probe version, registry, archetypes, fixture, env); the drift is stated in limitations"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "the page.next of a previous answer (listing tools)"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "items per page of a listing, default 50"
+          },
+          "locale": {
+            "type": "string",
+            "description": "locale of the capture to select, default en-US"
+          },
+          "theme": {
+            "type": "string",
+            "description": "theme of the capture to select, default light"
           }
         },
         "required": [],

@@ -11,9 +11,8 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-pub const DEFAULT_MAX_NODES: usize = 200;
-pub const MAX_NODES: usize = 2000;
-const MAX_FILE: u64 = 1 << 20;
+pub use super::ui_limits::{DEFAULT_MAX_NODES, DEFAULT_PAGE_SIZE, MAX_NODES, MAX_PAGE_SIZE};
+use super::ui_limits::{MAX_BLANK_LISTED, MAX_FILE, MAX_INVALID_LISTED, PHONE_MAX_WIDTH};
 /// Top-level directories of `ui/` that are not products.
 const TOP_RESERVED: &[&str] = &["blobs", "snapshots", "runs", "journeys", "coverage"];
 const SEAT_PREFERENCE: &[&str] = &["member", "admin", "ref", "operator", "admin-dev", "guest"];
@@ -31,6 +30,43 @@ pub struct Want {
     pub systems: bool,
     pub graphs: bool,
 }
+/// Options shared by the UI verbs (global flags of `comparegraph ui`): paging, which locale/theme to select, and the input-drift override.
+#[derive(Clone, Debug)]
+pub struct Opts {
+    pub allow_drift: bool,
+    pub cursor: usize,
+    pub page_size: usize,
+    pub locale: String,
+    pub theme: String,
+}
+impl Default for Opts {
+    fn default() -> Self {
+        Opts { allow_drift: false, cursor: 0, page_size: DEFAULT_PAGE_SIZE, locale: DEFAULT_LOCALE.into(), theme: DEFAULT_THEME.into() }
+    }
+}
+impl Opts {
+    /// From the raw flags: a malformed cursor is refused, a page size is clamped to 1..MAX_PAGE_SIZE.
+    pub fn from_flags(allow_drift: bool, cursor: Option<&str>, page_size: Option<usize>, locale: Option<&str>, theme: Option<&str>) -> Result<Opts> {
+        let cursor = match cursor {
+            None => 0,
+            Some(c) => c.parse::<usize>().map_err(|_| bad(format!("bad cursor `{c}`: pass the `page.next` of a previous answer")))?,
+        };
+        for (w, v) in [("--locale", locale), ("--theme", theme)] {
+            if let Some(v) = v {
+                need_token(w, v)?;
+            }
+        }
+        Ok(Opts { allow_drift, cursor, page_size: page_size.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE), locale: locale.unwrap_or(DEFAULT_LOCALE).into(), theme: theme.unwrap_or(DEFAULT_THEME).into() })
+    }
+    /// One page of a listing: the slice from the cursor, the next cursor (None at the end) and the total.
+    pub fn page<T: Clone>(&self, all: &[T]) -> (Vec<T>, Option<String>, usize) {
+        let total = all.len();
+        let from = self.cursor.min(total);
+        let to = (from + self.page_size).min(total);
+        (all[from..to].to_vec(), (to < total).then(|| to.to_string()), total)
+    }
+}
+
 pub struct UiSet {
     /// the `ui-root` as given, for the paths we print
     pub shown: String,
@@ -47,6 +83,11 @@ pub struct UiSet {
     pub registry: Option<UiRegistry>,
     pub invalid: Vec<(String, String)>,
     pub truncated: bool,
+    /// products whose directory was not (fully) read because the file cap was hit: their cells are UNREAD, not absent
+    pub unread: BTreeSet<String>,
+    /// (state, metric) and (seat, metric) pairs for which archetypes.json states a rule in prose: the probe's verdict stands there
+    pub state_rules: BTreeSet<(String, String)>,
+    pub seat_rules: BTreeSet<(String, String)>,
     max_nodes: usize,
     count: usize,
 }
@@ -127,13 +168,26 @@ impl UiSet {
     fn limitations(&self, extra: &[Limitation]) -> Value {
         let mut l: Vec<Limitation> = vec![];
         if self.truncated {
-            l.push(Limitation::new("truncated", format!("stopped after {} files (--max-nodes); raise it to read more", self.max_nodes)));
+            let (n, max) = (self.max_nodes, MAX_NODES);
+            let what = if n >= max {
+                format!("stopped after {n} files (--max-nodes {n}, the maximum {max}); ask a narrower question (one product, one screen) or page with --cursor: there is nothing higher to raise")
+            } else {
+                format!("stopped after {n} files (--max-nodes {n}); raise --max-nodes up to {max} to read more")
+            };
+            l.push(Limitation::new("truncated", what).with_data(json!({ "control": "max_nodes", "value": n, "max": max, "unreadProducts": self.unread })));
         }
-        for (rel, why) in self.invalid.iter().take(20) {
+        if !self.unread.is_empty() {
+            l.push(Limitation::new("products_unread", format!("not read (file cap): {}; their cells are `?`, not absent", self.unread.iter().cloned().collect::<Vec<_>>().join(", "))));
+        }
+        let unstable: Vec<String> = self.evidence.iter().filter(|x| x.ev.unstable).map(|x| x.ev.capture_key()).collect();
+        if !unstable.is_empty() {
+            l.push(Limitation::new("unstable_excluded", format!("{} unstable capture(s) are excluded from pass counts and gates: {}", unstable.len(), unstable.iter().take(5).cloned().collect::<Vec<_>>().join(", "))).with_data(json!({ "count": unstable.len(), "keys": unstable })));
+        }
+        for (rel, why) in self.invalid.iter().take(MAX_INVALID_LISTED) {
             l.push(Limitation::new("invalid_evidence", format!("{rel}: {why}")));
         }
-        if self.invalid.len() > 20 {
-            l.push(Limitation::new("invalid_evidence", format!("and {} more invalid files", self.invalid.len() - 20)));
+        if self.invalid.len() > MAX_INVALID_LISTED {
+            l.push(Limitation::new("invalid_evidence", format!("and {} more invalid files", self.invalid.len() - MAX_INVALID_LISTED)));
         }
         l.extend(extra.iter().cloned());
         serde_json::to_value(l).unwrap()
@@ -155,7 +209,7 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
     }
     let mut set = UiSet {
         shown: slash(&root.display().to_string()), dir: dir.clone(), nested, products: BTreeSet::new(), evidence: vec![], flows: vec![], navs: vec![], graphs: vec![],
-        systems: BTreeMap::new(), map: vec![], registry: None, invalid: vec![], truncated: false, max_nodes, count: 0,
+        systems: BTreeMap::new(), map: vec![], registry: None, invalid: vec![], truncated: false, unread: BTreeSet::new(), state_rules: BTreeSet::new(), seat_rules: BTreeSet::new(), max_nodes, count: 0,
     };
     if std::fs::symlink_metadata(dir.join("map.csv")).is_ok() {
         match read_text(&dir.join("map.csv")).and_then(|t| parse_map(&t)) {
@@ -174,6 +228,16 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
     if dir.join("archetypes.json").exists() {
         match read_json::<UiArchetypes>(&dir.join("archetypes.json")) {
             Ok(a) if a.problems().is_empty() => {
+                for (state, rules) in &a.state_rules {
+                    for id in rules.as_object().into_iter().flat_map(|o| o.keys()).filter(|k| metric_no(k).is_some()) {
+                        set.state_rules.insert((state.clone(), id.clone()));
+                    }
+                }
+                for (seat, rules) in &a.seat_overrides {
+                    for id in rules.as_object().into_iter().flat_map(|o| o.keys()).filter(|k| metric_no(k).is_some()) {
+                        set.seat_rules.insert((seat.clone(), id.clone()));
+                    }
+                }
                 if let Some(r) = set.registry.as_mut() {
                     for (name, e) in a.archetypes {
                         r.archetypes.entry(name).or_insert(e.limits);
@@ -190,6 +254,10 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
         }
         set.products.insert(product.clone());
         if only.is_some_and(|o| !o.contains(&product.as_str())) {
+            continue;
+        }
+        if set.truncated {
+            set.unread.insert(product.clone());
             continue;
         }
         for (name, path, is_dir) in entries(&ppath)? {
@@ -285,6 +353,9 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
                 _ => {}
             }
         }
+        if set.truncated {
+            set.unread.insert(product.clone()); // the cap was hit inside this product: it is only partly read
+        }
     }
     Ok(set)
 }
@@ -297,7 +368,8 @@ pub(super) fn need_product_pub(set: &UiSet, product: &str) -> Result<()> {
     if set.products.contains(product) {
         Ok(())
     } else {
-        Err(AppError::NotFound(format!("no product `{product}` (products: {})", set.products.iter().cloned().collect::<Vec<_>>().join(", "))))
+        let cands: Vec<String> = set.products.iter().cloned().collect();
+        Err(AppError::not_found_with(format!("no product `{product}` (products: {})", cands.join(", ")), product, cands, "list the products with `comparegraph ui products`"))
     }
 }
 fn available(cands: &[&Loaded]) -> String {
@@ -307,19 +379,27 @@ pub(super) fn seat_rank(seat: &str) -> usize {
     SEAT_PREFERENCE.iter().position(|s| *s == seat).unwrap_or(SEAT_PREFERENCE.len())
 }
 /// The one evidence file for product/screen/state; `viewport` None prefers 1440x900. Never crosses state.
-fn select<'a>(set: &'a UiSet, product: &str, screen: &str, state: &str, viewport: Option<&str>, seat: Option<&str>) -> Result<&'a Loaded> {
+fn select<'a>(set: &'a UiSet, product: &str, screen: &str, state: &str, viewport: Option<&str>, seat: Option<&str>, o: &Opts) -> Result<&'a Loaded> {
     need_product_pub(set, product)?;
-    let of_screen: Vec<&Loaded> = set.evidence_of(product).filter(|l| l.ev.screen == screen).collect();
+    // locale and theme are part of the key: the default is en-US/light, never "whichever file sorts first"
+    let of_screen: Vec<&Loaded> = set.evidence_of(product).filter(|l| l.ev.screen == screen && l.ev.locale == o.locale && l.ev.theme == o.theme).collect();
     if of_screen.is_empty() {
-        return Err(AppError::NotFound(format!("product `{product}` has no screen `{screen}` (screens: {})", screens_of(set, product).into_iter().collect::<Vec<_>>().join(", "))));
+        let other: Vec<String> = set.evidence_of(product).filter(|l| l.ev.screen == screen).map(|l| format!("{}/{}", l.ev.locale, l.ev.theme)).collect::<BTreeSet<_>>().into_iter().collect();
+        if !other.is_empty() {
+            return Err(AppError::not_found_with(format!("`{product}/{screen}` has no capture for locale {} theme {} (captured: {})", o.locale, o.theme, other.join(", ")), &format!("{}/{}", o.locale, o.theme), other, "pass --locale and --theme for one of the captured pairs"));
+        }
+        let cands: Vec<String> = screens_of(set, product).into_iter().map(String::from).collect();
+        return Err(AppError::not_found_with(format!("product `{product}` has no screen `{screen}` (screens: {})", cands.join(", ")), screen, cands, &format!("list the screens with `comparegraph ui screens {product}`")));
     }
     let in_state: Vec<&Loaded> = of_screen.iter().copied().filter(|l| l.ev.state == state).collect();
     if in_state.is_empty() {
-        return Err(AppError::NotFound(format!("`{product}/{screen}` has no state `{state}` (captured: {})", available(&of_screen))));
+        let cands: Vec<String> = of_screen.iter().map(|l| l.ev.state.clone()).collect::<BTreeSet<_>>().into_iter().collect();
+        return Err(AppError::not_found_with(format!("`{product}/{screen}` has no state `{state}` (captured: {})", available(&of_screen)), state, cands, &format!("pass --state with a captured state, or see `comparegraph ui screens {product}`")));
     }
     let mut c: Vec<&Loaded> = in_state.iter().copied().filter(|l| viewport.is_none_or(|v| l.ev.viewport == v) && seat.is_none_or(|s| l.ev.seat == s)).collect();
     if c.is_empty() {
-        return Err(AppError::NotFound(format!("`{product}/{screen}/{state}` has no capture for viewport {} seat {} (captured: {})", viewport.unwrap_or("any"), seat.unwrap_or("any"), available(&in_state))));
+        let cands: Vec<String> = in_state.iter().map(|l| l.ev.stem()).collect();
+        return Err(AppError::not_found_with(format!("`{product}/{screen}/{state}` has no capture for viewport {} seat {} (captured: {})", viewport.unwrap_or("any"), seat.unwrap_or("any"), available(&in_state)), &format!("{}/{}", viewport.unwrap_or("any"), seat.unwrap_or("any")), cands, "pass --viewport and --seat for one of the captured pairs"));
     }
     if viewport.is_none() && c.iter().any(|l| l.ev.viewport == DEFAULT_VIEWPORT) {
         c.retain(|l| l.ev.viewport == DEFAULT_VIEWPORT);
@@ -333,6 +413,64 @@ fn archetype_limits(set: &UiSet, screen: &str) -> (Option<String>, BTreeMap<Stri
         Some((a, l)) => (Some(a), l),
         None => (None, BTreeMap::new()),
     }
+}
+/// The device class (the column of the archetype limits) of a viewport "WxH".
+fn device_of(viewport: &str) -> &'static str {
+    let w = viewport.split('x').next().and_then(|w| w.parse::<u32>().ok()).unwrap_or(u32::MAX);
+    if w <= PHONE_MAX_WIDTH {
+        "phone"
+    } else {
+        "desktop"
+    }
+}
+fn parse_limit(s: &str) -> Option<(&'static str, f64)> {
+    let s = s.trim();
+    for op in ["<=", ">=", "<", ">", "="] {
+        if let Some(rest) = s.strip_prefix(op) {
+            return rest.trim().parse::<f64>().ok().map(|n| (op, n));
+        }
+    }
+    None
+}
+/// One metric after the engine's verdict: pass, the limit it was judged by, where that limit came from, and the probe's own (advisory) verdict.
+pub struct Judged {
+    pub pass: bool,
+    pub limit: Value,
+    pub source: &'static str,
+    pub probe_pass: bool,
+}
+/// ONE owner of pass/fail (REA lesson F): the probe records the VALUE; the engine judges it against the registry's archetype limit for the capture's
+/// device class. Where no numeric registry limit applies (no registry, a reference seat, or a rule written in prose) the probe's verdict stands and the source says so.
+fn judge(set: &UiSet, ev: &UiEvidence, id: &str, m: &Metric) -> Judged {
+    let probe = |source| Judged { pass: m.pass, limit: m.limit.clone(), source, probe_pass: m.pass };
+    if ev.seat == "ref" {
+        return probe("reference-seat");
+    }
+    if set.state_rules.contains(&(ev.state.clone(), id.to_string())) {
+        return probe("state-rule");
+    }
+    if set.seat_rules.contains(&(ev.seat.clone(), id.to_string())) {
+        return probe("seat-rule");
+    }
+    let (_, lim) = archetype_limits(set, &ev.screen);
+    let Some(text) = lim.get(id).and_then(|e| e.get(device_of(&ev.viewport)).or_else(|| e.get("desktop"))).and_then(|v| v.as_str()) else {
+        return probe("probe-default");
+    };
+    let Some((op, n)) = parse_limit(text) else {
+        return probe("probe-default");
+    };
+    let pass = m.value.as_f64().is_some_and(|v| match op {
+        "<=" => v <= n,
+        ">=" => v >= n,
+        "<" => v < n,
+        ">" => v > n,
+        _ => (v - n).abs() < 1e-9,
+    });
+    Judged { pass, limit: json!(text), source: "registry", probe_pass: m.pass }
+}
+/// Metrics passed under the engine's verdict.
+fn pass_count_of(set: &UiSet, ev: &UiEvidence) -> usize {
+    ev.metrics.iter().filter(|(id, m)| judge(set, ev, id, m).pass).count()
 }
 fn registry_limits(set: &UiSet, screen: &str) -> Vec<Limitation> {
     let mut v = vec![];
@@ -351,7 +489,7 @@ fn metric_ids_sorted(a: &UiEvidence, b: Option<&UiEvidence>) -> Vec<String> {
     ids.into_iter().map(|(_, m)| m).collect()
 }
 
-pub fn products(root: &Path, max_nodes: usize) -> Result<Value> {
+pub fn products(root: &Path, max_nodes: usize, o: &Opts) -> Result<Value> {
     let set = open(root, max_nodes, None, Want { evidence: true, flows: true, navs: true, systems: true, graphs: false })?;
     let items: Vec<Value> = set
         .products
@@ -367,11 +505,11 @@ pub fn products(root: &Path, max_nodes: usize) -> Result<Value> {
             })
         })
         .collect();
-    let total = items.len();
-    Ok(set.finish(json!({ "items": items, "page": { "next": null, "total": total } }), &[]))
+    let (items, next, total) = o.page(&items);
+    Ok(set.finish(json!({ "items": items, "page": { "next": next, "total": total } }), &[]))
 }
 
-pub fn screens(root: &Path, max_nodes: usize, product: &str) -> Result<Value> {
+pub fn screens(root: &Path, max_nodes: usize, product: &str, o: &Opts) -> Result<Value> {
     need_token("product", product)?;
     let set = open(root, max_nodes, Some(&[product]), EV)?;
     need_product_pub(&set, product)?;
@@ -380,40 +518,42 @@ pub fn screens(root: &Path, max_nodes: usize, product: &str) -> Result<Value> {
         let files: Vec<&Loaded> = set.evidence_of(product).filter(|l| l.ev.screen == s).collect();
         let (arch, _) = archetype_limits(&set, s);
         let states: BTreeSet<&str> = files.iter().map(|l| l.ev.state.as_str()).collect();
-        let best = files.iter().map(|l| l.ev.pass_count()).max().unwrap_or(0);
+        let best = files.iter().filter(|l| !l.ev.unstable).map(|l| pass_count_of(&set, &l.ev)).max().unwrap_or(0);
         items.push(json!({
             "screen": s, "archetype": arch, "route": files[0].ev.route, "states": states,
             "captures": files.iter().map(|l| format!("{}/{}", l.ev.state, l.ev.stem())).collect::<Vec<_>>(), "bestPass": best, "of": METRIC_COUNT,
         }));
     }
-    let total = items.len();
-    Ok(set.finish(json!({ "product": product, "items": items, "page": { "next": null, "total": total } }), &[Limitation::new("snapshot_recompute_pending", SNAPSHOT_NOTE)]))
+    let (items, next, total) = o.page(&items);
+    Ok(set.finish(json!({ "product": product, "items": items, "page": { "next": next, "total": total } }), &[Limitation::new("snapshot_recompute_pending", SNAPSHOT_NOTE)]))
 }
 
 fn one_side(set: &UiSet, l: &Loaded) -> Value {
     let e = &l.ev;
-    json!({ "product": e.product, "version": e.version, "seat": e.seat, "route": e.route, "domHash": e.dom_hash, "pass": e.pass_count(), "image": set.image(&e.image) })
+    json!({ "product": e.product, "version": e.version, "seat": e.seat, "route": e.route, "domHash": e.dom_hash, "pass": pass_count_of(set, e), "unstable": e.unstable, "image": set.image(&e.image) })
 }
 
-pub fn show(root: &Path, max_nodes: usize, product: &str, screen: &str, state: &str, viewport: Option<&str>, seat: Option<&str>) -> Result<Value> {
+#[allow(clippy::too_many_arguments)]
+pub fn show(root: &Path, max_nodes: usize, product: &str, screen: &str, state: &str, viewport: Option<&str>, seat: Option<&str>, o: &Opts) -> Result<Value> {
     need_token("product", product)?;
     need_token("screen", screen)?;
     let set = open(root, max_nodes, Some(&[product]), EV)?;
-    let l = select(&set, product, screen, state, viewport, seat)?;
+    let l = select(&set, product, screen, state, viewport, seat, o)?;
     let e = &l.ev;
     let (arch, lim) = archetype_limits(&set, screen);
     let metrics: Vec<Value> = metric_ids_sorted(e, None)
         .iter()
         .map(|id| {
             let m = &e.metrics[id];
-            json!({ "id": id, "value": m.value, "limit": m.limit, "pass": m.pass, "detail": m.detail, "archetypeLimit": lim.get(id) })
+            let j = judge(&set, e, id, m);
+            json!({ "id": id, "value": m.value, "limit": j.limit, "pass": j.pass, "probePass": j.probe_pass, "limitSource": j.source, "detail": m.detail, "archetypeLimit": lim.get(id) })
         })
         .collect();
     let others: Vec<String> = set.evidence_of(product).filter(|x| x.ev.screen == screen).map(|x| format!("{}/{}", x.ev.state, x.ev.stem())).collect();
     let v = json!({
         "key": e.capture_key(), "product": e.product, "version": e.version, "screen": e.screen, "archetype": arch, "state": e.state, "route": e.route,
         "viewport": e.viewport, "seat": e.seat, "locale": e.locale, "theme": e.theme, "domHash": e.dom_hash,
-        "pass": e.pass_count(), "of": METRIC_COUNT, "metrics": metrics,
+        "pass": pass_count_of(&set, e), "unstable": e.unstable, "of": METRIC_COUNT, "metrics": metrics,
         "layout": { "summary": layout_summary(&e.layout), "navColumns": nav_columns(&e.layout), "regions": e.layout.regions, "primary": e.layout.primary, "contentStart": e.layout.content_start },
         "style": { "summary": style_summary(&e.style), "style": e.style },
         "image": set.image(&e.image), "captures": others,
@@ -441,7 +581,7 @@ fn resolve_screen(set: &UiSet, product: &str, target: &str) -> Result<String> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str, state: &str, viewport: Option<&str>, seat: Option<&str>, ref_seat: Option<&str>) -> Result<Value> {
+pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str, state: &str, viewport: Option<&str>, seat: Option<&str>, ref_seat: Option<&str>, o: &Opts) -> Result<Value> {
     for (w, v) in [("target", target), ("--ours", ours), ("--ref", refp)] {
         need_token(w, v)?;
     }
@@ -453,20 +593,24 @@ pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str,
         return Err(bad(format!("refused: `{target}` is screen `{so}` for {ours} but `{sr}` for {refp}; a comparison is only within the same screen, state and viewport")));
     }
     let vp = viewport.unwrap_or(DEFAULT_VIEWPORT);
-    let (a, b) = (select(&set, ours, &so, state, Some(vp), seat)?, select(&set, refp, &sr, state, Some(vp), ref_seat)?);
+    let (a, b) = (select(&set, ours, &so, state, Some(vp), seat, o)?, select(&set, refp, &sr, state, Some(vp), ref_seat, o)?);
     let (ea, eb) = (&a.ev, &b.ev);
+    let drift = evidence_drift(ea, eb);
+    if !drift.is_empty() && !o.allow_drift {
+        return Err(drift_error(&drift, "the two captures"));
+    }
     let (arch, lim) = archetype_limits(&set, &so);
     let metrics: Vec<Value> = metric_ids_sorted(ea, Some(eb))
         .iter()
         .map(|id| {
-            let side = |e: &UiEvidence| e.metrics.get(id).map(|m| json!({ "value": m.value, "limit": m.limit, "pass": m.pass }));
+            let side = |e: &UiEvidence| e.metrics.get(id).map(|m| { let j = judge(&set, e, id, m); json!({ "value": m.value, "limit": j.limit, "pass": j.pass, "probePass": j.probe_pass, "limitSource": j.source }) });
             json!({ "id": id, "ours": side(ea), "ref": side(eb), "archetypeLimit": lim.get(id) })
         })
         .collect();
     let v = json!({
         "target": target, "screen": so, "archetype": arch, "state": state, "viewport": vp,
         "ours": one_side(&set, a), "ref": one_side(&set, b),
-        "pass": { "ours": ea.pass_count(), "ref": eb.pass_count(), "of": METRIC_COUNT },
+        "pass": { "ours": pass_count_of(&set, ea), "ref": pass_count_of(&set, eb), "of": METRIC_COUNT },
         "metrics": metrics,
         "layoutDiff": layout_diff(&ea.layout, &eb.layout),
         "styleDiff": style_diff(&ea.style, &eb.style),
@@ -479,6 +623,9 @@ pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str,
         v["netLine"] = json!(format!("ours: {} | ref: {}", side(ea), side(eb)));
     }
     let mut lims = registry_limits(&set, &so);
+    if !drift.is_empty() {
+        lims.push(drift_limitation(&drift));
+    }
     lims.push(Limitation::new("snapshot_recompute_pending", SNAPSHOT_NOTE));
     Ok(set.finish(v, &lims))
 }
@@ -496,7 +643,7 @@ fn family_rows(ui_root: &Path, root: &Path, family: &str) -> Option<Vec<String>>
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state: &str, viewport: Option<&str>, net: bool) -> Result<Value> {
+pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state: &str, viewport: Option<&str>, net: bool, o: &Opts) -> Result<Value> {
     need_token("family", family)?;
     let set = open(ui_root, max_nodes, None, EV)?;
     let vp = viewport.unwrap_or(DEFAULT_VIEWPORT);
@@ -515,17 +662,26 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
     for id in &ids {
         let mut cells = BTreeMap::new();
         for p in &products {
-            let best = mapped
-                .iter()
-                .filter(|m| &m.row_id == id && &&m.product == p)
-                .filter_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state && l.ev.viewport == vp).map(|l| l.ev.pass_count()).max())
-                .max();
-            cells.insert(p.to_string(), best.map_or("-".to_string(), |n| format!("{n}/{METRIC_COUNT}")));
+            let of_cell = |stable: bool| {
+                mapped
+                    .iter()
+                    .filter(|m| &m.row_id == id && &&m.product == p)
+                    .filter_map(|m| set.evidence_of(p).filter(|l| l.ev.screen == m.screen && l.ev.state == state && l.ev.viewport == vp && l.ev.unstable != stable).map(|l| pass_count_of(&set, &l.ev)).max())
+                    .max()
+            };
+            // `?` = the product was not read (file cap), never confused with `-` (read, nothing captured); unstable captures are not scored
+            let cell = match of_cell(true) {
+                Some(n) => format!("{n}/{METRIC_COUNT}"),
+                None if set.unread.contains(p.as_str()) => "?".to_string(),
+                None if of_cell(false).is_some() => "unstable".to_string(),
+                None => "-".to_string(),
+            };
+            cells.insert(p.to_string(), cell);
         }
         rows.push(json!({ "row": id, "cells": cells }));
     }
-    let total = rows.len();
-    let mut out = json!({ "family": family, "state": state, "viewport": vp, "products": products, "items": rows, "page": { "next": null, "total": total } });
+    let (rows, next, total) = o.page(&rows);
+    let mut out = json!({ "family": family, "state": state, "viewport": vp, "products": products, "items": rows, "page": { "next": next, "total": total } });
     if net {
         // `--net`: every capture of the products with failed calls (all states and viewports), so a 5xx on a screen cannot hide in a green cell
         let mut failing: Vec<Value> = vec![];
@@ -620,7 +776,7 @@ pub fn nav_diff_verb(root: &Path, max_nodes: usize, ours: &str, refp: &str, view
     Ok(set.finish(v, &[]))
 }
 
-pub fn journey(root: &Path, journey: &str, products: &[String]) -> Result<Value> {
+pub fn journey(root: &Path, journey: &str, products: &[String], o: &Opts) -> Result<Value> {
     need_token("journey", journey)?;
     for p in products {
         need_token("product", p)?;
@@ -652,8 +808,8 @@ pub fn journey(root: &Path, journey: &str, products: &[String]) -> Result<Value>
             .collect(),
         None => vec![],
     };
-    let total = rows.len();
-    let v = json!({ "journey": journey, "title": j.title, "goalArchetype": j.goal_archetype, "items": rows, "pairwise": words, "page": { "next": null, "total": total }, "limitation_items": lims });
+    let (rows, next, total) = o.page(&rows);
+    let v = json!({ "journey": journey, "title": j.title, "goalArchetype": j.goal_archetype, "items": rows, "pairwise": words, "page": { "next": next, "total": total }, "limitation_items": lims });
     Ok(v)
 }
 
@@ -677,7 +833,7 @@ pub fn coverage(root: &Path, run: &str) -> Result<Value> {
     let complete = blanks.is_empty();
     let mut lims = vec![];
     if !complete {
-        lims.push(Limitation::new("incomplete_run", format!("{} blank cells (a missing cell must be explained): {}", blanks.len(), blanks.iter().take(10).cloned().collect::<Vec<_>>().join(", "))));
+        lims.push(Limitation::new("incomplete_run", format!("{} blank cells (a missing cell must be explained): {}", blanks.len(), blanks.iter().take(MAX_BLANK_LISTED).cloned().collect::<Vec<_>>().join(", "))));
     }
     Ok(json!({ "runId": run, "complete": complete, "table": rows, "blankCells": blanks, "limitation_items": lims }))
 }
@@ -724,8 +880,41 @@ fn only_run(root: &Path, which: &str) -> Result<(PathBuf, String)> {
     }
 }
 
+/// Inputs two captures must share to be compared: the probe version, the fixture and the frozen environment (clock, timezone, scale, motion, colour scheme).
+fn evidence_inputs(e: &UiEvidence) -> Vec<(&'static str, Value)> {
+    let env = |k: &str| e.probe.get("env").and_then(|v| v.get(k)).cloned().unwrap_or(Value::Null);
+    vec![
+        ("probe.version", e.probe.get("version").cloned().unwrap_or(Value::Null)),
+        ("fixture.hash", e.fixture.get("hash").cloned().unwrap_or(Value::Null)),
+        ("env.clock", env("clock")),
+        ("env.timezone", env("timezone")),
+        ("env.deviceScaleFactor", env("deviceScaleFactor")),
+        ("env.reducedMotion", env("reducedMotion")),
+        ("env.colorScheme", env("colorScheme")),
+        ("locale", json!(e.locale)),
+        ("theme", json!(e.theme)),
+    ]
+}
+fn evidence_drift(a: &UiEvidence, b: &UiEvidence) -> Vec<Value> {
+    evidence_inputs(a).into_iter().zip(evidence_inputs(b)).filter(|((_, x), (_, y))| x != y).map(|((f, x), (_, y))| json!({ "field": f, "a": x, "b": y })).collect()
+}
+fn drift_fields(drift: &[Value]) -> String {
+    drift.iter().filter_map(|d| d["field"].as_str()).collect::<Vec<_>>().join(", ")
+}
+fn drift_error(drift: &[Value], what: &str) -> AppError {
+    AppError::structured(
+        "check_failed",
+        format!("refused: {what} were made from different inputs ({}); a comparison across different inputs proves nothing", drift_fields(drift)),
+        Some("re-capture both with the same probe, registry, archetypes and fixture, or pass --allow-input-drift to compare anyway (it is then stated in limitations)".into()),
+        Some(json!({ "inputDrift": drift })),
+    )
+}
+fn drift_limitation(drift: &[Value]) -> Limitation {
+    Limitation::new("input_drift_allowed", format!("--allow-input-drift: the inputs differ ({}); equal results do not prove the two sides are comparable", drift_fields(drift))).with_data(json!({ "inputDrift": drift }))
+}
+
 /// The determinism gate across two ui roots, each holding ONE run. Captures are matched on the key without its version.
-pub fn verify_roots(root_a: &Path, root_b: &Path, max_nodes: usize) -> std::result::Result<Value, Failure> {
+pub fn verify_roots(root_a: &Path, root_b: &Path, max_nodes: usize, o: &Opts, integrity: bool) -> std::result::Result<Value, Failure> {
     let f = |e: AppError| (e, None);
     check_max(max_nodes).map_err(f)?;
     if let (Ok(a), Ok(b)) = (std::fs::canonicalize(root_a), std::fs::canonicalize(root_b)) {
@@ -735,11 +924,11 @@ pub fn verify_roots(root_a: &Path, root_b: &Path, max_nodes: usize) -> std::resu
     }
     let ((da, ia), (db, ib)) = (only_run(root_a, "--root-a").map_err(f)?, only_run(root_b, "--root-b").map_err(f)?);
     let (ra, rb) = (load_run(&da, &ia).map_err(f)?, load_run(&db, &ib).map_err(f)?);
-    compare(&da, &ra, &db, &rb, (&ia, &ib), max_nodes, true)
+    compare(&da, &ra, &db, &rb, (&ia, &ib), max_nodes, true, o, integrity)
 }
 
 /// The determinism gate between two runs of ONE root. Only correct when the two runs wrote different evidence files; a shared file is refused.
-pub fn verify(root: &Path, max_nodes: usize, run_a: &str, run_b: &str) -> std::result::Result<Value, Failure> {
+pub fn verify(root: &Path, max_nodes: usize, run_a: &str, run_b: &str, o: &Opts, integrity: bool) -> std::result::Result<Value, Failure> {
     let f = |e: AppError| (e, None);
     check_max(max_nodes).map_err(f)?;
     need_token("run id", run_a).map_err(f)?;
@@ -754,13 +943,51 @@ pub fn verify(root: &Path, max_nodes: usize, run_a: &str, run_b: &str) -> std::r
             same[0]
         ))));
     }
-    compare(&dir, &ra, &dir, &rb, (run_a, run_b), max_nodes, false)
+    compare(&dir, &ra, &dir, &rb, (run_a, run_b), max_nodes, false, o, integrity)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+/// Re-hash what a run recorded (REA lesson I): every evidence file against the digest the probe wrote into the run, and every image blob against its name.
+fn check_integrity(side: &str, dir: &Path, run: &UiRun) -> (usize, Vec<Value>) {
+    let (mut checked, mut bad_) = (0usize, vec![]);
+    let mut mismatch = |file: String, why: &str, expected: Option<String>, actual: Option<String>| bad_.push(json!({ "side": side, "file": file, "why": why, "expected": expected, "actual": actual }));
+    if run.evidence_sha256.is_empty() && !run.captures.is_empty() {
+        mismatch("(run manifest)".into(), "the run recorded no evidenceSha256: its evidence files cannot be checked", None, None);
+    }
+    for (rel, want) in &run.evidence_sha256 {
+        checked += 1;
+        match std::fs::read(dir.join(rel)) {
+            Ok(b) if &sha256_hex(&b) == want => {}
+            Ok(b) => mismatch(rel.clone(), "evidence file changed since the probe wrote it", Some(want.clone()), Some(sha256_hex(&b))),
+            Err(_) => mismatch(rel.clone(), "evidence file is missing", Some(want.clone()), None),
+        }
+    }
+    let blobs: BTreeSet<String> = run.captures.values().filter_map(|rel| read_json::<UiEvidence>(&dir.join(rel)).ok()).map(|e| e.image.file).collect();
+    for rel in blobs {
+        checked += 1;
+        let name = Path::new(&rel).file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+        match std::fs::read(dir.join(&rel)) {
+            Ok(b) if sha256_hex(&b) == name => {}
+            Ok(b) => mismatch(rel, "image blob does not hash to its name", Some(name), Some(sha256_hex(&b))),
+            Err(_) => mismatch(rel, "image blob is missing", Some(name), None),
+        }
+    }
+    (checked, bad_)
 }
 
 /// domHash equal, metrics equal, image dHash within 4 bits and `net.failed` equal for every shared capture key. Timings and byte counts are never compared.
+/// A comparison that did not cover every key both runs hold, a key on one side only, an unstable capture, or inputs that differ is NOT a pass.
 #[allow(clippy::too_many_arguments)]
-fn compare(dir_a: &Path, ra: &UiRun, dir_b: &Path, rb: &UiRun, ids: (&str, &str), max_nodes: usize, ignore_version: bool) -> std::result::Result<Value, Failure> {
+fn compare(dir_a: &Path, ra: &UiRun, dir_b: &Path, rb: &UiRun, ids: (&str, &str), max_nodes: usize, ignore_version: bool, o: &Opts, integrity: bool) -> std::result::Result<Value, Failure> {
     let (run_a, run_b) = ids;
+    let drift = ra.input_drift(rb);
+    if !drift.is_empty() && !o.allow_drift {
+        let data = json!({ "runA": run_a, "runB": run_b, "identical": false, "compared": 0, "inputDrift": drift });
+        return Err((drift_error(&drift, "the two runs"), Some(data)));
+    }
     let load_ev = |dir: &Path, rel: &str| -> std::result::Result<UiEvidence, String> {
         let e: UiEvidence = read_json(&dir.join(rel))?;
         let p = e.problems();
@@ -771,9 +998,11 @@ fn compare(dir_a: &Path, ra: &UiRun, dir_b: &Path, rb: &UiRun, ids: (&str, &str)
     let map_b: BTreeMap<String, &String> = rb.captures.iter().map(|(k, f)| (norm(k), f)).collect();
     let keys_a: BTreeSet<&String> = map_a.keys().collect();
     let keys_b: BTreeSet<&String> = map_b.keys().collect();
+    let shared = keys_a.intersection(&keys_b).count();
     let both: Vec<&String> = keys_a.intersection(&keys_b).copied().take(max_nodes).collect();
-    let truncated = keys_a.intersection(&keys_b).count() > both.len();
+    let truncated = shared > both.len();
     let mut diffs: Vec<Value> = vec![];
+    let mut unstable: Vec<&String> = vec![];
     let mut net_missing = 0usize;
     for k in &both {
         let (ea, eb) = (load_ev(dir_a, map_a[*k]), load_ev(dir_b, map_b[*k]));
@@ -784,6 +1013,10 @@ fn compare(dir_a: &Path, ra: &UiRun, dir_b: &Path, rb: &UiRun, ids: (&str, &str)
                 continue;
             }
         };
+        if ea.unstable || eb.unstable {
+            unstable.push(k); // an unstable capture proves nothing either way: it is excluded and counted, and the gate cannot pass without it
+            continue;
+        }
         if ea.dom_hash != eb.dom_hash {
             diffs.push(json!({ "key": k, "kind": "domHash", "a": ea.dom_hash, "b": eb.dom_hash }));
         }
@@ -819,9 +1052,16 @@ fn compare(dir_a: &Path, ra: &UiRun, dir_b: &Path, rb: &UiRun, ids: (&str, &str)
     }
     let only_a: Vec<&String> = keys_a.difference(&keys_b).copied().collect();
     let only_b: Vec<&String> = keys_b.difference(&keys_a).copied().collect();
+    let compared = both.len() - unstable.len() - diffs.iter().filter(|d| d["kind"] == "unreadable").count();
     let mut lims = vec![];
     if truncated {
-        lims.push(Limitation::new("truncated", format!("compared the first {} shared keys (--max-nodes)", both.len())));
+        lims.push(
+            Limitation::new("incomplete_comparison", format!("compared {} of {shared} shared keys (--max-nodes {max_nodes}); a partial comparison is not a pass", both.len()))
+                .with_data(json!({ "control": "max_nodes", "value": max_nodes, "max": MAX_NODES, "compared": both.len(), "total": shared })),
+        );
+    }
+    if !unstable.is_empty() {
+        lims.push(Limitation::new("unstable_excluded", format!("{} shared capture(s) are unstable on at least one side and were not compared: {}", unstable.len(), unstable.iter().take(5).map(|k| k.as_str()).collect::<Vec<_>>().join(", "))));
     }
     if net_missing > 0 {
         lims.push(Limitation::new("net_missing", format!("{net_missing} shared captures have `net` on one side only: their failed calls were not compared")));
@@ -829,19 +1069,49 @@ fn compare(dir_a: &Path, ra: &UiRun, dir_b: &Path, rb: &UiRun, ids: (&str, &str)
     if ignore_version {
         lims.push(Limitation::new("versions_ignored", "captures are matched on product/screen/state/viewport/seat/locale/theme; the version in the key may differ between the roots"));
     }
+    if !drift.is_empty() {
+        lims.push(drift_limitation(&drift));
+    }
     lims.push(Limitation::new("snapshot_recompute_pending", SNAPSHOT_NOTE));
-    let data = json!({
-        "runA": run_a, "runB": run_b, "compared": both.len(), "identical": diffs.is_empty(), "differences": diffs,
-        "onlyInA": only_a, "onlyInB": only_b,
+    let mut integrity_data = Value::Null;
+    if integrity {
+        let ((na, ma), (nb, mb)) = (check_integrity("a", dir_a, ra), check_integrity("b", dir_b, rb));
+        let all: Vec<Value> = ma.into_iter().chain(mb).collect();
+        if !all.is_empty() {
+            lims.push(Limitation::new("integrity_mismatch", format!("{} file(s) do not match what the probe recorded: {}", all.len(), all.iter().take(3).filter_map(|m| m["file"].as_str()).collect::<Vec<_>>().join(", "))));
+        }
+        integrity_data = json!({ "checked": na + nb, "mismatches": all });
+    }
+    let integrity_bad = integrity_data["mismatches"].as_array().is_some_and(|m| !m.is_empty());
+    let clean = diffs.is_empty() && only_a.is_empty() && only_b.is_empty() && !truncated && unstable.is_empty() && compared > 0 && !integrity_bad;
+    let mut data = json!({
+        "runA": run_a, "runB": run_b, "compared": compared, "total": shared, "identical": clean, "differences": diffs,
+        "onlyInA": only_a, "onlyInB": only_b, "unstable": unstable,
         "limitation_items": lims,
     });
-    if both.is_empty() && ignore_version {
-        return Err((AppError::CheckFailed(format!("roots share no capture key: {} only in A, {} only in B (nothing was compared)", only_a.len(), only_b.len())), Some(data)));
+    if !integrity_data.is_null() {
+        data["integrity"] = integrity_data;
     }
-    if data["identical"] == Value::Bool(true) {
-        Ok(data)
+    if !drift.is_empty() {
+        data["inputDrift"] = json!(drift);
+    }
+    if clean {
+        return Ok(data);
+    }
+    let n = data["differences"].as_array().map_or(0, |a| a.len());
+    let msg = if n > 0 {
+        format!("runs {run_a} and {run_b} differ: {n} differences over {compared} compared keys")
+    } else if !only_a.is_empty() || !only_b.is_empty() {
+        format!("runs {run_a} and {run_b} hold different keys: {} only in A, {} only in B (a gate needs both sides to hold every key)", only_a.len(), only_b.len())
+    } else if integrity_bad {
+        format!("integrity: {} file(s) do not match the digests the probe recorded", data["integrity"]["mismatches"].as_array().map_or(0, |a| a.len()))
+    } else if !unstable.is_empty() {
+        format!("{} shared capture(s) are unstable: the gate cannot pass without them", unstable.len())
+    } else if truncated {
+        format!("incomplete: compared {compared} of {shared} shared keys (--max-nodes {max_nodes}); a partial comparison is not a pass")
     } else {
-        let n = data["differences"].as_array().map_or(0, |a| a.len());
-        Err((AppError::CheckFailed(format!("runs {run_a} and {run_b} differ: {n} differences over {} shared keys", both.len())), Some(data)))
-    }
+        format!("roots share no capture key: {} only in A, {} only in B (nothing was compared)", only_a.len(), only_b.len())
+    };
+    let hint = if truncated { "raise --max-nodes (up to the maximum) so every shared key is compared, or verify one product at a time" } else { "fix the differences, or re-capture the run that disagrees" };
+    Err((AppError::structured("check_failed", msg, Some(hint.into()), None), Some(data)))
 }

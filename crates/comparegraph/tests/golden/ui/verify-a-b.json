@@ -6,10 +6,12 @@
     "runA": "run-a",
     "runB": "run-b",
     "compared": 3,
+    "total": 3,
     "identical": true,
     "differences": [],
     "onlyInA": [],
-    "onlyInB": []
+    "onlyInB": [],
+    "unstable": []
   },
   "evidence": {
     "confidence": "derived",
@@ -22,6 +24,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 104
+    "bytes": 128
   }
 }

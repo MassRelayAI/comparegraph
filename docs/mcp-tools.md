@@ -3,7 +3,7 @@
 The tools `comparegraph mcp` serves. [`catalog.json`](catalog.json) is the machine-readable source for the tool list and the error codes; `comparegraph catalog --check` fails when it drifts from the code.
 
 `comparegraph mcp` speaks JSON-RPC 2.0 over stdio, one object per line, protocol `2025-06-18`. Every tool returns the same
-envelope as the CLI. Eighteen tools: seventeen read-only, one write (`comparegraph_claim`). The list is generated into
+envelope as the CLI. 34 tools: 33 read-only, one write (`comparegraph_claim`). The list is generated into
 [`docs/catalog.json`](catalog.json) and checked in CI by `comparegraph catalog --check`.
 
 | Tool | Answers | Key arguments |
@@ -33,7 +33,8 @@ envelope as the CLI. Eighteen tools: seventeen read-only, one write (`comparegra
 | `comparegraph_ui_nav_diff` | UI evidence: two menu trees compared in words | `ours`, `ref`; optional `viewport`, `seat`, `ref_seat` |
 | `comparegraph_ui_journey` | UI evidence: a journey per product (completed / partial / n/a) | `journey`; optional `products` |
 | `comparegraph_ui_coverage` | UI evidence: coverage table of a run, blank cells reported | `run` |
-| `comparegraph_ui_verify` | UI evidence: the determinism gate between two runs (also `net.failed`) | `run_a` + `run_b`, or `root_a` + `root_b` (one run per ui root) |
+| `comparegraph_ui_verify` | UI evidence: the determinism gate between two runs (also `net.failed`) | `run_a` + `run_b`, or `root_a` + `root_b` (one run per ui root); `integrity` re-hashes every evidence file and blob |
+| `comparegraph_ui_limits` | UI evidence: every cap the ui tools apply (max_nodes, file size, page size, path length), its unit and what is reported when it is hit | none |
 | `comparegraph_claim` | **Write.** Record a claim | `repo`, `feature`, `family`, `verdict`, `author`, `at[]`, `searched`, `read_hits[]` (the `read_set.candidates` names, after opening each), `note` |
 | `comparegraph_traverse` | Reachable nodes, summary first, then one page by path confidence | `repo`, `qualified_name`, `direction`, `depth` (max 10), `max_nodes` (max 2000), `kinds`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_impact` | Blast radius: summary (`by_hop`, `by_kind`, `tests_total`), then one page, plus the tests that reach it (capped at `limit`) | `repo`, `qualified_name` or `files[]`, `depth`, `max_nodes`, `min_confidence`, `limit`, `cursor` |

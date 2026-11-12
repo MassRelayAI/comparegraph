@@ -16,6 +16,7 @@
     "theme": "light",
     "domHash": "68c45344596f0ece230d3035a79633eb40c75d4ee8935e720170a914e43e118b",
     "pass": 7,
+    "unstable": false,
     "of": 12,
     "metrics": [
       {
@@ -23,6 +24,8 @@
         "value": 3,
         "limit": 2,
         "pass": true,
+        "probePass": true,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": 2
       },
@@ -31,6 +34,8 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "probePass": true,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       },
@@ -39,6 +44,8 @@
         "value": 0,
         "limit": 1,
         "pass": false,
+        "probePass": false,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": 1
       },
@@ -47,6 +54,8 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "probePass": true,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       },
@@ -55,6 +64,8 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "probePass": true,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       },
@@ -63,6 +74,8 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "probePass": true,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       },
@@ -71,6 +84,8 @@
         "value": 352,
         "limit": 200,
         "pass": false,
+        "probePass": false,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": 200
       },
@@ -79,6 +94,8 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "probePass": false,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       },
@@ -87,6 +104,8 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "probePass": true,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       },
@@ -95,6 +114,8 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "probePass": false,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       },
@@ -103,6 +124,8 @@
         "value": 1,
         "limit": 5,
         "pass": true,
+        "probePass": true,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       },
@@ -111,6 +134,8 @@
         "value": 1,
         "limit": 5,
         "pass": false,
+        "probePass": false,
+        "limitSource": "probe-default",
         "detail": [],
         "archetypeLimit": null
       }
@@ -275,6 +300,6 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 3146
+    "bytes": 3732
   }
 }

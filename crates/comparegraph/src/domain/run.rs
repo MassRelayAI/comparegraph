@@ -29,13 +29,21 @@ impl RunStatus {
 pub struct Limitation {
     pub code: String,
     pub detail: String,
+    /// machine-readable detail (the control that caused it, its value and maximum ...); absent for plain limitations
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
 }
 impl Limitation {
     pub fn new(code: &str, detail: impl Into<String>) -> Self {
         Self {
             code: code.to_string(),
             detail: detail.into(),
+            data: None,
         }
+    }
+    pub fn with_data(mut self, data: serde_json::Value) -> Self {
+        self.data = Some(data);
+        self
     }
 }
 

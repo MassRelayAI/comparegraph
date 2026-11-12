@@ -6,6 +6,7 @@
     "runA": "run-a",
     "runB": "run-c",
     "compared": 2,
+    "total": 2,
     "identical": false,
     "differences": [
       {
@@ -46,6 +47,7 @@
     "onlyInB": [
       "cluttered@9f3c2a1/room/empty/1440x900/member/en-US/light"
     ],
+    "unstable": [],
     "limitation_items": [
       {
         "code": "snapshot_recompute_pending",
@@ -59,10 +61,11 @@
   },
   "cost": {
     "rows": 1,
-    "bytes": 1068
+    "bytes": 1092
   },
   "error": {
     "code": "check_failed",
-    "message": "runs run-a and run-c differ: 3 differences over 2 shared keys"
+    "message": "runs run-a and run-c differ: 3 differences over 2 compared keys",
+    "hint": "fix the differences, or re-capture the run that disagrees"
   }
 }

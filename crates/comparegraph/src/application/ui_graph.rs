@@ -9,8 +9,7 @@ use crate::domain::Limitation;
 use serde_json::{json, Value};
 use std::path::Path;
 
-pub const DEFAULT_MAX_LEN: usize = 8;
-pub const MAX_LEN: usize = 20;
+pub use super::ui_limits::{DEFAULT_MAX_LEN, MAX_LEN};
 const GRAPHS: Want = Want { evidence: false, flows: false, navs: false, systems: false, graphs: true };
 
 fn select_graph<'a>(set: &'a UiSet, product: &str, viewport: &str, seat: Option<&str>) -> Result<&'a UiGraph> {

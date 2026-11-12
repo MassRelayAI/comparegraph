@@ -107,7 +107,9 @@ fn initialize_and_list_tools() {
     assert_eq!(out[0]["result"]["serverInfo"]["name"], "comparegraph");
     assert!(out[0]["result"]["capabilities"]["tools"].is_object());
     let tools = out[1]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 33);
+    // the served list is the committed catalog (docs/catalog.json is checked against the code by tests/catalog.rs)
+    let committed: serde_json::Value = serde_json::from_str(include_str!("../../../docs/catalog.json")).unwrap();
+    assert_eq!(tools.len(), committed["tools"].as_array().unwrap().len());
     for t in tools {
         assert_eq!(t["inputSchema"]["type"], "object");
         assert_eq!(t["inputSchema"]["additionalProperties"], false);

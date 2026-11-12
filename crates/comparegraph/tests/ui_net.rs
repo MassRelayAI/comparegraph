@@ -30,9 +30,10 @@ fn write(p: &Path, v: &Value) {
     std::fs::write(p, serde_json::to_string_pretty(v).unwrap()).unwrap();
 }
 /// A copy of the contract fixture that holds ONLY the `cluttered` run labelled `label` (what a probe `--out <dir>/<label>` gives).
+/// Evidence is append-only, so run `a` is the contract root and run `b` is the second root `fixtures/ui-contract-b`.
 fn one_run_root(label: &str) -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
-    copy_dir(&fx("ui-contract"), d.path());
+    copy_dir(&fx(if label == "b" { "ui-contract-b" } else { "ui-contract" }), d.path());
     let runs = d.path().join("ui/runs");
     for e in std::fs::read_dir(&runs).unwrap().flatten() {
         let v = read(&e.path());
@@ -119,7 +120,7 @@ fn a_root_with_two_runs_the_same_folder_and_mixed_forms_are_refused() {
     let (c, v) = verify_roots(full.path(), b.path());
     assert_eq!(c, 1, "{v}");
     assert_eq!(v["error"]["code"], "invalid_arguments");
-    assert!(v["error"]["message"].as_str().unwrap().contains("holds 4 runs"), "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("holds 2 runs"), "{v}");
     let (c, v) = verify_roots(a.path(), a.path());
     assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
     assert!(c != 0 && v["error"]["message"].as_str().unwrap().contains("same folder"), "{v}");
@@ -135,12 +136,15 @@ fn a_root_with_two_runs_the_same_folder_and_mixed_forms_are_refused() {
 
 #[test]
 fn the_old_two_run_id_form_refuses_runs_that_share_an_evidence_file() {
-    let root = fx("ui-contract");
-    let ids: Vec<String> = std::fs::read_dir(root.join("ui/runs")).unwrap().flatten().filter_map(|e| {
-        let v = read(&e.path());
-        (v["inputs"]["product"] == "cluttered").then(|| v["runId"].as_str().unwrap().to_string())
-    }).collect();
-    assert_eq!(ids.len(), 2);
+    // the probe no longer writes two runs into one root (evidence is append-only), so make the old situation by hand: a second run manifest naming the same files
+    let d = tempfile::tempdir().unwrap();
+    copy_dir(&fx("ui-contract"), d.path());
+    let root = d.path().to_path_buf();
+    let first = std::fs::read_dir(root.join("ui/runs")).unwrap().flatten().find(|e| read(&e.path())["inputs"]["product"] == "cluttered").unwrap().path();
+    let mut twin = read(&first);
+    twin["runId"] = json!("twin-of-the-first-run");
+    write(&root.join("ui/runs/twin-of-the-first-run.json"), &twin);
+    let ids = [read(&first)["runId"].as_str().unwrap().to_string(), "twin-of-the-first-run".to_string()];
     let (c, v) = cg(&root, &["verify", &ids[0], &ids[1], "--ui-root", "."]);
     assert_eq!(c, 1, "{v}");
     assert_eq!(v["error"]["code"], "invalid_arguments");

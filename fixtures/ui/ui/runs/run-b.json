@@ -5,5 +5,20 @@
     "cluttered@9f3c2a1/room/populated/1440x900/member/en-US/light": "runs/run-b.d/2.json"
   },
   "runId": "run-b",
-  "schema": "ui-run/1"
+  "schema": "ui-run/1",
+  "inputs": {
+    "archetypesDigest": null,
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reducedMotion": "reduce",
+      "timezone": "UTC"
+    },
+    "fixtureHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "probeVersion": "1",
+    "registryDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "registryVersion": "1"
+  }
 }

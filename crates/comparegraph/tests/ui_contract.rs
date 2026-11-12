@@ -23,8 +23,29 @@ fn clean(args: &[&str]) -> Value {
     assert!(!s.contains("invalid_evidence"), "{args:?} reported invalid evidence: {s}");
     v
 }
+/// A temp copy of a contract root holding only the run of `product`.
+fn product_root(src: &Path, product: &str) -> tempfile::TempDir {
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for e in std::fs::read_dir(from).unwrap().flatten() {
+            let (p, q) = (e.path(), to.join(e.file_name()));
+            if e.file_type().unwrap().is_dir() { copy_dir(&p, &q) } else { std::fs::copy(&p, &q).unwrap(); }
+        }
+    }
+    let d = tempfile::tempdir().unwrap();
+    copy_dir(src, d.path());
+    for e in std::fs::read_dir(d.path().join("ui/runs")).unwrap().flatten() {
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(e.path()).unwrap()).unwrap();
+        if v["inputs"]["product"] != product {
+            std::fs::remove_file(e.path()).unwrap();
+        }
+    }
+    d
+}
 fn run_id(product: &str, label: &str) -> String {
-    for e in std::fs::read_dir(root().join("ui/runs")).unwrap().flatten() {
+    // evidence is append-only: run `a` is the contract root, run `b` the second root fixtures/ui-contract-b
+    let dir = if label == "b" { root().join("../ui-contract-b/ui/runs") } else { root().join("ui/runs") };
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
         let v: Value = serde_json::from_str(&std::fs::read_to_string(e.path()).unwrap()).unwrap();
         if v["inputs"]["product"] == product && v["inputs"]["runLabel"] == label {
             return v["runId"].as_str().unwrap().to_string();
@@ -92,9 +113,13 @@ fn every_ui_verb_reads_the_probes_own_output_without_invalid_evidence() {
     for product in ["cluttered", "clean"] {
         let (a, b) = (run_id(product, "a"), run_id(product, "b"));
         assert_ne!(a, b);
-        // the two probe runs share evidence files (one path per capture), so the one-root form must refuse; tests/ui_net.rs verifies them as two roots
-        let (c, _, v) = ui(&["verify", &a, &b]);
-        assert_eq!((c, v["error"]["code"].as_str()), (1, Some("invalid_arguments")), "{v}");
+        // the probe never writes over another run's evidence, so run b lives in its own root; verify them as two roots (each holding only this product's run)
+        let (ra, rb) = (product_root(&root(), product), product_root(&root().join("../ui-contract-b"), product));
+        let out = Command::cargo_bin("comparegraph").unwrap().current_dir(ra.path()).args(["--pretty", "ui", "verify", "--root-a"]).arg(ra.path()).arg("--root-b").arg(rb.path()).arg("--integrity").output().unwrap();
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(out.status.code(), Some(0), "{product}: the two probe runs must verify identical, integrity checked: {v}");
+        assert_eq!(v["data"]["identical"], true);
+        assert_eq!(v["data"]["compared"], v["data"]["total"]);
         let cov = clean(&["coverage", &a]);
         assert_eq!(cov["data"]["complete"], true, "every coverage cell is explained: {cov}");
     }
