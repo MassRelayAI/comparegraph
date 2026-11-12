@@ -14,7 +14,7 @@
     "overflowPx": 0,
     "size": "1440x900"
   },
-  "domHash": "94120e1ca3201fd2fa847a1f23aad31fa6fdae48b807f34d178b58a8aca2ccab",
+  "domHash": "70b809d27bde41f86eb77dfe8593d9af53dfb06b758c934aa3120a397f391927",
   "fixture": {
     "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
     "status": "seeded"
@@ -22,8 +22,8 @@
   "flow": null,
   "image": {
     "dhash": "4040404040404040",
-    "file": "blobs/ff96e940a0b5560b646fca1fd5c1b572e603c30c7bc4d81a1930e021d32d0cd9.png",
-    "sha256": "ff96e940a0b5560b646fca1fd5c1b572e603c30c7bc4d81a1930e021d32d0cd9"
+    "file": "blobs/547a3f0abde876d97f1c1661a9c8fff35d0200bd72a6c4752b8fd45c7362ec97.png",
+    "sha256": "547a3f0abde876d97f1c1661a9c8fff35d0200bd72a6c4752b8fd45c7362ec97"
   },
   "key": "cluttered@contract-1/room/populated/1440x900/member/en-US/light",
   "layout": {
@@ -67,7 +67,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T09:55:26.336Z",
+    "capturedAt": "2026-11-12T11:37:27.390Z",
     "url": "http://127.0.0.1:47831/cluttered.html"
   },
   "metrics": {
@@ -181,18 +181,39 @@
       "xhr": 0
     },
     "bytes": 2213,
+    "completeness": {
+      "attach_limited_sections": [],
+      "conditions": [
+        "complete_within_window"
+      ],
+      "dropped_events": {
+        "console_events": 0,
+        "network_requests": 0,
+        "scripts": 0,
+        "timeline_events": 0,
+        "total": 0,
+        "webmcp_tools": 0,
+        "websocket_connections": 0,
+        "websocket_frames": 0
+      },
+      "excluded": [],
+      "policy_filtered_sections": [],
+      "status": "complete_within_window",
+      "truncated_sections": [],
+      "unavailable_sections": []
+    },
     "failed": [],
     "requests": 1,
     "slowest": {
-      "ms": 2,
+      "ms": 3,
       "path": "/cluttered.html"
     },
     "thirdPartyHosts": 0,
     "timing": {
-      "contentStartVisibleMs": 40,
-      "domContentLoadedMs": 5,
-      "firstContentfulPaintMs": 40,
-      "loadMs": 6
+      "contentStartVisibleMs": 35,
+      "domContentLoadedMs": 8,
+      "firstContentfulPaintMs": 35,
+      "loadMs": 9
     }
   },
   "probe": {
@@ -229,7 +250,7 @@
         "#111111": 1,
         "#dddddd": 1,
         "#eeeeee": 1,
-        "#f0f0f0": 5
+        "#efefef": 5
       },
       "border": {
         "#000000": 5,

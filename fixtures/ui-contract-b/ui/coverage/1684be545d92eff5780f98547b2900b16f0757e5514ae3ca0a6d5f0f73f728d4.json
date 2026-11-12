@@ -70,30 +70,27 @@
       "screen": "room",
       "seat": "member",
       "state": "populated",
-      "status": "captured",
-      "support": "full",
+      "status": "failed",
       "viewport": "ipad-landscape",
-      "why": ""
+      "why": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh"
     },
     {
       "product": "devprod",
       "screen": "room",
       "seat": "member",
       "state": "populated",
-      "status": "captured",
-      "support": "full",
+      "status": "failed",
       "viewport": "ipad-portrait",
-      "why": ""
+      "why": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh"
     },
     {
       "product": "devprod",
       "screen": "room",
       "seat": "member",
       "state": "populated",
-      "status": "captured",
-      "support": "degraded",
+      "status": "failed",
       "viewport": "iphone",
-      "why": ""
+      "why": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh"
     },
     {
       "product": "devprod",
@@ -317,10 +314,9 @@
       "screen": "inbox",
       "seat": "member",
       "state": "populated",
-      "status": "captured",
-      "support": "blocked",
+      "status": "failed",
       "viewport": "iphone",
-      "why": ""
+      "why": "browserType.launch: Executable doesn't exist at /home/nsujitno/.cache/ms-playwright/webkit-2359/pw_run.sh"
     },
     {
       "product": "devprod",

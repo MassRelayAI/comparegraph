@@ -40,6 +40,9 @@ pub struct ErrorBody {
     /// structured detail of the error (a `none_refused` carries its `NoneRefusal` here)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
+    /// machine-readable next step: `{kind, operation?, retryable}` (see `catalog::RECOVERY`); `hint` is the same advice in words
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<Value>,
 }
 
 impl Envelope {
@@ -81,6 +84,7 @@ impl Envelope {
                 message: e.to_string(),
                 hint: e.hint(),
                 data: e.data(),
+                recovery: Some(crate::application::catalog::recovery(e.code())),
             }),
         }
     }

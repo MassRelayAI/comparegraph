@@ -14,7 +14,7 @@
     "overflowPx": 540,
     "size": "360x800"
   },
-  "domHash": "3993c04417718305549a390f1630bf83fb5380c2467477393c86eb2bea4840f8",
+  "domHash": "fd23d2115256ed0488ee722085c163b8d3086f93b539fdbd231fefe6cf019b10",
   "fixture": {
     "hash": "f15675e19d6cc968de848db33c76d7b1d7cb99756b79e70824a8eefea5a2dc71",
     "status": "seeded"
@@ -22,8 +22,8 @@
   "flow": null,
   "image": {
     "dhash": "0000000000000000",
-    "file": "blobs/200ea6344e19b46650dd7ae2d01c4b4759a7e548bdc4b1c268176bff57f5d47c.png",
-    "sha256": "200ea6344e19b46650dd7ae2d01c4b4759a7e548bdc4b1c268176bff57f5d47c"
+    "file": "blobs/7a9ea9dd2d16291fd455955970b8f9e34832f9866dc085680cb06f3794fe7133.png",
+    "sha256": "7a9ea9dd2d16291fd455955970b8f9e34832f9866dc085680cb06f3794fe7133"
   },
   "key": "devprod@contract-1/room/populated/android/member/en-US/light",
   "layout": {
@@ -42,7 +42,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T09:55:45.139Z",
+    "capturedAt": "2026-11-12T11:37:40.701Z",
     "url": "http://127.0.0.1:47831/dev-overflow.html"
   },
   "metrics": {
@@ -131,18 +131,39 @@
       "xhr": 0
     },
     "bytes": 616,
+    "completeness": {
+      "attach_limited_sections": [],
+      "conditions": [
+        "complete_within_window"
+      ],
+      "dropped_events": {
+        "console_events": 0,
+        "network_requests": 0,
+        "scripts": 0,
+        "timeline_events": 0,
+        "total": 0,
+        "webmcp_tools": 0,
+        "websocket_connections": 0,
+        "websocket_frames": 0
+      },
+      "excluded": [],
+      "policy_filtered_sections": [],
+      "status": "complete_within_window",
+      "truncated_sections": [],
+      "unavailable_sections": []
+    },
     "failed": [],
     "requests": 1,
     "slowest": {
-      "ms": 2,
+      "ms": 3,
       "path": "/dev-overflow.html"
     },
     "thirdPartyHosts": 0,
     "timing": {
-      "contentStartVisibleMs": 25,
-      "domContentLoadedMs": 6,
-      "firstContentfulPaintMs": 25,
-      "loadMs": 7
+      "contentStartVisibleMs": 20,
+      "domContentLoadedMs": 9,
+      "firstContentfulPaintMs": 20,
+      "loadMs": 10
     }
   },
   "probe": {
@@ -177,7 +198,7 @@
       "accent": "#ccddee",
       "background": {
         "#ccddee": 1,
-        "#f0f0f0": 1
+        "#efefef": 1
       },
       "border": {
         "#000000": 1

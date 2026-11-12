@@ -3,7 +3,7 @@
 The tools `comparegraph mcp` serves. [`catalog.json`](catalog.json) is the machine-readable source for the tool list and the error codes; `comparegraph catalog --check` fails when it drifts from the code.
 
 `comparegraph mcp` speaks JSON-RPC 2.0 over stdio, one object per line, protocol `2025-06-18`. Every tool returns the same
-envelope as the CLI. 36 tools: 35 read-only, one write (`comparegraph_claim`). The list is generated into
+envelope as the CLI. 37 tools: 36 read-only, one write (`comparegraph_claim`). The list is generated into
 [`docs/catalog.json`](catalog.json) and checked in CI by `comparegraph catalog --check`.
 
 | Tool | Answers | Key arguments |
@@ -33,6 +33,7 @@ envelope as the CLI. 36 tools: 35 read-only, one write (`comparegraph_claim`). T
 | `comparegraph_ui_path` | UI evidence: the shortest click path between two screens, bounded | `product`, `from`, `to`; optional `viewport`, `seat`, `max_len` |
 | `comparegraph_ui_graph_diff` | UI evidence: two interaction graphs (or `target`) compared by depth to each screen, orphans, dead actions | `ours`, `ref`; optional `viewport`, `seat`, `ref_seat`, `tree` |
 | `comparegraph_ui_nav_diff` | UI evidence: two menu trees compared in words | `ours`, `ref`; optional `viewport`, `seat`, `ref_seat` |
+| `comparegraph_ui_net_diff` | UI evidence: the requests two products make on the same screen, state and device: added, removed, changed (outcome or response shape). Reads the probe's `net.behaviour` / `net.shapes` / `net.completeness`; a truncated capture is never `unchanged` | `ours`, `ref`; optional `screen`, `state`, `device` |
 | `comparegraph_ui_journey` | UI evidence: a journey per product (completed / partial / n/a) | `journey`; optional `products` |
 | `comparegraph_ui_coverage` | UI evidence: coverage table of a run, blank cells reported | `run` |
 | `comparegraph_ui_verify` | UI evidence: the determinism gate between two runs (also `net.failed`) | `run_a` + `run_b`, or `root_a` + `root_b` (one run per ui root); `integrity` re-hashes every evidence file and blob |
@@ -57,3 +58,13 @@ Truncation (`depth`, `max_nodes`) is recorded in `evidence.limitations`. By hand
 
 
 [Back to README](../README.md)
+
+## Output schemas and structured content
+
+Every tool advertises a compact `outputSchema` next to its `inputSchema` (JSON Schema 2020-12): the envelope (`ok`, `verb`, `schema`, `data`, `evidence`,
+`page`, `cost`, `error`) with this tool's `verb` and the `data` keys a caller can rely on (typed; `!` keys are always present in a successful answer;
+other keys stay open, so the schema is always a widening of the real answer). `tools/call` returns the same envelope as `structuredContent` and as
+the text content. A failed call has `ok: false`, `data: null` and an `error` with `code`, `message`, optional `hint` and a machine-readable `recovery`
+(`{kind, operation?, retryable}`; `kind` is `fix_arguments`, `retry`, `run_command`, `inspect`, `choose_candidate` or `none`). The per-tool part is
+one line of `crates/comparegraph/src/application/output_schema.rs`; `tests/output_schema.rs` calls every tool on the fixtures and validates the real
+answer against the advertised schema. Together the 37 schemas are about 50 KB on the wire (the input schemas are about 27 KB).

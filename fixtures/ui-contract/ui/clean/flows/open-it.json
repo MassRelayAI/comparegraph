@@ -24,10 +24,10 @@
   "steps": [
     {
       "action": "goto",
-      "domHash": "1f8d5205e22a799a7db612998e4256ae686d08b4f48531b0d8dddb2e5ea67ce0",
+      "domHash": "73073a3de4dea452d2a3214fdfc291cbe90e5753d0fe189e7b0c3ac6c3a688c7",
       "image": {
         "dhash": "0000000000000000",
-        "sha256": "633272c1a038ee13c1ea11268180b85c73e9d82555e6d46142daee6749998479"
+        "sha256": "a5e2ddd6274f2023f5b8663d3a294701c4175e247c89979f6489af5ac4633d25"
       },
       "key": {
         "screen": "unknown",
@@ -36,10 +36,10 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1566,
+        "settleMs": 1586,
         "stable": true,
         "wait": false,
-        "waitMs": 52
+        "waitMs": 65
       },
       "metrics": {
         "E1": {
@@ -102,18 +102,39 @@
           "xhr": 0
         },
         "bytes": 506,
+        "completeness": {
+          "attach_limited_sections": [],
+          "conditions": [
+            "complete_within_window"
+          ],
+          "dropped_events": {
+            "console_events": 0,
+            "network_requests": 0,
+            "scripts": 0,
+            "timeline_events": 0,
+            "total": 0,
+            "webmcp_tools": 0,
+            "websocket_connections": 0,
+            "websocket_frames": 0
+          },
+          "excluded": [],
+          "policy_filtered_sections": [],
+          "status": "complete_within_window",
+          "truncated_sections": [],
+          "unavailable_sections": []
+        },
         "failed": [],
         "requests": 1,
         "slowest": {
-          "ms": 2,
+          "ms": 5,
           "path": "/flow.html"
         },
         "thirdPartyHosts": 0,
         "timing": {
-          "contentStartVisibleMs": 143,
-          "domContentLoadedMs": 5,
-          "firstContentfulPaintMs": 143,
-          "loadMs": 19
+          "contentStartVisibleMs": 43,
+          "domContentLoadedMs": 10,
+          "firstContentfulPaintMs": 43,
+          "loadMs": 13
         }
       },
       "screen": "unknown",
@@ -122,10 +143,10 @@
     },
     {
       "action": "fill",
-      "domHash": "1f8d5205e22a799a7db612998e4256ae686d08b4f48531b0d8dddb2e5ea67ce0",
+      "domHash": "73073a3de4dea452d2a3214fdfc291cbe90e5753d0fe189e7b0c3ac6c3a688c7",
       "image": {
         "dhash": "0000000000000000",
-        "sha256": "49eee1891557ae820e3d6fa8a4c3be969e2b33ffcb40906573d499dbe1879854"
+        "sha256": "f4be8e0184c441c8a5f9983c3aa560d2d3d6404f989e905c94d4fb61801b9b0f"
       },
       "key": {
         "screen": "unknown",
@@ -134,10 +155,10 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1043,
+        "settleMs": 1025,
         "stable": true,
         "wait": false,
-        "waitMs": 13
+        "waitMs": 33
       },
       "metrics": {
         "E1": {
@@ -200,6 +221,27 @@
           "xhr": 0
         },
         "bytes": 0,
+        "completeness": {
+          "attach_limited_sections": [],
+          "conditions": [
+            "complete_within_window"
+          ],
+          "dropped_events": {
+            "console_events": 0,
+            "network_requests": 0,
+            "scripts": 0,
+            "timeline_events": 0,
+            "total": 0,
+            "webmcp_tools": 0,
+            "websocket_connections": 0,
+            "websocket_frames": 0
+          },
+          "excluded": [],
+          "policy_filtered_sections": [],
+          "status": "complete_within_window",
+          "truncated_sections": [],
+          "unavailable_sections": []
+        },
         "failed": [],
         "requests": 0,
         "slowest": {
@@ -214,10 +256,10 @@
     },
     {
       "action": "click",
-      "domHash": "e93a62eb9d582aa362a1ad3643e8a8fe5c96759499dbdc93a3cc7208803efd75",
+      "domHash": "7d09bd700310dcd7237f926722bbb3acd926b183d03d00f7b1716316e34da63f",
       "image": {
         "dhash": "0000000000000000",
-        "sha256": "8ebbbe8e4dcbd9dbed83fe0d2bb7e9fef5c6efb23f7ab5e0194249de4e660891"
+        "sha256": "083288cf9cd3c911897a799a10b0324fec6e59adc64df601d7a074892fd5fcd8"
       },
       "key": {
         "screen": "unknown",
@@ -226,10 +268,10 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1025,
+        "settleMs": 1031,
         "stable": true,
         "wait": false,
-        "waitMs": 41
+        "waitMs": 57
       },
       "metrics": {
         "E1": {
@@ -292,6 +334,27 @@
           "xhr": 0
         },
         "bytes": 0,
+        "completeness": {
+          "attach_limited_sections": [],
+          "conditions": [
+            "complete_within_window"
+          ],
+          "dropped_events": {
+            "console_events": 0,
+            "network_requests": 0,
+            "scripts": 0,
+            "timeline_events": 0,
+            "total": 0,
+            "webmcp_tools": 0,
+            "websocket_connections": 0,
+            "websocket_frames": 0
+          },
+          "excluded": [],
+          "policy_filtered_sections": [],
+          "status": "complete_within_window",
+          "truncated_sections": [],
+          "unavailable_sections": []
+        },
         "failed": [],
         "requests": 0,
         "slowest": {
@@ -306,10 +369,10 @@
     },
     {
       "action": "expect",
-      "domHash": "e93a62eb9d582aa362a1ad3643e8a8fe5c96759499dbdc93a3cc7208803efd75",
+      "domHash": "7d09bd700310dcd7237f926722bbb3acd926b183d03d00f7b1716316e34da63f",
       "image": {
         "dhash": "0000000000000000",
-        "sha256": "8ebbbe8e4dcbd9dbed83fe0d2bb7e9fef5c6efb23f7ab5e0194249de4e660891"
+        "sha256": "083288cf9cd3c911897a799a10b0324fec6e59adc64df601d7a074892fd5fcd8"
       },
       "key": {
         "screen": "unknown",
@@ -318,10 +381,10 @@
         "viewport": "1440x900"
       },
       "meta": {
-        "settleMs": 1019,
+        "settleMs": 1026,
         "stable": true,
         "wait": false,
-        "waitMs": 3
+        "waitMs": 8
       },
       "metrics": {
         "E1": {
@@ -384,6 +447,27 @@
           "xhr": 0
         },
         "bytes": 0,
+        "completeness": {
+          "attach_limited_sections": [],
+          "conditions": [
+            "complete_within_window"
+          ],
+          "dropped_events": {
+            "console_events": 0,
+            "network_requests": 0,
+            "scripts": 0,
+            "timeline_events": 0,
+            "total": 0,
+            "webmcp_tools": 0,
+            "websocket_connections": 0,
+            "websocket_frames": 0
+          },
+          "excluded": [],
+          "policy_filtered_sections": [],
+          "status": "complete_within_window",
+          "truncated_sections": [],
+          "unavailable_sections": []
+        },
         "failed": [],
         "requests": 0,
         "slowest": {
@@ -398,10 +482,10 @@
     },
     {
       "action": "click",
-      "domHash": "e93a62eb9d582aa362a1ad3643e8a8fe5c96759499dbdc93a3cc7208803efd75",
+      "domHash": "7d09bd700310dcd7237f926722bbb3acd926b183d03d00f7b1716316e34da63f",
       "image": {
         "dhash": "0000000000000000",
-        "sha256": "8ebbbe8e4dcbd9dbed83fe0d2bb7e9fef5c6efb23f7ab5e0194249de4e660891"
+        "sha256": "083288cf9cd3c911897a799a10b0324fec6e59adc64df601d7a074892fd5fcd8"
       },
       "key": {
         "screen": "unknown",
@@ -476,6 +560,27 @@
           "xhr": 0
         },
         "bytes": 0,
+        "completeness": {
+          "attach_limited_sections": [],
+          "conditions": [
+            "complete_within_window"
+          ],
+          "dropped_events": {
+            "console_events": 0,
+            "network_requests": 0,
+            "scripts": 0,
+            "timeline_events": 0,
+            "total": 0,
+            "webmcp_tools": 0,
+            "websocket_connections": 0,
+            "websocket_frames": 0
+          },
+          "excluded": [],
+          "policy_filtered_sections": [],
+          "status": "complete_within_window",
+          "truncated_sections": [],
+          "unavailable_sections": []
+        },
         "failed": [],
         "requests": 0,
         "slowest": {

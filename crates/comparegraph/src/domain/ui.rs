@@ -322,6 +322,159 @@ pub struct NetTiming {
     pub first_contentful_paint_ms: u64,
     pub content_start_visible_ms: u64,
 }
+/// `net.completeness` (REA completeness ledger v2, written by the probe on every capture since REA-A): what the capture did NOT keep.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DroppedEvents {
+    pub scripts: u64,
+    pub network_requests: u64,
+    pub console_events: u64,
+    pub websocket_connections: u64,
+    pub websocket_frames: u64,
+    pub webmcp_tools: u64,
+    pub timeline_events: u64,
+    pub total: u64,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Exclusion {
+    pub section: String,
+    pub reason: String,
+    pub count: Option<u64>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Completeness {
+    /// complete_within_window | policy_filtered | attach_limited | truncated
+    pub status: String,
+    pub conditions: Vec<String>,
+    pub policy_filtered_sections: Vec<String>,
+    pub attach_limited_sections: Vec<String>,
+    pub truncated_sections: Vec<String>,
+    pub unavailable_sections: Vec<String>,
+    pub excluded: Vec<Exclusion>,
+    pub dropped_events: DroppedEvents,
+}
+const COMPLETENESS_STATUS: &[&str] = &["complete_within_window", "policy_filtered", "attach_limited", "truncated"];
+impl Completeness {
+    /// True when the capture lost events or a section to a cap: a comparison that includes it is not a complete comparison.
+    pub fn truncated(&self) -> bool {
+        self.status == "truncated" || self.dropped_events.total > 0 || !self.truncated_sections.is_empty()
+    }
+    pub fn problems(&self) -> Vec<String> {
+        let d = &self.dropped_events;
+        let sum = d.scripts + d.network_requests + d.console_events + d.websocket_connections + d.websocket_frames + d.webmcp_tools + d.timeline_events;
+        let mut p = vec![];
+        if !COMPLETENESS_STATUS.contains(&self.status.as_str()) {
+            p.push(format!("net.completeness.status `{}` is not one of {}", self.status, COMPLETENESS_STATUS.join(", ")));
+        }
+        if sum != d.total {
+            p.push(format!("net.completeness.dropped_events.total {} is not the sum {sum}", d.total));
+        }
+        if self.status == "complete_within_window" && (d.total > 0 || !self.truncated_sections.is_empty()) {
+            p.push("net.completeness says complete_within_window but records dropped events or truncated sections".into());
+        }
+        p
+    }
+}
+/// One event of a recorded transaction (`net.behaviour.transactions[].events[]`): the request, then its outcome.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub enum NetEvent {
+    Request {
+        method: String,
+        path: String,
+        #[serde(rename = "type")]
+        type_: String,
+        /// first | third
+        party: String,
+    },
+    Response { status: u16 },
+    Aborted,
+    Failed,
+    Pending,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetTx {
+    pub events: Vec<NetEvent>,
+    /// sha256 (hex) of the normalised events together with the parent fingerprint: the identity of the transaction
+    pub fingerprint: String,
+    /// null for a root, the parent's fingerprint, or the string `unknown` when the redirect source was not observed
+    pub parent: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NormRule {
+    pub rule_id: String,
+    #[serde(rename = "match")]
+    pub match_: String,
+    pub replacement: String,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Normalization {
+    pub rules: Vec<NormRule>,
+    pub sha256: String,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Coverage {
+    /// complete | unknown (an unchanged claim is not supported)
+    pub status: String,
+    pub reasons: Vec<String>,
+}
+/// `net.behaviour` (`net-behaviour/1`, opt-in `--net-behaviour` in the probe): every request as a fingerprinted transaction, without times, queries, headers or bodies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetBehaviour {
+    pub schema: String,
+    pub normalization: Normalization,
+    pub transactions: Vec<NetTx>,
+    pub coverage: Coverage,
+    pub sha256: String,
+}
+pub const NET_BEHAVIOUR_SCHEMA: &str = "net-behaviour/1";
+fn is_sha(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+impl NetBehaviour {
+    pub fn problems(&self) -> Vec<String> {
+        let mut p = vec![];
+        if self.schema != NET_BEHAVIOUR_SCHEMA {
+            p.push(format!("net.behaviour.schema `{}` is not `{NET_BEHAVIOUR_SCHEMA}`", self.schema));
+        }
+        for (what, v) in [("sha256", &self.sha256), ("normalization.sha256", &self.normalization.sha256)] {
+            if !is_sha(v) {
+                p.push(format!("net.behaviour.{what} is not a sha256"));
+            }
+        }
+        if !["complete", "unknown"].contains(&self.coverage.status.as_str()) {
+            p.push(format!("net.behaviour.coverage.status `{}` is not complete or unknown", self.coverage.status));
+        }
+        for t in &self.transactions {
+            if !is_sha(&t.fingerprint) {
+                p.push("net.behaviour.transactions[].fingerprint is not a sha256".into());
+                break;
+            }
+            if !matches!(t.events.first(), Some(NetEvent::Request { .. })) {
+                p.push("net.behaviour.transactions[].events must start with the request".into());
+                break;
+            }
+        }
+        p
+    }
+}
+/// `net.shapes[]` (opt-in `--shapes`): a value-free JSON shape of one response, with the digest the probe computed. Never a body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetShape {
+    pub method: String,
+    pub path: String,
+    pub status: u16,
+    pub digest: String,
+    pub shape: Value,
+}
 /// `net` of a ui-evidence/1 file (CMP-UI-1-lanes section 13).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -338,6 +491,15 @@ pub struct Net {
     pub third_party_hosts: u64,
     #[serde(default)]
     pub timing: Option<NetTiming>,
+    /// REA-A: what the capture did not keep (caps, exclusions); absent in files from before REA-A
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completeness: Option<Completeness>,
+    /// opt-in `--net-behaviour`; not echoed by `show` (can hold 1500 transactions): `ui net-diff` reads it
+    #[serde(default, skip_serializing)]
+    pub behaviour: Option<NetBehaviour>,
+    /// opt-in `--shapes`; not echoed by `show`
+    #[serde(default, skip_serializing)]
+    pub shapes: Option<Vec<NetShape>>,
 }
 impl Net {
     pub fn problems(&self) -> Vec<String> {
@@ -352,6 +514,12 @@ impl Net {
             if !s.path.is_empty() && !path_ok(&s.path) {
                 p.push(format!("net.slowest.path `{}` must be a path without query or fragment", s.path));
             }
+        }
+        if let Some(c) = &self.completeness {
+            p.extend(c.problems());
+        }
+        if let Some(b) = &self.behaviour {
+            p.extend(b.problems());
         }
         p
     }
