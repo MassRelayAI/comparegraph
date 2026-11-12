@@ -42,7 +42,7 @@
       "meta": {
         "stable": true,
         "wait": false,
-        "waitMs": 1727
+        "waitMs": 1707
       },
       "metrics": {
         "E1": {
@@ -108,14 +108,14 @@
         "failed": [],
         "requests": 1,
         "slowest": {
-          "ms": 1,
+          "ms": 2,
           "path": "/flow.html"
         },
         "thirdPartyHosts": 0,
         "timing": {
-          "contentStartVisibleMs": 21,
-          "domContentLoadedMs": 4,
-          "firstContentfulPaintMs": 21,
+          "contentStartVisibleMs": 28,
+          "domContentLoadedMs": 5,
+          "firstContentfulPaintMs": 28,
           "loadMs": 16
         }
       },
@@ -139,7 +139,7 @@
       "meta": {
         "stable": true,
         "wait": false,
-        "waitMs": 1158
+        "waitMs": 1169
       },
       "metrics": {
         "E1": {
@@ -230,7 +230,7 @@
       "meta": {
         "stable": true,
         "wait": false,
-        "waitMs": 1181
+        "waitMs": 1182
       },
       "metrics": {
         "E1": {

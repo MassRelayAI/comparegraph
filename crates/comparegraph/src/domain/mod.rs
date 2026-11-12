@@ -3,6 +3,7 @@ pub mod graph;
 pub mod ids;
 pub mod run;
 pub mod ui;
+pub mod ui_graph;
 pub mod ui_nav;
 pub use evidence::{Confidence, Location};
 pub use graph::{content_hash, Edge, EdgeKind, Node, NodeKind};

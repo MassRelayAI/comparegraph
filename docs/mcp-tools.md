@@ -27,6 +27,9 @@ envelope as the CLI. Eighteen tools: seventeen read-only, one write (`comparegra
 | `comparegraph_ui_system` | UI evidence: a product's design system against the targets | `product` |
 | `comparegraph_ui_flow` | UI evidence: one flow's steps and dead ends | `product`, `task` |
 | `comparegraph_ui_nav` | UI evidence: a product's menu tree and derived numbers | `product`; optional `viewport`, `seat` |
+| `comparegraph_ui_graph` | UI evidence: a product's interaction graph (ui-graph/1): depth, orphans, dead actions, duplicate paths, cycles | `product`; optional `viewport`, `seat` |
+| `comparegraph_ui_path` | UI evidence: the shortest click path between two screens, bounded | `product`, `from`, `to`; optional `viewport`, `seat`, `max_len` |
+| `comparegraph_ui_graph_diff` | UI evidence: two interaction graphs (or `target`) compared by depth to each screen, orphans, dead actions | `ours`, `ref`; optional `viewport`, `seat`, `ref_seat`, `tree` |
 | `comparegraph_ui_nav_diff` | UI evidence: two menu trees compared in words | `ours`, `ref`; optional `viewport`, `seat`, `ref_seat` |
 | `comparegraph_ui_journey` | UI evidence: a journey per product (completed / partial / n/a) | `journey`; optional `products` |
 | `comparegraph_ui_coverage` | UI evidence: coverage table of a run, blank cells reported | `run` |

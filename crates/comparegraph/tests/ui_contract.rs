@@ -69,6 +69,25 @@ fn every_ui_verb_reads_the_probes_own_output_without_invalid_evidence() {
     let j = clean(&["journey", "j1"]);
     assert_eq!(j["data"]["items"].as_array().unwrap().len(), 2);
 
+    // CMP-UI-1g: the interaction graphs the probe crawled (read-only) on its own /g/ fixture site
+    let g = clean(&["graph", "clean"]);
+    let s = &g["data"]["summary"];
+    assert_eq!((s["nodes"].as_u64(), s["orphans"].as_u64(), s["deadActions"].as_u64(), s["mutatingNotClicked"].as_u64(), s["cycles"].as_u64()), (Some(8), Some(1), Some(3), Some(3), Some(1)), "{g}");
+    assert_eq!(g["data"]["orphans"], serde_json::json!(["flows-list"]), "the registry has flows-list (/g/orphan); no click reaches it");
+    assert_eq!(g["data"]["start"], "room");
+    assert_eq!(g["data"]["depth"]["unregistered:/g/hidden"], 2, "reachable only through the Details dialog");
+    let p = clean(&["path", "clean", "room", "unregistered:/g/hidden"]);
+    assert_eq!(p["data"]["clicks"], 2);
+    assert_eq!(p["data"]["steps"][0]["effect"], "open-dialog");
+    let gc = clean(&["graph", "cluttered"]);
+    assert_eq!(gc["data"]["truncated"]["depth"], true, "the cluttered graph was crawled to depth 1 and says so");
+    assert!(gc["evidence"]["limitations"].to_string().contains("graph_truncated"), "{gc}");
+    let gd = clean(&["graph-diff", "--ours", "cluttered", "--ref", "clean"]);
+    assert!(gd["data"]["depth"].as_array().unwrap().iter().any(|r| r["screen"] == "inbox"));
+    assert!(!gd["data"]["diff"].as_array().unwrap().is_empty(), "{gd}");
+    let gt = clean(&["graph-diff", "--ours", "clean", "--ref", "target", "--tree", "app"]);
+    assert_eq!(gt["data"]["ref"]["product"], "target");
+
     // verify between the two probe runs of the same fixtures (two products, so check both)
     for product in ["cluttered", "clean"] {
         let (a, b) = (run_id(product, "a"), run_id(product, "b"));

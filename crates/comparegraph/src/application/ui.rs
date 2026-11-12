@@ -3,6 +3,7 @@
 #![allow(clippy::result_large_err)] // serde_json::Value is larger with arbitrary_precision
 use super::{AppError, Result};
 use crate::domain::ui::*;
+use crate::domain::ui_graph::UiGraph;
 use crate::domain::ui_nav::*;
 use crate::domain::Limitation;
 use serde::de::DeserializeOwned;
@@ -28,6 +29,7 @@ pub struct Want {
     pub flows: bool,
     pub navs: bool,
     pub systems: bool,
+    pub graphs: bool,
 }
 pub struct UiSet {
     /// the `ui-root` as given, for the paths we print
@@ -39,6 +41,7 @@ pub struct UiSet {
     pub evidence: Vec<Loaded>,
     pub flows: Vec<(String, UiFlow)>,
     pub navs: Vec<(String, UiNav)>,
+    pub graphs: Vec<(String, UiGraph)>,
     pub systems: BTreeMap<String, std::result::Result<Style, String>>,
     pub map: Vec<MapRow>,
     pub registry: Option<UiRegistry>,
@@ -51,7 +54,7 @@ pub struct UiSet {
 fn bad(m: String) -> AppError {
     AppError::InvalidArguments(m)
 }
-fn need_token(what: &str, v: &str) -> Result<()> {
+pub(super) fn need_token(what: &str, v: &str) -> Result<()> {
     if token_ok(v) {
         Ok(())
     } else {
@@ -136,7 +139,7 @@ impl UiSet {
         serde_json::to_value(l).unwrap()
     }
     /// Attach the evidence limitations to an answer.
-    fn finish(&self, mut v: Value, extra: &[Limitation]) -> Value {
+    pub(super) fn finish(&self, mut v: Value, extra: &[Limitation]) -> Value {
         v["limitation_items"] = self.limitations(extra);
         v
     }
@@ -151,7 +154,7 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
         return Err(AppError::NotFound(format!("no ui directory at {}", root.display())));
     }
     let mut set = UiSet {
-        shown: slash(&root.display().to_string()), dir: dir.clone(), nested, products: BTreeSet::new(), evidence: vec![], flows: vec![], navs: vec![],
+        shown: slash(&root.display().to_string()), dir: dir.clone(), nested, products: BTreeSet::new(), evidence: vec![], flows: vec![], navs: vec![], graphs: vec![],
         systems: BTreeMap::new(), map: vec![], registry: None, invalid: vec![], truncated: false, max_nodes, count: 0,
     };
     if std::fs::symlink_metadata(dir.join("map.csv")).is_ok() {
@@ -237,7 +240,25 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
                         }
                     }
                 }
-                "flows" | "nav" => {}
+                "graph" if want.graphs => {
+                    for (f, fp, d) in entries(&path)? {
+                        if d || !f.ends_with(".json") || !set.take() {
+                            continue;
+                        }
+                        let rel = format!("{product}/graph/{f}");
+                        match read_json::<UiGraph>(&fp) {
+                            Ok(g) => {
+                                let mut p = g.problems();
+                                if g.product != product || format!("{}.json", g.stem()) != f {
+                                    p.push("product, viewport or seat does not match the path".into());
+                                }
+                                if p.is_empty() { set.graphs.push((rel, g)) } else { set.invalid.push((rel, p.join("; "))) }
+                            }
+                            Err(e) => set.invalid.push((rel, e)),
+                        }
+                    }
+                }
+                "flows" | "nav" | "graph" | "graph-log" => {}
                 _ if want.evidence => {
                     for (state, spath, sd) in entries(&path)? {
                         if !sd {
@@ -267,12 +288,12 @@ pub fn open(root: &Path, max_nodes: usize, only: Option<&[&str]>, want: Want) ->
     }
     Ok(set)
 }
-const EV: Want = Want { evidence: true, flows: false, navs: false, systems: false };
+const EV: Want = Want { evidence: true, flows: false, navs: false, systems: false, graphs: false };
 
 fn screens_of<'a>(set: &'a UiSet, product: &str) -> BTreeSet<&'a str> {
     set.evidence_of(product).map(|l| l.ev.screen.as_str()).collect()
 }
-fn need_product(set: &UiSet, product: &str) -> Result<()> {
+pub(super) fn need_product_pub(set: &UiSet, product: &str) -> Result<()> {
     if set.products.contains(product) {
         Ok(())
     } else {
@@ -282,12 +303,12 @@ fn need_product(set: &UiSet, product: &str) -> Result<()> {
 fn available(cands: &[&Loaded]) -> String {
     cands.iter().map(|l| format!("{}/{}", l.ev.state, l.ev.stem())).collect::<Vec<_>>().join(", ")
 }
-fn seat_rank(seat: &str) -> usize {
+pub(super) fn seat_rank(seat: &str) -> usize {
     SEAT_PREFERENCE.iter().position(|s| *s == seat).unwrap_or(SEAT_PREFERENCE.len())
 }
 /// The one evidence file for product/screen/state; `viewport` None prefers 1440x900. Never crosses state.
 fn select<'a>(set: &'a UiSet, product: &str, screen: &str, state: &str, viewport: Option<&str>, seat: Option<&str>) -> Result<&'a Loaded> {
-    need_product(set, product)?;
+    need_product_pub(set, product)?;
     let of_screen: Vec<&Loaded> = set.evidence_of(product).filter(|l| l.ev.screen == screen).collect();
     if of_screen.is_empty() {
         return Err(AppError::NotFound(format!("product `{product}` has no screen `{screen}` (screens: {})", screens_of(set, product).into_iter().collect::<Vec<_>>().join(", "))));
@@ -331,7 +352,7 @@ fn metric_ids_sorted(a: &UiEvidence, b: Option<&UiEvidence>) -> Vec<String> {
 }
 
 pub fn products(root: &Path, max_nodes: usize) -> Result<Value> {
-    let set = open(root, max_nodes, None, Want { evidence: true, flows: true, navs: true, systems: true })?;
+    let set = open(root, max_nodes, None, Want { evidence: true, flows: true, navs: true, systems: true, graphs: false })?;
     let items: Vec<Value> = set
         .products
         .iter()
@@ -353,7 +374,7 @@ pub fn products(root: &Path, max_nodes: usize) -> Result<Value> {
 pub fn screens(root: &Path, max_nodes: usize, product: &str) -> Result<Value> {
     need_token("product", product)?;
     let set = open(root, max_nodes, Some(&[product]), EV)?;
-    need_product(&set, product)?;
+    need_product_pub(&set, product)?;
     let mut items = vec![];
     for s in screens_of(&set, product) {
         let files: Vec<&Loaded> = set.evidence_of(product).filter(|l| l.ev.screen == s).collect();
@@ -425,8 +446,8 @@ pub fn diff(root: &Path, max_nodes: usize, target: &str, ours: &str, refp: &str,
         need_token(w, v)?;
     }
     let set = open(root, max_nodes, Some(&[ours, refp]), EV)?;
-    need_product(&set, ours)?;
-    need_product(&set, refp)?;
+    need_product_pub(&set, ours)?;
+    need_product_pub(&set, refp)?;
     let (so, sr) = (resolve_screen(&set, ours, target)?, resolve_screen(&set, refp, target)?);
     if so != sr {
         return Err(bad(format!("refused: `{target}` is screen `{so}` for {ours} but `{sr}` for {refp}; a comparison is only within the same screen, state and viewport")));
@@ -527,7 +548,7 @@ pub fn matrix(root: &Path, ui_root: &Path, max_nodes: usize, family: &str, state
 pub fn system(root: &Path, max_nodes: usize, product: &str) -> Result<Value> {
     need_token("product", product)?;
     let set = open(root, max_nodes, Some(&[product]), Want { evidence: true, systems: true, ..Default::default() })?;
-    need_product(&set, product)?;
+    need_product_pub(&set, product)?;
     let mut lims = vec![];
     let (source, style, unioned) = match set.systems.get(product) {
         Some(Ok(s)) => ("system.json", s.clone(), 0),
@@ -546,7 +567,7 @@ pub fn flow(root: &Path, max_nodes: usize, product: &str, task: &str) -> Result<
     need_token("product", product)?;
     need_token("task", task)?;
     let set = open(root, max_nodes, Some(&[product]), Want { flows: true, ..Default::default() })?;
-    need_product(&set, product)?;
+    need_product_pub(&set, product)?;
     let (_, f) = set.flows.iter().find(|(_, f)| f.task == task).ok_or_else(|| {
         AppError::NotFound(format!("`{product}` has no flow `{task}` (flows: {})", set.flows.iter().map(|(_, f)| f.task.clone()).collect::<Vec<_>>().join(", ")))
     })?;
@@ -560,7 +581,7 @@ pub fn flow(root: &Path, max_nodes: usize, product: &str, task: &str) -> Result<
 }
 
 fn select_nav<'a>(set: &'a UiSet, product: &str, viewport: &str, seat: Option<&str>) -> Result<&'a UiNav> {
-    need_product(set, product)?;
+    need_product_pub(set, product)?;
     let all: Vec<&UiNav> = set.navs.iter().filter(|(_, n)| n.product == product).map(|(_, n)| n).collect();
     let mut c: Vec<&UiNav> = all.iter().copied().filter(|n| n.viewport == viewport && seat.is_none_or(|s| n.seat == s)).collect();
     c.sort_by_key(|n| (seat_rank(&n.seat), n.seat.clone()));
@@ -568,7 +589,7 @@ fn select_nav<'a>(set: &'a UiSet, product: &str, viewport: &str, seat: Option<&s
         AppError::NotFound(format!("`{product}` has no nav for viewport {viewport} seat {} (navs: {})", seat.unwrap_or("any"), all.iter().map(|n| n.stem()).collect::<Vec<_>>().join(", ")))
     })
 }
-const NAVS: Want = Want { evidence: false, flows: false, navs: true, systems: false };
+const NAVS: Want = Want { evidence: false, flows: false, navs: true, systems: false, graphs: false };
 
 pub fn nav(root: &Path, max_nodes: usize, product: &str, viewport: Option<&str>, seat: Option<&str>) -> Result<Value> {
     need_token("product", product)?;

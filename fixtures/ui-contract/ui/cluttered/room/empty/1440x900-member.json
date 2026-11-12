@@ -53,7 +53,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T06:31:24.014Z",
+    "capturedAt": "2026-11-12T07:04:26.829Z",
     "url": "http://127.0.0.1:47831/cluttered.html"
   },
   "metrics": {
@@ -170,14 +170,14 @@
     "failed": [],
     "requests": 1,
     "slowest": {
-      "ms": 1,
+      "ms": 2,
       "path": "/cluttered.html"
     },
     "thirdPartyHosts": 0,
     "timing": {
-      "contentStartVisibleMs": 23,
+      "contentStartVisibleMs": 19,
       "domContentLoadedMs": 3,
-      "firstContentfulPaintMs": 23,
+      "firstContentfulPaintMs": 19,
       "loadMs": 4
     }
   },

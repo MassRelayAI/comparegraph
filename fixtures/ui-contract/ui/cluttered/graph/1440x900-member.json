@@ -1,0 +1,270 @@
+{
+  "caps": {
+    "depth": 1,
+    "nodes": 300
+  },
+  "derived": {
+    "actionsMax": 12,
+    "actionsMean": 12,
+    "actionsPerScreen": {
+      "room": 12
+    },
+    "blockedWrites": 1,
+    "cycles": 0,
+    "deadActionCount": 3,
+    "deadActions": [
+      {
+        "effect": "error",
+        "from": "room",
+        "kind": "menu",
+        "name": "Gone",
+        "region": "topbar"
+      },
+      {
+        "effect": "none",
+        "from": "room",
+        "kind": "button",
+        "name": "Look around",
+        "region": "main"
+      },
+      {
+        "effect": "none",
+        "from": "room",
+        "kind": "button",
+        "name": "Tidy up",
+        "region": "main"
+      }
+    ],
+    "depth": {
+      "inbox": 1,
+      "room": 0,
+      "room#dialog:Details": 1,
+      "room#panel:More": 1,
+      "settings": 1
+    },
+    "duplicatePaths": [],
+    "edgeCount": 12,
+    "maxDepth": 1,
+    "meanDepth": 0.8,
+    "mutatingNotClicked": 2,
+    "nodeCount": 6,
+    "orphanCount": 1,
+    "orphans": [
+      "flows-list"
+    ],
+    "reachable": 5
+  },
+  "edges": [
+    {
+      "action": {
+        "kind": "menu",
+        "name": "Home",
+        "region": "topbar"
+      },
+      "effect": "navigate",
+      "from": "room",
+      "to": "room"
+    },
+    {
+      "action": {
+        "kind": "menu",
+        "name": "Inbox",
+        "region": "topbar"
+      },
+      "effect": "navigate",
+      "from": "room",
+      "to": "inbox"
+    },
+    {
+      "action": {
+        "kind": "menu",
+        "name": "Settings",
+        "region": "topbar"
+      },
+      "effect": "navigate",
+      "from": "room",
+      "to": "settings"
+    },
+    {
+      "action": {
+        "kind": "menu",
+        "name": "Gone",
+        "region": "topbar"
+      },
+      "effect": "error",
+      "from": "room",
+      "to": "unregistered:/g/missing"
+    },
+    {
+      "action": {
+        "kind": "menu",
+        "name": "Docs",
+        "region": "topbar"
+      },
+      "effect": "external",
+      "from": "room",
+      "to": "external"
+    },
+    {
+      "action": {
+        "kind": "button",
+        "name": "More",
+        "region": "topbar"
+      },
+      "effect": "open-panel",
+      "from": "room",
+      "to": "room#panel:More"
+    },
+    {
+      "action": {
+        "kind": "dialog-open",
+        "name": "Open details",
+        "region": "main"
+      },
+      "effect": "open-dialog",
+      "from": "room",
+      "to": "room#dialog:Details"
+    },
+    {
+      "action": {
+        "kind": "button",
+        "name": "Look around",
+        "region": "main"
+      },
+      "effect": "none",
+      "from": "room",
+      "to": "room"
+    },
+    {
+      "action": {
+        "kind": "button",
+        "name": "Delete item",
+        "region": "main"
+      },
+      "effect": "mutating-not-clicked",
+      "from": "room",
+      "to": "unknown"
+    },
+    {
+      "action": {
+        "kind": "button",
+        "name": "Tidy up",
+        "region": "main"
+      },
+      "effect": "none",
+      "from": "room",
+      "to": "room"
+    },
+    {
+      "action": {
+        "kind": "tab",
+        "name": "Activity",
+        "region": "main"
+      },
+      "effect": "toggle",
+      "from": "room",
+      "to": "room"
+    },
+    {
+      "action": {
+        "kind": "button",
+        "name": "Go",
+        "region": "main"
+      },
+      "effect": "mutating-not-clicked",
+      "from": "room",
+      "to": "unknown"
+    }
+  ],
+  "locale": "en-US",
+  "meta": {
+    "capturedAt": "2026-11-12T07:04:10.601Z",
+    "url": "http://127.0.0.1:47831/g/home"
+  },
+  "nodes": [
+    {
+      "depth": 1,
+      "domHash": "867d059154eabd098cbfa2ad3b6f931e85a23f03e9df8b81b92a01385c5c5242",
+      "id": "inbox",
+      "route": "/g/inbox",
+      "state": "populated"
+    },
+    {
+      "depth": 0,
+      "domHash": "53b7a7a8f1fb69e309d4e6ab351a19441dde39d9d8e439bd4568819605b2528c",
+      "id": "room",
+      "route": "/g/home",
+      "state": "populated"
+    },
+    {
+      "depth": 1,
+      "domHash": "a9ce639555745cf24ff7a7ea974bf0775127b2a57413496a8c4e7f6905b867c2",
+      "id": "room#dialog:Details",
+      "route": "/g/home",
+      "state": "populated",
+      "via": 1
+    },
+    {
+      "depth": 1,
+      "domHash": "f0003a9795ed5fdfa930fd280f117dde3636f6ae2cb29124b3b26fb5d21bf157",
+      "id": "room#panel:More",
+      "route": "/g/home",
+      "state": "populated",
+      "via": 1
+    },
+    {
+      "depth": 1,
+      "domHash": "3203f14e29310f1cf4959d9817b2f247ef66d1a9013e54d77830ed5103661035",
+      "id": "settings",
+      "route": "/g/settings",
+      "state": "populated"
+    },
+    {
+      "depth": 1,
+      "domHash": "4e0358cc7729901e30bc702f71b211d27c3f44ba2513a952bf6cb7035382cfac",
+      "id": "unregistered:/g/missing",
+      "route": "/g/missing",
+      "state": "populated"
+    }
+  ],
+  "probe": {
+    "env": {
+      "clock": "2026-01-15T10:00:00.000Z",
+      "colorScheme": "light",
+      "deviceScaleFactor": 1,
+      "locale": "en-US",
+      "reducedMotion": "reduce",
+      "timezone": "UTC",
+      "viewport": {
+        "height": 900,
+        "width": 1440
+      }
+    },
+    "version": "1",
+    "wordsVersion": "1"
+  },
+  "product": "cluttered",
+  "registryScreens": [
+    "flows-list",
+    "inbox",
+    "room",
+    "settings"
+  ],
+  "schema": "ui-graph/1",
+  "seat": "member",
+  "start": "room",
+  "theme": "light",
+  "truncated": {
+    "depth": true,
+    "nodes": false,
+    "unexpanded": [
+      "inbox",
+      "room#dialog:Details",
+      "room#panel:More",
+      "settings",
+      "unregistered:/g/missing"
+    ]
+  },
+  "version": "contract-1",
+  "viewport": "1440x900"
+}

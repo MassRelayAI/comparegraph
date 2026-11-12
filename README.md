@@ -270,6 +270,9 @@ comparegraph ui show ours room --ui-root ./captures                       # the 
 comparegraph ui diff room --ours ours --ref theirs --ui-root ./captures   # layout and style differences in words
 comparegraph ui matrix FAMILY --ui-root ./captures                        # one family's rows against every product
 comparegraph ui nav-diff --ours ours --ref theirs --ui-root ./captures    # menu tree against menu tree
+comparegraph ui graph ours --ui-root ./captures                           # interaction graph: depth, orphans, dead actions, cycles
+comparegraph ui path ours room inbox --ui-root ./captures                 # shortest click path between two screens
+comparegraph ui graph-diff --ours ours --ref target --ui-root ./captures  # against the intended graph built from target-nav.json
 comparegraph ui journey j1 --ui-root ./captures                           # who completes the goal, in how many clicks
 comparegraph ui matrix FAMILY --net --ui-root ./captures                  # also: captures with failed network calls
 comparegraph ui verify --root-a ./run1 --root-b ./run2                    # the determinism gate: run twice (own root each), diff

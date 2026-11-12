@@ -277,7 +277,7 @@ fn mcp_exposes_eighteen_tools_and_the_analysis_verbs() {
         ],
     );
     let tools = out[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 30);
+    assert_eq!(tools.len(), 33);
     for t in tools {
         assert_eq!(t["inputSchema"]["additionalProperties"], false);
     }

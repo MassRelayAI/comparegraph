@@ -115,6 +115,12 @@ pub fn tools() -> Vec<Value> {
             "product":{"type":"string"}, "viewport":{"type":"string","description":"default 1440x900"}, "seat":{"type":"string"} }), &["product"])),
         tool("comparegraph_ui_nav_diff", "UI evidence: two menu trees compared in words (same viewport): places, depth, items per level, duplicates, dead items, items only via overflow, screens only on one side.", ui_schema(json!({
             "ours":{"type":"string"}, "ref":{"type":"string"}, "viewport":{"type":"string"}, "seat":{"type":"string"}, "ref_seat":{"type":"string"} }), &["ours", "ref"])),
+        tool("comparegraph_ui_graph", "UI evidence: a product's interaction graph (ui-graph/1): reachable screens, depth from the start, orphans vs the registry, dead actions, duplicate paths, cycles, actions per screen. Read-only crawl evidence.", ui_schema(json!({
+            "product":{"type":"string"}, "viewport":{"type":"string","description":"default 1440x900"}, "seat":{"type":"string"} }), &["product"])),
+        tool("comparegraph_ui_path", "UI evidence: the shortest click path between two screens (or dialogs) of a product's interaction graph, bounded by max_len (default 8, max 20).", ui_schema(json!({
+            "product":{"type":"string"}, "from":{"type":"string"}, "to":{"type":"string"}, "viewport":{"type":"string"}, "seat":{"type":"string"}, "max_len":{"type":"integer","minimum":1,"maximum":20} }), &["product", "from", "to"])),
+        tool("comparegraph_ui_graph_diff", "UI evidence: two interaction graphs compared: depth to each comparable screen, orphans, dead actions. ref may be `target` (built from target-nav.json).", ui_schema(json!({
+            "ours":{"type":"string"}, "ref":{"type":"string"}, "viewport":{"type":"string"}, "seat":{"type":"string"}, "ref_seat":{"type":"string"}, "tree":{"type":"string","description":"target tree: app | router | console"} }), &["ours", "ref"])),
         tool("comparegraph_ui_journey", "UI evidence: a journey per product: completed, partial at step N, or n/a with the reason, and screens, clicks, decisions, waits, dead ends, time to first useful thing.", ui_schema(json!({
             "journey":{"type":"string"}, "products":{"type":"string","description":"comma list"} }), &["journey"])),
         tool("comparegraph_ui_coverage", "UI evidence: the coverage table of a run (captured / n/a / failed per product); a blank cell makes the run incomplete and is listed.", ui_schema(json!({"run":{"type":"string"}}), &["run"])),
@@ -196,6 +202,9 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             "comparegraph_ui_flow" => &["product", "task", "ui_root", "max_nodes"],
             "comparegraph_ui_nav" => &["product", "viewport", "seat", "ui_root", "max_nodes"],
             "comparegraph_ui_nav_diff" => &["ours", "ref", "viewport", "seat", "ref_seat", "ui_root", "max_nodes"],
+            "comparegraph_ui_graph" => &["product", "viewport", "seat", "ui_root", "max_nodes"],
+            "comparegraph_ui_path" => &["product", "from", "to", "viewport", "seat", "max_len", "ui_root", "max_nodes"],
+            "comparegraph_ui_graph_diff" => &["ours", "ref", "viewport", "seat", "ref_seat", "tree", "ui_root", "max_nodes"],
             "comparegraph_ui_journey" => &["journey", "products", "ui_root", "max_nodes"],
             "comparegraph_ui_coverage" => &["run", "ui_root", "max_nodes"],
             "comparegraph_ui_verify" => &["run_a", "run_b", "root_a", "root_b", "ui_root", "max_nodes"],
@@ -342,6 +351,9 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 "comparegraph_ui_flow" => UiCmd::Flow { product: req(a, "product")?, task: req(a, "task")? },
                 "comparegraph_ui_nav" => UiCmd::Nav { product: req(a, "product")?, viewport: s("viewport")?, seat: s("seat")? },
                 "comparegraph_ui_nav_diff" => UiCmd::NavDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")? },
+                "comparegraph_ui_graph" => UiCmd::Graph { product: req(a, "product")?, viewport: s("viewport")?, seat: s("seat")? },
+                "comparegraph_ui_path" => UiCmd::Path { product: req(a, "product")?, from: req(a, "from")?, to: req(a, "to")?, viewport: s("viewport")?, seat: s("seat")?, max_len: uint_arg(a, "max_len", 8)? },
+                "comparegraph_ui_graph_diff" => UiCmd::GraphDiff { ours: req(a, "ours")?, refp: req(a, "ref")?, viewport: s("viewport")?, seat: s("seat")?, ref_seat: s("ref_seat")?, tree: s("tree")? },
                 "comparegraph_ui_journey" => UiCmd::Journey { journey: req(a, "journey")?, products: s("products")? },
                 "comparegraph_ui_coverage" => UiCmd::Coverage { run: req(a, "run")? },
                 _ => UiCmd::Verify { run_a: s("run_a")?, run_b: s("run_b")?, root_a: s("root_a")?.map(PathBuf::from), root_b: s("root_b")?.map(PathBuf::from) },

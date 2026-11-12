@@ -22,6 +22,7 @@ pub mod setup;
 pub mod show;
 pub mod termscore;
 pub mod ui;
+pub mod ui_graph;
 pub mod vault;
 use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]

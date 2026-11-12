@@ -12,7 +12,7 @@
   },
   "journey": "j1",
   "meta": {
-    "waits": 1
+    "waits": 2
   },
   "metrics": {
     "deadEnds": 1,
@@ -26,7 +26,7 @@
     "bytes": 506,
     "failed": 0,
     "requests": 1,
-    "waits": 1
+    "waits": 2
   },
   "product": "cluttered",
   "schema": "ui-journey/1",
@@ -48,8 +48,8 @@
       },
       "meta": {
         "stable": true,
-        "wait": false,
-        "waitMs": 1704
+        "wait": true,
+        "waitMs": 22151
       },
       "metrics": {
         "E1": {
@@ -115,15 +115,15 @@
         "failed": [],
         "requests": 1,
         "slowest": {
-          "ms": 1,
+          "ms": 20383,
           "path": "/flow.html"
         },
         "thirdPartyHosts": 0,
         "timing": {
-          "contentStartVisibleMs": 35,
-          "domContentLoadedMs": 4,
-          "firstContentfulPaintMs": 35,
-          "loadMs": 16
+          "contentStartVisibleMs": 33,
+          "domContentLoadedMs": 5,
+          "firstContentfulPaintMs": 33,
+          "loadMs": 18
         }
       },
       "screen": "room",
@@ -146,7 +146,7 @@
       "meta": {
         "stable": true,
         "wait": false,
-        "waitMs": 1176
+        "waitMs": 1192
       },
       "metrics": {
         "E1": {
@@ -237,7 +237,7 @@
       "meta": {
         "stable": true,
         "wait": false,
-        "waitMs": 1177
+        "waitMs": 1213
       },
       "metrics": {
         "E1": {
@@ -328,7 +328,7 @@
       "meta": {
         "stable": true,
         "wait": true,
-        "waitMs": 4152
+        "waitMs": 4142
       },
       "metrics": {
         "E1": {

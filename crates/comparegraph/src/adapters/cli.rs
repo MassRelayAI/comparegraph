@@ -107,6 +107,43 @@ pub enum UiCmd {
         #[arg(long)]
         ref_seat: Option<String>,
     },
+    /// The interaction graph of a product (ui-graph/1): reachable screens, depth, orphans, dead actions, cycles, actions per screen
+    Graph {
+        product: String,
+        #[arg(long)]
+        viewport: Option<String>,
+        #[arg(long)]
+        seat: Option<String>,
+    },
+    /// The shortest click path between two screens of a product's graph (bounded by --max-len)
+    Path {
+        product: String,
+        from: String,
+        to: String,
+        #[arg(long)]
+        viewport: Option<String>,
+        #[arg(long)]
+        seat: Option<String>,
+        /// most clicks looked at, 1..=20
+        #[arg(long, default_value_t = 8)]
+        max_len: usize,
+    },
+    /// Two interaction graphs compared: depth to each comparable screen, orphans, dead actions; `--ref target` builds the intended graph from target-nav.json
+    GraphDiff {
+        #[arg(long)]
+        ours: String,
+        #[arg(long = "ref")]
+        refp: String,
+        #[arg(long)]
+        viewport: Option<String>,
+        #[arg(long)]
+        seat: Option<String>,
+        #[arg(long)]
+        ref_seat: Option<String>,
+        /// which tree of target-nav.json (app | router | console); default by product
+        #[arg(long)]
+        tree: Option<String>,
+    },
     /// A journey per product: completed / partial at step N / n/a, and its numbers
     Journey {
         journey: String,
@@ -593,6 +630,9 @@ fn verb_of(c: &Cmd) -> &'static str {
             UiCmd::Flow { .. } => "ui-flow",
             UiCmd::Nav { .. } => "ui-nav",
             UiCmd::NavDiff { .. } => "ui-nav-diff",
+            UiCmd::Graph { .. } => "ui-graph",
+            UiCmd::Path { .. } => "ui-path",
+            UiCmd::GraphDiff { .. } => "ui-graph-diff",
             UiCmd::Journey { .. } => "ui-journey",
             UiCmd::Coverage { .. } => "ui-coverage",
             UiCmd::Verify { .. } => "ui-verify",
@@ -823,7 +863,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
             let conf = if matches!(
                 cli.cmd,
                 Cmd::Check | Cmd::Claims { .. } | Cmd::Matrix { .. }
-                    | Cmd::Ui { what: UiCmd::Diff { .. } | UiCmd::Matrix { .. } | UiCmd::NavDiff { .. } | UiCmd::Verify { .. }, .. }
+                    | Cmd::Ui { what: UiCmd::Diff { .. } | UiCmd::Matrix { .. } | UiCmd::NavDiff { .. } | UiCmd::GraphDiff { .. } | UiCmd::Verify { .. }, .. }
             ) {
                 "derived"
             } else if matches!(cli.cmd, Cmd::Claim { .. }) {
@@ -1274,6 +1314,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 UiCmd::Flow { product, task } => u::flow(ur, m, product, task)?,
                 UiCmd::Nav { product, viewport, seat } => u::nav(ur, m, product, vp(viewport), vp(seat))?,
                 UiCmd::NavDiff { ours, refp, viewport, seat, ref_seat } => u::nav_diff_verb(ur, m, ours, refp, vp(viewport), vp(seat), vp(ref_seat))?,
+                UiCmd::Graph { product, viewport, seat } => crate::application::ui_graph::graph(ur, m, product, vp(viewport), vp(seat))?,
+                UiCmd::Path { product, from, to, viewport, seat, max_len } => crate::application::ui_graph::path(ur, m, product, from, to, vp(viewport), vp(seat), *max_len)?,
+                UiCmd::GraphDiff { ours, refp, viewport, seat, ref_seat, tree } => crate::application::ui_graph::graph_diff(ur, m, ours, refp, vp(viewport), vp(seat), vp(ref_seat), vp(tree))?,
                 UiCmd::Journey { journey, products } => {
                     let ps: Vec<String> = products.as_deref().map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default();
                     u::journey(ur, journey, &ps)?

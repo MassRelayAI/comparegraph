@@ -230,6 +230,7 @@ reader, which is not in `Cargo.lock` - reported as `snapshot_recompute_pending` 
 | `ui matrix <family> [--state --viewport]` | family rows x products, cell = pass count / 12 or `-`, through `map.csv` |
 | `ui system <product>` | design system (`system.json`, else the union of its 1440x900 captures) against <= 6 type sizes, <= 12 colours, >= 0.95 on the 4px scale |
 | `ui flow <product> <task>` | steps, clicks, dead ends |
+| `ui graph <product>` / `ui path <product> <from> <to>` / `ui graph-diff --ours P --ref Q\|target` | the interaction graph (ui-graph/1, `<product>/graph/<viewport>-<seat>.json`): depth from the start, orphans vs the registry, dead actions (effect none/error), duplicate paths, cycles, actions per screen; the shortest click path (bounded by `--max-len`, default 8); depth to each comparable screen against another product or the target tree (`target-nav.json`). Numbers are recomputed from nodes and edges, never read from the probe |
 | `ui nav <product>` / `ui nav-diff --ours P --ref Q` | the menu tree and its numbers (places, depth, items per level and group, destinations, duplicates, dead items, items only via overflow); the tree difference in words |
 | `ui journey <journey> [--products a,b]` | per product: completed / partial at step N / n/a with the reason, and the journey numbers |
 | `ui coverage <runId>` | captured / n/a / failed per product; a blank cell makes the run incomplete and is listed |

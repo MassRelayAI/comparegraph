@@ -1,0 +1,161 @@
+{
+  "clicks": [
+    {
+      "blockedWrites": [],
+      "clicked": false,
+      "cls": "safe",
+      "effect": "navigate",
+      "kind": "menu",
+      "n": 1,
+      "name": "Home",
+      "node": "room",
+      "reason": "known target",
+      "region": "topbar"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": true,
+      "cls": "safe",
+      "effect": "navigate",
+      "kind": "menu",
+      "n": 2,
+      "name": "Inbox",
+      "node": "room",
+      "reason": "",
+      "region": "topbar"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": true,
+      "cls": "safe",
+      "effect": "navigate",
+      "kind": "menu",
+      "n": 3,
+      "name": "Settings",
+      "node": "room",
+      "reason": "",
+      "region": "topbar"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": true,
+      "cls": "safe",
+      "effect": "error",
+      "kind": "menu",
+      "n": 4,
+      "name": "Gone",
+      "node": "room",
+      "reason": "",
+      "region": "topbar"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": false,
+      "cls": "safe",
+      "effect": "external",
+      "kind": "menu",
+      "n": 5,
+      "name": "Docs",
+      "node": "room",
+      "reason": "external link",
+      "region": "topbar"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": true,
+      "cls": "safe",
+      "effect": "open-panel",
+      "kind": "button",
+      "n": 6,
+      "name": "More",
+      "node": "room",
+      "reason": "",
+      "region": "topbar"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": true,
+      "cls": "safe",
+      "effect": "open-dialog",
+      "kind": "dialog-open",
+      "n": 7,
+      "name": "Open details",
+      "node": "room",
+      "reason": "",
+      "region": "main"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": true,
+      "cls": "safe",
+      "effect": "none",
+      "kind": "button",
+      "n": 8,
+      "name": "Look around",
+      "node": "room",
+      "reason": "",
+      "region": "main"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": false,
+      "cls": "mutating",
+      "effect": "mutating-not-clicked",
+      "kind": "button",
+      "n": 9,
+      "name": "Delete item",
+      "node": "room",
+      "reason": "deny word \"delete\"",
+      "region": "main"
+    },
+    {
+      "blockedWrites": [
+        "POST /g/api/tidy"
+      ],
+      "clicked": true,
+      "cls": "safe",
+      "effect": "none",
+      "kind": "button",
+      "n": 10,
+      "name": "Tidy up",
+      "node": "room",
+      "reason": "",
+      "region": "main"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": true,
+      "cls": "safe",
+      "effect": "toggle",
+      "kind": "tab",
+      "n": 11,
+      "name": "Activity",
+      "node": "room",
+      "reason": "",
+      "region": "main"
+    },
+    {
+      "blockedWrites": [],
+      "clicked": false,
+      "cls": "mutating",
+      "effect": "mutating-not-clicked",
+      "kind": "button",
+      "n": 12,
+      "name": "Go",
+      "node": "room",
+      "reason": "submit",
+      "region": "main"
+    }
+  ],
+  "product": "cluttered",
+  "schema": "ui-graph-clicklog/1",
+  "seat": "member",
+  "summary": {
+    "actions": 12,
+    "blockedWrites": 1,
+    "clicked": 8,
+    "mutatingClicked": 0,
+    "notClicked": 4
+  },
+  "viewport": "1440x900"
+}

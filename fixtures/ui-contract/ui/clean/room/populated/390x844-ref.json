@@ -35,7 +35,7 @@
   "locale": "en-US",
   "masks": [],
   "meta": {
-    "capturedAt": "2026-11-12T06:31:29.361Z",
+    "capturedAt": "2026-11-12T07:04:32.209Z",
     "url": "http://127.0.0.1:47831/clean.html"
   },
   "metrics": {
@@ -134,9 +134,9 @@
     },
     "thirdPartyHosts": 0,
     "timing": {
-      "contentStartVisibleMs": 23,
+      "contentStartVisibleMs": 21,
       "domContentLoadedMs": 5,
-      "firstContentfulPaintMs": 23,
+      "firstContentfulPaintMs": 21,
       "loadMs": 5
     }
   },

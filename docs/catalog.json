@@ -676,6 +676,84 @@
       }
     },
     {
+      "name": "comparegraph_ui_graph",
+      "description": "UI evidence: a product's interaction graph (ui-graph/1): reachable screens, depth from the start, orphans vs the registry, dead actions, duplicate paths, cycles, actions per screen. Read-only crawl evidence.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "viewport": {
+            "type": "string",
+            "description": "default 1440x900"
+          },
+          "seat": {
+            "type": "string"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "product"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_graph_diff",
+      "description": "UI evidence: two interaction graphs compared: depth to each comparable screen, orphans, dead actions. ref may be `target` (built from target-nav.json).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ours": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "viewport": {
+            "type": "string"
+          },
+          "seat": {
+            "type": "string"
+          },
+          "ref_seat": {
+            "type": "string"
+          },
+          "tree": {
+            "type": "string",
+            "description": "target tree: app | router | console"
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "ours",
+          "ref"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "comparegraph_ui_journey",
       "description": "UI evidence: a journey per product: completed, partial at step N, or n/a with the reason, and screens, clicks, decisions, waits, dead ends, time to first useful thing.",
       "inputSchema": {
@@ -815,6 +893,52 @@
         "required": [
           "ours",
           "ref"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comparegraph_ui_path",
+      "description": "UI evidence: the shortest click path between two screens (or dialogs) of a product's interaction graph, bounded by max_len (default 8, max 20).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "viewport": {
+            "type": "string"
+          },
+          "seat": {
+            "type": "string"
+          },
+          "max_len": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "ui_root": {
+            "type": "string",
+            "description": "directory holding ui/ (default: the server root)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "files read at most, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "product",
+          "from",
+          "to"
         ],
         "additionalProperties": false
       }

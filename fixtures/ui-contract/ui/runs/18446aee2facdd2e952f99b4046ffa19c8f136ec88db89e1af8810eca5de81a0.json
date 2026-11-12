@@ -17,9 +17,9 @@
     "probeVersion": "1",
     "product": "clean",
     "registryVersion": "1",
-    "runLabel": "a",
+    "runLabel": "b",
     "version": "contract-1"
   },
-  "runId": "56bc0e32f2e52bd71724be77faf6a41fe551dca2bd9ca7938dc27d68c32f18e3",
+  "runId": "18446aee2facdd2e952f99b4046ffa19c8f136ec88db89e1af8810eca5de81a0",
   "schema": "ui-run/1"
 }
