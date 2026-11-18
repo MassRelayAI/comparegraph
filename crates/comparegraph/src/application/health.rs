@@ -21,9 +21,8 @@ use std::path::{Path, PathBuf};
 pub const SECTIONS: &[&str] =
     &["cycles", "dead_imports", "duplicate_bodies", "size_outliers", "coupling_outliers", "boundary_violations", "dead_code"];
 
-const MAX_CYCLES: usize = 500;
+const MAX_CYCLES: usize = 10_000;
 const BFS_BUDGET: usize = 20_000_000;
-const DEAD_CODE_ALL: usize = 1_000_000;
 
 /// One finding. Built only through [`Finding::new`], which refuses a finding without an evidence location.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -412,12 +411,20 @@ struct Import {
     range: (usize, usize),
 }
 
+/// `//` and `/* */` comments removed (an import clause can carry them between its names).
+fn strip_js_comments(s: &str) -> String {
+    let line = Regex::new(r"//[^\n]*").unwrap();
+    let block = Regex::new(r"(?s)/\*.*?\*/").unwrap();
+    line.replace_all(&block.replace_all(s, " "), " ").into_owned()
+}
+
 fn ts_imports(src: &str, is_jsx: bool) -> Vec<Import> {
     let re = Regex::new(r#"(?m)^[ \t]*import\s+(?:type\s+)?([^'";]*?)\s*from\s*['"]([^'"]+)['"]"#).unwrap();
     let mut out = vec![];
     for c in re.captures_iter(src) {
         let m = c.get(0).unwrap();
-        let clause = c.get(1).unwrap().as_str();
+        let clause = strip_js_comments(c.get(1).unwrap().as_str());
+        let clause = clause.as_str();
         let mut names = vec![];
         let (head, braces) = match (clause.find('{'), clause.find('}')) {
             (Some(a), Some(b)) if b > a => (&clause[..a], Some(&clause[a + 1..b])),
@@ -817,16 +824,24 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
 
     // dead code, folded in from the dead-code query
     if on("dead_code") {
-        let v = super::graph::dead_code(root, repo, DEAD_CODE_ALL, None, 0.5)?;
         let mut f = vec![];
-        for it in v["items"].as_array().into_iter().flatten() {
-            let (qn, path, line) = (it["qualified_name"].as_str().unwrap_or(""), it["path"].as_str().unwrap_or(""), it["line_start"].as_u64().unwrap_or(0) as u32);
-            f.push(Finding::new(
-                "dead-code",
-                format!("dead-code:{qn}@{path}"),
-                format!("{qn} is referenced by nothing (candidate; dynamic dispatch is invisible)"),
-                vec![(path.to_string(), line)],
-            )?);
+        let mut cursor: Option<String> = None;
+        loop {
+            // the query pages at 500; the ratchet needs every candidate
+            let v = super::graph::dead_code(root, repo, 500, cursor.as_deref(), 0.5)?;
+            for it in v["items"].as_array().into_iter().flatten() {
+                let (qn, path, line) = (it["qualified_name"].as_str().unwrap_or(""), it["path"].as_str().unwrap_or(""), it["line_start"].as_u64().unwrap_or(0) as u32);
+                f.push(Finding::new(
+                    "dead-code",
+                    format!("dead-code:{qn}@{path}"),
+                    format!("{qn} is referenced by nothing (candidate; dynamic dispatch is invisible)"),
+                    vec![(path.to_string(), line)],
+                )?);
+            }
+            match v["page"]["next"].as_str() {
+                Some(n) => cursor = Some(n.to_string()),
+                None => break,
+            }
         }
         lims.push(Limitation::new("dead_code_candidates", "dead-code findings are candidates (confidence unknown); they are in the baseline and the check only with --ratchet-dead-code"));
         sections.insert("dead_code", f);
@@ -938,7 +953,7 @@ mod tests {
 
     #[test]
     fn dead_imports_per_language() {
-        let ts = "import a, { b, c as d, type E } from './x';\nimport * as ns from './y';\nimport './side';\nconsole.log(a, d);\n";
+        let ts = "import a, { b, // note: from here\n  c as d, /* x */ type E } from './x';\nimport * as ns from './y';\nimport './side';\nconsole.log(a, d);\n";
         let got: Vec<String> = dead_imports_of("s.ts", ts).into_iter().map(|d| d.0).collect();
         assert_eq!(got, vec!["b", "E", "ns"]);
         let py = "import os.path\nimport sys as s\nfrom m import (x,\n   y as z)\nprint(os, z)\n";
