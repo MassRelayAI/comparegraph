@@ -387,3 +387,24 @@ fn r6_merged_kept_part_and_reverted_part() {
     let items: Vec<String> = v["data"]["branch"]["residue"].as_array().unwrap().iter().filter(|r| r["why"] == "merged_into_base_before").map(|r| r["path"].as_str().unwrap().to_string()).collect();
     assert_eq!(items, vec!["src/c.py".to_string()], "{}", s(&v));
 }
+
+/// The branch's ordinary work after the merge base, on a path base merged before (and kept), is the model's and the regular
+/// backstop's to judge: no `merged_into_base_before` item for it.
+#[test]
+fn r6_post_merge_base_work_on_a_path_base_merged_before_is_no_b2_item() {
+    let fx = Fx::new(&[("src/a.py", K5)]);
+    let d = fx.d();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", &format!("{K5}\n{G5}"));
+    commit(&d, "add g");
+    git(&d, &["checkout", "-q", "main"]);
+    git(&d, &["-c", "user.email=t@t", "-c", "user.name=t", "merge", "-q", "--no-ff", "-m", "merge feat", "feat"]);
+    git(&d, &["checkout", "-q", "feat"]);
+    write(&d, "src/a.py", &format!("{K5}\n{G5}\n{H5}"));
+    commit(&d, "add h, after the merge base");
+    git(&d, &["checkout", "-q", "main"]);
+    let v = fx.delta();
+    assert_eq!(v["data"]["summary"]["unknown"]["by_why"].get("merged_into_base_before"), None, "{}", s(&v));
+    let h = v["data"]["branch"]["added"].as_array().unwrap().iter().find(|r| r["qualified_name"] == "src/a.py::h").unwrap().clone();
+    assert_eq!(h["on_base"], "no", "{h}");
+}
