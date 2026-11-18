@@ -68,12 +68,10 @@ struct Side {
     duplicates: usize,
     /// the file limits the run was read with (`build::run_limits`); None for a run recorded before they were
     limits: Option<Value>,
-    /// what the run's own read left out (truncation, skipped files, the size limit, tree hazards): carried into the delta's
+    /// what the run's own read left out (truncation, skipped files, the size limit, tree hazards): every one is carried into the
+    /// delta's limitations, naming the side
     limitations: Vec<crate::domain::Limitation>,
 }
-
-/// The run limitation codes a delta carries from each side: each says the side's graph misses files.
-const CARRIED: &[&str] = &["truncated_files", "skipped_oversize", "skipped_file", "case_collision_skipped", "non_utf8_path", "submodule_skipped"];
 
 fn tokens(text: &str, name: &str) -> Vec<String> {
     let mut out = vec![];
@@ -336,7 +334,7 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
             rows.push(r?);
         }
     }
-    let limitations = run.limitations.iter().filter(|l| CARRIED.contains(&l.code.as_str())).cloned().collect();
+    let limitations = run.limitations.clone();
     let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations };
     for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
@@ -960,8 +958,11 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             "base_symbols": base.syms.len(), "head_symbols": head.syms.len(),
             "added": wa.len(), "removed": wr.len(), "changed": wc.len(), "unchanged": unchanged,
             "head_only": head_only, "head_only_already_on_base": already,
-            "share_already_on_base": (head_only > 0).then(|| ((already as f64 / head_only as f64) * 10_000.0).round() / 10_000.0),
         });
+        let mut ws = ws;
+        let wshare = (head_only > 0).then(|| ((already as f64 / head_only as f64) * 10_000.0).round() / 10_000.0);
+        ws["share_on_base_exact"] = json!(wshare);
+        ws["share_already_on_base"] = json!(wshare);
         Some((ws, wa, wr, wc))
     } else {
         None
@@ -995,8 +996,17 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             continue;
         }
         seen_runs.push(s.run);
-        for l in &s.limitations {
+        // every limitation of the side, bounded like any list: the first `cap`, then one line counting the rest by code
+        for l in s.limitations.iter().take(cap) {
             limitations.push(json!({ "code": l.code, "detail": format!("{} ({}, run {}): {}", names.join(" and "), &r[..r.len().min(40)], s.run, l.detail), "data": { "sides": names, "run": s.run } }));
+        }
+        if s.limitations.len() > cap {
+            let mut by: BTreeMap<&str, usize> = BTreeMap::new();
+            for l in &s.limitations[cap..] {
+                *by.entry(l.code.as_str()).or_default() += 1;
+            }
+            let rest: Vec<String> = by.iter().map(|(c, n)| format!("{c} {n}")).collect();
+            limitations.push(json!({ "code": "truncated", "detail": format!("{} (run {}): {} run limitations, the first {cap} listed; the rest by code: {}", names.join(" and "), s.run, s.limitations.len(), rest.join(", ")), "data": { "sides": names, "run": s.run } }));
         }
     }
     if recorded.iter().any(|(_, s)| s.limits.is_none()) {
