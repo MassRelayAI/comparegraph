@@ -226,6 +226,22 @@ fn r6_criss_cross_with_a_revert_on_base() {
     let v = fx.delta();
     assert!(!std::fs::read_to_string(d.join("src/a.py")).unwrap().contains("def g"));
     assert_ne!(v["data"]["summary"]["share_on_base_exact"].as_f64(), Some(1.0), "{}", s(&v));
+    // the ruling of round 6: one item per delta, the paths in a limitation
+    assert_eq!(b2(&v), Some((1, vec!["src/a.py".to_string()])), "{}", s(&v));
+}
+
+fn paths_len(lim: &Value) -> usize {
+    lim["data"]["paths"].as_array().map_or(0, Vec::len)
+}
+
+/// The `merged_into_base_before` reading: (the number of such items, the paths its limitation lists), None without one.
+fn b2(v: &Value) -> Option<(i64, Vec<String>)> {
+    let n = v["data"]["summary"]["unknown"]["by_why"]["merged_into_base_before"].as_i64()?;
+    let lim = v["evidence"]["limitations"].as_array()?.iter().find(|l| l["code"] == "merged_into_base_before_paths")?.clone();
+    let paths = lim["data"]["paths"].as_array()?.iter().map(|p| p.as_str().unwrap_or("").to_string()).collect();
+    let count = lim["data"]["count"].as_u64().unwrap_or(0) as usize;
+    assert!(count >= paths_len(&lim) && paths_len(&lim) <= 20, "{lim}");
+    Some((n, paths))
 }
 
 /// B2 pin: the merged-then-reverted shape names the reason.
@@ -246,7 +262,7 @@ fn r6_merged_then_reverted_is_an_item() {
     write(&d, "src/b.py", H5);
     commit(&d, "take h");
     let v = fx.delta();
-    assert_eq!(v["data"]["summary"]["unknown"]["by_why"]["merged_into_base_before"].as_i64(), Some(1), "{}", s(&v));
+    assert_eq!(b2(&v), Some((1, vec!["src/a.py".to_string()])), "{}", s(&v));
 }
 
 /// MAJOR pin, the 1.0 tree rule: the branch changes f in A; base renames A to B keeping the old f and holds the new f in D.
@@ -384,8 +400,8 @@ fn r6_merged_kept_part_and_reverted_part() {
         write(d, "src/a.py", &format!("# base note\n{K5}\n{G5}"));
         write(d, "src/c.py", "X = 1\n");
     });
-    let items: Vec<String> = v["data"]["branch"]["residue"].as_array().unwrap().iter().filter(|r| r["why"] == "merged_into_base_before").map(|r| r["path"].as_str().unwrap().to_string()).collect();
-    assert_eq!(items, vec!["src/c.py".to_string()], "{}", s(&v));
+    // the ruling of round 6: one item per delta, the paths in a limitation (was one item per path)
+    assert_eq!(b2(&v), Some((1, vec!["src/c.py".to_string()])), "{}", s(&v));
 }
 
 /// The branch's ordinary work after the merge base, on a path base merged before (and kept), is the model's and the regular
