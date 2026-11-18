@@ -94,7 +94,10 @@ fn tools_base() -> Vec<Value> {
         tool("comparegraph_delta", "What a branch holds that its base does not, per symbol: added, removed, changed (normalised body hash), how many head-only symbols the base already has elsewhere (same body at confidence 1.0, same name and kind with >= 0.9 token similarity at that confidence), the families and features they map to, and the files the base deleted or rewrote since the merge base. Both refs must be built (`build --ref`). Facts only, no verdict; bounded by max_nodes.", schema(json!({
             "repo": {"type":"string"}, "base": {"type":"string","description":"git ref of the base, built with build --ref"}, "head": {"type":"string","description":"git ref of the branch, built with build --ref"},
             "family": {"type":"string","description":"map head-only symbols to this family only (default: every registered family)"},
-            "max_nodes": {"type":"integer","minimum":1,"maximum":2000,"description":"rows listed per section, default 200; truncation is reported in limitations"} }), &["repo", "base", "head"])),
+            "max_nodes": {"type":"integer","minimum":1,"maximum":2000,"description":"rows listed per section, default 200; truncation is reported in limitations"},
+            "whole_tree": {"type":"boolean","description":"also give the whole-tree comparison (everything head holds against everything base holds)"},
+            "build_missing": {"type":"boolean","description":"WRITES: build the refs never built (base, head, merge base) instead of refusing"},
+            "refresh": {"type":"boolean","description":"WRITES: like build_missing, and rebuild the refs that moved since they were built"} }), &["repo", "base", "head"])),
         tool("comparegraph_absent_check", "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits, and `reason` says why (`hits`, `family words set aside: <words>`, or `absent`). It also returns `read_set`, the top 10 ranked candidates (with `total`, `score` and `why`) that a `none` must read; pass `searched` (the terms you would record) to include the hits of that search. Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"},
             "searched": {"type":"string","description":"optional: the terms a none would be recorded with; their search hits join the read_set and make absent false when found"},
@@ -237,7 +240,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         }
         "comparegraph_families" => &[],
         "comparegraph_map" => &["repo", "family", "feature", "limit"],
-        "comparegraph_delta" => &["repo", "base", "head", "family", "max_nodes"],
+        "comparegraph_delta" => &["repo", "base", "head", "family", "max_nodes", "whole_tree", "build_missing", "refresh"],
         "comparegraph_absent_check" => &["repo", "family", "feature", "searched", "include_non_code"],
         "comparegraph_relate" => &["repo", "family"],
         "comparegraph_claims" => &["repo", "family", "feature", "history"],
@@ -387,6 +390,9 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             head: req(a, "head")?,
             family: str_arg(a, "family")?,
             max_nodes: uint_arg(a, "max_nodes", 200)?,
+            whole_tree: a.get("whole_tree").and_then(Value::as_bool).unwrap_or(false),
+            build_missing: a.get("build_missing").and_then(Value::as_bool).unwrap_or(false),
+            refresh: a.get("refresh").and_then(Value::as_bool).unwrap_or(false),
         },
         "comparegraph_families" => Cmd::Family {
             what: FamilyCmd::List,

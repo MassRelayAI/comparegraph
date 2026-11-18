@@ -50,8 +50,9 @@ impl Fx {
     fn build_ref(&self, r: &str) -> Value {
         ok(self.root(), &["build", "r", "--ref", r])
     }
+    /// delta with the missing and the moved refs (and the merge base) built on the way
     fn delta(&self, base: &str, head: &str) -> Value {
-        ok(self.root(), &["delta", "r", "--base", base, "--head", head])
+        ok(self.root(), &["delta", "r", "--base", base, "--head", head, "--refresh"])
     }
     fn db(&self) -> rusqlite::Connection {
         rusqlite::Connection::open(self.root().join(".comparegraph/comparegraph.db")).unwrap()
@@ -178,106 +179,178 @@ fn an_unknown_ref_is_a_structured_refusal_and_writes_no_run() {
     err(fx.root(), &["build", "r", "--providers", "reference,crg", "--ref", "main"], "invalid_arguments");
 }
 
-// ---------------------------------------------------------------- CG-DELTA
+// ---------------------------------------------------------------- CG-DELTA (the branch's own work: merge base -> head)
 
-#[test]
-fn one_new_function_is_exactly_the_one_head_only_symbol() {
+const QUX: &str = "def qux(z):\n    return z - 3\n";
+
+fn branch(v: &Value) -> &Value {
+    &v["data"]["branch"]
+}
+
+/// feat leaves base at c1 and adds `extra` to src/a.py; main stays put.
+fn lane(extra: &str) -> Fx {
     let fx = Fx::new(&[("src/a.py", FOO)]);
     let d = fx.clone();
     git(&d, &["checkout", "-q", "-b", "feat"]);
-    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
-    commit(&d, "feat adds bar");
+    write(&d, "src/a.py", &format!("{FOO}\n{extra}"));
+    commit(&d, "feat");
     git(&d, &["checkout", "-q", "main"]);
-    fx.build_ref("main");
-    fx.build_ref("feat");
+    fx
+}
+
+#[test]
+fn one_new_function_is_exactly_the_one_branch_symbol() {
+    let fx = lane(BAR);
     let v = fx.delta("main", "feat");
     let data = &v["data"];
-    assert_eq!(qns(&data["added"]), vec!["src/a.py::bar"]);
-    assert!(data["removed"].as_array().unwrap().is_empty());
-    assert!(data["changed"].as_array().unwrap().is_empty());
+    assert_eq!(qns(&branch(&v)["added"]), vec!["src/a.py::bar"]);
+    assert!(branch(&v)["removed"].as_array().unwrap().is_empty());
+    assert!(branch(&v)["changed"].as_array().unwrap().is_empty());
     let s = &data["summary"];
-    assert_eq!((s["head_only"].as_i64(), s["head_only_already_on_base"].as_i64(), s["unchanged"].as_i64()), (Some(1), Some(0), Some(1)));
-    assert!(s["share_already_on_base"].as_f64().unwrap() == 0.0);
-    assert!(data["added"][0].get("already_on_base").is_none());
+    assert_eq!((s["branch_symbols"].as_i64(), s["already_on_base"].as_i64(), s["stale_conflicts"].as_i64()), (Some(1), Some(0), Some(0)));
+    assert_eq!(s["share_already_on_base"].as_f64(), Some(0.0));
+    assert!(branch(&v)["added"][0].get("already_on_base").is_none());
     assert!(data.get("verdict").is_none() && s.get("verdict").is_none());
+    assert!(data.get("whole_tree").is_none(), "the whole-tree section is off by default");
+    assert_eq!(data["merge_base"]["commit"], git_out(&fx.clone(), &["rev-parse", "main"]).trim());
     assert_eq!(v["verb"], "delta");
 }
 
 #[test]
-fn a_body_that_changed_is_reported_changed() {
+fn a_branch_body_that_changed_is_reported_changed() {
     let fx = Fx::new(&[("src/a.py", FOO)]);
     let d = fx.clone();
     git(&d, &["checkout", "-q", "-b", "feat"]);
     write(&d, "src/a.py", "def foo():\n    return 2\n");
     commit(&d, "feat edits foo");
     git(&d, &["checkout", "-q", "main"]);
-    fx.build_ref("main");
-    fx.build_ref("feat");
     let v = fx.delta("main", "feat");
-    assert_eq!(qns(&v["data"]["changed"]), vec!["src/a.py::foo"]);
-    assert_eq!(v["data"]["summary"]["head_only"], 1);
-    assert!(v["data"]["added"].as_array().unwrap().is_empty());
+    assert_eq!(qns(&branch(&v)["changed"]), vec!["src/a.py::foo"]);
+    assert_eq!(v["data"]["summary"]["branch_symbols"], 1);
+    assert!(branch(&v)["added"].as_array().unwrap().is_empty());
 }
 
-/// A branch cut from c1, while main later moved the file and renamed both functions: the branch's code is all on base.
-fn rebased_with_rename_and_move() -> Fx {
-    let fx = Fx::new(&[("src/a.py", FOO)]);
+#[test]
+fn base_gaining_unrelated_symbols_after_the_lane_left_does_not_count_as_the_lane() {
+    let fx = lane(BAR);
     let d = fx.clone();
-    git(&d, &["checkout", "-q", "-b", "feat"]);
-    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
-    commit(&d, "feat adds bar");
-    git(&d, &["checkout", "-q", "main"]);
+    let mut many = String::new();
+    for i in 0..50 {
+        many.push_str(&format!("def unrelated_{i}():\n    return {}\n\n", i + 100));
+    }
+    write(&d, "src/other.py", &many);
+    commit(&d, "main gains 50 symbols");
+    let v = fx.delta("main", "feat");
+    assert_eq!(v["data"]["summary"]["branch_symbols"], 1, "{}", v["data"]["summary"]);
+    assert_eq!(qns(&branch(&v)["added"]), vec!["src/a.py::bar"]);
+    // the old whole-tree comparison is still there on request, and shows base's own growth as base-only
+    let w = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--whole-tree"]);
+    assert_eq!(w["data"]["whole_tree"]["summary"]["removed"], 50);
+    assert_eq!(w["data"]["whole_tree"]["summary"]["added"], 1);
+}
+
+/// feat leaves c1 and adds bar and qux; main later takes the same code under new names in a moved file.
+fn merged_with_rename() -> Fx {
+    let fx = lane(&format!("{BAR}\n{QUX}"));
+    let d = fx.clone();
     git(&d, &["rm", "-q", "src/a.py"]);
-    write(&d, "lib/b.py", "def foo2():\n    return 1\n\ndef bar2(x):\n        y = x * 2\n        return y + 1\n"); // moved, renamed, re-indented
+    write(&d, "lib/b.py", "def foo2():\n    return 1\n\ndef bar2(x):\n        y = x * 2\n        return y + 1\n\ndef qux2(z):\n    return z - 3\n");
     commit(&d, "main moves and renames");
-    fx.build_ref("main");
-    fx.build_ref("feat");
     fx
 }
 
 #[test]
-fn a_branch_rebased_with_a_rename_and_a_move_is_already_on_base() {
-    let fx = rebased_with_rename_and_move();
+fn a_lane_merged_into_base_with_a_rename_is_entirely_already_on_base() {
+    let fx = merged_with_rename();
     let v = fx.delta("main", "feat");
-    let data = &v["data"];
-    assert_eq!(qns(&data["added"]), vec!["src/a.py::foo", "src/a.py::bar"]);
-    let s = &data["summary"];
-    assert_eq!(s["head_only"], 2);
-    assert_eq!(s["head_only_already_on_base"], 2);
-    assert_eq!(s["head_only_already_on_base_exact"], 2);
-    assert_eq!(s["share_already_on_base"].as_f64().unwrap(), 1.0);
-    for (i, to) in [(0, "lib/b.py::foo2"), (1, "lib/b.py::bar2")] {
-        let m = &data["added"][i]["already_on_base"];
+    let s = &v["data"]["summary"];
+    assert_eq!(qns(&branch(&v)["added"]), vec!["src/a.py::bar", "src/a.py::qux"]);
+    assert_eq!((s["branch_symbols"].as_i64(), s["already_on_base"].as_i64()), (Some(2), Some(2)));
+    assert_eq!(s["share_already_on_base"].as_f64(), Some(1.0));
+    for (i, to) in [(0, "lib/b.py::bar2"), (1, "lib/b.py::qux2")] {
+        let m = &branch(&v)["added"][i]["already_on_base"];
         assert_eq!((m["confidence"].as_f64().unwrap(), m["via"].as_str().unwrap()), (1.0, "body_hash"));
         assert_eq!(m["matches"][0]["qualified_name"], to);
     }
-    // what base has that the branch lacks is listed too, never judged
-    assert_eq!(qns(&data["removed"]), vec!["lib/b.py::foo2", "lib/b.py::bar2"]);
-    // base deleted src/a.py, which the branch edited
-    assert_eq!(data["base_files"]["deleted"], json!([{ "path": "src/a.py", "head_modified": true }]));
-    assert_eq!(s["files_base_deleted"], 1);
-    assert!(data["merge_base"].as_str().unwrap().len() >= 40);
+    // base deleted src/a.py, which the lane edited
+    assert_eq!(v["data"]["base_files"]["deleted"], json!([{ "path": "src/a.py", "head_modified": true }]));
+    // whole-tree on request: foo (unchanged by the lane) shows too
+    let w = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--whole-tree"]);
+    assert_eq!(w["data"]["whole_tree"]["summary"]["added"], 3);
 }
 
 #[test]
-fn a_file_base_deleted_is_reported_even_when_the_branch_did_not_touch_it() {
-    let fx = Fx::new(&[("src/a.py", FOO), ("src/gone.py", "def gone():\n    return 5\n"), ("src/kept.py", "def kept():\n    return 6\n")]);
+fn a_lane_merged_unchanged_is_already_on_base_as_the_same_symbol() {
+    let fx = lane(BAR);
+    let d = fx.clone();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}")); // main took the lane's work as is
+    commit(&d, "main merges the lane");
+    let v = fx.delta("main", "feat");
+    let m = &branch(&v)["added"][0]["already_on_base"];
+    assert_eq!((m["via"].as_str().unwrap(), m["confidence"].as_f64().unwrap()), ("same_symbol", 1.0));
+    assert_eq!(v["data"]["summary"]["share_already_on_base"].as_f64(), Some(1.0));
+}
+
+#[test]
+fn a_function_the_lane_changed_and_base_rewrote_is_a_stale_conflict() {
+    let fx = Fx::new(&[("src/a.py", FOO)]);
     let d = fx.clone();
     git(&d, &["checkout", "-q", "-b", "feat"]);
-    write(&d, "src/new.py", BAR);
-    commit(&d, "feat adds a file");
+    write(&d, "src/a.py", "def foo():\n    return 2\n");
+    commit(&d, "lane edits foo");
     git(&d, &["checkout", "-q", "main"]);
-    git(&d, &["rm", "-q", "src/gone.py"]);
-    write(&d, "src/kept.py", "def kept():\n    return 7\n");
-    commit(&d, "main deletes gone.py and rewrites kept.py");
-    fx.build_ref("main");
-    fx.build_ref("feat");
+    write(&d, "src/a.py", "def foo():\n    return 3\n");
+    commit(&d, "base rewrites foo differently");
     let v = fx.delta("main", "feat");
-    assert_eq!(v["data"]["base_files"]["deleted"], json!([{ "path": "src/gone.py", "head_modified": false }]));
-    // kept.py was rewritten by base but not touched by the branch: not a conflict, not listed
+    let s = &v["data"]["summary"];
+    assert_eq!((s["branch_symbols"].as_i64(), s["stale_conflicts"].as_i64(), s["already_on_base"].as_i64()), (Some(1), Some(1), Some(0)));
+    let row = &branch(&v)["changed"][0];
+    assert_eq!(row["base_also_changed"], true);
+    assert!(row.get("already_on_base").is_none());
+    assert_eq!(v["data"]["base_files"]["rewritten"], json!([{ "path": "src/a.py", "head_modified": true }]));
+
+    // base changed it to the very same thing: no conflict, the lane's change is on base
+    write(&d, "src/a.py", "def foo():\n    return 2\n");
+    commit(&d, "base now agrees");
+    let v = fx.delta("main", "feat");
+    assert_eq!(v["data"]["summary"]["stale_conflicts"], 0);
+    assert_eq!(branch(&v)["changed"][0]["already_on_base"]["via"], "same_symbol");
+}
+
+#[test]
+fn a_symbol_the_lane_removed_and_base_removed_too_is_marked_base_removed() {
+    let fx = Fx::new(&[("src/a.py", &format!("{FOO}\n{BAR}"))]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", FOO);
+    commit(&d, "lane drops bar");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/a.py", FOO);
+    commit(&d, "base drops bar");
+    let v = fx.delta("main", "feat");
+    assert_eq!(qns(&branch(&v)["removed"]), vec!["src/a.py::bar"]);
+    assert_eq!(branch(&v)["removed"][0]["base_removed"], true);
+    assert_eq!(v["data"]["summary"]["share_already_on_base"].as_f64(), Some(1.0));
+}
+
+#[test]
+fn a_file_base_deleted_is_reported_only_when_the_lane_touched_it() {
+    let fx = Fx::new(&[("src/a.py", FOO), ("src/gone.py", "def gone():\n    return 5\n"), ("src/quiet.py", "def quiet():\n    return 8\n"), ("src/kept.py", "def kept():\n    return 6\n")]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/gone.py", "def gone():\n    return 55\n");
+    write(&d, "src/new.py", BAR);
+    commit(&d, "lane edits gone.py and adds a file");
+    git(&d, &["checkout", "-q", "main"]);
+    git(&d, &["rm", "-q", "src/gone.py", "src/quiet.py"]);
+    write(&d, "src/kept.py", "def kept():\n    return 7\n");
+    commit(&d, "main deletes gone.py and quiet.py, rewrites kept.py");
+    let v = fx.delta("main", "feat");
+    // quiet.py and kept.py were not touched by the lane: not its business
+    assert_eq!(v["data"]["base_files"]["deleted"], json!([{ "path": "src/gone.py", "head_modified": true }]));
     assert!(v["data"]["base_files"]["rewritten"].as_array().unwrap().is_empty());
-    // the branch still holds gone() and the old kept(): head-only, with no copy on base
-    assert!(qns(&v["data"]["added"]).contains(&"src/gone.py::gone".to_string()));
+    let changed = &branch(&v)["changed"][0];
+    assert_eq!((changed["qualified_name"].as_str().unwrap(), &changed["base_removed"]), ("src/gone.py::gone", &json!(true)));
     assert_eq!(v["data"]["summary"]["files_base_deleted"], 1);
 }
 
@@ -299,24 +372,31 @@ fn the_same_name_with_a_near_identical_body_is_matched_at_a_lower_stated_confide
     git(&d, &["checkout", "-q", "main"]);
     write(&d, "pkg/p.py", &long(" + 1")); // same name and kind, one token apart
     commit(&d, "main has a slightly different process");
-    fx.build_ref("main");
-    fx.build_ref("feat");
     let v = fx.delta("main", "feat");
-    let row = &v["data"]["added"][0];
+    let row = &branch(&v)["added"][0];
     assert_eq!(row["qualified_name"], "src/a.py::process");
     let m = &row["already_on_base"];
     assert_eq!(m["via"], "name_and_tokens");
     let c = m["confidence"].as_f64().unwrap();
     assert!((0.9..1.0).contains(&c), "{c}");
     assert_eq!(m["matches"][0]["qualified_name"], "pkg/p.py::process");
-    assert_eq!(v["data"]["summary"]["head_only_already_on_base_exact"], 0);
 
     // a body that is really different is not matched, whatever the name
     write(&d, "pkg/p.py", "def process(items):\n    return sorted(items)\n");
     commit(&d, "main rewrites process");
-    fx.build_ref("main");
     let v = fx.delta("main", "feat");
-    assert!(v["data"]["added"][0].get("already_on_base").is_none(), "{v}");
+    assert!(branch(&v)["added"][0].get("already_on_base").is_none(), "{v}");
+}
+
+#[test]
+fn rows_list_what_is_not_on_base_first() {
+    let fx = lane(&format!("{QUX}\n{BAR}"));
+    let d = fx.clone();
+    write(&d, "lib/b.py", "def qux2(z):\n    return z - 3\n"); // base has qux (renamed), not bar
+    commit(&d, "main has qux2");
+    let v = fx.delta("main", "feat");
+    // bar (not on base) before qux (on base), though qux comes first by line
+    assert_eq!(qns(&branch(&v)["added"]), vec!["src/a.py::bar", "src/a.py::qux"]);
 }
 
 #[test]
@@ -328,32 +408,28 @@ fn added_symbols_map_to_the_families_features_with_map_s_ranking() {
     write(&d, "src/net.py", "def retry_with_backoff(call):\n    return call()\n");
     commit(&d, "feat adds retry");
     git(&d, &["checkout", "-q", "main"]);
-    fx.build_ref("main");
-    fx.build_ref("feat");
     let v = fx.delta("main", "feat");
-    let row = &v["data"]["added"][0];
+    let row = &branch(&v)["added"][0];
     assert_eq!(row["qualified_name"], "src/net.py::retry_with_backoff");
     let feats: Vec<&str> = row["features"].as_array().unwrap().iter().map(|f| f.as_str().unwrap()).collect();
     assert!(feats.iter().any(|f| f.starts_with("fam/") && f.contains("routing.retry")), "{feats:?}");
-    assert_eq!(v["data"]["features_touched"][0]["head_only_symbols"], 1);
-    // --family narrows; an unknown family is refused
+    assert_eq!(v["data"]["features_touched"][0]["branch_symbols"], 1);
     let one = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--family", "fam"]);
-    assert_eq!(one["data"]["added"][0]["features"], row["features"]);
+    assert_eq!(branch(&one)["added"][0]["features"], row["features"]);
     err(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--family", "nope"], "not_found");
 }
 
 #[test]
 fn delta_is_deterministic_and_bounded() {
-    let fx = rebased_with_rename_and_move();
+    let fx = merged_with_rename();
+    let first = fx.delta("main", "feat");
+    assert_eq!(first["data"]["rebuilt"].as_array().unwrap().len(), 3, "main, feat and the merge base are built on the way");
     let (a, b) = (fx.delta("main", "feat"), fx.delta("main", "feat"));
+    assert!(a["data"]["rebuilt"].as_array().unwrap().is_empty());
     assert_eq!(sha(&a["data"]), sha(&b["data"]));
     assert_eq!(a["data"], b["data"]);
-    // rebuilding the refs (a new store would give new run ids; the same store reuses them) leaves the answer as it was
-    fx.build_ref("main");
-    assert_eq!(sha(&fx.delta("main", "feat")["data"]), sha(&a["data"]));
-    // a cap lists fewer rows, says so, and leaves the summary whole
     let c = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--max-nodes", "1"]);
-    assert_eq!(c["data"]["added"].as_array().unwrap().len(), 1);
+    assert_eq!(branch(&c)["added"].as_array().unwrap().len(), 1);
     assert_eq!(c["data"]["summary"]["added"], 2);
     let lims = c["evidence"]["limitations"].to_string();
     assert!(lims.contains("truncated"), "{lims}");
@@ -362,54 +438,48 @@ fn delta_is_deterministic_and_bounded() {
 }
 
 #[test]
-fn delta_refuses_a_ref_that_is_unknown_or_not_built() {
-    let fx = Fx::new(&[("src/a.py", FOO)]);
+fn delta_refuses_what_is_unbuilt_unless_told_to_build_it() {
+    let fx = lane(BAR);
     let d = fx.clone();
-    git(&d, &["checkout", "-q", "-b", "feat"]);
-    write(&d, "src/n.py", BAR);
-    commit(&d, "feat");
-    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/m.py", QUX);
+    commit(&d, "main moves on, so the merge base is neither tip");
     fx.build_ref("main");
-    let v = err(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"], "not_found");
-    assert!(v["error"]["hint"].as_str().unwrap().contains("build r --ref feat"), "{v}");
+    let strict = |head: &str| run(fx.root(), &["delta", "r", "--base", "main", "--head", head]);
+    let v = strict("feat");
+    assert_eq!(v["error"]["code"], "not_found");
+    let hint = v["error"]["hint"].as_str().unwrap();
+    assert!(hint.contains("build r --ref feat") && hint.contains("--build-missing"), "{v}");
     assert_eq!(v["error"]["data"]["ref"], "feat");
-    let v = err(fx.root(), &["delta", "r", "--base", "main", "--head", "nope"], "not_found");
-    assert_eq!(v["error"]["data"]["ref"], "nope");
+    fx.build_ref("feat");
+    // base and head are built; the merge base commit is not
+    let v = strict("feat");
+    assert_eq!(v["error"]["code"], "not_found");
+    assert_eq!(v["error"]["data"]["ref"], git_out(&d, &["merge-base", "main", "feat"]).trim());
+    // --build-missing builds it, after which the strict call works
+    ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--build-missing"]);
+    assert_eq!(strict("feat")["ok"], true);
+    err(fx.root(), &["delta", "r", "--base", "main", "--head", "nope"], "not_found");
     err(fx.root(), &["delta", "nope", "--base", "main", "--head", "main"], "not_found");
     // the same ref on both sides is an empty delta, not an error
-    let same = run(fx.root(), &["delta", "r", "--base", "main", "--head", "main"]);
-    assert_eq!(same["ok"], true);
-    assert_eq!(same["data"]["summary"]["head_only"], 0);
+    let same = fx.delta("main", "main");
+    assert_eq!(same["data"]["summary"]["branch_symbols"], 0);
     assert!(same["data"]["summary"]["share_already_on_base"].is_null());
-}
-
-#[test]
-fn a_branch_that_moved_since_its_build_needs_a_new_build() {
-    let fx = Fx::new(&[("src/a.py", FOO)]);
-    let d = fx.clone();
-    git(&d, &["checkout", "-q", "-b", "feat"]);
-    fx.build_ref("feat");
-    write(&d, "src/c.py", BAR);
-    commit(&d, "feat moves on");
-    git(&d, &["checkout", "-q", "main"]);
-    fx.build_ref("main");
-    err(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"], "not_found");
-    fx.build_ref("feat");
-    assert_eq!(qns(&fx.delta("main", "feat")["data"]["added"]), vec!["src/c.py::bar"]);
 }
 
 #[test]
 fn the_mcp_tools_carry_delta_and_ref() {
     use std::io::{BufRead, BufReader, Write};
-    let fx = Fx::new(&[("src/a.py", FOO)]);
-    let d = fx.clone();
-    git(&d, &["checkout", "-q", "-b", "feat"]);
-    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
-    commit(&d, "feat");
-    git(&d, &["checkout", "-q", "main"]);
+    let fx = lane(BAR);
     fx.build_ref("main");
     fx.build_ref("feat");
-    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("comparegraph")).arg("--root").arg(fx.root()).arg("mcp").stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("comparegraph"))
+        .arg("--root")
+        .arg(fx.root())
+        .arg("mcp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
     let mut rd = BufReader::new(child.stdout.take().unwrap());
     let mut n = 0;
     let mut call = |name: &str, args: Value| -> Value {
@@ -421,9 +491,10 @@ fn the_mcp_tools_carry_delta_and_ref() {
         let r: Value = serde_json::from_str(&out).unwrap();
         serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
     };
-    let d = call("comparegraph_delta", json!({"repo":"r","base":"main","head":"feat"}));
+    let d = call("comparegraph_delta", json!({"repo":"r","base":"main","head":"feat","whole_tree":true}));
     assert_eq!(d["ok"], true, "{d}");
-    assert_eq!(qns(&d["data"]["added"]), vec!["src/a.py::bar"]);
+    assert_eq!(qns(&d["data"]["branch"]["added"]), vec!["src/a.py::bar"]);
+    assert!(d["data"]["whole_tree"].is_object());
     let s = call("comparegraph_show", json!({"repo":"r","qualified_name":"src/a.py::bar","ref":"feat"}));
     assert_eq!(s["ok"], true, "{s}");
     let s = call("comparegraph_show", json!({"repo":"r","qualified_name":"src/a.py::bar","ref":"main"}));

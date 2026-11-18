@@ -300,6 +300,15 @@ pub enum Cmd {
         /// rows listed per section (1..=2000); the summary counts are never truncated
         #[arg(long, default_value_t = 200)]
         max_nodes: usize,
+        /// also give the whole-tree comparison (everything head holds against everything base holds)
+        #[arg(long)]
+        whole_tree: bool,
+        /// build the refs that were never built (base, head and their merge base) instead of refusing
+        #[arg(long)]
+        build_missing: bool,
+        /// like --build-missing, and also rebuild only the refs that moved since they were built
+        #[arg(long)]
+        refresh: bool,
     },
     /// Verify: schema, search index, citation locations, the action log. Writes nothing unless --mark
     Check {
@@ -1317,10 +1326,10 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             },
         )?)
         .unwrap(),
-        Cmd::Delta { repo, base, head, family, max_nodes } => crate::application::delta::delta(
+        Cmd::Delta { repo, base, head, family, max_nodes, whole_tree, build_missing, refresh } => crate::application::delta::delta(
             &cli.root,
             repo,
-            &crate::application::delta::DeltaOpts { base, head, family: family.as_deref(), max_nodes: *max_nodes },
+            &crate::application::delta::DeltaOpts { base, head, family: family.as_deref(), max_nodes: *max_nodes, whole_tree: *whole_tree, build_missing: *build_missing, refresh: *refresh },
         )?,
         Cmd::Check { mark, recompute, deep, by } => {
             let r = crate::application::check::check_with(
