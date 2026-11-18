@@ -936,6 +936,15 @@ impl<'a> Judge<'a> {
     }
 }
 
+/// A merged tree's entries (blobs and gitlinks) by path.
+fn merge_entries(m: &gitref::Merged) -> BTreeMap<String, (String, String)> {
+    let mut e: BTreeMap<String, (String, String)> = m.index.blobs.clone();
+    for (p, c) in &m.index.gitlinks {
+        e.insert(p.clone(), ("160000".into(), c.clone()));
+    }
+    e
+}
+
 /// `{yes, no, unknown}` over rows and residue items (every residue item is unknown), and `{count, by_why}` of the unknown ones
 /// (`by_why` sorted by reason).
 fn answers<'r>(rows: impl Iterator<Item = &'r Row>, residue: &[Residue]) -> (Value, Value) {
@@ -1395,18 +1404,22 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         (Some(a), Some(fp)) => fp.iter().find(|c| a.contains(*c)).cloned(),
         _ => None,
     };
-    let from_f = fork_f.as_ref().filter(|f| **f != mb_c).and_then(|f| gitref::merge_tree_from(clone, root, &base_c, &head_c, Some(f)).ok());
+    // the regular merge (the real merge base), shared by B2 and the backstop below
+    let merged = gitref::merge_tree(clone, root, &base_c, &head_c);
+    let merged_entries = merged.as_ref().ok().map(merge_entries);
+    // the branch's work before the merge base is F -> mb: merged into base from F, does it change base? (a revert: yes)
+    let from_f = fork_f.as_ref().filter(|f| **f != mb_c).and_then(|f| gitref::merge_tree_from(clone, root, &base_c, &mb_c, Some(f)).ok());
     match (&fork_f, &eh, &eb) {
-        (Some(f), Some(_), Some(b)) if *f != mb_c && from_f.is_some() => {
+        // an item where base lacks some of that earlier work (the merge from F of base and the merge base changes base's
+        // entry, or conflicts) and head still differs from base there; base's kept earlier work merges to base's own entry,
+        // and the branch's ordinary work after the merge base is not in F -> mb at all
+        (Some(f), Some(h), Some(b)) if *f != mb_c && from_f.is_some() => {
             let m = from_f.as_ref().expect("checked above");
-            let mut me: BTreeMap<String, (String, String)> = m.index.blobs.clone();
-            for (p, c) in &m.index.gitlinks {
-                me.insert(p.clone(), ("160000".into(), c.clone()));
-            }
-            let named: HashSet<String> = residue.iter().map(|r| r.path.clone()).collect();
+            let me = merge_entries(m);
+            let named: HashSet<String> = residue.iter().map(|x| x.path.clone()).collect();
             let paths: BTreeSet<&String> = me.keys().chain(b.keys()).chain(m.conflicts.iter()).collect();
             for p in paths {
-                if (me.get(p) != b.get(p) || m.conflicts.contains(p)) && !named.contains(p) {
+                if (me.get(p) != b.get(p) || m.conflicts.contains(p)) && h.get(p) != b.get(p) && !named.contains(p) {
                     residue.push(Residue { path: p.clone(), why: "merged_into_base_before", hunk: None });
                 }
             }
@@ -1440,14 +1453,6 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     // A path whose merged entry is not base's, or that conflicts, turns every yes row in it unknown (`merge_changes_file`);
     // git unable to merge turns every yes unknown (`merge_check_unavailable`); a share of 1.0 also needs the merged tree to
     // be base's tree, else one unknown item names the first path that differs (`merge_changes_tree`). Only ever yes -> unknown.
-    let merged = gitref::merge_tree(clone, root, &base_c, &head_c);
-    let merged_entries = merged.as_ref().ok().map(|m| {
-        let mut e: BTreeMap<String, (String, String)> = m.index.blobs.clone();
-        for (p, c) in &m.index.gitlinks {
-            e.insert(p.clone(), ("160000".into(), c.clone()));
-        }
-        e
-    });
     let mut merge_note: Option<String> = None;
     for r in added.iter_mut().chain(changed.iter_mut()).chain(removed.iter_mut()) {
         if !r.resolved() {

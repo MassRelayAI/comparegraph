@@ -601,10 +601,14 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   the per-row check (`merge_changes_file`) answers first.
 - **B2** work base merged and then took back lies before the merge base. F is the newest commit of base's first-parent chain
   that head reaches. When F is not the merge base, git merges head into base with F as the merge base
-  (`merge-tree --merge-base=F`, git >= 2.40, the same hardened options): every path that merge changes on base, or conflicts
-  on, is one unknown item, `merged_into_base_before`, unless an item names it already; work base merged and kept (even if
-  changed since) merges to base's own entry and is no item (the coordinator approved this over the first, broad rule, which
-  made 374 items on massrelay's loop-remind delta). If that merge cannot be had, the broad rule stands in: every path whose
+  (`merge-tree --merge-base=F <base> <merge base>`, git >= 2.40, the same hardened options): the branch's work before the
+  merge base is F -> merge base, and an item `merged_into_base_before` is made where merging that work into base changes
+  base's entry or conflicts, and head differs from base there, unless an item names it already. Work base merged and kept
+  merges to base's own entry; the branch's ordinary work after the merge base is not in F -> merge base at all; base's revert
+  of earlier work is undone by that merge. (The approved "the F merge of head and the regular merge disagree" read as a
+  conflict on the very work both sides hold, so it flagged ordinary post-merge-base work; this form keeps every fixture the
+  coordinator named. Earlier forms: the broad rule, 374 items on massrelay's loop-remind delta; "the F merge of head differs
+  from base", 337.) If that merge cannot be had, the broad rule stands in: every path whose
   entry differs between F and head and between head and base. A listing git cannot give is one `diff_failed` item.
 - **The merge is not the clone's to shape**: `--attr-source=<the empty tree>` (git >= 2.42; with an older git the backstop is
   unavailable, every yes unknown), `core.attributesFile=/dev/null`, `merge.renormalize=false`, `merge.renames=true`,
