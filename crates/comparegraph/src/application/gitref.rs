@@ -4,8 +4,8 @@
 //! conversion, no export-ignore: `git archive` applied all three). A symlink is written as a regular file holding its target (as
 //! git does with `core.symlinks=false`), never followed; a submodule entry is skipped. A path that breaks git's `verify_path` rules
 //! (absolute, `..`, `.git` in any NTFS/HFS spelling, a stream colon, a trailing dot or space: `unsafe_component`) refuses the tree
-//! (`unsafe_tree`); paths that fold to one name on a case-insensitive file system, and paths that are not UTF-8, are left out with a
-//! limitation. The folder is keyed by the commit, so it is immutable and shared by every
+//! (`unsafe_tree`); paths that fold to one name on a case-insensitive file system, paths holding a Windows reserved device name
+//! (`aux.c`), and paths that are not UTF-8 are left out with a limitation. The folder is keyed by the commit, so it is immutable and shared by every
 //! name for it; a lock file beside it makes two builds of one commit extract it once, and the tree is extracted into a temporary
 //! sibling and renamed into place before it is marked complete.
 use super::{AppError, Result};
@@ -91,7 +91,6 @@ fn hfs_ignorable(c: char) -> bool {
 /// - `ntfs_dotgit`: `.git` followed by dots or spaces only (NTFS drops them: `.git.`, `.git `)
 /// - `ntfs_8dot3_dotgit`: `git~1`, the 8.3 short name of `.git` (with trailing dots or spaces too)
 /// - `ntfs_stream`: a `:` (an NTFS alternate data stream such as `.git::$INDEX_ALLOCATION`, or a drive letter)
-/// - `windows_reserved_name`: `con`, `prn`, `aux`, `nul`, `com1`-`com9`, `lpt1`-`lpt9`, any case, with or without an extension
 /// - `trailing_dot_or_space`: Windows drops them, so the name would alias another path
 pub fn unsafe_component(c: &str) -> Option<&'static str> {
     if c.is_empty() || c == "." || c == ".." {
@@ -114,16 +113,19 @@ pub fn unsafe_component(c: &str) -> Option<&'static str> {
     if trimmed.eq_ignore_ascii_case("git~1") {
         return Some("ntfs_8dot3_dotgit");
     }
-    // a device name opens the device on Windows whatever the extension (`aux.c`, `NUL.txt`): one tree must extract the same everywhere
-    let stem = trimmed.split('.').next().unwrap_or("").trim_end_matches(' ').to_ascii_lowercase();
-    let numbered = stem.len() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) && matches!(stem.as_bytes()[3], b'1'..=b'9');
-    if matches!(stem.as_str(), "con" | "prn" | "aux" | "nul") || numbered {
-        return Some("windows_reserved_name");
-    }
     if trimmed.len() != c.len() {
         return Some("trailing_dot_or_space");
     }
     None
+}
+
+/// A Windows reserved device name: `con`, `prn`, `aux`, `nul`, `com1`-`com9`, `lpt1`-`lpt9`, any case, with or without an
+/// extension (`aux.c`, `NUL.txt`). Not an attack (unlike a `.git` alias): such a path is skipped on every platform, so one tree
+/// extracts the same everywhere, and listed in `windows_reserved_skipped`.
+pub fn reserved_component(c: &str) -> bool {
+    let stem = c.split('.').next().unwrap_or("").trim_end_matches(' ').to_ascii_lowercase();
+    let numbered = stem.len() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) && matches!(stem.as_bytes()[3], b'1'..=b'9');
+    matches!(stem.as_str(), "con" | "prn" | "aux" | "nul") || numbered
 }
 
 /// A tree path as a relative path inside the cache folder, or the rule it breaks: `empty`, `absolute`, `backslash`, `nul`, or a
@@ -223,11 +225,14 @@ fn list_tree(clone: &Path, commit: &str, max_file_bytes: u64) -> std::result::Re
     }
     let colliding: std::collections::BTreeSet<&String> = spellings.iter().filter(|(_, s)| s.len() > 1).map(|(k, _)| k).collect();
     let mut skipped: Vec<String> = vec![];
+    let mut reserved: Vec<String> = vec![];
     let mut kept = vec![];
     for (mode, oid, size, p) in v {
         let folded = p.to_lowercase();
         let hit = colliding.iter().any(|k| folded == **k || folded.starts_with(&format!("{k}/")));
-        if hit {
+        if p.split('/').any(reserved_component) {
+            reserved.push(p); // never written, on every platform
+        } else if hit {
             skipped.push(p);
         } else {
             let rel = safe_rel_path(&p).expect("checked above");
@@ -252,6 +257,18 @@ fn list_tree(clone: &Path, commit: &str, max_file_bytes: u64) -> std::result::Re
     }
     if submodules > 0 {
         lims.push(Limitation::new("submodule_skipped", format!("{submodules} submodule(s) skipped: a submodule is another repository's commit and is not read")));
+    }
+    if !reserved.is_empty() {
+        let shown: Vec<&str> = reserved.iter().take(10).map(String::as_str).collect();
+        lims.push(Limitation::new(
+            "windows_reserved_skipped",
+            format!(
+                "{} path(s) hold a Windows reserved device name (con, prn, aux, nul, com1-9, lpt1-9) and were left out (on every platform): {}{}",
+                reserved.len(),
+                shown.join(", "),
+                if reserved.len() > shown.len() { ", ..." } else { "" }
+            ),
+        ));
     }
     if non_utf8 > 0 {
         lims.push(Limitation::new(
@@ -564,13 +581,15 @@ mod tests {
             ("a/\u{feff}.GIT/x", "hfs_dotgit"),
             ("a/name./x", "trailing_dot_or_space"),
             ("a/name /x", "trailing_dot_or_space"),
-            ("src/aux.c", "windows_reserved_name"),
-            ("NUL.txt", "windows_reserved_name"),
-            ("a/Com1/x", "windows_reserved_name"),
-            ("LPT9.tar.gz", "windows_reserved_name"),
-            ("con", "windows_reserved_name"),
         ] {
             assert_eq!(safe_rel_path(p), Err(rule), "{p:?}");
+        }
+        // reserved device names are not refused: they are skipped (`reserved_component`, round 3 amended)
+        for p in ["aux.c", "NUL.txt", "Com1", "LPT9.tar.gz", "con", "prn "] {
+            assert!(super::reserved_component(p), "{p:?}");
+        }
+        for p in ["console.c", "com10.c", "com0", "auxiliary.py", "nul_check.py"] {
+            assert!(!super::reserved_component(p), "{p:?}");
         }
         for ok in [".gitignore", ".github/workflows/ci.yml", "git~2/x", "a/.git-blame-ignore-revs", "x.y/z", "...a", "src/console.c", "com10.c", "com0", "auxiliary.py", "nul_check.py"] {
             assert!(safe_rel_path(ok).is_ok(), "{ok:?} refused");

@@ -408,7 +408,10 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   rows not on base and a changed near row base changed or moved counts as a stale conflict. `decide --summary-from-delta` stores
   both. The verdict reads the exact share; near rows are for a person (`docs/usage.md`). The whole-tree share is exact-only too.
 - **Round 3: Windows reserved device names** (`con`, `prn`, `aux`, `nul`, `com1`-`com9`, `lpt1`-`lpt9`, any case, with or
-  without an extension: `aux.c`, `NUL.txt`) refuse the tree as `unsafe_tree` (rule `windows_reserved_name`) on EVERY platform:
-  a tree must extract the same everywhere. This supersedes the "not covered" note on reserved names above; a tree that holds one
-  (the Linux kernel holds `aux.c`) cannot be ref-built. **Known and unhandled:** Unicode normalisation collisions (an NFC and an
-  NFD spelling of one name, which HFS+ and some macOS file systems fold to one file) are neither refused nor skipped.
+  without an extension: `aux.c`, `NUL.txt`), amended the same day by the coordinator: they are not an attack (unlike a `.git`
+  alias, which stays `unsafe_tree`), and refusing the whole tree blocked real repositories (the Linux kernel holds `aux.c`). Such a
+  path is SKIPPED on every platform, never written, with a `windows_reserved_skipped` limitation (the count and the first 10
+  paths), the same treatment as case-folded duplicates; the build goes on and one tree extracts the same everywhere
+  (`gitref::reserved_component`). This supersedes the "not covered" note on reserved names above. **Known and unhandled:**
+  Unicode normalisation collisions (an NFC and an NFD spelling of one name, which HFS+ and some macOS file systems fold to one
+  file) are neither refused nor skipped.
