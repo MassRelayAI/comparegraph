@@ -72,6 +72,23 @@ otherwise. List verbs take `--limit` (default 50, maximum 500) and `--cursor`. E
 `error.data`: the exact `searched` and the full `hits_read` list a re-claim needs (see `claim` in
 [`commands.md`](commands.md)).
 
+## Judging a branch against its base
+
+`delta` answers "what does this branch add that the base does not already have", from two builds of the same clone at two refs. The
+clone is only read (`git archive`); its checkout, index and working tree never change.
+
+```bash
+comparegraph build myrepo --ref origin/main
+comparegraph build myrepo --ref origin/feature-x
+comparegraph delta myrepo --base origin/main --head origin/feature-x --pretty
+# summary.head_only: symbols the branch has that the base lacks under the same name
+# summary.share_already_on_base: how many of those the base has under another name or path (1.0 = all of them)
+# base_files.deleted: files the base deleted since the merge base that the branch still holds
+comparegraph show myrepo src/a.py::bar --ref origin/feature-x     # any graph read verb can answer from a ref's run
+```
+
+The fields are facts; whether to restack, take parts or retire the branch is the reader's call.
+
 ## Family packs
 
 A family is a directory with a `rows.md`: front matter with `family:` and `description:`, then a table with `id`, `group`,

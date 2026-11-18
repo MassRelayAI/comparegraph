@@ -3,7 +3,7 @@
 The tools `comparegraph mcp` serves. [`catalog.json`](catalog.json) is the machine-readable source for the tool list and the error codes; `comparegraph catalog --check` fails when it drifts from the code.
 
 `comparegraph mcp` speaks JSON-RPC 2.0 over stdio, one object per line, protocol `2025-06-18`. Every tool returns the same
-envelope as the CLI. 39 tools: 38 read-only, one write (`comparegraph_claim`). The list is generated into
+envelope as the CLI. 40 tools: 39 read-only, one write (`comparegraph_claim`). The list is generated into
 [`docs/catalog.json`](catalog.json) and checked in CI by `comparegraph catalog --check`.
 
 | Tool | Answers | Key arguments |
@@ -69,4 +69,4 @@ other keys stay open, so the schema is always a widening of the real answer). `t
 the text content. A failed call has `ok: false`, `data: null` and an `error` with `code`, `message`, optional `hint` and a machine-readable `recovery`
 (`{kind, operation?, retryable}`; `kind` is `fix_arguments`, `retry`, `run_command`, `inspect`, `choose_candidate` or `none`). The per-tool part is
 one line of `crates/comparegraph/src/application/output_schema.rs`; `tests/output_schema.rs` calls every tool on the fixtures and validates the real
-answer against the advertised schema. Together the 39 schemas are about 54 KB on the wire (the input schemas are about 27 KB).
+answer against the advertised schema. Together the 40 schemas are about 54 KB on the wire (the input schemas are about 27 KB).

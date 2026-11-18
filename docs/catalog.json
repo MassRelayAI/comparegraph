@@ -26,6 +26,10 @@
           "include_non_code": {
             "type": "boolean",
             "description": "also rank css/scss/html parser nodes in read_set (default false; a none is judged without them)"
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [
@@ -829,6 +833,10 @@
           "cursor": {
             "type": "string",
             "description": "opaque cursor from a previous page"
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [
@@ -1009,6 +1017,10 @@
               0.5,
               1.0
             ]
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [
@@ -1082,6 +1094,232 @@
                   },
                   "items": {
                     "type": "array"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "comparegraph_delta",
+      "description": "What a branch holds that its base does not, per symbol: added, removed, changed (normalised body hash), how many head-only symbols the base already has elsewhere (same body at confidence 1.0, same name and kind with >= 0.9 token similarity at that confidence), the families and features they map to, and the files the base deleted or rewrote since the merge base. Both refs must be built (`build --ref`). Facts only, no verdict; bounded by max_nodes.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "base": {
+            "type": "string",
+            "description": "git ref of the base, built with build --ref"
+          },
+          "head": {
+            "type": "string",
+            "description": "git ref of the branch, built with build --ref"
+          },
+          "family": {
+            "type": "string",
+            "description": "map head-only symbols to this family only (default: every registered family)"
+          },
+          "max_nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "rows listed per section, default 200; truncation is reported in limitations"
+          }
+        },
+        "required": [
+          "repo",
+          "base",
+          "head"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "delta"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "base",
+                  "head",
+                  "summary",
+                  "added",
+                  "removed",
+                  "changed",
+                  "features_touched",
+                  "base_files"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "base": {
+                    "type": "object"
+                  },
+                  "head": {
+                    "type": "object"
+                  },
+                  "merge_base": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "object"
+                  },
+                  "added": {
+                    "type": "array"
+                  },
+                  "removed": {
+                    "type": "array"
+                  },
+                  "changed": {
+                    "type": "array"
+                  },
+                  "features_touched": {
+                    "type": "array"
+                  },
+                  "base_files": {
+                    "type": "object"
+                  },
+                  "feature_pool": {
+                    "type": "integer"
                   }
                 }
               }
@@ -1369,6 +1607,10 @@
               0.5,
               1.0
             ]
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [
@@ -1923,6 +2165,10 @@
           },
           "cursor": {
             "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [
@@ -2124,6 +2370,10 @@
             "minimum": 1,
             "maximum": 50,
             "description": "symbols per feature, default 5"
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [
@@ -3235,6 +3485,10 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "cap on callers and callees listed, default 50; a truncated list is reported in limitations"
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [
@@ -3463,6 +3717,10 @@
           },
           "cursor": {
             "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [
@@ -3690,6 +3948,10 @@
           },
           "cursor": {
             "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "description": "answer from the latest run built from this git ref (`build --ref`), default the head run"
           }
         },
         "required": [

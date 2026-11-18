@@ -29,6 +29,8 @@ pub struct BuildOptions {
     /// include reads every file; an exclude match wins over an include match. See `reference::walker::Subset`.
     pub include: Vec<String>,
     pub exclude: Vec<String>,
+    /// `build --ref`: read this git ref's tree (through `git archive`) instead of the clone's working tree
+    pub git_ref: Option<String>,
 }
 
 /// What an incremental build knows of the previous run, by qualified name (row ids are per run and never carried).
@@ -55,6 +57,7 @@ impl std::fmt::Debug for BuildOptions {
             .field("progress", &self.progress)
             .field("include", &self.include)
             .field("exclude", &self.exclude)
+            .field("git_ref", &self.git_ref)
             .finish()
     }
 }
@@ -69,6 +72,7 @@ impl Default for BuildOptions {
             progress: false,
             include: vec![],
             exclude: vec![],
+            git_ref: None,
         }
     }
 }

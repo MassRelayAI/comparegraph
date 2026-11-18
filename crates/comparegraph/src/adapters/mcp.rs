@@ -37,7 +37,22 @@ fn page_props() -> Value {
             "cursor": {"type":"string","description":"opaque cursor from a previous page"} })
 }
 
+/// The read tools `ref` means something to: they answer from the latest run built from that ref (`build --ref`), default the head run.
+const REF_TOOLS: &[&str] = &[
+    "comparegraph_show", "comparegraph_communities", "comparegraph_map", "comparegraph_absent_check", "comparegraph_traverse",
+    "comparegraph_impact", "comparegraph_tests_for", "comparegraph_entry_points", "comparegraph_dead_code",
+];
 pub fn tools() -> Vec<Value> {
+    let mut v = tools_base();
+    for t in v.iter_mut() {
+        let name = t["name"].as_str().unwrap_or("").to_string();
+        if REF_TOOLS.contains(&name.as_str()) {
+            t["inputSchema"]["properties"]["ref"] = json!({"type":"string","description":"answer from the latest run built from this git ref (`build --ref`), default the head run"});
+        }
+    }
+    v
+}
+fn tools_base() -> Vec<Value> {
     let mut search_props = json!({
         "query": {"type":"string","description":"words to find in symbol names and paths"},
         "repo": {"type":"string"}, "kind": {"type":"string","description":"node kind, e.g. function, class, file"} });
@@ -76,6 +91,10 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_map", "Candidate symbols and communities per feature of a family in one clone. Candidates are never verdicts; writes nothing.", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"},
             "limit": {"type":"integer","minimum":1,"maximum":50,"description":"symbols per feature, default 5"} }), &["repo", "family"])),
+        tool("comparegraph_delta", "What a branch holds that its base does not, per symbol: added, removed, changed (normalised body hash), how many head-only symbols the base already has elsewhere (same body at confidence 1.0, same name and kind with >= 0.9 token similarity at that confidence), the families and features they map to, and the files the base deleted or rewrote since the merge base. Both refs must be built (`build --ref`). Facts only, no verdict; bounded by max_nodes.", schema(json!({
+            "repo": {"type":"string"}, "base": {"type":"string","description":"git ref of the base, built with build --ref"}, "head": {"type":"string","description":"git ref of the branch, built with build --ref"},
+            "family": {"type":"string","description":"map head-only symbols to this family only (default: every registered family)"},
+            "max_nodes": {"type":"integer","minimum":1,"maximum":2000,"description":"rows listed per section, default 200; truncation is reported in limitations"} }), &["repo", "base", "head"])),
         tool("comparegraph_absent_check", "Is a feature absent from a clone's graph? Searches the feature's terms over symbols, paths, community labels/keywords and node kinds of the latest run; `absent` is true only when every channel has zero hits, and `reason` says why (`hits`, `family words set aside: <words>`, or `absent`). It also returns `read_set`, the top 10 ranked candidates (with `total`, `score` and `why`) that a `none` must read; pass `searched` (the terms you would record) to include the hits of that search. Reads only: it records nothing, and no MCP tool can record a graph-backed absence (that is `comparegraph claim ... none` on the CLI).", schema(json!({
             "repo": {"type":"string"}, "family": {"type":"string"}, "feature": {"type":"string","description":"one feature id"},
             "searched": {"type":"string","description":"optional: the terms a none would be recorded with; their search hits join the read_set and make absent false when found"},
@@ -218,6 +237,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         }
         "comparegraph_families" => &[],
         "comparegraph_map" => &["repo", "family", "feature", "limit"],
+        "comparegraph_delta" => &["repo", "base", "head", "family", "max_nodes"],
         "comparegraph_absent_check" => &["repo", "family", "feature", "searched", "include_non_code"],
         "comparegraph_relate" => &["repo", "family"],
         "comparegraph_claims" => &["repo", "family", "feature", "history"],
@@ -252,7 +272,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         .as_object()
         .unwrap()
         .keys()
-        .find(|k| !known.contains(&k.as_str()) && !(name.starts_with("comparegraph_ui_") && UI_COMMON.contains(&k.as_str())))
+        .find(|k| !known.contains(&k.as_str()) && !(k.as_str() == "ref" && REF_TOOLS.contains(&name)) && !(name.starts_with("comparegraph_ui_") && UI_COMMON.contains(&k.as_str())))
     {
         return Err(format!("unknown argument {k}"));
     }
@@ -354,6 +374,13 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             limit: limit_arg(a)?,
             cursor: str_arg(a, "cursor")?,
             min_confidence: conf_arg(a)?,
+        },
+        "comparegraph_delta" => Cmd::Delta {
+            repo: req(a, "repo")?,
+            base: req(a, "base")?,
+            head: req(a, "head")?,
+            family: str_arg(a, "family")?,
+            max_nodes: uint_arg(a, "max_nodes", 200)?,
         },
         "comparegraph_families" => Cmd::Family {
             what: FamilyCmd::List,
@@ -510,6 +537,10 @@ fn call(root: &Path, params: &Value) -> Value {
         None | Some(Value::Null) => &empty,
         Some(v) => v,
     };
+    let git_ref = match str_arg(args, "ref") {
+        Ok(r) if r.is_none() || REF_TOOLS.contains(&name) => r,
+        _ => None,
+    };
     let (text, is_error, structured) = match command(name, args) {
         Err(m) => {
             let verb = name.strip_prefix("comparegraph_").unwrap_or("mcp");
@@ -524,6 +555,7 @@ fn call(root: &Path, params: &Value) -> Value {
                 allow_unverified: false,
                 root_map: vec![],
                 wait: None,
+                git_ref,
                 cmd,
             });
             let text = env.to_json();

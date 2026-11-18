@@ -310,6 +310,23 @@ pub fn map(
     })
 }
 
+/// The features of a family each symbol of a run ranks under, for `delta`: `qualified name -> sorted feature ids`, taken from the top
+/// `pool` ranked symbols of each active feature (the same ranking `map` shows, only deeper). Candidates, never verdicts.
+pub(crate) fn symbol_features(store: &Store, run: i64, family: &str, pool: usize) -> Result<std::collections::BTreeMap<String, Vec<String>>> {
+    store
+        .family_by_name(family)?
+        .ok_or_else(|| AppError::NotFound(format!("no family named {family}")))?;
+    let idx = RunIndex::load(store, run)?;
+    let mut out: std::collections::BTreeMap<String, BTreeSet<String>> = Default::default();
+    for f in active(store, family)? {
+        let wt = idx.terms(&f);
+        for r in idx.rank(&f, &wt, pool) {
+            out.entry(idx.nodes[r.i].qn.clone()).or_default().insert(format!("{family}/{}", f.key()));
+        }
+    }
+    Ok(out.into_iter().map(|(k, v)| (k, v.into_iter().collect())).collect())
+}
+
 /// sha256 of the family's active features as sorted `<id>\t<title>` lines: what a relatedness row was scored against.
 pub(crate) fn pack_hash(store: &Store, family: &str) -> Result<String> {
     let mut lines: Vec<String> = active(store, family)?

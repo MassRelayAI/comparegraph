@@ -172,6 +172,9 @@ const ADDED_COLUMNS: &[(&str, &str, &str, &str)] = &[
     ("run", "exclude_json", "TEXT NOT NULL DEFAULT '[]'", "'[]'"),
     // the git head (short) of the clone the run read; `claim --at-commit` is checked against it
     ("run", "head", "TEXT", "NULL"),
+    // CG-BR1: a run built from a git ref (`build --ref`): the ref as given and the commit it named; NULL on a head run
+    ("run", "ref", "TEXT", "NULL"),
+    ("run", "ref_commit", "TEXT", "NULL"),
     // field-run asks 7, 15 and 5: `claim --at-commit`, `out_of_subset`, and `reach` with its path and note
     ("claim", "at_commit", "TEXT", "NULL"),
     ("claim", "out_of_subset", "TEXT", "NULL"),
@@ -590,19 +593,52 @@ impl Store {
     pub fn run(&self, id: RunId) -> Result<Option<Run>> {
         Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE id=?1", params![id.0], row_to_run).optional()?)
     }
+    /// The latest run of a repo at its head (a run built from a ref, `build --ref`, is never this one).
     pub fn latest_run(&self, repo: RepoId) -> Result<Option<Run>> {
-        Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE repo_id=?1 ORDER BY id DESC LIMIT 1", params![repo.0], row_to_run).optional()?)
+        Ok(self.conn.query_row(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND ref IS NULL ORDER BY id DESC LIMIT 1"), params![repo.0], row_to_run).optional()?)
     }
+    /// The latest done run the read verbs answer from: the head run, or, when `--ref` is set for this call (`with_run_ref`),
+    /// the latest done run built from that ref (its name as given to `build --ref`, or a commit prefix).
     pub fn latest_done_run(&self, repo: RepoId) -> Result<Option<Run>> {
-        Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE repo_id=?1 AND status='done' ORDER BY id DESC LIMIT 1", params![repo.0], row_to_run).optional()?)
+        match run_ref() {
+            None => Ok(self.conn.query_row(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND ref IS NULL ORDER BY id DESC LIMIT 1"), params![repo.0], row_to_run).optional()?),
+            Some(r) => Ok(self
+                .conn
+                .query_row(
+                    &format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND ref IS NOT NULL AND (ref=?2 OR (length(?2) >= 7 AND ref_commit LIKE ?2 || '%')) ORDER BY id DESC LIMIT 1"),
+                    params![repo.0, r],
+                    row_to_run,
+                )
+                .optional()?),
+        }
     }
-    /// The latest done run of one provider at any version.
+    /// The latest done head run of one provider at any version.
     pub fn latest_done_run_by_provider(&self, repo: RepoId, provider: &str) -> Result<Option<Run>> {
-        Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE repo_id=?1 AND status='done' AND provider=?2 ORDER BY id DESC LIMIT 1", params![repo.0, provider], row_to_run).optional()?)
+        Ok(self.conn.query_row(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND provider=?2 AND ref IS NULL ORDER BY id DESC LIMIT 1"), params![repo.0, provider], row_to_run).optional()?)
     }
-    /// The latest done run of one provider at one version (a run of another provider in between does not hide it).
-    pub fn latest_done_run_of(&self, repo: RepoId, provider: &str, version: &str) -> Result<Option<Run>> {
-        Ok(self.conn.query_row("SELECT id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash FROM run WHERE repo_id=?1 AND status='done' AND provider=?2 AND provider_version=?3 ORDER BY id DESC LIMIT 1", params![repo.0, provider, version], row_to_run).optional()?)
+    /// The latest done run of one provider at one version (a run of another provider in between does not hide it), among the
+    /// runs of one ref (`None`: the head runs); `commit` narrows it to the runs that read exactly that commit.
+    pub fn latest_done_run_of(&self, repo: RepoId, provider: &str, version: &str, git_ref: Option<&str>, commit: Option<&str>) -> Result<Option<Run>> {
+        Ok(self.conn.query_row(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND provider=?2 AND provider_version=?3 AND ref IS ?4 AND (?5 IS NULL OR ref_commit=?5) ORDER BY id DESC LIMIT 1"), params![repo.0, provider, version, git_ref, commit], row_to_run).optional()?)
+    }
+    /// The latest done reference run that read exactly this commit (any name it was built under).
+    pub fn done_run_at_commit(&self, repo: RepoId, commit: &str) -> Result<Option<Run>> {
+        Ok(self.conn.query_row(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND ref_commit=?2 AND provider='reference' ORDER BY id DESC LIMIT 1"), params![repo.0, commit], row_to_run).optional()?)
+    }
+    /// Record the ref a run was built from and the commit it named.
+    pub fn set_run_ref(&self, id: RunId, git_ref: Option<&str>, commit: Option<&str>) -> Result<()> {
+        self.conn.execute("UPDATE run SET ref=?2, ref_commit=?3 WHERE id=?1", params![id.0, git_ref, commit])?;
+        Ok(())
+    }
+    /// `(ref, ref_commit)` of a run; both None for a head run.
+    pub fn run_ref(&self, id: RunId) -> Result<(Option<String>, Option<String>)> {
+        Ok(self.conn.query_row("SELECT ref, ref_commit FROM run WHERE id=?1", params![id.0], |r| Ok((r.get(0)?, r.get(1)?)))?)
+    }
+    /// Every done run built from a ref: `(run id, ref, commit)`, sorted by ref then newest first.
+    pub fn ref_runs(&self, repo: RepoId) -> Result<Vec<(i64, String, String)>> {
+        let mut st = self.conn.prepare("SELECT id, ref, ref_commit FROM run WHERE repo_id=?1 AND status='done' AND ref IS NOT NULL ORDER BY ref, id DESC")?;
+        let rows = st.query_map(params![repo.0], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<String>>(2)?.unwrap_or_default())))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     // ---- nodes / edges ----
@@ -826,6 +862,23 @@ fn row_to_repo(r: &rusqlite::Row<'_>) -> rusqlite::Result<RepoRow> {
         exclude: serde_json::from_str(&r.get::<_, String>(14)?).unwrap_or_default(),
     })
 }
+const RUN_COLS: &str = "id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash";
+
+thread_local! {
+    static RUN_REF: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+/// The `--ref` of the call in flight on this thread, if any.
+pub fn run_ref() -> Option<String> {
+    RUN_REF.with(|c| c.borrow().clone())
+}
+/// Run `f` with the read verbs' run choice pinned to a ref (`None`: the head run, today's behaviour); restored after.
+pub fn with_run_ref<T>(git_ref: Option<&str>, f: impl FnOnce() -> T) -> T {
+    let prev = RUN_REF.with(|c| c.replace(git_ref.map(String::from)));
+    let out = f();
+    RUN_REF.with(|c| *c.borrow_mut() = prev);
+    out
+}
+
 fn row_to_run(r: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
     let lim: String = r.get(7)?;
     Ok(Run {

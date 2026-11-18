@@ -33,6 +33,10 @@ pub struct Cli {
     /// seconds a writer waits for another writer's store lock before failing (default 30, at most 3600; env COMPAREGRAPH_WAIT)
     #[arg(long, global = true, value_name = "SECS")]
     pub wait: Option<u64>,
+    /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run.
+    /// The graph read verbs (search excepted): answer from the latest run built from this ref (default: the clone's head run)
+    #[arg(long = "ref", global = true, value_name = "REF")]
+    pub git_ref: Option<String>,
     #[command(subcommand)]
     pub cmd: Cmd,
 }
@@ -278,6 +282,22 @@ pub enum Cmd {
         /// never read files matching these globs (repeat); wins over --include; recorded on the run
         #[arg(long, value_name = "GLOB")]
         exclude: Vec<String>,
+    },
+    /// What a branch holds that its base does not: symbols added, removed and changed, how many the base already has under
+    /// another name or path, the features they map to, and the files the base deleted or rewrote since the merge base. Both
+    /// refs must be built (`build <REPO> --ref <ref>`); reports facts, no verdict
+    Delta {
+        repo: String,
+        #[arg(long)]
+        base: String,
+        #[arg(long)]
+        head: String,
+        /// map head-only symbols to this family's features only (default: every registered family)
+        #[arg(long)]
+        family: Option<String>,
+        /// rows listed per section (1..=2000); the summary counts are never truncated
+        #[arg(long, default_value_t = 200)]
+        max_nodes: usize,
     },
     /// Verify: schema, search index, citation locations, the action log. Writes nothing unless --mark
     Check {
@@ -801,6 +821,7 @@ fn verb_of(c: &Cmd) -> &'static str {
     match c {
         Cmd::Add { .. } => "add",
         Cmd::Build { .. } => "build",
+        Cmd::Delta { .. } => "delta",
         Cmd::Check { .. } => "check",
         Cmd::Backup { .. } => "backup",
         Cmd::RestoreStore { .. } => "restore-store",
@@ -1079,7 +1100,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
         Ok(v) => {
             let conf = if matches!(
                 cli.cmd,
-                Cmd::Check { .. } | Cmd::Claims { .. } | Cmd::Matrix { .. } | Cmd::Governance { .. }
+                Cmd::Check { .. } | Cmd::Claims { .. } | Cmd::Matrix { .. } | Cmd::Governance { .. } | Cmd::Delta { .. }
                     | Cmd::Ui { what: UiCmd::Diff { .. } | UiCmd::Matrix { .. } | UiCmd::NavDiff { .. } | UiCmd::NetDiff { .. } | UiCmd::GraphDiff { .. } | UiCmd::Verify { .. }, .. }
             ) {
                 "derived"
@@ -1145,8 +1166,31 @@ fn progress_on(flag: bool) -> bool {
 
 type Failure = (AppError, Option<serde_json::Value>);
 
+/// The verbs `--ref` means something to: `build` (which ref to read) and the graph read verbs (which run to answer from).
+fn takes_ref(c: &Cmd) -> bool {
+    matches!(
+        c,
+        Cmd::Build { .. }
+            | Cmd::Show { .. }
+            | Cmd::Traverse { .. }
+            | Cmd::Impact { .. }
+            | Cmd::TestsFor { .. }
+            | Cmd::EntryPoints { .. }
+            | Cmd::DeadCode { .. }
+            | Cmd::Communities { .. }
+            | Cmd::Map { .. }
+            | Cmd::AbsentCheck { .. }
+    )
+}
+
 fn dispatch(cli: &Cli) -> Result<serde_json::Value, Failure> {
-    dispatch_inner(cli).map_err(|e| (e, None)).and_then(|r| r)
+    if cli.git_ref.is_some() && !takes_ref(&cli.cmd) {
+        let e = AppError::InvalidArguments(format!("--ref applies to build and the graph read verbs, not {}", verb_of(&cli.cmd)));
+        return Err((e, None));
+    }
+    // `build --ref` names the tree to read; every other verb names the run to answer from
+    let pin = if matches!(cli.cmd, Cmd::Build { .. }) { None } else { cli.git_ref.as_deref() };
+    crate::store::with_run_ref(pin, || dispatch_inner(cli).map_err(|e| (e, None)).and_then(|r| r))
 }
 
 fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppError> {
@@ -1200,6 +1244,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             include,
             exclude,
         } if !providers.is_empty() => {
+            if cli.git_ref.is_some() {
+                return Err(AppError::InvalidArguments("--ref reads one provider's run; drop --providers".into()));
+            }
             let rep = crate::application::build::build_many(
                 &cli.root,
                 repo,
@@ -1211,6 +1258,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     progress: progress_on(*progress),
                     include: include.clone(),
                     exclude: exclude.clone(),
+                    git_ref: cli.git_ref.clone(),
                     ..BuildOptions::default()
                 },
             )?;
@@ -1238,10 +1286,16 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 progress: progress_on(*progress),
                 include: include.clone(),
                 exclude: exclude.clone(),
+                git_ref: cli.git_ref.clone(),
                 ..BuildOptions::default()
             },
         )?)
         .unwrap(),
+        Cmd::Delta { repo, base, head, family, max_nodes } => crate::application::delta::delta(
+            &cli.root,
+            repo,
+            &crate::application::delta::DeltaOpts { base, head, family: family.as_deref(), max_nodes: *max_nodes },
+        )?,
         Cmd::Check { mark, recompute, deep, by } => {
             let r = crate::application::check::check_with(
                 &cli.root,
@@ -1823,6 +1877,14 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     "name": r.name, "licence": r.licence, "lane": r.lane, "role": r.role,
                     "head": r.head, "source_commit": r.source_commit, "moved_to": r.moved_to,
                     "include": r.include, "exclude": r.exclude, "latest_run": latest,
+                });
+                row["ref_runs"] = serde_json::json!(match r.id {
+                    Some(id) => store
+                        .ref_runs(id)?
+                        .into_iter()
+                        .map(|(run, git_ref, commit)| serde_json::json!({ "run": run, "ref": git_ref, "ref_commit": commit }))
+                        .collect::<Vec<_>>(),
+                    None => vec![],
                 });
                 if *archived || *all {
                     row["archived"] = serde_json::json!(arch.contains(&r.name));

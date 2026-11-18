@@ -25,6 +25,7 @@ const DATA: &[(&str, &str)] = &[
     ("comparegraph_governance_verify", "actions:i! chain_ok:b! problems:a! head:s? store_head:s? broken_at:i? file:s archived:i"),
     ("comparegraph_families", "items:a!"),
     ("comparegraph_map", "repo:s! family:s! features:a! entry_points:i"),
+    ("comparegraph_delta", "repo:s! base:o! head:o! merge_base:s? summary:o! added:a! removed:a! changed:a! features_touched:a! base_files:o! feature_pool:i"),
     ("comparegraph_absent_check", "repo:s! family:s! feature:s! absent:b! reason:s! read_set:o! channels:o terms:a"),
     ("comparegraph_relate", "items:a!"),
     ("comparegraph_claims", "items:a!"),

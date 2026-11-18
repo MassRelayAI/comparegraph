@@ -190,6 +190,7 @@ fn calls() -> Vec<(&'static str, Value, usize)> {
         ("comparegraph_governance_verify", json!({}), 0),
         ("comparegraph_families", json!({}), 0),
         ("comparegraph_map", json!({"repo":"a","family":"fam"}), 0),
+        ("comparegraph_delta", json!({"repo":"a","base":"HEAD","head":"HEAD"}), 0),
         ("comparegraph_absent_check", json!({"repo":"a","family":"fam","feature":"routing.retry"}), 0),
         ("comparegraph_relate", json!({}), 0),
         ("comparegraph_claims", json!({}), 0),
@@ -225,6 +226,7 @@ fn calls() -> Vec<(&'static str, Value, usize)> {
 
 fn fixture() -> (Ws, tempfile::TempDir, tempfile::TempDir) {
     let ws = Ws::new();
+    common::ok(ws.root(), &["build", "a", "--ref", "HEAD"]);
     let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     copy_dir(&fx("ui"), a.path());
     copy_dir(&fx("ui-contract"), b.path());

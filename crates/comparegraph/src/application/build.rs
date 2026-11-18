@@ -15,6 +15,11 @@ pub struct BuildReport {
     /// the git head (short) of that path when the build ran
     #[serde(default)]
     pub head: Option<String>,
+    /// `build --ref`: the ref as given and the commit it named (None on a head build)
+    #[serde(default, rename = "ref")]
+    pub git_ref: Option<String>,
+    #[serde(default)]
+    pub ref_commit: Option<String>,
     /// the upstream commit the repo was registered with (`add --source-commit`); for an export whose head is not upstream's
     #[serde(default)]
     pub source_commit: Option<String>,
@@ -87,10 +92,23 @@ pub fn build_repo(
             crate::providers::ProviderError::Unavailable(provider_name.into(), status.detail),
         ));
     }
+    // `--ref`: the tree of the ref's commit, read through `git archive` into a cache folder; the clone is not touched
+    let ref_commit = match opts.git_ref.as_deref() {
+        Some(r) => Some(super::gitref::resolve(Path::new(&repo.path), r)?),
+        None => None,
+    };
+    let read_path: String = match &ref_commit {
+        Some(c) => super::gitref::materialise(Path::new(&repo.path), root, repo_name, c)?.to_string_lossy().into_owned(),
+        None => repo.path.clone(),
+    };
+    let head_of = |p: &str| match &ref_commit {
+        Some(c) => Some(c.chars().take(7).collect::<String>()),
+        None => super::git(Path::new(p), &["rev-parse", "--short=7", "HEAD"]),
+    };
     if provider_name != "reference" {
         if let Some(ext) = crate::providers::external::ExternalProvider::discover(root, provider_name) {
             // the languages the walker finds in the clone, computed once; the conform gate judges only those
-            let langs: std::collections::BTreeSet<String> = crate::providers::reference::walker::walk(Path::new(&repo.path), opts)
+            let langs: std::collections::BTreeSet<String> = crate::providers::reference::walker::walk(Path::new(&read_path), opts)
                 .files
                 .iter()
                 .map(|f| crate::providers::external::fixture_name(&f.language).to_string())
@@ -102,7 +120,8 @@ pub fn build_repo(
     let repo_id = repo.id.unwrap();
     let t = Instant::now();
     if !opts.full && provider.name() == "reference" {
-        if let Some(mut r) = try_reuse(&store, repo_id, &repo.path, &provider.version(), opts, t)? {
+        if let Some(mut r) = try_reuse(&store, repo_id, &read_path, &provider.version(), opts, ref_commit.as_deref(), t)? {
+            r.path = repo.path.clone();
             r.source_commit = repo.source_commit.clone();
             store.set_run_head(r.run, r.head.as_deref())?;
             return Ok(r);
@@ -120,8 +139,9 @@ pub fn build_repo(
         store_hash: None,
     })?;
     store.set_run_subset(run, &opts.include, &opts.exclude)?;
-    let head = super::git(Path::new(&repo.path), &["rev-parse", "--short=7", "HEAD"]);
+    let head = head_of(&repo.path);
     store.set_run_head(run, head.as_deref())?;
+    store.set_run_ref(run, opts.git_ref.as_deref(), ref_commit.as_deref())?;
     let mut opts = opts.clone();
     let mut prev_comms: Option<PrevComms> = None;
     if opts.full {
@@ -129,7 +149,7 @@ pub fn build_repo(
         opts.prev = None;
     } else if provider.name() == "reference" && opts.prev.is_none() {
         let tp = Instant::now();
-        let loaded = load_prev(&store, repo_id, &provider.version())?;
+        let loaded = load_prev(&store, repo_id, &provider.version(), opts.git_ref.as_deref())?;
         crate::providers::reference::profile_line("load_prev", tp, loaded.as_ref().map_or(0, |l| l.0.edges.len()));
         if let Some((g, c)) = loaded {
             opts.prev = Some(std::rc::Rc::new(g));
@@ -143,9 +163,9 @@ pub fn build_repo(
         cache_handle = Some(c);
     }
     if opts.progress {
-        eprintln!("[progress] reading {} head={}", repo.path, super::git(Path::new(&repo.path), &["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "none".into()));
+        eprintln!("[progress] reading {} head={}", read_path, head_of(&read_path).unwrap_or_else(|| "none".into()));
     }
-    let out = match provider.build(Path::new(&repo.path), &opts) {
+    let out = match provider.build(Path::new(&read_path), &opts) {
         Ok(o) => o,
         Err(e @ crate::providers::ProviderError::Unavailable(..)) => {
             store.finish_run(run, RunStatus::Failed, t.elapsed().as_secs_f64(), &[Limitation::new("provider_unavailable", e.to_string())], None)?;
@@ -266,6 +286,8 @@ pub fn build_repo(
         run,
         path: repo.path.clone(),
         head,
+        git_ref: opts.git_ref.clone(),
+        ref_commit: ref_commit.clone(),
         source_commit: repo.source_commit.clone(),
         include: opts.include.clone(),
         exclude: opts.exclude.clone(),
@@ -294,9 +316,10 @@ fn load_prev(
     store: &Store,
     repo_id: crate::domain::RepoId,
     version: &str,
+    git_ref: Option<&str>,
 ) -> Result<Option<(crate::providers::PrevGraph, PrevComms)>> {
     use crate::domain::{EdgeKind, NodeKind};
-    let Some(last) = store.latest_done_run_of(repo_id, "reference", version)? else {
+    let Some(last) = store.latest_done_run_of(repo_id, "reference", version, git_ref, None)? else {
         return Ok(None);
     };
     let Some(last_id) = last.id else {
@@ -355,11 +378,13 @@ fn try_reuse(
     repo_path: &str,
     version: &str,
     opts: &BuildOptions,
+    commit: Option<&str>,
     t: Instant,
 ) -> Result<Option<BuildReport>> {
     use crate::domain::{content_hash, NodeKind};
     use crate::providers::reference::walker;
-    let Some(last) = store.latest_done_run_of(repo_id, "reference", version)? else {
+    // a ref build is reused only by a run of the same ref name that read the same commit
+    let Some(last) = store.latest_done_run_of(repo_id, "reference", version, opts.git_ref.as_deref(), commit)? else {
         return Ok(None);
     };
     let Some(last_id) = last.id else {
@@ -415,7 +440,12 @@ fn try_reuse(
     Ok(Some(BuildReport {
         run: last_id,
         path: repo_path.to_string(),
-        head: super::git(root, &["rev-parse", "--short=7", "HEAD"]),
+        head: match commit {
+            Some(c) => Some(c.chars().take(7).collect()),
+            None => super::git(root, &["rev-parse", "--short=7", "HEAD"]),
+        },
+        git_ref: opts.git_ref.clone(),
+        ref_commit: commit.map(String::from),
         source_commit: None,
         include: opts.include.clone(),
         exclude: opts.exclude.clone(),

@@ -99,7 +99,7 @@ pub(crate) const LABEL_SUBQUERY: &str = "(SELECT cm.label FROM community_member 
  WHERE x.node_id = n.id AND cm.run_id = n.run_id LIMIT 1)";
 
 pub(crate) const WHERE: &str = "FROM node_fts CROSS JOIN node n ON n.id = node_fts.rowid JOIN repo r ON r.id = n.repo_id \
- WHERE node_fts MATCH ?1 AND n.run_id = (SELECT MAX(id) FROM run WHERE repo_id = n.repo_id AND status = 'done') \
+ WHERE node_fts MATCH ?1 AND n.run_id = (SELECT MAX(id) FROM run WHERE repo_id = n.repo_id AND status = 'done' AND ref IS NULL) \
  AND (?2 IS NULL OR r.name = ?2) AND (?3 IS NULL OR n.kind = ?3)";
 
 pub fn search(root: &Path, q: &SearchQuery) -> Result<SearchPage> {
