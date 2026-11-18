@@ -421,7 +421,7 @@
   "tsx": {
     "files": 1,
     "nodes": 5,
-    "edges": 5,
+    "edges": 6,
     "kinds": {
       "class": 1,
       "file": 1,
@@ -429,10 +429,10 @@
       "method": 1
     },
     "edge_kinds": {
-      "calls": 1,
+      "calls": 2,
       "contains": 4
     },
-    "digest": "a8e1a2e5e513d717d2d30720515b3da030616c57040b712e650c254b235936bf"
+    "digest": "44274c771ecd77978e4d6b15bd4e9c4b4ba329e47804b62d5303e13f7c8c90cf"
   },
   "typescript": {
     "files": 1,

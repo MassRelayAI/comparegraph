@@ -1168,7 +1168,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             .flatten()
             .filter(|(p, (_, o))| s.read.contains(*p) && !keep.iter().any(|k| k.contains(o)))
             .filter_map(|(p, (_, o))| {
-                let lang = crate::providers::reference::walker::language_for(Path::new(p))?;
+                let lang = crate::providers::reference::walker::language_for(Path::new(p)).filter(|l| !crate::providers::reference::NO_SYMBOL_LANGUAGES.contains(l))?;
                 let text = std::fs::read(dir.join(p)).ok()?;
                 crate::providers::reference::has_parse_error(&String::from_utf8_lossy(&text), lang).filter(|e| *e).map(|_| o.clone())
             })

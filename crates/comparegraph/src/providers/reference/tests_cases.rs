@@ -91,7 +91,7 @@ fn a_rust_cfg_test_fn_calling_a_function_yields_a_tests_edge() {
 }
 
 fn parsed(path: &str, lang: &str, src: &str, with_cases: bool) -> super::ParsedFile {
-    let r = super::vendor::parse(path, src, lang).unwrap();
+    let r = super::parse_file(path, src, lang).unwrap(); // the provider's grammar choice (tsx: TSX)
     let mut symbols = r.symbols;
     if with_cases {
         symbols.extend(super::js_ctx::test_cases(src, lang).0.into_iter().map(|c| super::vendor::Symbol {
@@ -200,8 +200,9 @@ fn a_jsx_element_is_a_rendering_call_to_an_imported_or_same_file_component_only(
     assert!(o.edges_by_qn.contains(&(EdgeKind::Calls, app.into(), "src/App.tsx::Local".into(), 1.0)));
     assert!(o.edges_by_qn.iter().all(|e| !(e.1 == app && e.2.contains("Stray"))), "an unimported name binds nothing");
     assert!(o.edges_by_qn.iter().all(|e| !(e.1 == app && e.2.ends_with("::div"))));
-    // an arrow bound to a const is no function node in the vendored extractor: its elements belong to the file
-    assert!(o.edges_by_qn.contains(&(EdgeKind::Calls, "src/App.tsx".into(), "src/Button.tsx::Button".into(), 1.0)), "{:?}", o.edges_by_qn);
+    // round 5 (the TSX grammar for .tsx): read with the TypeScript grammar the JSX arrow did not parse, so `Page` was no function
+    // node and its elements belonged to the file; read with TSX, `Page` is a function and the rendering call is its own
+    assert!(o.edges_by_qn.contains(&(EdgeKind::Calls, "src/App.tsx::Page".into(), "src/Button.tsx::Button".into(), 1.0)), "{:?}", o.edges_by_qn);
 }
 
 #[test]

@@ -582,3 +582,13 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   (0.0, was 0.5), a_lane_merged_into_base_with_a_rename... (0.0), s1_two_base_copies (0.0), s3 gitlink, s4 top-level (0.0),
   g4 diff-failed and unlanded-deletion, p8_whole_tree... (share_identical); r5_lossy_path_collision... (its `git branch -f main`
   on main itself, which git refuses, removed).
+- **The TSX grammar for `.tsx`** (the coordinator's ruling, option 3, 2026-11-19): 377 of the 428 base files the round-5
+  parse-error rule counted unread on massrelay were `.tsx`, read with the TypeScript grammar the vendored parser maps `tsx` to
+  (JSX is an error there). The provider now reads `tsx` with `LANGUAGE_TSX` outside `vendor/` (`parse_file`; the vendored files
+  are byte-identical, docs/THIRD_PARTY_NOTICES.md) and `has_parse_error` uses the same choice; `jsx` keeps the vendored
+  JavaScript grammar, which reads JSX (pinned by `tests/tsx_grammar.rs`). The provider version gains `+tsx`, so runs built
+  before are rebuilt by `--build-missing`. The `tsx` language digest was re-golded on purpose: the fixture's call inside JSX
+  is now found (calls 1 -> 2), and an arrow component bound to a const is a function node (`tests_cases.rs`, reason there).
+- **`NO_SYMBOL_LANGUAGES` = `sql`**: the vendored SQL extractor yields no symbol (its node names do not match the SQL grammar it
+  is given; the fixture's CREATE TABLE and VIEW give none), so a `.sql` file cannot hide one and its parse errors do not count
+  as unread (43 of the 428). `html`'s fixture has no symbol either, but its extractor can yield one, so it stays under the rule.

@@ -12,12 +12,40 @@ pub mod tests_link;
 pub mod vendor;
 pub mod walker;
 
-/// Whether `source` parses with errors under the grammar the reference provider uses for `language` (the same mapping as
-/// `vendor::parser::parse`, read here so the vendored file stays as it is): tree-sitter's `has_error` on the root. A symbol
-/// inside an ERROR node is not extracted, so `delta` counts such a file as unread (round 5, B-5). None: no grammar.
+/// Languages whose vendored extractor yields no symbol (pinned by `tests/tsx_grammar.rs`): a file of one cannot hide a symbol,
+/// so `delta` does not count its parse errors as unread.
+pub const NO_SYMBOL_LANGUAGES: [&str; 1] = ["sql"];
+
+/// The provider's grammar overrides of the vendored choice, part of its version (a parse cache of another choice is not reused).
+pub const GRAMMAR_OVERRIDES: &str = "tsx";
+
+/// Parse one file the way the provider does: the vendored parser, except `tsx`, which the vendored parser reads with the
+/// TypeScript grammar (it cannot read JSX: a component's file parses with errors and loses symbols). The provider reads `tsx`
+/// with tree-sitter-typescript's TSX grammar itself and hands the tree to the vendored TS/JS extractors, the very functions
+/// `vendor::parser::parse` calls for `tsx`; the vendored files stay byte-identical (docs/THIRD_PARTY_NOTICES.md). `jsx` keeps
+/// the vendored JavaScript grammar, which reads JSX.
+pub fn parse_file(path: &str, source: &str, language: &str) -> Result<vendor::ParseResult, String> {
+    if language != "tsx" {
+        return vendor::parse(path, source, language);
+    }
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&tree_sitter_typescript::LANGUAGE_TSX.into()).map_err(|e| format!("Failed to set language: {e}"))?;
+    let tree = parser.parse(source, None).ok_or_else(|| "Failed to parse source".to_string())?;
+    let root = tree.root_node();
+    Ok(vendor::ParseResult {
+        symbols: vendor::extractor::extract_symbols(root, source),
+        call_sites: vendor::extractor::extract_call_sites(root, source),
+        imports: vendor::resolver::extract_imports(root, source, path),
+    })
+}
+
+/// Whether `source` parses with errors under the grammar the reference provider uses for `language` (`parse_file`'s choice:
+/// the vendored mapping, `tsx` read with the TSX grammar): tree-sitter's `has_error` on the root. A symbol inside an ERROR node
+/// is not extracted, so `delta` counts such a file as unread (round 5, B-5). None: no grammar.
 pub fn has_parse_error(source: &str, language: &str) -> Option<bool> {
     let lang: tree_sitter::Language = match language {
-        "typescript" | "tsx" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
         "javascript" | "jsx" | "mjs" => tree_sitter_javascript::LANGUAGE.into(),
         "python" => tree_sitter_python::LANGUAGE.into(),
         "go" => tree_sitter_go::LANGUAGE.into(),
@@ -184,7 +212,8 @@ impl GraphProvider for ReferenceProvider {
     }
     fn version(&self) -> String {
         // the vendored parser's hash is part of the cache key: a parser change with the same crate version must not reuse old parses
-        format!("{}+{}", env!("CARGO_PKG_VERSION"), env!("COMPAREGRAPH_PARSER_HASH"))
+        // and the grammar overrides made outside the vendored files (`parse_file`)
+        format!("{}+{}+{GRAMMAR_OVERRIDES}", env!("CARGO_PKG_VERSION"), env!("COMPAREGRAPH_PARSER_HASH"))
     }
     fn detect(&self) -> ProviderStatus {
         ProviderStatus {
@@ -336,7 +365,7 @@ impl GraphProvider for ReferenceProvider {
                     })
                 }
                 None => {
-                    let r = vendor::parse(&f.rel_path, &source, &f.language);
+                    let r = parse_file(&f.rel_path, &source, &f.language);
                     if let (Ok(r), true) = (&r, opts.cache.is_some()) {
                         out.cache_misses += 1;
                         if let Ok(b) = serde_json::to_vec(&(&r.symbols, &r.call_sites, &r.imports))
