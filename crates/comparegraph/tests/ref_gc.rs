@@ -238,6 +238,39 @@ fn a_run_a_claim_cites_is_never_removed() {
     let _ = (cc, run);
 }
 
+/// MAJOR: a clone that cannot be read (moved away, unmounted, git not on PATH) says nothing about its refs: every ref run is
+/// `unknown`, never `gone`, and `gc --refs --apply` removes nothing of it.
+#[test]
+fn an_unreachable_clone_makes_its_ref_runs_unknown_and_gc_removes_nothing() {
+    let fx = Fx::new();
+    fx.delete_feat(); // even feat, really gone, cannot be told apart while the clone is unreadable
+    let clone = fx.clone();
+    let away = clone.with_file_name("r-away");
+    std::fs::rename(&clone, &away).unwrap();
+    let st = ok(fx.root(), &["repos", "--stale"]);
+    let s = statuses(&st);
+    assert!(s.len() == 2 && s.iter().all(|x| x.1 == "unknown"), "{st}");
+    let runs = fx.runs();
+    let v = ok(fx.root(), &["gc", "--refs", "--apply", "--by", "t"]);
+    assert_eq!(fx.runs(), runs, "nothing may be removed while the clone cannot be read: {v}");
+    assert!(v["data"]["removed_runs"].as_array().unwrap().is_empty(), "{v}");
+    assert_eq!(v["data"]["unknown"].as_array().unwrap().len(), 2, "{v}");
+    assert!(limits(&v).contains("unknown"), "gc must say what it skipped: {v}");
+    let q = ok(fx.root(), &["show", "r", "src/a.py::bar", "--ref", "feat"]);
+    assert!(limits(&q).contains("stale: unknown"), "{q}");
+
+    // git not on PATH: the same
+    std::fs::rename(&away, &clone).unwrap();
+    let o = cc(fx.root()).args(["gc", "--refs", "--apply", "--by", "t"]).env("PATH", "").output().unwrap();
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(fx.runs(), runs, "git not runnable: nothing removed: {v}");
+
+    // the clone is readable again: feat is gone and goes, main stays
+    let v = ok(fx.root(), &["gc", "--refs", "--apply", "--by", "t"]);
+    assert_eq!(v["data"]["removed_runs"].as_array().unwrap().len(), 1, "{v}");
+    assert_eq!(fx.runs(), runs - 1);
+}
+
 fn trigger_sql(fx: &Fx) -> Vec<(String, String)> {
     let db = fx.db();
     let mut st = db.prepare("SELECT name, sql FROM sqlite_master WHERE type='trigger' ORDER BY name").unwrap();
