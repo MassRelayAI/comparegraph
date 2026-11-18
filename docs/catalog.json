@@ -1208,6 +1208,18 @@
             "minimum": 1,
             "maximum": 2000,
             "description": "rows listed per section, default 200; truncation is reported in limitations"
+          },
+          "whole_tree": {
+            "type": "boolean",
+            "description": "also give the whole-tree comparison (everything head holds against everything base holds)"
+          },
+          "build_missing": {
+            "type": "boolean",
+            "description": "WRITES: build the refs never built (base, head, merge base) instead of refusing"
+          },
+          "refresh": {
+            "type": "boolean",
+            "description": "WRITES: like build_missing, and rebuild the refs that moved since they were built"
           }
         },
         "required": [
@@ -1277,10 +1289,9 @@
                   "repo",
                   "base",
                   "head",
+                  "merge_base",
                   "summary",
-                  "added",
-                  "removed",
-                  "changed",
+                  "branch",
                   "features_touched",
                   "base_files"
                 ],
@@ -1295,22 +1306,13 @@
                     "type": "object"
                   },
                   "merge_base": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
+                    "type": "object"
                   },
                   "summary": {
                     "type": "object"
                   },
-                  "added": {
-                    "type": "array"
-                  },
-                  "removed": {
-                    "type": "array"
-                  },
-                  "changed": {
-                    "type": "array"
+                  "branch": {
+                    "type": "object"
                   },
                   "features_touched": {
                     "type": "array"
@@ -1318,8 +1320,14 @@
                   "base_files": {
                     "type": "object"
                   },
+                  "rebuilt": {
+                    "type": "array"
+                  },
                   "feature_pool": {
                     "type": "integer"
+                  },
+                  "whole_tree": {
+                    "type": "object"
                   }
                 }
               }
@@ -3113,6 +3121,10 @@
           "no_port": {
             "type": "boolean",
             "description": "only the repos whose code must not be ported: lane not take, a never-copy licence (AGPL, GPL, LGPL, SSPL, BUSL, fair-code ...) or no licence read; each row says why"
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "only the repos with a ref run (build --ref) whose ref moved or is gone, and only those runs in ref_runs"
           },
           "limit": {
             "type": "integer",

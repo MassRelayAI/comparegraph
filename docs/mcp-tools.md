@@ -8,7 +8,7 @@ envelope as the CLI. 40 tools: 39 read-only, one write (`comparegraph_claim`). T
 
 | Tool | Answers | Key arguments |
 |---|---|---|
-| `comparegraph_repos` | Which repos, with licence, lane, role, head and latest run; archived repos are left out unless asked; `no_port` lists the repos whose code must not be ported, each with why (`lane study`, `licence AGPL-3.0`, `licence unread`) | `limit`, `cursor`, `archived`, `all`, `no_port` |
+| `comparegraph_repos` | Which repos, with licence, lane, role, head and latest run; archived repos are left out unless asked; `no_port` lists the repos whose code must not be ported, each with why; `stale` lists the repos with a `build --ref` run whose ref moved or is gone (`lane study`, `licence AGPL-3.0`, `licence unread`) | `limit`, `cursor`, `archived`, `all`, `no_port` |
 | `comparegraph_search` | Which symbols match these words | `query`, `repo`, `kind`, `limit`, `cursor` |
 | `comparegraph_show` | One symbol: callers, callees, community, licence lane | `repo`, `qualified_name`, `detail`, `max_callers` |
 | `comparegraph_communities` | Module clusters of a repo | `repo`, `limit`, `cursor` |
@@ -46,7 +46,7 @@ envelope as the CLI. 40 tools: 39 read-only, one write (`comparegraph_claim`). T
 | `comparegraph_tests_for` | Tests linked to a symbol, summary first, then one page | `repo`, `qualified_name`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_entry_points` | Exported, handler or main symbols nothing calls | `repo`, `limit`, `cursor`, `min_confidence` |
 | `comparegraph_dead_code` | Dead-code candidates (never proof) | `repo`, `limit`, `cursor`, `min_confidence`, `ref` |
-| `comparegraph_delta` | A branch against its base: symbols added, removed, changed, how many the base already has, features touched, files base deleted or rewrote (facts, no verdict; both refs built with `build --ref`) | `repo`, `base`, `head`, `family`, `max_nodes` |
+| `comparegraph_delta` | What a branch introduced since the merge base and whether base has it now: added, changed, removed, share on base, stale conflicts, features, files base deleted or rewrote among the branch's (facts, no verdict; refs built with `build --ref`, or `build_missing`/`refresh` WRITE them) | `repo`, `base`, `head`, `family`, `max_nodes`, `whole_tree`, `build_missing`, `refresh` |
 | `comparegraph_doctor` | Store and provider status | none |
 
 There is no `decide` tool: adopting or rejecting a clone is a human act on the CLI. For the same reason the store-safety

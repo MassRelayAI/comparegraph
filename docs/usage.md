@@ -74,17 +74,20 @@ otherwise. List verbs take `--limit` (default 50, maximum 500) and `--cursor`. E
 
 ## Judging a branch against its base
 
-`delta` answers "what does this branch add that the base does not already have", from two builds of the same clone at two refs. The
-clone is only read (`git archive`); its checkout, index and working tree never change.
+`delta` answers "what did this branch introduce since it left its base, and does the base have it now", from builds of the same
+clone at three refs: the base, the head and their merge base. The clone is only read (`git archive`); its checkout, index and
+working tree never change.
 
 ```bash
-comparegraph build myrepo --ref origin/main
-comparegraph build myrepo --ref origin/feature-x
-comparegraph delta myrepo --base origin/main --head origin/feature-x --pretty
-# summary.head_only: symbols the branch has that the base lacks under the same name
-# summary.share_already_on_base: how many of those the base has under another name or path (1.0 = all of them)
-# base_files.deleted: files the base deleted since the merge base that the branch still holds
-comparegraph show myrepo src/a.py::bar --ref origin/feature-x     # any graph read verb can answer from a ref's run
+comparegraph delta myrepo --base origin/main --head origin/feature-x --build-missing --pretty
+# summary.branch_symbols: symbols the branch added, changed or removed since the merge base
+# summary.share_already_on_base: how many of those base has now, under any name or path (1.0 = all)
+# summary.stale_conflicts: symbols the branch changed that base changed differently
+# base_files.deleted: files base deleted that the branch touched
+comparegraph delta myrepo --base origin/main --head origin/feature-x --refresh   # after either ref moved: rebuilds only what moved
+comparegraph repos --stale                  # ref runs whose ref moved or is gone
+comparegraph gc --refs                      # dry run: gone, superseded and old ref runs; add --apply --by me to remove them
+comparegraph show myrepo src/a.py::bar --ref origin/feature-x    # a graph read verb answers from a ref's run (and says `stale` if the ref moved)
 ```
 
 The fields are facts; whether to restack, take parts or retire the branch is the reader's call.
