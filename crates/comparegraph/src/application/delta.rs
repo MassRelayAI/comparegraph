@@ -6,11 +6,10 @@
 //! symbol's own name replaced by a placeholder), hashed with sha256 (already a dependency). From that:
 //! - the branch's own work is what differs between the merge base and head: `added`, `changed`, `removed`. Base's own growth
 //!   since the merge base is not the branch's (`--whole-tree` adds the old everything-against-everything comparison).
-//! - whether base already holds each of those rows is ONE rule for every row type, `Judge::rule` (docs/decisions.md, "Plan 14
-//!   review round 2"): a branch change is on base only if base holds the branch's version of it, and that version was not
-//!   already on the merge base. A match is the very same symbol (`same_symbol`), the same body hash under another name or path
-//!   (`body_hash`, confidence 1.0), or a base symbol of the same name and kind whose token-bigram Jaccard is >= 0.9 and nearer
-//!   the branch than the merge base (`name_and_tokens`, floored to two decimals, never above 0.99).
+//! - whether base already holds each of those rows is the delta model (docs/decisions.md, "Plan 14: the delta model"): copy
+//!   counts per (kind, body hash) over the whole tree of the merge base, head and base, one-to-one credit, and an answer that is
+//!   yes, no or not known (`Judge::judge_heads` for added and changed rows, `Judge::removed` for removed rows). A near match
+//!   (`name_and_tokens`: same name and kind, token-bigram Jaccard >= 0.9 and nearer the branch than the merge base) is never a yes.
 //! - the families and features each head-only symbol ranks under come from `map`'s own ranking (`map::symbol_features`).
 use super::{gitref, AppError, Result};
 use crate::store::Store;
@@ -62,7 +61,10 @@ struct Sym {
 struct Side {
     run: i64,
     commit: String,
+    /// one symbol per (kind, qualified name): the first by path and line
     syms: BTreeMap<(String, String), Sym>,
+    /// every symbol, duplicate keys too: the copy counts read these
+    all: Vec<Sym>,
     files: HashMap<String, Vec<String>>,
     unreadable: usize,
     duplicates: usize,
@@ -335,7 +337,7 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         }
     }
     let limitations = run.limitations.clone();
-    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations };
+    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations };
     for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
@@ -350,19 +352,23 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         h.update(tokens(&body, &s.name).join("\u{0}").as_bytes());
         s.hash = hex::encode(h.finalize());
         s.trivial = body_tokens(&body, &s.name, language == "python") < MIN_BODY_TOKENS;
-        if side.syms.insert((kind, qn), s).is_some() {
-            side.duplicates += 1;
+        side.all.push(s.clone());
+        match side.syms.entry((kind, qn)) {
+            std::collections::btree_map::Entry::Occupied(_) => side.duplicates += 1,
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert(s);
+            }
         }
     }
     Ok(side)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct Match {
     qualified_name: String,
     path: String,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct OnBase {
     confidence: f64,
     via: &'static str,
@@ -377,13 +383,21 @@ impl OnBase {
     fn exact(via: &'static str, matches: Vec<Match>) -> OnBase {
         OnBase { confidence: 1.0, via, matches, j_head: None, j_merge_base: None }
     }
-    fn is_near(&self) -> bool {
-        self.via == "name_and_tokens"
-    }
 }
 fn round4(x: f64) -> f64 {
     (x * 10_000.0).round() / 10_000.0
 }
+
+/// The answer the model gives one branch row (docs/decisions.md, "Plan 14: the delta model").
+#[derive(Debug, Clone, PartialEq)]
+enum Answer {
+    /// base holds the branch's change; how it is known (`same_symbol`, `body_hash`, ...)
+    Yes(&'static str),
+    No,
+    /// not known; why (`trivial_body`, `body_on_merge_base`, `shared_credit`, `near`, ...)
+    Unknown(&'static str),
+}
+
 #[derive(Serialize)]
 struct Row {
     qualified_name: String,
@@ -394,7 +408,7 @@ struct Row {
     body_hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     base_body_hash: Option<String>,
-    /// absent: not on base; null: not judged (`note` says why); else the match
+    /// absent: not on base; null: not known (`note` says why); else the match
     #[serde(skip_serializing_if = "Option::is_none")]
     already_on_base: Option<Option<OnBase>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -411,9 +425,15 @@ struct Row {
     base_moved_to: Vec<Match>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     features: Vec<String>,
-    /// a row of `removed` that the rule found on base: base holds the symbol nowhere (no copy of its merge-base body)
+    /// the model's answer (None until judged: read as `No`)
     #[serde(skip)]
-    removal_resolved: bool,
+    answer: Option<Answer>,
+    /// a yes: the base symbols that hold the branch's version
+    #[serde(skip)]
+    matches: Vec<Match>,
+    /// a `name_and_tokens` hit (A6): evidence for unknown only
+    #[serde(skip)]
+    near_m: Option<OnBase>,
 }
 
 impl Row {
@@ -432,33 +452,38 @@ impl Row {
             base_removed: false,
             base_moved_to: vec![],
             features: vec![],
-            removal_resolved: false,
+            answer: None,
+            matches: vec![],
+            near_m: None,
         }
     }
-    /// nothing left for the branch to carry, by `Judge::rule`: base holds the branch's version EXACTLY (added, changed: a near
-    /// match is for a person to read, never landed work), or holds the removed symbol nowhere (removed).
+    fn answer(&self) -> &Answer {
+        self.answer.as_ref().unwrap_or(&Answer::No)
+    }
+    /// base holds the branch's change (a yes): the only rows the exact share counts
     fn resolved(&self) -> bool {
-        self.on_base().is_some_and(|m| !m.is_near()) || self.removal_resolved
+        matches!(self.answer(), Answer::Yes(_))
     }
     fn near(&self) -> Option<&OnBase> {
-        self.on_base().filter(|m| m.is_near())
+        self.near_m.as_ref()
     }
     /// changed or removed, not on base, and base changed, removed or moved the same symbol its own way since the merge base
     fn stale_conflict(&self) -> bool {
         !self.resolved() && (self.base_also_changed || self.base_removed)
     }
-    fn on_base(&self) -> Option<&OnBase> {
-        self.already_on_base.as_ref().and_then(|m| m.as_ref())
-    }
-    /// set the base lookup of a head symbol: a trivial body that is not the very same symbol is not judged
-    fn set_on_base(&mut self, s: &Sym, m: Option<OnBase>) {
-        match m {
-            Some(m) => self.already_on_base = Some(Some(m)),
-            None if s.trivial => {
-                self.already_on_base = Some(None);
-                self.note = Some("trivial_body");
+    /// write the answer into the row's JSON fields (`removed`: a removed row, whose yes has no match to show)
+    fn encode(&mut self, removed: bool) {
+        match self.answer().clone() {
+            Answer::Yes(_) if removed => {}
+            Answer::Yes(via) => self.already_on_base = Some(Some(OnBase::exact(via, std::mem::take(&mut self.matches)))),
+            Answer::Unknown("near") if !removed => self.already_on_base = Some(self.near_m.clone()),
+            Answer::Unknown(why) => {
+                if !removed {
+                    self.already_on_base = Some(None);
+                }
+                self.note = Some(why);
             }
-            None => {}
+            Answer::No => {}
         }
     }
 }
@@ -467,7 +492,7 @@ impl Row {
 type GramSet = Option<Rc<HashSet<String>>>;
 struct Grams<'a> {
     side: &'a Side,
-    cache: RefCell<HashMap<(String, String), GramSet>>,
+    cache: RefCell<HashMap<(String, String, u32), GramSet>>,
     computed: std::cell::Cell<usize>,
 }
 impl<'a> Grams<'a> {
@@ -476,7 +501,7 @@ impl<'a> Grams<'a> {
     }
     /// `s` must be a symbol of this side; None when its source cannot be read
     fn of(&self, s: &Sym) -> GramSet {
-        let k = (s.kind.clone(), s.qn.clone());
+        let k = (s.kind.clone(), s.qn.clone(), s.ls);
         if let Some(v) = self.cache.borrow().get(&k) {
             return v.clone();
         }
@@ -490,6 +515,13 @@ impl<'a> Grams<'a> {
 fn key(s: &Sym) -> (String, String) {
     (s.kind.clone(), s.qn.clone())
 }
+/// An added or changed row's head symbol and its merge-base body (a changed symbol's own, an added symbol's partner, or none).
+type HeadPair<'a> = (&'a Sym, Option<&'a Sym>);
+/// A body's copy-count key: (kind, body hash).
+type CKey = (String, String);
+fn ckey(s: &Sym) -> CKey {
+    (s.kind.clone(), s.hash.clone())
+}
 fn matches_of(v: &[&Sym]) -> Vec<Match> {
     let mut m: Vec<Match> = v.iter().map(|b| Match { qualified_name: b.qn.clone(), path: b.path.clone() }).collect();
     m.sort_by(|a, b| (&a.path, &a.qualified_name).cmp(&(&b.path, &b.qualified_name)));
@@ -497,31 +529,42 @@ fn matches_of(v: &[&Sym]) -> Vec<Match> {
     m.truncate(MAX_MATCHES);
     m
 }
-
-/// One branch change, as the rule reads it.
-enum Change<'a> {
-    /// an added or changed head symbol `h`; `m` is its merge-base body (a changed symbol's own, an added symbol's partner, or none)
-    Head { h: &'a Sym, m: Option<&'a Sym> },
-    /// a merge-base symbol the branch deleted
-    Removed { m: &'a Sym },
+/// Copies per (kind, body hash) over a side's whole tree, every symbol counted (duplicate keys too).
+fn counts(s: &Side) -> HashMap<CKey, i64> {
+    let mut m: HashMap<CKey, i64> = HashMap::new();
+    for x in &s.all {
+        *m.entry(ckey(x)).or_default() += 1;
+    }
+    m
 }
-struct Verdict<'a> {
-    on_base: Option<OnBase>,
-    /// Removed: base holds the symbol nowhere
-    removal_resolved: bool,
-    /// Removed: where base keeps the merge-base body under another name or path
-    copies: Vec<&'a Sym>,
+/// How many symbols of each name a side's file defines (a redefinition is named `name#2`, ... by the provider).
+fn names_per_file(s: &Side) -> HashMap<(String, String), usize> {
+    let mut m: HashMap<(String, String), usize> = HashMap::new();
+    for x in &s.all {
+        *m.entry((x.path.clone(), x.name.clone())).or_default() += 1;
+    }
+    m
+}
+fn n_of(m: &HashMap<CKey, i64>, k: &CKey) -> i64 {
+    m.get(k).copied().unwrap_or(0)
 }
 
-/// The three sides of a delta and their lookups. `fork` is the merge base; the whole-tree comparison has none.
+/// The three sides of a delta and their lookups. `fork` is the merge base; the whole-tree comparison has none (every merge-base
+/// count is then 0).
 struct Judge<'a> {
     base: &'a Side,
     head: &'a Side,
     fork: Option<&'a Side>,
-    by_hash: HashMap<&'a str, Vec<&'a Sym>>,
+    by_hash: HashMap<CKey, Vec<&'a Sym>>,
     by_name: HashMap<(&'a str, &'a str), Vec<&'a Sym>>,
     fork_by_name: HashMap<(&'a str, &'a str), Vec<&'a Sym>>,
     head_by_name: HashMap<(&'a str, &'a str), Vec<&'a Sym>>,
+    /// copies per (kind, body hash): base, head, merge base
+    cb: HashMap<CKey, i64>,
+    ch: HashMap<CKey, i64>,
+    cm: HashMap<CKey, i64>,
+    names_base: HashMap<(String, String), usize>,
+    names_head: HashMap<(String, String), usize>,
     g_base: Grams<'a>,
     g_head: Grams<'a>,
     g_fork: Option<Grams<'a>>,
@@ -531,14 +574,14 @@ impl<'a> Judge<'a> {
     fn new(base: &'a Side, head: &'a Side, fork: Option<&'a Side>) -> Judge<'a> {
         let index = |s: &'a Side| {
             let mut by_name: HashMap<(&'a str, &'a str), Vec<&'a Sym>> = HashMap::new();
-            for x in s.syms.values() {
+            for x in &s.all {
                 by_name.entry((x.name.as_str(), x.kind.as_str())).or_default().push(x);
             }
             by_name
         };
-        let mut by_hash: HashMap<&'a str, Vec<&'a Sym>> = HashMap::new();
-        for s in base.syms.values() {
-            by_hash.entry(s.hash.as_str()).or_default().push(s);
+        let mut by_hash: HashMap<CKey, Vec<&'a Sym>> = HashMap::new();
+        for s in &base.all {
+            by_hash.entry(ckey(s)).or_default().push(s);
         }
         Judge {
             base,
@@ -548,13 +591,19 @@ impl<'a> Judge<'a> {
             by_name: index(base),
             fork_by_name: fork.map(index).unwrap_or_default(),
             head_by_name: index(head),
+            cb: counts(base),
+            ch: counts(head),
+            cm: fork.map(counts).unwrap_or_default(),
+            names_base: names_per_file(base),
+            names_head: names_per_file(head),
             g_base: Grams::new(base),
             g_head: Grams::new(head),
             g_fork: fork.map(Grams::new),
         }
     }
 
-    /// base symbol `b` is new or changed on base since the fork (with no fork, every base symbol is)
+    /// base symbol `b` is new or changed on base since the fork (with no fork, every base symbol is). Used by the removed-row
+    /// reading only, until the removed rules (R1-R5) replace it.
     fn fresh(&self, b: &Sym) -> bool {
         self.fork.is_none_or(|f| f.syms.get(&key(b)).is_none_or(|m| m.hash != b.hash))
     }
@@ -563,79 +612,114 @@ impl<'a> Judge<'a> {
         self.g_base.of(b).map(|g| jaccard(&g, other))
     }
 
-    /// **THE RULE** (docs/decisions.md, "Plan 14 review round 2"), one function for every row type:
-    ///
-    /// A branch change is on base only if base holds the branch's version of it, and that version was not already on the
-    /// merge base.
-    /// - added / changed (head body H, merge-base body M; M is absent for a pure add): resolved iff some base symbol B (the same
-    ///   qualified name, or another name or path) has H's normalised hash, or (H not trivial) has H's name and kind and
-    ///   J(B,H) >= 0.9 and J(B,H) > J(B,M); AND B's (kind, qualified name) did not have that same hash on the merge base (B is new
-    ///   or changed on base since the fork: old code never shows the branch's work). Matches are reported as `same_symbol`, then
-    ///   `body_hash`, then `name_and_tokens`.
-    /// - removed (merge-base body M): resolved iff base holds the symbol under its own (kind, qualified name) nowhere and keeps no
-    ///   copy of M (`copies_of`) under another name or path. A copy fills `base_moved_to` and leaves the row unresolved.
-    /// - with no fork (the whole-tree comparison) every base symbol counts as fresh and the same key is not a near candidate.
-    fn rule(&self, change: Change<'a>) -> Verdict<'a> {
-        let none = Verdict { on_base: None, removal_resolved: false, copies: vec![] };
-        match change {
-            Change::Head { h, m } => {
-                if let Some(b) = self.base.syms.get(&key(h)) {
-                    if b.hash == h.hash && self.fresh(b) {
-                        return Verdict { on_base: Some(OnBase::exact("same_symbol", matches_of(&[b]))), ..none };
-                    }
-                }
-                if h.trivial {
-                    return none;
-                }
-                let exact: Vec<&Sym> = self.by_hash.get(h.hash.as_str()).map(|v| v.iter().copied().filter(|b| key(b) != key(h) && self.fresh(b)).collect()).unwrap_or_default();
-                if !exact.is_empty() {
-                    return Verdict { on_base: Some(OnBase::exact("body_hash", matches_of(&exact))), ..none };
-                }
-                let same_key_ok = self.fork.is_some();
-                let cands: Vec<&Sym> = self
-                    .by_name
-                    .get(&(h.name.as_str(), h.kind.as_str()))
-                    .map(|v| v.iter().copied().filter(|b| (same_key_ok || key(b) != key(h)) && self.fresh(b)).collect())
-                    .unwrap_or_default();
-                if cands.is_empty() {
-                    return none;
-                }
-                let Some(mine) = self.g_head.of(h) else { return none };
-                let old = match (m, &self.g_fork) {
-                    (Some(m), Some(g)) => g.of(m),
-                    _ => None,
-                };
-                let mut best: Vec<(f64, Option<f64>, &Sym)> = vec![];
-                for c in cands {
-                    let Some(theirs) = self.g_base.of(c) else { continue };
-                    let sim = jaccard(&mine, &theirs);
-                    let to_old = old.as_ref().map(|o| jaccard(o, &theirs));
-                    if sim >= SIMILARITY_FLOOR && to_old.is_none_or(|t| sim > t) {
-                        best.push((sim, to_old, c));
-                    }
-                }
-                best.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then((&a.2.path, &a.2.qn).cmp(&(&b.2.path, &b.2.qn))));
-                let Some(&(top, top_old, _)) = best.first() else { return none };
-                let confidence = ((top * 100.0).floor() / 100.0).min(0.99);
-                let at_top: Vec<&Sym> = best.iter().filter(|b| b.0 == top).map(|b| b.2).collect();
-                let on = OnBase { confidence, via: "name_and_tokens", matches: matches_of(&at_top), j_head: Some(round4(top)), j_merge_base: top_old.map(round4) };
-                Verdict { on_base: Some(on), ..none }
-            }
-            Change::Removed { m } => {
-                if self.base.syms.contains_key(&key(m)) {
-                    return none; // base keeps it in place (as it was, or changed its own way: a stale conflict)
-                }
-                let copies = self.copies_of(m);
-                Verdict { on_base: None, removal_resolved: copies.is_empty(), copies }
+    /// A1: base holds the row's (kind, qualified name) with the head body, and the name is defined once in that file on base and
+    /// on head (a redefinition's `#n` numbering shifts when one copy is added or removed, so its identity is not trusted).
+    fn identity(&self, h: &Sym) -> Option<&'a Sym> {
+        let b = self.base.syms.get(&key(h))?;
+        let once = |m: &HashMap<(String, String), usize>| m.get(&(h.path.clone(), h.name.clone())).copied().unwrap_or(0) <= 1;
+        (b.hash == h.hash && once(&self.names_base) && once(&self.names_head)).then_some(b)
+    }
+
+    /// **THE MODEL** for added and changed rows (docs/decisions.md, "Plan 14: the delta model"), all rows of one comparison at
+    /// once (`heads[i]` is row i's head symbol and its merge-base body, if any). With x the row's head hash and h, m, b the copies
+    /// of (kind, x) in head, merge base and base:
+    /// - A1 identity (`identity`): yes, `same_symbol`;
+    /// - A2 fewer than `MIN_BODY_TOKENS` body tokens: unknown, `trivial_body`;
+    /// - A3 h - m <= 0 (a copy, move or swap of merge-base code): unknown, `body_on_merge_base`;
+    /// - A4 credits = min(h - m, b - m) less the A1 rows of x (and, with no fork, less the head symbols base holds as they are);
+    ///   of the r rows of x left: credits >= r: yes, `body_hash`; credits <= 0: no; else all r unknown, `shared_credit`;
+    /// - A6 a `name_and_tokens` hit is never a yes: it turns a no into unknown, `near`.
+    fn judge_heads(&self, rows: &mut [Row], heads: &[HeadPair<'a>], identical: &HashMap<CKey, i64>) {
+        let mut a1: HashMap<CKey, i64> = identical.clone();
+        let mut groups: BTreeMap<CKey, Vec<usize>> = BTreeMap::new();
+        for (i, (h, _)) in heads.iter().enumerate() {
+            if let Some(b) = self.identity(h) {
+                rows[i].answer = Some(Answer::Yes("same_symbol"));
+                rows[i].matches = matches_of(&[b]);
+                *a1.entry(ckey(h)).or_default() += 1;
+            } else if h.trivial {
+                rows[i].answer = Some(Answer::Unknown("trivial_body"));
+            } else {
+                groups.entry(ckey(h)).or_default().push(i);
             }
         }
+        for (ck, idx) in groups {
+            let m = n_of(&self.cm, &ck);
+            let hm = n_of(&self.ch, &ck) - m;
+            let credits = hm.min(n_of(&self.cb, &ck) - m) - n_of(&a1, &ck);
+            let r = idx.len() as i64;
+            for i in idx {
+                let h = heads[i].0;
+                rows[i].answer = Some(if hm <= 0 {
+                    Answer::Unknown("body_on_merge_base")
+                } else if credits >= r {
+                    let at: Vec<&Sym> = self.by_hash.get(&ck).map(|v| v.iter().copied().filter(|b| key(b) != key(h)).collect()).unwrap_or_default();
+                    rows[i].matches = matches_of(&at);
+                    Answer::Yes("body_hash")
+                } else if credits <= 0 {
+                    Answer::No
+                } else {
+                    Answer::Unknown("shared_credit")
+                });
+            }
+        }
+        for (i, (h, m)) in heads.iter().enumerate() {
+            if rows[i].answer() == &Answer::No {
+                if let Some(near) = self.near_of(h, *m) {
+                    rows[i].answer = Some(Answer::Unknown("near"));
+                    rows[i].near_m = Some(near);
+                }
+            }
+        }
+    }
+
+    /// A6: a base symbol of H's name and kind (under any path; with no fork, not H's own key) whose token-bigram Jaccard with H is
+    /// >= 0.9 and, when the row has a merge-base body M, strictly above its Jaccard with M (nearer the branch than the merge base).
+    fn near_of(&self, h: &'a Sym, m: Option<&'a Sym>) -> Option<OnBase> {
+        if h.trivial {
+            return None;
+        }
+        let same_key_ok = self.fork.is_some();
+        let cands: Vec<&Sym> = self.by_name.get(&(h.name.as_str(), h.kind.as_str())).map(|v| v.iter().copied().filter(|b| same_key_ok || key(b) != key(h)).collect()).unwrap_or_default();
+        if cands.is_empty() {
+            return None;
+        }
+        let mine = self.g_head.of(h)?;
+        let old = match (m, &self.g_fork) {
+            (Some(m), Some(g)) => g.of(m),
+            _ => None,
+        };
+        let mut best: Vec<(f64, Option<f64>, &Sym)> = vec![];
+        for c in cands {
+            let Some(theirs) = self.g_base.of(c) else { continue };
+            let sim = jaccard(&mine, &theirs);
+            let to_old = old.as_ref().map(|o| jaccard(o, &theirs));
+            if sim >= SIMILARITY_FLOOR && to_old.is_none_or(|t| sim > t) {
+                best.push((sim, to_old, c));
+            }
+        }
+        best.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then((&a.2.path, &a.2.qn).cmp(&(&b.2.path, &b.2.qn))));
+        let &(top, top_old, _) = best.first()?;
+        let confidence = ((top * 100.0).floor() / 100.0).min(0.99);
+        let at_top: Vec<&Sym> = best.iter().filter(|b| b.0 == top).map(|b| b.2).collect();
+        Some(OnBase { confidence, via: "name_and_tokens", matches: matches_of(&at_top), j_head: Some(round4(top)), j_merge_base: top_old.map(round4) })
+    }
+
+    /// A removed row (merge-base body M): resolved iff base holds the symbol under its own (kind, qualified name) nowhere and keeps
+    /// no copy of M (`copies_of`) under another name or path. A copy fills `base_moved_to` and leaves the row unresolved.
+    fn removed(&self, m: &'a Sym) -> (bool, Vec<&'a Sym>) {
+        if self.base.syms.contains_key(&key(m)) {
+            return (false, vec![]); // base keeps it in place (as it was, or changed its own way: a stale conflict)
+        }
+        let copies = self.copies_of(m);
+        (copies.is_empty(), copies)
     }
 
     /// Where base keeps merge-base body `m` under another (kind, qualified name): a fresh base symbol with M's hash, or of M's
     /// name and kind with J(B,M) >= 0.9 that is not nearer the branch's own new version of it (the head partner of a move) than M.
     /// A base symbol that already held its body on the merge base is a duplicate there, not a place base moved `m` to.
     fn copies_of(&self, m: &'a Sym) -> Vec<&'a Sym> {
-        let mut out: Vec<&'a Sym> = self.by_hash.get(m.hash.as_str()).map(|v| v.iter().copied().filter(|b| key(b) != key(m) && self.fresh(b)).collect()).unwrap_or_default();
+        let mut out: Vec<&'a Sym> = self.by_hash.get(&ckey(m)).map(|v| v.iter().copied().filter(|b| key(b) != key(m) && self.fresh(b)).collect()).unwrap_or_default();
         let (Some(gf), false) = (&self.g_fork, m.trivial) else { return out };
         let Some(old) = gf.of(m) else { return out };
         let new = self.head_partner(m).and_then(|h| self.g_head.of(h));
@@ -666,7 +750,7 @@ impl<'a> Judge<'a> {
         if let Some(v) = self.fork_by_name.get(&(h.name.as_str(), h.kind.as_str())) {
             return pick(v.clone());
         }
-        let near: Vec<&'a Sym> = fork.syms.values().filter(|m| m.kind == h.kind && removed(m) && score(m) >= SIMILARITY_FLOOR).collect();
+        let near: Vec<&'a Sym> = fork.all.iter().filter(|m| m.kind == h.kind && removed(m) && score(m) >= SIMILARITY_FLOOR).collect();
         pick(near)
     }
 
@@ -795,20 +879,21 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
 
     // the branch's own work: merge base -> head, each row judged by the one rule
     let judge = Judge::new(&base, &head, Some(&mb));
-    let (mut added, mut changed, mut removed) = (vec![], vec![], vec![]);
+    // added and changed rows are judged together: one body's copies are credited across both sections
+    let (mut heads, mut is_changed, mut hrows): (Vec<HeadPair>, Vec<bool>, Vec<Row>) = (vec![], vec![], vec![]);
     for (k, h) in &head.syms {
         let in_base = base.syms.get(k);
         match mb.syms.get(k) {
             None => {
                 let mut r = Row::of(h);
-                r.set_on_base(h, judge.rule(Change::Head { h, m: judge.fork_partner(h) }).on_base);
-                r.base_also_changed = r.on_base().is_none() && in_base.is_some();
-                added.push(r);
+                r.base_also_changed = in_base.is_some();
+                heads.push((h, judge.fork_partner(h)));
+                is_changed.push(false);
+                hrows.push(r);
             }
             Some(m) if m.hash != h.hash => {
                 let mut r = Row::of(h);
                 r.base_body_hash = Some(m.hash.clone());
-                r.set_on_base(h, judge.rule(Change::Head { h, m: Some(m) }).on_base);
                 match in_base {
                     None => {
                         r.base_removed = true;
@@ -816,17 +901,32 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
                     }
                     Some(b) => r.base_also_changed = b.hash != m.hash,
                 }
-                changed.push(r);
+                heads.push((h, Some(m)));
+                is_changed.push(true);
+                hrows.push(r);
             }
             Some(_) => {}
+        }
+    }
+    judge.judge_heads(&mut hrows, &heads, &HashMap::new());
+    let (mut added, mut changed, mut removed) = (vec![], vec![], vec![]);
+    for (mut r, c) in hrows.into_iter().zip(is_changed) {
+        if c {
+            changed.push(r);
+        } else {
+            // an added symbol base holds in another version: said only when base does not hold the branch's
+            r.base_also_changed &= !r.resolved() && r.near().is_none();
+            added.push(r);
         }
     }
     for (k, m) in &mb.syms {
         if !head.syms.contains_key(k) {
             let mut r = Row::of(m);
-            let v = judge.rule(Change::Removed { m });
-            r.removal_resolved = v.removal_resolved;
-            r.base_moved_to = matches_of(&v.copies);
+            let (resolved, copies) = judge.removed(m);
+            if resolved {
+                r.answer = Some(Answer::Yes("absent_on_base"));
+            }
+            r.base_moved_to = matches_of(&copies);
             match base.syms.get(k) {
                 None => r.base_removed = true,
                 Some(b) => r.base_also_changed = b.hash != m.hash,
@@ -893,13 +993,13 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
 
     let branch_symbols = added.len() + changed.len() + removed.len();
     // landed work is exact only (same_symbol, body_hash); a near match is listed apart, with its two similarities
-    let exact_n = added.iter().chain(changed.iter()).filter(|r| r.on_base().is_some_and(|m| !m.is_near())).count();
+    let exact_n = added.iter().chain(changed.iter()).filter(|r| r.resolved()).count();
     let near_rows: Vec<Value> = [("added", &added), ("changed", &changed)]
         .iter()
         .flat_map(|(sec, rows)| rows.iter().filter_map(move |r| r.near().map(|m| (sec, r, m))))
         .map(|(sec, r, m)| json!({ "section": sec, "qualified_name": r.qualified_name, "kind": r.kind, "path": r.path, "confidence": m.confidence, "j_head": m.j_head, "j_merge_base": m.j_merge_base, "matches": m.matches }))
         .collect();
-    let trivial_n = added.iter().chain(changed.iter()).filter(|r| r.note == Some("trivial_body")).count();
+    let trivial_n = added.iter().chain(changed.iter()).filter(|r| r.answer() == &Answer::Unknown("trivial_body")).count();
     let base_removed_n = changed.iter().chain(removed.iter()).filter(|r| r.base_removed).count();
     // a change or deletion base does not hold, to a symbol base changed otherwise, removed, or moved without it
     let stale_conflicts = changed.iter().chain(removed.iter()).filter(|r| r.stale_conflict()).count();
@@ -931,20 +1031,35 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         let wj = Judge::new(&base, &head, None);
         let (mut wa, mut wc, mut wr) = (vec![], vec![], vec![]);
         let mut unchanged = 0usize;
+        // the head symbols base holds as they are play A1's part: base's copy of such a body is that symbol's own
+        let mut identical: HashMap<CKey, i64> = HashMap::new();
+        let (mut wheads, mut wchanged, mut wrows): (Vec<HeadPair>, Vec<bool>, Vec<Row>) = (vec![], vec![], vec![]);
         for (k, h) in &head.syms {
             match base.syms.get(k) {
                 None => {
-                    let mut r = Row::of(h);
-                    r.set_on_base(h, wj.rule(Change::Head { h, m: None }).on_base);
-                    wa.push(r);
+                    wheads.push((h, None));
+                    wchanged.push(false);
+                    wrows.push(Row::of(h));
                 }
                 Some(b) if b.hash != h.hash => {
                     let mut r = Row::of(h);
                     r.base_body_hash = Some(b.hash.clone());
-                    r.set_on_base(h, wj.rule(Change::Head { h, m: None }).on_base);
-                    wc.push(r);
+                    wheads.push((h, None));
+                    wchanged.push(true);
+                    wrows.push(r);
                 }
-                Some(_) => unchanged += 1,
+                Some(_) => {
+                    unchanged += 1;
+                    *identical.entry(ckey(h)).or_default() += 1;
+                }
+            }
+        }
+        wj.judge_heads(&mut wrows, &wheads, &identical);
+        for (r, c) in wrows.into_iter().zip(wchanged) {
+            if c {
+                wc.push(r);
+            } else {
+                wa.push(r);
             }
         }
         for (k, b) in &base.syms {
@@ -1020,9 +1135,10 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             limitations.push(json!({ "code": "partial", "detail": format!("{n} {what}") }));
         }
     }
-    for v in [&mut added, &mut changed, &mut removed] {
+    for (v, rm) in [(&mut added, false), (&mut changed, false), (&mut removed, true)] {
         sort_rows(v);
         v.truncate(cap);
+        v.iter_mut().for_each(|r| r.encode(rm));
     }
     deleted.truncate(cap);
     rewritten.truncate(cap);
@@ -1045,9 +1161,10 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         "summary": out["summary"],
     }));
     if let Some((ws, mut wa, mut wr, mut wc)) = whole {
-        for v in [&mut wa, &mut wr, &mut wc] {
+        for (v, rm) in [(&mut wa, false), (&mut wr, true), (&mut wc, false)] {
             sort_rows(v);
             v.truncate(cap);
+            v.iter_mut().for_each(|r| r.encode(rm));
         }
         out["whole_tree"] = json!({ "summary": ws, "added": wa, "removed": wr, "changed": wc });
     }
@@ -1059,13 +1176,14 @@ mod tests {
     use super::*;
 
     fn side(files: &[(&str, &str)], syms: &[(&str, &str, u32, u32)]) -> Side {
-        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![] };
+        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![] };
         for (p, t) in files {
             s.files.insert(p.to_string(), t.lines().map(String::from).collect());
         }
         for (name, path, ls, le) in syms {
             let qn = format!("{path}::{name}");
             let sym = Sym { kind: "function".into(), name: name.to_string(), qn: qn.clone(), path: path.to_string(), ls: *ls, le: *le, hash: name.to_string(), trivial: false };
+            s.all.push(sym.clone());
             s.syms.insert(("function".into(), qn), sym);
         }
         s
