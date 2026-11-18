@@ -144,3 +144,28 @@ fn the_nearest_run_is_the_previous_the_merge_base_before_the_base_ref() {
     let full = fx.build(&["--ref", "feat", "--full"]);
     assert_eq!(hash_of(&feat), hash_of(&full));
 }
+
+#[test]
+fn the_reason_an_incremental_build_fell_back_is_recorded_on_the_run() {
+    let fx = Fx::new();
+    let d = fx.clone();
+    write(&d, "pkg/__init__.py", "X = 1\n");
+    commit(&d, "main adds a package file");
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "pkg/__init__.py", "X = 2\n");
+    write(&d, "m2.py", &module(2, "y = x * 3"));
+    commit(&d, "feat changes the package file");
+    git(&d, &["checkout", "-q", "main"]);
+    let m = fx.build(&["--ref", "main"]);
+    assert!(m["data"]["incremental_fallback"].is_null());
+    let f = fx.build(&["--ref", "feat"]);
+    assert_eq!(f["data"]["incremental_from"].as_i64(), Some(run_of(&m)));
+    let why = f["data"]["incremental_fallback"].as_str().unwrap_or_else(|| panic!("no reason recorded: {f}"));
+    assert!(why.contains("__init__.py"), "{why}");
+    assert_eq!(f["data"]["edges_copied"], 0);
+    let db = rusqlite::Connection::open(fx.root().join(".comparegraph/comparegraph.db")).unwrap();
+    let rec: Option<String> = db.query_row("SELECT incremental_fallback FROM run WHERE id=?1", [run_of(&f)], |r| r.get(0)).unwrap();
+    assert_eq!(rec.as_deref(), Some(why));
+    // the answer is still the full answer
+    assert_eq!(hash_of(&f), hash_of(&fx.build(&["--ref", "feat", "--full"])));
+}

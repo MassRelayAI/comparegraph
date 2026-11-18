@@ -48,6 +48,9 @@ pub struct BuildReport {
     /// the run an incremental build took its previous graph from (None: a full build)
     #[serde(default)]
     pub incremental_from: Option<i64>,
+    /// why that incremental build resolved every edge again (the `incremental_fallback` limitation's detail); None when it did not
+    #[serde(default)]
+    pub incremental_fallback: Option<String>,
 }
 
 /// The workspace db as the provider's parse cache (its own connection; written only after the parse loop). It notes
@@ -211,6 +214,10 @@ pub fn build_repo(
         ));
     }
     out.limitations = collapse_limitations(std::mem::take(&mut out.limitations));
+    let incremental_fallback: Option<String> = out.limitations.iter().find(|l| l.code == "incremental_fallback").map(|l| l.detail.clone());
+    if incremental_fallback.is_some() {
+        store.set_run_incremental_fallback(run, incremental_fallback.as_deref())?;
+    }
     if out.files_parsed == 0 {
         let msg = format!(
             "0 files parsed under {} ({} files seen, {} limitations)",
@@ -314,6 +321,7 @@ pub fn build_repo(
         reused: false,
         edges_copied: out.edges_copied,
         incremental_from,
+        incremental_fallback,
     })
 }
 
@@ -510,6 +518,7 @@ fn try_reuse(
         reused: true,
         edges_copied: 0,
         incremental_from: None,
+        incremental_fallback: None,
     }))
 }
 

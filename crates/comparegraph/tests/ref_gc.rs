@@ -236,3 +236,55 @@ fn a_run_a_claim_cites_is_never_removed() {
     assert_eq!(fx.runs(), before, "a refused gc removes nothing");
     let _ = (cc, run);
 }
+
+fn trigger_sql(fx: &Fx) -> Vec<(String, String)> {
+    let db = fx.db();
+    let mut st = db.prepare("SELECT name, sql FROM sqlite_master WHERE type='trigger' ORDER BY name").unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect()
+}
+
+#[test]
+fn head_runs_stay_append_only_and_gc_refs_prunes_a_ref_run_without_touching_a_trigger() {
+    let fx = Fx::new();
+    let head: i64 = fx.db().query_row("SELECT id FROM run WHERE ref IS NULL", [], |r| r.get(0)).unwrap();
+    // the ruling: ref runs are a prunable cache, head runs are append-only exactly as before
+    for sql in [
+        "DELETE FROM community_member WHERE community_id IN (SELECT id FROM community WHERE run_id=?1)",
+        "DELETE FROM community WHERE run_id=?1",
+        "DELETE FROM edge WHERE run_id=?1",
+        "DELETE FROM node WHERE run_id=?1",
+    ] {
+        let n: i64 = fx.db().query_row("SELECT COUNT(*) FROM node WHERE run_id=?1", [head], |r| r.get(0)).unwrap();
+        assert!(n > 0);
+        let e = fx.db().execute(sql, [head]);
+        assert!(e.as_ref().is_err_and(|e| e.to_string().contains("append-only")) || sql.contains("community_member") && e.is_ok_and(|c| c == 0), "a head run row was deletable: {sql}");
+    }
+    let triggers = trigger_sql(&fx);
+    for t in ["node_no_delete", "edge_no_delete", "community_no_delete", "community_member_no_delete"] {
+        let sql = &triggers.iter().find(|x| x.0 == t).unwrap().1;
+        assert!(sql.contains("ref IS NOT NULL"), "{t} must name its exception in the trigger itself: {sql}");
+    }
+    fx.feat_advances();
+    fx.build_ref("feat");
+    let before = trigger_sql(&fx);
+    ok(fx.root(), &["gc", "--refs", "--apply", "--by", "t"]); // the older feat run is superseded
+    assert_eq!(trigger_sql(&fx), before, "no trigger may be dropped, recreated or changed by an apply");
+    assert_eq!(fx.db().query_row("SELECT COUNT(*) FROM run WHERE ref='feat'", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    // the head run is whole
+    assert!(fx.db().query_row("SELECT COUNT(*) FROM node WHERE run_id=?1", [head], |r| r.get::<_, i64>(0)).unwrap() > 0);
+}
+
+#[test]
+fn a_store_with_the_old_unconditional_triggers_is_upgraded_on_open() {
+    let fx = Fx::new();
+    {
+        let db = fx.db();
+        db.execute_batch(
+            "DROP TRIGGER node_no_delete; CREATE TRIGGER node_no_delete BEFORE DELETE ON node BEGIN SELECT RAISE(ABORT, 'append-only'); END;",
+        )
+        .unwrap();
+    }
+    assert!(!trigger_sql(&fx).iter().find(|x| x.0 == "node_no_delete").unwrap().1.contains("ref IS NOT NULL"));
+    ok(fx.root(), &["build", "r"]); // a writer open migrates
+    assert!(trigger_sql(&fx).iter().find(|x| x.0 == "node_no_delete").unwrap().1.contains("ref IS NOT NULL"));
+}

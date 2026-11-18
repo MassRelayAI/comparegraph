@@ -38,36 +38,19 @@ pub fn stale_limitation(store: &Store, repo: &str, git_ref: &str) -> Option<Valu
     Some(json!({ "code": "stale", "detail": detail, "data": { "state": state, "ref": row.git_ref, "run": row.id, "built_at": row.commit } }))
 }
 
-const TRIGGERS: [&str; 4] = [
-    "CREATE TRIGGER IF NOT EXISTS node_no_delete BEFORE DELETE ON node BEGIN SELECT RAISE(ABORT, 'append-only'); END;",
-    "CREATE TRIGGER IF NOT EXISTS edge_no_delete BEFORE DELETE ON edge BEGIN SELECT RAISE(ABORT, 'append-only'); END;",
-    "CREATE TRIGGER IF NOT EXISTS community_no_delete BEFORE DELETE ON community BEGIN SELECT RAISE(ABORT, 'append-only'); END;",
-    "CREATE TRIGGER IF NOT EXISTS community_member_no_delete BEFORE DELETE ON community_member BEGIN SELECT RAISE(ABORT, 'append-only'); END;",
-];
-
-/// Delete one ref run's graph rows. The graph tables are append-only for completed runs; a ref run that is gone, superseded
-/// or old is the one thing that may leave, so the delete triggers are dropped for the span of one locked transaction and put back.
+/// Delete one ref run's graph rows. The delete triggers allow exactly this (`run.ref IS NOT NULL`, see schema.sql); none is dropped.
 fn delete_runs(store: &Store, ids: &[i64]) -> Result<()> {
     let c = store.conn();
-    for t in ["node_no_delete", "edge_no_delete", "community_no_delete", "community_member_no_delete"] {
-        c.execute_batch(&format!("DROP TRIGGER IF EXISTS {t};"))?;
+    for id in ids {
+        c.execute("DELETE FROM community_member WHERE community_id IN (SELECT id FROM community WHERE run_id=?1)", [id])?;
+        c.execute("DELETE FROM community WHERE run_id=?1", [id])?;
+        c.execute("DELETE FROM edge WHERE run_id=?1", [id])?;
+        c.execute("DELETE FROM node_fts WHERE rowid IN (SELECT id FROM node WHERE run_id=?1)", [id])?;
+        c.execute("DELETE FROM embedding WHERE owner_kind='node' AND owner_id IN (SELECT id FROM node WHERE run_id=?1)", [id])?;
+        c.execute("DELETE FROM node WHERE run_id=?1", [id])?;
+        c.execute("DELETE FROM run WHERE id=?1", [id])?;
     }
-    let r = (|| -> rusqlite::Result<()> {
-        for id in ids {
-            c.execute("DELETE FROM community_member WHERE community_id IN (SELECT id FROM community WHERE run_id=?1)", [id])?;
-            c.execute("DELETE FROM community WHERE run_id=?1", [id])?;
-            c.execute("DELETE FROM edge WHERE run_id=?1", [id])?;
-            c.execute("DELETE FROM node_fts WHERE rowid IN (SELECT id FROM node WHERE run_id=?1)", [id])?;
-            c.execute("DELETE FROM embedding WHERE owner_kind='node' AND owner_id IN (SELECT id FROM node WHERE run_id=?1)", [id])?;
-            c.execute("DELETE FROM node WHERE run_id=?1", [id])?;
-            c.execute("DELETE FROM run WHERE id=?1", [id])?;
-        }
-        Ok(())
-    })();
-    for t in TRIGGERS {
-        c.execute_batch(t)?;
-    }
-    Ok(r?)
+    Ok(())
 }
 
 pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bool, by: &str) -> Result<Value> {

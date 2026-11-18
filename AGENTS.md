@@ -38,6 +38,7 @@ Toolchain is pinned in `rust-toolchain.toml`. Tests that use `--apply` run again
 - Add an LLM call, network call or model dependency to the engine. It is deterministic and offline; `author`/`by` is always
   given by the caller, and the engine never writes a claim or decision itself.
 - Add a dependency or edit `Cargo.lock` or `store/schema.sql` without a ruling.
+- Update or delete a row of an append-only table (`node`, `edge`, `community`, `community_member`, `claim`, ...), except ref runs, pruned only by `gc --refs` (docs/decisions.md, CG-REFGC).
 - Execute code in a clone. Clones are read only.
 
 ## Where things are written down

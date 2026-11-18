@@ -177,6 +177,8 @@ const ADDED_COLUMNS: &[(&str, &str, &str, &str)] = &[
     ("run", "ref_commit", "TEXT", "NULL"),
     // the run an incremental build took its previous graph from (None: a full build)
     ("run", "incremental_from", "INTEGER", "NULL"),
+    // why an incremental build resolved everything again (the `incremental_fallback` limitation's detail), if it did
+    ("run", "incremental_fallback", "TEXT", "NULL"),
     // field-run asks 7, 15 and 5: `claim --at-commit`, `out_of_subset`, and `reach` with its path and note
     ("claim", "at_commit", "TEXT", "NULL"),
     ("claim", "out_of_subset", "TEXT", "NULL"),
@@ -210,10 +212,21 @@ fn needs_migration(conn: &Connection) -> rusqlite::Result<bool> {
             return Ok(true);
         }
     }
+    if !old_delete_triggers(conn)?.is_empty() {
+        return Ok(true);
+    }
     let v: Option<String> = conn
         .query_row("SELECT value FROM main.meta WHERE key = 'schema_version'", [], |r| r.get(0))
         .optional()?;
     Ok(v.is_none())
+}
+/// The delete triggers an older binary created without the ref-run exception (CG-REFGC ruling): replaced once, on a writer's open.
+fn old_delete_triggers(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut st = conn.prepare(
+        "SELECT name FROM main.sqlite_master WHERE type='trigger' AND name IN ('node_no_delete','edge_no_delete','community_no_delete','community_member_no_delete') AND sql NOT LIKE '%ref IS NOT NULL%'",
+    )?;
+    let v = st.query_map([], |r| r.get(0))?.collect();
+    v
 }
 /// The schema.sql objects, the added columns and the schema_version row, under BEGIN IMMEDIATE: concurrent openers
 /// of an old store wait on the busy timeout, then find the columns present. A `duplicate column name` (another
@@ -221,6 +234,9 @@ fn needs_migration(conn: &Connection) -> rusqlite::Result<bool> {
 fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
     let res = (|| {
+        for t in old_delete_triggers(conn)? {
+            conn.execute_batch(&format!("DROP TRIGGER IF EXISTS {t};"))?;
+        }
         conn.execute_batch(SCHEMA)?;
         for (table, col, ty, _) in ADDED_COLUMNS {
             if table_columns(conn, table)?.iter().any(|n| n == col) {
@@ -647,6 +663,10 @@ impl Store {
         let mut st = self.conn.prepare("SELECT id, ref, COALESCE(ref_commit,''), started_at FROM run WHERE repo_id=?1 AND status='done' AND ref IS NOT NULL ORDER BY ref, id DESC")?;
         let rows = st.query_map(params![repo.0], |r| Ok(RefRunRow { id: r.get(0)?, git_ref: r.get(1)?, commit: r.get(2)?, started_at: r.get(3)? }))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+    pub fn set_run_incremental_fallback(&self, id: RunId, why: Option<&str>) -> Result<()> {
+        self.conn.execute("UPDATE run SET incremental_fallback=?2 WHERE id=?1", params![id.0, why])?;
+        Ok(())
     }
     pub fn set_run_incremental_from(&self, id: RunId, from: Option<i64>) -> Result<()> {
         self.conn.execute("UPDATE run SET incremental_from=?2 WHERE id=?1", params![id.0, from])?;

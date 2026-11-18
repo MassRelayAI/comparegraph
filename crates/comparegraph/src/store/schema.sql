@@ -63,13 +63,15 @@ CREATE TRIGGER IF NOT EXISTS relatedness_no_delete BEFORE DELETE ON relatedness 
 CREATE TRIGGER IF NOT EXISTS location_no_delete BEFORE DELETE ON location BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS location_no_update BEFORE UPDATE OF path, line_start, line_end, content_hash, claim_id, node_id, resolved_at ON location BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS node_no_update BEFORE UPDATE ON node BEGIN SELECT RAISE(ABORT, 'append-only'); END;
-CREATE TRIGGER IF NOT EXISTS node_no_delete BEFORE DELETE ON node BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS node_no_delete BEFORE DELETE ON node WHEN NOT EXISTS (SELECT 1 FROM run WHERE id = OLD.run_id AND ref IS NOT NULL) BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS edge_no_update BEFORE UPDATE ON edge BEGIN SELECT RAISE(ABORT, 'append-only'); END;
-CREATE TRIGGER IF NOT EXISTS edge_no_delete BEFORE DELETE ON edge BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS edge_no_delete BEFORE DELETE ON edge WHEN NOT EXISTS (SELECT 1 FROM run WHERE id = OLD.run_id AND ref IS NOT NULL) BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS community_no_update BEFORE UPDATE ON community BEGIN SELECT RAISE(ABORT, 'append-only'); END;
-CREATE TRIGGER IF NOT EXISTS community_no_delete BEFORE DELETE ON community BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS community_no_delete BEFORE DELETE ON community WHEN NOT EXISTS (SELECT 1 FROM run WHERE id = OLD.run_id AND ref IS NOT NULL) BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS community_member_no_update BEFORE UPDATE ON community_member BEGIN SELECT RAISE(ABORT, 'append-only'); END;
-CREATE TRIGGER IF NOT EXISTS community_member_no_delete BEFORE DELETE ON community_member BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+CREATE TRIGGER IF NOT EXISTS community_member_no_delete BEFORE DELETE ON community_member WHEN NOT EXISTS (SELECT 1 FROM community c JOIN run r ON r.id = c.run_id WHERE c.id = OLD.community_id AND r.ref IS NOT NULL) BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+-- Ruling (CG-REFGC): the graph tables are append-only for every run EXCEPT a ref run (`build --ref`, run.ref IS NOT NULL), a prunable
+-- cache like parse_cache that only `gc --refs` removes. The exception is in the four delete triggers themselves; head runs stay append-only.
 -- per-file parse cache (incremental builds): prunable, so no append-only triggers.
 CREATE TABLE IF NOT EXISTS parse_cache (
   file_hash TEXT NOT NULL, language TEXT NOT NULL, provider_version TEXT NOT NULL, payload BLOB NOT NULL,
