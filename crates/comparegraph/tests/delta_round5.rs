@@ -351,8 +351,7 @@ fn r5_lossy_path_collision_hides_a_change() {
     let p2 = d.join(std::ffi::OsStr::from_bytes(b"notes\xff.txt"));
     std::fs::write(&p1, "one\n").unwrap();
     std::fs::write(&p2, "two\n").unwrap();
-    commit(&d, "two non-utf8 paths");
-    git(&d, &["branch", "-f", "main"]);
+    commit(&d, "two non-utf8 paths"); // (the review's probe also ran `git branch -f main` on main itself, which git refuses)
     fx.feat();
     let g2 = G5.replace("x * 3", "x * 4");
     write(&d, "src/a.py", &g2);
@@ -451,4 +450,46 @@ fn r5_blank_line_in_a_module_string() {
     let v = fx.delta();
     eprintln!("BLANK: {}", summ(&v));
     assert_ne!(exact_share(&v), Some(1.0), "FALSE YES: {}", summ(&v));
+}
+
+// ================================================================ round 5: the backstop
+
+/// The backstop never takes an honest yes away: base took the branch's change exactly (an add, a change and a deletion, in
+/// three files), so git's merge of head into base is base itself.
+#[test]
+fn r5_backstop_keeps_an_honest_yes() {
+    let fx = Fx::new(&[("src/a.py", FOO), ("src/g.py", G5), ("src/d.py", &format!("{KEEP}\n{}", long_named("gone", true)))]);
+    let d = fx.d();
+    let lane = |d: &Path| {
+        write(d, "src/a.py", &format!("{FOO}\n{BAR}"));
+        write(d, "src/g.py", &G5.replace("x * 3", "x * 4"));
+        write(d, "src/d.py", KEEP);
+    };
+    fx.feat();
+    lane(&d);
+    commit(&d, "lane");
+    fx.main();
+    lane(&d);
+    write(&d, "src/other.py", "def other(q):\n    r = q + 7\n    return r * 3\n");
+    commit(&d, "base takes it all, and moves on");
+    let v = fx.delta();
+    assert_eq!(exact_share(&v), Some(1.0), "{}", summ(&v));
+    assert!(v["data"]["summary"]["unknown"]["by_why"].as_object().unwrap().is_empty(), "{}", summ(&v));
+}
+
+/// The backstop turns a yes the merge contradicts unknown and says how the model had it: the lane adds bar and base takes bar
+/// but not the lane's other edit to the same file.
+#[test]
+fn r5_backstop_turns_a_contradicted_yes_unknown() {
+    let fx = Fx::new(&[("src/a.py", &format!("{FOO}\n{G5}"))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &format!("{FOO}\n{}\n{BAR}", G5.replace("x * 3", "x * 4")));
+    commit(&d, "lane changes g and adds bar");
+    fx.main();
+    write(&d, "src/a.py", &format!("{FOO}\n{G5}\n{BAR}"));
+    commit(&d, "base takes bar only");
+    let v = fx.delta();
+    let bar = row_of(&v, "added", "src/a.py::bar");
+    assert_eq!((bar["on_base"].as_str(), bar["why"].as_str(), bar["model_via"].as_str()), (Some("unknown"), Some("merge_changes_file"), Some("same_symbol")), "{bar}");
 }

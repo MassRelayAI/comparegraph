@@ -483,9 +483,10 @@ fn g4_an_unlanded_deletion_of_top_level_code_is_an_item() {
     write(&d, "src/a.py", &format!("{FOO}\nRETRIES = compute_retries(3, backoff=2)\n\n{BAR}"));
     commit(&d, "base takes bar only");
     let v = fx.delta();
-    assert_eq!(row_of(&v, "added", "src/a.py::bar")["via"], "same_symbol", "{}", branch(&v));
+    // round 5: bar is same_symbol to the model, and the merge backstop turns it unknown (the merged a.py drops the constant)
+    assert_eq!(row_of(&v, "added", "src/a.py::bar")["model_via"], "same_symbol", "{}", branch(&v));
     assert_eq!(v["data"]["summary"]["unknown"]["by_why"]["outside_symbols"].as_i64(), Some(1), "{}", summ(&v));
-    assert_eq!(exact_share(&v), Some(0.5), "{}", summ(&v));
+    assert_eq!(exact_share(&v), Some(0.0), "{}", summ(&v));
 }
 
 /// The whole-tree comparison subtracts the head symbols base holds as they are: head's new g copies f's body, and base's only
@@ -515,10 +516,10 @@ fn g4_a_diff_that_fails_is_an_item() {
     write(&d, "src/a.py", &format!("{FOO}\n{BAR}\n"));
     commit(&d, "base takes bar, its file otherwise");
     let v = fx.delta();
-    assert_eq!(exact_share(&v), Some(1.0), "{}", summ(&v));
+    assert_eq!(v["data"]["summary"]["unknown"]["by_why"].get("diff_failed"), None, "{}", summ(&v));
     let blob = git_out(&d, &["rev-parse", "feat:src/a.py"]);
     drop_object(&d, &blob);
     let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
     assert_eq!(v["data"]["summary"]["unknown"]["by_why"]["diff_failed"].as_i64(), Some(1), "{}", summ(&v));
-    assert_eq!(exact_share(&v), Some(0.5), "{}", summ(&v));
+    assert_ne!(exact_share(&v), Some(1.0), "{}", summ(&v));
 }

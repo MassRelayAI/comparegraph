@@ -230,10 +230,11 @@ fn s1_two_base_copies_credit_two_branch_rows() {
     write(&d, "src/o.py", &format!("{}\n{}", long_named("p2", true), long_named("q2", true)));
     commit(&d, "base takes both under other names");
     let v = fx.delta();
+    // round 5: both are body_hash to the model; the merge backstop turns them unknown (merging adds src/n.py to base)
     for qn in ["src/n.py::p", "src/n.py::q"] {
-        assert_eq!(row_of(&v, "added", qn)["via"], "body_hash", "{}", branch(&v));
+        assert_eq!(row_of(&v, "added", qn)["model_via"], "body_hash", "{}", branch(&v));
     }
-    assert_eq!(exact_share(&v), Some(1.0));
+    assert_eq!(exact_share(&v), Some(0.0));
 }
 
 // ---------------------------------------------------------------- slice 2: the unread set U(T); removed rows R1-R5; A5
@@ -367,7 +368,8 @@ fn s3_a_deletion_with_a_gitlink_added_on_base_is_unknown() {
     git(&d, &["update-ref", "refs/heads/main", &tip]);
     let v = fx.delta();
     let row = row_of(&v, "removed", "src/a.py::bar");
-    assert_eq!((row["on_base"].as_str(), row["via"].as_str()), (Some("yes"), Some("absent_on_base")), "{row}");
+    // round 5: R4 says yes; git's merge of the two a.py edits is not base's a.py, so the backstop says unknown
+    assert_eq!((row["model_via"].as_str(), row["why"].as_str()), (Some("absent_on_base"), Some("merge_changes_file")), "{row}");
 }
 
 fn git_out(dir: &Path, args: &[&str]) -> String {
@@ -400,8 +402,9 @@ fn s4_unlanded_top_level_code_reads_below_one() {
     commit(&d, "base takes bar only");
     let v = fx.delta();
     let s = &v["data"]["summary"];
-    assert_eq!(row_of(&v, "added", "src/a.py::bar")["via"], "same_symbol", "{}", branch(&v));
-    assert_eq!(exact_share(&v), Some(0.5), "the module constant is not on base: {s}");
+    // round 5: bar is same_symbol to the model; merging puts the constant into base's a.py: unknown (was 0.5)
+    assert_eq!(row_of(&v, "added", "src/a.py::bar")["model_via"], "same_symbol", "{}", branch(&v));
+    assert_eq!(exact_share(&v), Some(0.0), "the module constant is not on base: {s}");
     assert_eq!(s["unknown"]["by_why"]["outside_symbols"].as_i64(), Some(1), "{s}");
     let res = branch(&v)["residue"].as_array().unwrap();
     assert_eq!((res.len(), res[0]["path"].as_str(), res[0]["why"].as_str()), (1, Some("src/a.py"), Some("outside_symbols")), "{res:?}");

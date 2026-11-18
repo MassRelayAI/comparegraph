@@ -503,6 +503,9 @@ struct Row {
     /// a `name_and_tokens` hit (A6): evidence for unknown only
     #[serde(skip_serializing_if = "Option::is_none")]
     near: Option<Near>,
+    /// a yes of the model the merge backstop turned unknown: how the model had it (`same_symbol`, `body_hash`, ...)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_via: Option<&'static str>,
     /// base changed (or, for an added symbol, holds a different version of) the same symbol since the merge base
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     base_also_changed: bool,
@@ -538,6 +541,7 @@ impl Row {
             why: None,
             matches: vec![],
             near: None,
+            model_via: None,
             base_also_changed: false,
             base_removed: false,
             base_moved_to: vec![],
@@ -1327,6 +1331,52 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         }
     }
 
+    // THE BACKSTOP (docs/decisions.md, "Plan 14 round 5"): a yes is checked against git's own merge, the thing it predicts.
+    // A path whose merged entry is not base's, or that conflicts, turns every yes row in it unknown (`merge_changes_file`);
+    // git unable to merge turns every yes unknown (`merge_check_unavailable`); a share of 1.0 also needs the merged tree to
+    // be base's tree, else one unknown item names the first path that differs (`merge_changes_tree`). Only ever yes -> unknown.
+    let merged = gitref::merge_tree(clone, root, &base_c, &head_c);
+    let merged_entries = merged.as_ref().ok().map(|m| {
+        let mut e: BTreeMap<String, (String, String)> = m.index.blobs.clone();
+        for (p, c) in &m.index.gitlinks {
+            e.insert(p.clone(), ("160000".into(), c.clone()));
+        }
+        e
+    });
+    let mut merge_note: Option<String> = None;
+    for r in added.iter_mut().chain(changed.iter_mut()).chain(removed.iter_mut()) {
+        if !r.resolved() {
+            continue;
+        }
+        let why = match (&merged, &merged_entries) {
+            (Ok(m), Some(me)) => {
+                let base_entry = eb.as_ref().and_then(|b| b.get(&r.path));
+                (m.conflicts.contains(&r.path) || me.get(&r.path) != base_entry || eb.is_none()).then_some("merge_changes_file")
+            }
+            _ => Some("merge_check_unavailable"),
+        };
+        if let Some(w) = why {
+            r.model_via = r.via;
+            r.answer = Some(Answer::Unknown(w));
+            r.matches.clear();
+            r.encode();
+        }
+    }
+    match &merged {
+        Err(e) => merge_note = Some(format!("git merge-tree could not check the yes rows ({e}): every yes is unknown (`merge_check_unavailable`)")),
+        Ok(m) => {
+            let resolved_now = added.iter().chain(changed.iter()).chain(removed.iter()).filter(|r| r.resolved()).count();
+            let items = added.len() + changed.len() + removed.len() + residue.len();
+            if items > 0 && resolved_now == items && gitref::tree_of(clone, &base_c).as_deref() != Some(m.tree.as_str()) {
+                let first = match (&merged_entries, &eb) {
+                    (Some(me), Some(b)) => me.keys().chain(b.keys()).find(|p| me.get(*p) != b.get(*p)).cloned().unwrap_or_default(),
+                    _ => String::new(),
+                };
+                residue.push(Residue { path: first, why: "merge_changes_tree", hunk: None });
+            }
+        }
+    }
+
     let branch_symbols = added.len() + changed.len() + removed.len();
     // landed work is exact only (same_symbol, body_hash); a near match is listed apart, with its two similarities
     let exact_n = added.iter().chain(changed.iter()).filter(|r| r.resolved()).count();
@@ -1443,6 +1493,9 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     }
     if trivial_n > 0 {
         limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature (decorators and docstrings excluded): not matched by body hash or tokens (on_base: unknown, why: trivial_body)") }));
+    }
+    if let Some(n) = merge_note {
+        limitations.push(json!({ "code": "partial", "detail": n }));
     }
     if u0_failed {
         limitations.push(json!({ "code": "partial", "detail": format!("the diff of a touched file ({}..{}) could not be read: each such file is one unknown item (`diff_failed`)", &mb_c[..12.min(mb_c.len())], &head_c[..12.min(head_c.len())]) }));

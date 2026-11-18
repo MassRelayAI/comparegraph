@@ -342,14 +342,15 @@ fn a_lane_merged_into_base_with_a_rename_is_entirely_already_on_base() {
     assert_eq!(qns(&branch(&v)["added"]), vec!["src/a.py::bar", "src/a.py::qux"]);
     // round 4 (B1): a body_hash yes also needs the raw text to agree. Base's bar2 indents its body by 8 spaces where the lane's
     // bar has 4: the tokens agree, the text does not, so bar is unknown (`text_differs`) and the share is 0.5 (was 1.0, 2 yes).
-    assert_eq!((s["branch_symbols"].as_i64(), s["already_on_base"].as_i64()), (Some(2), Some(1)));
-    assert_eq!(s["share_already_on_base"].as_f64(), Some(0.5));
+    // round 5: qux's body_hash yes is checked against git's merge, which conflicts on src/a.py (base deleted it, the lane
+    // edited it): unknown (`merge_changes_file`), share 0.0 (was 0.5)
+    assert_eq!((s["branch_symbols"].as_i64(), s["already_on_base"].as_i64()), (Some(2), Some(0)));
+    assert_eq!(s["share_already_on_base"].as_f64(), Some(0.0));
     let bar = &branch(&v)["added"][0];
     assert_eq!((bar["qualified_name"].as_str(), bar["on_base"].as_str(), bar["why"].as_str()), (Some("src/a.py::bar"), Some("unknown"), Some("text_differs")), "{bar}");
     // the delta model: a yes is `on_base: yes` with `via` and `matches` on the row (was an `already_on_base` object)
     let m = &branch(&v)["added"][1];
-    assert_eq!((m["on_base"].as_str().unwrap(), m["via"].as_str().unwrap()), ("yes", "body_hash"));
-    assert_eq!(m["matches"][0]["qualified_name"], "lib/b.py::qux2");
+    assert_eq!((m["model_via"].as_str().unwrap(), m["why"].as_str().unwrap()), ("body_hash", "merge_changes_file"), "{m}");
     // base deleted src/a.py, which the lane edited
     assert_eq!(v["data"]["base_files"]["deleted"], json!([{ "path": "src/a.py", "head_modified": true }]));
     // whole-tree on request: foo (unchanged by the lane) shows too
@@ -604,13 +605,20 @@ fn the_same_name_with_a_near_identical_body_is_matched_at_a_lower_stated_confide
 
 #[test]
 fn rows_list_what_is_not_on_base_first() {
-    let fx = lane(&format!("{QUX}\n{BAR}"));
+    // round 5: a yes survives the merge backstop only where the merged file is base's, so base takes the lane's qux file as is
+    // (was: qux renamed into lib/b.py, which the merge would add the lane's copy beside)
+    let fx = Fx::new(&[("src/a.py", FOO)]);
     let d = fx.clone();
-    write(&d, "lib/b.py", "def qux2(z):\n    w = z - 3\n    return w * w\n"); // base has qux (renamed), not bar
-    commit(&d, "main has qux2");
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", &format!("{FOO}\n{QUX}"));
+    write(&d, "src/z.py", BAR);
+    commit(&d, "feat adds qux and bar");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/a.py", &format!("{FOO}\n{QUX}"));
+    commit(&d, "main takes qux as is");
     let v = fx.delta("main", "feat");
-    // bar (not on base) before qux (on base), though qux comes first by line
-    assert_eq!(qns(&branch(&v)["added"]), vec!["src/a.py::bar", "src/a.py::qux"]);
+    // bar (not on base) before qux (on base), though src/a.py comes first by path
+    assert_eq!(qns(&branch(&v)["added"]), vec!["src/z.py::bar", "src/a.py::qux"]);
 }
 
 #[test]
@@ -841,8 +849,8 @@ fn r2_base_took_a_moved_change_under_another_path_exactly_and_nearly() {
         let row = row_of(&v, "added", "src/b.py::process");
         // the delta model: the near take is unknown (why near), never a yes; the exact take a yes, body_hash
         if via == "body_hash" {
-            assert_eq!(on_base_of(row).map(|m| m["via"].clone()), Some(json!(via)), "{row}");
-            assert_eq!(row["matches"][0]["qualified_name"], "src/c.py::process", "{row}");
+            // round 5: the model says body_hash (base's c.py copy); the merge would still add the lane's b.py: unknown
+            assert_eq!((row["model_via"].as_str(), row["why"].as_str()), (Some("body_hash"), Some("merge_changes_file")), "{row}");
         } else {
             assert_eq!((row["why"].as_str(), row["near"]["matches"][0]["qualified_name"].as_str()), (Some("near"), Some("src/c.py::process")), "{row}");
         }
@@ -855,7 +863,7 @@ fn r2_base_took_a_moved_change_under_another_path_exactly_and_nearly() {
         // unknown"). Was 1.0 / 0.5.
         assert_eq!(row_of(&v, "removed", "src/a.py::process")["why"], "near", "{}", branch(&v));
         let s = &v["data"]["summary"];
-        let (share, near) = if via == "body_hash" { (0.5, 0) } else { (0.0, 1) };
+        let (share, near) = if via == "body_hash" { (0.0, 0) } else { (0.0, 1) }; // round 5: was 0.5 for the exact take
         assert_eq!((s["share_already_on_base"].as_f64(), s["near_on_base"]["count"].as_i64()), (Some(share), Some(near)), "{s}");
     }
 }
@@ -928,8 +936,9 @@ fn r2_the_trivial_floor_is_exactly_eight_tokens_after_the_signature() {
     let (seven, eight) = (row_of(&v, "added", "src/n.py::seven"), row_of(&v, "added", "src/n.py::eight"));
     // the delta model: unknown with why (was `already_on_base: null` with note); a yes with via (was an object)
     assert_eq!((seven["on_base"].as_str(), seven["why"].as_str()), (Some("unknown"), Some("trivial_body")), "7 tokens (return - x + y + z): {seven}");
-    assert_eq!(eight["via"], "body_hash", "8 tokens (return x + y - z - w): {eight}");
-    assert!(eight.get("why").is_none(), "{eight}");
+    // round 5: the model's yes is body_hash; the merge backstop turns it unknown, since merging would add src/n.py to base
+    assert_eq!(eight["model_via"], "body_hash", "8 tokens (return x + y - z - w): {eight}");
+    assert_eq!((eight["on_base"].as_str(), eight["why"].as_str()), (Some("unknown"), Some("merge_changes_file")), "{eight}");
 }
 
 /// A `pass` stub whose signature spans several lines is trivial: the parameters are signature, not body.

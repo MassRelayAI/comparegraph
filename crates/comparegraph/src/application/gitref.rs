@@ -293,9 +293,15 @@ pub struct TreeIndex {
 
 /// The `TreeIndex` of `commit` in `clone`.
 pub fn tree_index(clone: &Path, commit: &str) -> Result<TreeIndex> {
+    tree_index_with(clone, commit, &[])
+}
+
+/// The `TreeIndex` of a commit or tree, git run with `env` (an object directory of its own, for a tree `git merge-tree` wrote).
+pub fn tree_index_with(clone: &Path, commit: &str, env: &[(String, String)]) -> Result<TreeIndex> {
     let out = Command::new("git")
         .arg("-C")
         .arg(clone)
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .args(["ls-tree", "-r", "-z", "--full-tree", commit])
         .output()
         .map_err(|e| AppError::Io(clone.to_path_buf(), e))?;
@@ -325,6 +331,73 @@ pub fn tree_index(clone: &Path, commit: &str) -> Result<TreeIndex> {
         }
     }
     Ok(t)
+}
+
+/// What git's own merge of `head` into `base` gives (`git merge-tree --write-tree`, git >= 2.38): the merged tree's id, its
+/// entries, and the paths in conflict. Read-only for the clone: the objects the merge writes go to a temporary object directory
+/// under the store (the clone's own objects are only an alternate), removed afterwards.
+pub struct Merged {
+    pub tree: String,
+    pub index: TreeIndex,
+    pub conflicts: std::collections::BTreeSet<String>,
+}
+
+/// `git merge-tree` of `base` and `head`; Err (with why) when git cannot give it (too old, an error, a missing object).
+pub fn merge_tree(clone: &Path, store_root: &Path, base: &str, head: &str) -> std::result::Result<Merged, String> {
+    let objects = Command::new("git")
+        .arg("-C")
+        .arg(clone)
+        .args(["rev-parse", "--path-format=absolute", "--git-path", "objects"])
+        .output()
+        .map_err(|e| format!("cannot run git: {e}"))?;
+    if !objects.status.success() {
+        return Err("git rev-parse --git-path objects failed".into());
+    }
+    let objects = String::from_utf8_lossy(&objects.stdout).trim().to_string();
+    let tmp = store_root.join(".comparegraph").join(format!("tmp-merge-{}", new_token().replace(' ', "-")));
+    std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let env = vec![("GIT_OBJECT_DIRECTORY".to_string(), tmp.display().to_string()), ("GIT_ALTERNATE_OBJECT_DIRECTORIES".to_string(), objects)];
+    let res = (|| {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(clone)
+            .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .args(["-c", "core.quotepath=false", "merge-tree", "--write-tree", "--no-messages", base, head])
+            .output()
+            .map_err(|e| format!("cannot run git merge-tree: {e}"))?;
+        // 0: clean, 1: conflicts (the tree is still written); anything else is an error (an old git does not know --write-tree)
+        if !matches!(out.status.code(), Some(0) | Some(1)) {
+            return Err(format!("git merge-tree failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        }
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        let mut lines = text.lines();
+        let tree = lines.next().unwrap_or("").trim().to_string();
+        if tree.len() < 40 || !tree.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(format!("git merge-tree gave no tree id: {:?}", text.lines().next().unwrap_or("")));
+        }
+        let mut conflicts = std::collections::BTreeSet::new();
+        for l in lines {
+            if l.is_empty() {
+                break;
+            }
+            if let Some((_, p)) = l.split_once('\t') {
+                conflicts.insert(p.to_string());
+            }
+        }
+        if out.status.code() == Some(1) && conflicts.is_empty() {
+            return Err("git merge-tree reported conflicts but listed none".into());
+        }
+        let index = tree_index_with(clone, &tree, &env).map_err(|e| e.to_string())?;
+        Ok(Merged { tree, index, conflicts })
+    })();
+    let _ = std::fs::remove_dir_all(&tmp);
+    res
+}
+
+/// The tree id of a commit.
+pub fn tree_of(clone: &Path, commit: &str) -> Option<String> {
+    let out = Command::new("git").arg("-C").arg(clone).args(["rev-parse", &format!("{commit}^{{tree}}")]).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// Write every blob of `entries` under `into`, reading them raw through one `git cat-file --batch`.
