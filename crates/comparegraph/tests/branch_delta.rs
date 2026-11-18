@@ -165,6 +165,102 @@ fn a_ref_build_leaves_the_clones_head_index_and_working_tree_untouched() {
     ok(fx.root(), &["check"]);
 }
 
+fn cached(fx: &Fx, rel: &str) -> PathBuf {
+    fx.root().join(".comparegraph/refs/r").join(git_out(&fx.clone(), &["rev-parse", "main"]).trim()).join(rel)
+}
+
+/// M1: the tree is read as raw blobs. No smudge filter of the clone runs (git-lfs would fetch and write .git/lfs/objects), no eol
+/// conversion, no export-ignore; the clone's status, HEAD and index stay as they were.
+#[test]
+fn a_ref_build_runs_no_filter_or_eol_conversion_of_the_clone() {
+    let fx = Fx::new(&[("src/a.py", FOO)]);
+    let d = fx.clone();
+    let marker = fx.base.path().join("smudge-ran");
+    let script = fx.base.path().join("smudge.sh");
+    let fwd = |p: &Path| p.display().to_string().replace('\\', "/");
+    std::fs::write(&script, format!("#!/bin/sh\ntouch '{}'\ncat\n", fwd(&marker))).unwrap();
+    for f in ["x", "lfs"] {
+        git(&d, &["config", &format!("filter.{f}.smudge"), &format!("sh '{}'", fwd(&script))]);
+        git(&d, &["config", &format!("filter.{f}.clean"), "cat"]);
+        git(&d, &["config", &format!("filter.{f}.required"), "true"]);
+    }
+    git(&d, &["config", "core.autocrlf", "true"]);
+    write(&d, ".gitattributes", "*.py filter=x text eol=crlf\n*.bin filter=lfs diff=lfs merge=lfs -text\nsrc/ignored.py export-ignore\n");
+    write(&d, "src/ignored.py", BAR);
+    let pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393\nsize 12345\n";
+    write(&d, "data/blob.bin", pointer);
+    commit(&d, "attributes");
+    let _ = std::fs::remove_file(&marker);
+    let before = tree_state(&d);
+
+    fx.build_ref("main");
+
+    assert!(!marker.exists(), "a smudge filter of the clone ran during a ref build");
+    assert!(!d.join(".git/lfs").exists(), "an lfs-style filter wrote .git/lfs");
+    assert_eq!(std::fs::read_to_string(cached(&fx, "data/blob.bin")).unwrap(), pointer, "the blob is the committed pointer, not a fetch");
+    let a = std::fs::read(cached(&fx, "src/a.py")).unwrap();
+    assert!(!a.contains(&b'\r'), "eol conversion was applied: {a:?}");
+    assert!(cached(&fx, "src/ignored.py").is_file(), "export-ignore must have no effect on what is read");
+    assert_eq!(tree_state(&d), before, "status, HEAD or the index of the clone changed");
+}
+
+#[test]
+fn a_symlink_in_the_tree_is_a_file_holding_its_target_never_followed() {
+    let fx = Fx::new(&[("src/a.py", FOO)]);
+    let d = fx.clone();
+    // a symlink entry made without the OS (as a Windows clone without symlink rights has it): mode 120000, blob = the target
+    let target = fx.base.path().join("target.txt");
+    std::fs::write(&target, "../../../../outside.py").unwrap();
+    let oid = git_out(&d, &["hash-object", "-w", target.to_str().unwrap()]).trim().to_string();
+    git(&d, &["update-index", "--add", "--cacheinfo", &format!("120000,{oid},src/link.py")]);
+    git(&d, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "a symlink"]);
+    let before = tree_state(&d);
+
+    fx.build_ref("main");
+
+    let link = cached(&fx, "src/link.py");
+    let meta = std::fs::symlink_metadata(&link).unwrap();
+    assert!(meta.file_type().is_file(), "the link must be a regular file, never a symlink: {meta:?}");
+    assert_eq!(std::fs::read_to_string(&link).unwrap(), "../../../../outside.py");
+    assert_eq!(tree_state(&d), before);
+}
+
+#[test]
+fn two_builds_of_one_commit_at_once_both_read_a_whole_tree() {
+    let mut files: Vec<(String, String)> = vec![];
+    for i in 0..300 {
+        files.push((format!("src/m{i:03}.py"), format!("def f{i}(x):\n    y = x * {i}\n    return y + {i}\n")));
+    }
+    let refs: Vec<(&str, &str)> = files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+    let fx = Fx::new(&refs);
+    let root = fx.root().to_path_buf();
+    let bin = assert_cmd::cargo::cargo_bin("comparegraph");
+    let kids: Vec<_> = (0..6).map(|_| std::process::Command::new(&bin).arg("--root").arg(&root).args(["build", "r", "--ref", "main", "--full"]).spawn_output()).collect();
+    for k in kids {
+        let o = k.join().unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    }
+    for i in 0..300 {
+        assert!(cached(&fx, &format!("src/m{i:03}.py")).is_file(), "src/m{i:03}.py missing from a tree marked complete");
+    }
+    let counts: Vec<i64> = {
+        let db = fx.db();
+        let mut st = db.prepare("SELECT COUNT(*) FROM node n JOIN run u ON u.id = n.run_id WHERE u.ref = 'main' AND u.status = 'done' AND n.kind = 'function' GROUP BY u.id").unwrap();
+        st.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    };
+    assert!(!counts.is_empty() && counts.iter().all(|c| *c == 300), "every finished build read all 300 functions: {counts:?}");
+}
+
+trait SpawnOutput {
+    fn spawn_output(&mut self) -> std::thread::JoinHandle<std::process::Output>;
+}
+impl SpawnOutput for std::process::Command {
+    fn spawn_output(&mut self) -> std::thread::JoinHandle<std::process::Output> {
+        let child = self.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+        std::thread::spawn(move || child.wait_with_output().unwrap())
+    }
+}
+
 #[test]
 fn an_unknown_ref_is_a_structured_refusal_and_writes_no_run() {
     let fx = Fx::new(&[("src/a.py", FOO)]);
