@@ -383,3 +383,70 @@ fn git_in(dir: &Path, args: &[&str], stdin: &[u8]) -> String {
     assert!(o.status.success(), "git {args:?}");
     String::from_utf8_lossy(&o.stdout).trim().to_string()
 }
+
+// ---------------------------------------------------------------- slice 4: blob equality; work outside symbols
+
+/// The branch adds `bar` (base takes it as is) and one top-level statement base does not have. The statement is in no symbol:
+/// it is one unknown item in the denominator (`outside_symbols`), so the branch reads below 1.0.
+#[test]
+fn s4_unlanded_top_level_code_reads_below_one() {
+    let fx = Fx::new(&[("src/a.py", FOO)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}\nRETRIES = compute_retries(3, backoff=2)\n"));
+    commit(&d, "lane adds bar and a module constant");
+    fx.main();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
+    commit(&d, "base takes bar only");
+    let v = fx.delta();
+    let s = &v["data"]["summary"];
+    assert_eq!(row_of(&v, "added", "src/a.py::bar")["via"], "same_symbol", "{}", branch(&v));
+    assert_eq!(exact_share(&v), Some(0.5), "the module constant is not on base: {s}");
+    assert_eq!(s["unknown"]["by_why"]["outside_symbols"].as_i64(), Some(1), "{s}");
+    let res = branch(&v)["residue"].as_array().unwrap();
+    assert_eq!((res.len(), res[0]["path"].as_str(), res[0]["why"].as_str()), (1, Some("src/a.py"), Some("outside_symbols")), "{res:?}");
+}
+
+/// The branch adds `bar` (base takes it) and changes a `.sql` file base does not have: a touched file with no symbols is one
+/// unknown item (`file_without_symbols`).
+#[test]
+fn s4_an_unlanded_sql_change_reads_below_one() {
+    let fx = Fx::new(&[("src/a.py", FOO), ("db/schema.sql", "ALTER TABLE users ADD COLUMN age int;\n")]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
+    write(&d, "db/schema.sql", "ALTER TABLE users ADD COLUMN age int;\nALTER TABLE users ADD COLUMN email text;\n");
+    commit(&d, "lane adds bar and a column");
+    fx.main();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
+    commit(&d, "base takes bar only");
+    let v = fx.delta();
+    let s = &v["data"]["summary"];
+    assert_eq!(exact_share(&v), Some(0.5), "the column is not on base: {s}");
+    assert_eq!(s["unknown"]["by_why"]["file_without_symbols"].as_i64(), Some(1), "{s}");
+    // base takes the column too: the file is the same blob on both, nothing left
+    write(&d, "db/schema.sql", "ALTER TABLE users ADD COLUMN age int;\nALTER TABLE users ADD COLUMN email text;\n");
+    commit(&d, "base takes the column");
+    assert_eq!(exact_share(&fx.delta()), Some(1.0));
+}
+
+/// Blob equality: base made the branch's very change to the file (here a swap of two bodies, which the copy counts alone read
+/// as unknown, A3): the path holds the same blob on head and base, so every row in it is yes (`same_file`).
+#[test]
+fn s4_the_same_file_on_head_and_base_makes_its_rows_yes() {
+    let fx = Fx::new(&[("src/a.py", &format!("{}\n{}", long_named("f", false), long_named("g", true)))]);
+    let d = fx.d();
+    fx.feat();
+    let swapped = format!("{}\n{}", long_named("f", true), long_named("g", false));
+    write(&d, "src/a.py", &swapped);
+    commit(&d, "lane swaps");
+    fx.main();
+    write(&d, "src/a.py", &swapped);
+    commit(&d, "base makes the same swap");
+    let v = fx.delta();
+    for qn in ["src/a.py::f", "src/a.py::g"] {
+        let row = row_of(&v, "changed", qn);
+        assert_eq!((row["on_base"].as_str(), row["via"].as_str()), (Some("yes"), Some("same_file")), "{row}");
+    }
+    assert_eq!(exact_share(&v), Some(1.0), "{}", v["data"]["summary"]);
+}
