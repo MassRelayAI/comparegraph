@@ -297,3 +297,7 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   a failed build on Windows); submodules are skipped; an unsafe path (absolute, `..`, `.git`, a Windows drive colon) refuses the
   tree. Still a process call, no new dependency. MINOR (same lane): `<commit>.lock` (create-new, stale after 10 min) serialises the
   extraction, which goes to `<commit>.tmp-<pid>` and is renamed into place before `<commit>.complete` is written.
+- **MAJOR (gc)** a resolve that cannot ask the clone (missing or unmounted folder, not a repository, git not runnable) is
+  `unknown`, never `gone` (`gitref::probe`). `gc --refs` skips every run of such a ref, whatever else would remove it, lists them
+  in `unknown` and says so; `repos --stale` and the query `stale` limitation show `unknown`. Why: an unmounted disk made every ref
+  `gone` and an apply deleted every ref run. What would change it: none.

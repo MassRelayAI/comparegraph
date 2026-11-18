@@ -21,12 +21,14 @@ pub fn claim_on_ref_refused(git_ref: &str) -> AppError {
     )
 }
 
-/// `current`, `moved` or `gone`.
+/// `current`, `moved`, `gone`, or `unknown` when the clone cannot be read (missing or unmounted folder, git not runnable): an
+/// I/O failure says nothing about the ref, so it is never `gone`.
 pub fn status_of(clone: &Path, git_ref: &str, commit: &str) -> &'static str {
-    match gitref::resolve(clone, git_ref) {
-        Ok(c) if c == commit => "current",
-        Ok(_) => "moved",
-        Err(_) => "gone",
+    match gitref::probe(clone, git_ref) {
+        gitref::Probe::Commit(c) if c == commit => "current",
+        gitref::Probe::Commit(_) => "moved",
+        gitref::Probe::Missing => "gone",
+        gitref::Probe::Unreadable(_) => "unknown",
     }
 }
 
@@ -39,11 +41,12 @@ pub fn stale_limitation(store: &Store, repo: &str, git_ref: &str) -> Option<Valu
     let r = store.repo_by_name(repo).ok()??;
     let rows = store.ref_run_rows(r.id?).ok()?;
     let row = rows.iter().find(|x| x.git_ref == git_ref || (git_ref.len() >= 7 && x.commit.starts_with(git_ref)))?;
-    let now = gitref::resolve(Path::new(&r.path), &row.git_ref);
+    let now = gitref::probe(Path::new(&r.path), &row.git_ref);
     let (state, detail) = match now {
-        Ok(c) if c == row.commit => return None,
-        Ok(c) => ("moved", format!("stale: moved - the answer is from run {} built at {}, but '{}' now names {}; rebuild with `build {repo} --ref {}`", row.id, short(&row.commit), row.git_ref, short(&c), row.git_ref)),
-        Err(_) => ("gone", format!("stale: gone - the answer is from run {} built at {}, but '{}' no longer names a commit; `gc --refs` removes the run", row.id, short(&row.commit), row.git_ref)),
+        gitref::Probe::Commit(c) if c == row.commit => return None,
+        gitref::Probe::Commit(c) => ("moved", format!("stale: moved - the answer is from run {} built at {}, but '{}' now names {}; rebuild with `build {repo} --ref {}`", row.id, short(&row.commit), row.git_ref, short(&c), row.git_ref)),
+        gitref::Probe::Missing => ("gone", format!("stale: gone - the answer is from run {} built at {}, but '{}' no longer names a commit; `gc --refs` removes the run", row.id, short(&row.commit), row.git_ref)),
+        gitref::Probe::Unreadable(why) => ("unknown", format!("stale: unknown - the answer is from run {} built at {}; whether '{}' still names it is not known ({why})", row.id, short(&row.commit), row.git_ref)),
     };
     Some(json!({ "code": "stale", "detail": detail, "data": { "state": state, "ref": row.git_ref, "run": row.id, "built_at": row.commit } }))
 }
@@ -78,6 +81,7 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
     let mut cands: Vec<Value> = vec![];
     let mut cited: Vec<Value> = vec![];
     let mut kept = 0usize;
+    let mut unknown: Vec<Value> = vec![];
     let mut ids: Vec<i64> = vec![];
     let mut trees: BTreeMap<(String, String), bool> = BTreeMap::new(); // (repo, commit) -> still used by a run that stays
     for repo in store.repos()? {
@@ -89,8 +93,15 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
             let rank = per_ref.entry(row.git_ref.clone()).or_default();
             *rank += 1;
             let mut why = vec![];
-            if status_of(Path::new(&repo.path), &row.git_ref, &row.commit) == "gone" {
-                why.push("gone".to_string());
+            match status_of(Path::new(&repo.path), &row.git_ref, &row.commit) {
+                "gone" => why.push("gone".to_string()),
+                "unknown" => {
+                    // the clone cannot be read: nothing about this ref is known, so nothing of it is removed
+                    unknown.push(json!({ "run": row.id, "repo": repo.name, "ref": row.git_ref, "ref_commit": row.commit }));
+                    trees.insert((repo.name.clone(), row.commit.clone()), true);
+                    continue;
+                }
+                _ => {}
             }
             if *rank > keep {
                 why.push(format!("superseded (keeping the latest {keep})"));
@@ -116,9 +127,13 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
             cands.push(item);
         }
     }
+    let mut lims = vec![];
+    if !unknown.is_empty() {
+        lims.push(json!({ "code": "partial", "detail": format!("{} ref run(s) skipped, status unknown: their clone cannot be read (moved, unmounted, or git not runnable); nothing of them is removed until it can", unknown.len()) }));
+    }
     let mut base = json!({
         "keep": keep, "older_than_days": older_than_days, "candidates": cands, "kept": kept,
-        "cited": cited,
+        "cited": cited, "unknown": unknown, "limitation_items": lims,
     });
     if !apply {
         base["dry_run"] = json!(true);

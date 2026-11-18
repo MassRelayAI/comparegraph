@@ -338,7 +338,8 @@ fn resolve_live(store: &Store, repo: &crate::store::RepoRow, label: &str) -> Res
         Ok(c) => Ok(c),
         Err(AppError::Structured(mut e)) => {
             let has_runs = store.ref_runs(repo.id.expect("stored repo has id"))?.iter().any(|(_, r, _)| r == label);
-            if has_runs {
+            // gone only when the clone answered; a clone that cannot be read says nothing about the ref
+            if has_runs && gitref::probe(Path::new(&repo.path), label) == gitref::Probe::Missing {
                 if let Some(Value::Object(d)) = e.data.as_mut() {
                     d.insert("stale".into(), json!("gone"));
                 }

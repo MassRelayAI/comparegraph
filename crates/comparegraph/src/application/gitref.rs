@@ -41,6 +41,34 @@ pub fn resolve(clone: &Path, git_ref: &str) -> Result<String> {
     Ok(sha)
 }
 
+/// What a ref names now, as far as the clone can say.
+#[derive(Debug, PartialEq)]
+pub enum Probe {
+    /// the ref names this commit
+    Commit(String),
+    /// the clone was read and the ref names nothing (deleted branch)
+    Missing,
+    /// the clone could not be read (folder missing or unmounted, not a git repository, git not runnable): nothing is known
+    Unreadable(String),
+}
+
+/// Resolve a ref, telling "the ref is gone" (the clone answered) from "the clone could not be asked" (an I/O failure).
+pub fn probe(clone: &Path, git_ref: &str) -> Probe {
+    if !clone.is_dir() {
+        return Probe::Unreadable(format!("{} is not a folder", clone.display()));
+    }
+    match Command::new("git").arg("-C").arg(clone).args(["rev-parse", "--git-dir"]).output() {
+        Err(e) => return Probe::Unreadable(format!("cannot run git: {e}")),
+        Ok(o) if !o.status.success() => return Probe::Unreadable(format!("{} is not a git repository", clone.display())),
+        Ok(_) => {}
+    }
+    match resolve(clone, git_ref) {
+        Ok(c) => Probe::Commit(c),
+        Err(AppError::Io(_, e)) => Probe::Unreadable(format!("cannot run git: {e}")),
+        Err(_) => Probe::Missing,
+    }
+}
+
 /// Where the tree of `commit` of repo `repo` is kept.
 pub fn cache_dir(store_root: &Path, repo: &str, commit: &str) -> PathBuf {
     let safe: String = repo.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '_' }).collect();
