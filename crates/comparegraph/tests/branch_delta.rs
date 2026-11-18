@@ -317,6 +317,83 @@ fn a_function_the_lane_changed_and_base_rewrote_is_a_stale_conflict() {
     assert_eq!(branch(&v)["changed"][0]["already_on_base"]["via"], "same_symbol");
 }
 
+// ---------------------------------------------------------------- B1: a change to a symbol base moved is not "already on base"
+
+const HANDLE: &str = "def handle(req):\n    user = req.user\n    data = load(req.path)\n    out = render(user, data)\n    return out\n";
+const HANDLE_GUARDED: &str = "def handle(req):\n    if not req.ok:\n        raise Denied()\n    user = req.user\n    data = load(req.path)\n    out = render(user, data)\n    return out\n";
+
+/// `def process(items)`: 14 near-identical lines, optionally a 2-line guard after the first line and a tweak on the return.
+fn long_process(guard: bool, tweak: &str) -> String {
+    let mut s = String::from("def process(items):\n    total = 0\n");
+    if guard {
+        s.push_str("    if not items:\n        raise Denied()\n");
+    }
+    for i in 0..14 {
+        s.push_str(&format!("    total = total + items[{i}] * {} - len(items)\n", i + 2));
+    }
+    s.push_str(&format!("    return total{tweak}\n"));
+    s
+}
+
+/// main has `before` in src/a.py; feat changes it to `lane`; main then moves the file (git mv) and writes `base` at src/b.py.
+fn lane_then_base_moves(before: &str, lane: &str, base: Option<&str>) -> Fx {
+    let fx = Fx::new(&[("src/a.py", before)]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", lane);
+    commit(&d, "lane changes the function");
+    git(&d, &["checkout", "-q", "main"]);
+    git(&d, &["mv", "src/a.py", "src/b.py"]);
+    if let Some(b) = base {
+        write(&d, "src/b.py", b);
+    }
+    commit(&d, "main moves the file");
+    fx
+}
+
+#[test]
+fn a_change_to_a_function_base_only_moved_is_a_stale_conflict_not_on_base() {
+    let fx = lane_then_base_moves(HANDLE, HANDLE_GUARDED, None);
+    let v = fx.delta("main", "feat");
+    let s = &v["data"]["summary"];
+    assert_eq!(qns(&branch(&v)["changed"]), vec!["src/a.py::handle"], "{v}");
+    assert_eq!(s["share_already_on_base"].as_f64(), Some(0.0), "{s}");
+    assert_eq!(s["stale_conflicts"].as_i64(), Some(1), "{s}");
+    assert_eq!(s["already_on_base"].as_i64(), Some(0), "{s}");
+    let row = &branch(&v)["changed"][0];
+    assert!(row["already_on_base"].is_null(), "{row}");
+    assert_eq!(row["base_removed"], true);
+    // where base keeps the merge-base body: the moved copy, without the branch's change
+    assert_eq!(row["base_moved_to"][0]["qualified_name"], "src/b.py::handle", "{row}");
+}
+
+#[test]
+fn a_long_body_whose_moved_copy_lacks_the_branch_s_two_new_lines_is_not_on_base() {
+    let fx = lane_then_base_moves(&long_process(false, ""), &long_process(true, ""), None);
+    let v = fx.delta("main", "feat");
+    let s = &v["data"]["summary"];
+    let row = &branch(&v)["changed"][0];
+    assert_eq!(row["qualified_name"], "src/a.py::process");
+    assert!(row["already_on_base"].is_null(), "the moved copy is nearer the merge base than the branch: {row}");
+    assert_eq!((s["share_already_on_base"].as_f64(), s["stale_conflicts"].as_i64()), (Some(0.0), Some(1)), "{s}");
+}
+
+#[test]
+fn a_branch_change_base_took_after_a_rename_is_on_base() {
+    // exactly: base moved the file and holds the branch's body
+    let fx = lane_then_base_moves(&long_process(false, ""), &long_process(true, ""), Some(&long_process(true, "")));
+    let v = fx.delta("main", "feat");
+    let row = &branch(&v)["changed"][0];
+    assert_eq!((row["already_on_base"]["via"].as_str(), row["already_on_base"]["matches"][0]["qualified_name"].as_str()), (Some("body_hash"), Some("src/b.py::process")), "{row}");
+    assert_eq!((v["data"]["summary"]["share_already_on_base"].as_f64(), v["data"]["summary"]["stale_conflicts"].as_i64()), (Some(1.0), Some(0)));
+    // nearly: base took the branch's two lines and tweaked the return; it is nearer the branch than the merge base
+    let fx = lane_then_base_moves(&long_process(false, ""), &long_process(true, ""), Some(&long_process(true, " + 1")));
+    let v = fx.delta("main", "feat");
+    let row = &branch(&v)["changed"][0];
+    assert_eq!(row["already_on_base"]["via"], "name_and_tokens", "{row}");
+    assert_eq!((v["data"]["summary"]["share_already_on_base"].as_f64(), v["data"]["summary"]["stale_conflicts"].as_i64()), (Some(1.0), Some(0)));
+}
+
 #[test]
 fn a_symbol_the_lane_removed_and_base_removed_too_is_marked_base_removed() {
     let fx = Fx::new(&[("src/a.py", &format!("{FOO}\n{BAR}"))]);
