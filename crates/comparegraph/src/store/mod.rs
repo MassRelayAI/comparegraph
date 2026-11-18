@@ -442,7 +442,7 @@ impl Store {
     pub fn open_existing(root: &Path) -> Result<Store> {
         if !root.join(".comparegraph").join("comparegraph.db").is_file() {
             return Err(StoreError::NotFound(format!(
-                "no workspace at {} — run `comparegraph add` first",
+                "no workspace at {} â€” run `comparegraph add` first",
                 root.join(".comparegraph").display()
             )));
         }
@@ -956,6 +956,14 @@ fn row_to_run(r: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_added_column_is_listed_once() {
+        let mut seen = std::collections::HashSet::new();
+        for (t, c, _, _) in super::ADDED_COLUMNS {
+            assert!(seen.insert((t, c)), "{t}.{c} is listed twice in ADDED_COLUMNS");
+        }
+    }
+
     use super::*;
     use crate::domain::*;
     fn tmp() -> (tempfile::TempDir, Store) {

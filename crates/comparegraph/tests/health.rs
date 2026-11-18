@@ -248,6 +248,22 @@ fn the_ratchet_fails_on_a_new_cycle_and_passes_on_a_fixed_one() {
     assert!(v["data"]["check"]["message"].as_str().unwrap().contains("now clean, shrink the baseline"));
 }
 
+/// MINOR: a duplicate group's key is its member set, so a third copy of a baselined pair is a new finding (keyed by the body
+/// hash alone, the group grew silently).
+#[test]
+fn a_third_copy_of_a_baselined_duplicate_is_a_new_finding() {
+    let same = ["+", "*", "-", "/"];
+    let (ws, clone) = ws_with(&[("src/one.ts", &body("one", same)), ("src/two.ts", &body("two", same))], "");
+    let base = ws.path().join("base.json");
+    let b = base.to_str().unwrap();
+    cc(ws.path()).args(["health", "r", "--baseline", b]).assert().success();
+    json(cc(ws.path()).args(["health", "r", "--check", b]).assert().success());
+    rebuild(ws.path(), clone.path(), &[("src/three.ts", &body("three", same))]);
+    let v = json(cc(ws.path()).args(["health", "r", "--check", b]).assert().code(1));
+    let new: Vec<&str> = v["data"]["check"]["new"].as_array().unwrap().iter().map(|k| k["key"].as_str().unwrap()).collect();
+    assert!(new.iter().any(|k| k.starts_with("duplicate-body:")), "{v}");
+}
+
 #[test]
 fn two_runs_give_the_same_bytes() {
     let (ws, _c) = ws_with(

@@ -214,11 +214,13 @@ fn a_ref_run_that_is_superseded_goes_when_the_ref_lives_on_and_keep_says_how_man
 /// Defensive only: `claim` refuses `--ref`, so no claim cites a ref run through the CLI (see `a_claim_never_cites_a_ref_run`); a row inserted by hand is still protected.
 fn a_run_a_claim_cites_is_never_removed() {
     let fx = Fx::new();
+    fx.feat_advances();
+    fx.build_ref("feat"); // feat: an older run (cited below) and a newer one (not cited)
     let pack = fx.base.path().join("pack");
     write(&pack, "rows.md", PACK);
     ok(fx.root(), &["family", "add", pack.to_str().unwrap()]);
     ok(fx.root(), &["claim", "r", "routing.retry", "unknown", "--author", "t", "--no-reach"]);
-    let feat_run: i64 = fx.db().query_row("SELECT id FROM run WHERE ref='feat'", [], |r| r.get(0)).unwrap();
+    let feat_run: i64 = fx.db().query_row("SELECT MIN(id) FROM run WHERE ref='feat'", [], |r| r.get(0)).unwrap();
     // a claim that cites the ref run (a claim is append-only, so the row is added, not changed)
     fx.db()
         .execute(
@@ -231,11 +233,92 @@ fn a_run_a_claim_cites_is_never_removed() {
     let dry = ok(fx.root(), &["gc", "--refs"]);
     assert_eq!(dry["data"]["cited"][0]["run"], feat_run);
     let before = fx.runs();
-    let e = err(fx.root(), &["gc", "--refs", "--apply", "--by", "t"], "check_failed");
-    assert_eq!(e["error"]["data"]["cited"][0]["run"], feat_run);
-    assert!(e["error"]["message"].as_str().unwrap().contains(&feat_run.to_string()), "{e}");
-    assert_eq!(fx.runs(), before, "a refused gc removes nothing");
+    // MINOR: the cited run is skipped and said so; the apply goes on with the rest
+    let v = ok(fx.root(), &["gc", "--refs", "--apply", "--by", "t"]);
+    assert_eq!(v["data"]["cited"][0]["run"], feat_run);
+    assert!(limits(&v).contains(&feat_run.to_string()), "{v}");
+    let left: Vec<i64> = {
+        let db = fx.db();
+        let mut st = db.prepare("SELECT id FROM run WHERE ref='feat'").unwrap();
+        st.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    };
+    assert_eq!(left, vec![feat_run], "the cited run stays, the other gone feat run goes");
+    assert_eq!(fx.runs(), before - 1);
     let _ = (cc, run);
+}
+
+/// MINOR: `gc --refs` removes the newest run and node rows; their ids are never handed out again.
+#[test]
+fn ids_of_removed_ref_runs_are_never_reused() {
+    let fx = Fx::new();
+    let max = |t: &str| fx.db().query_row(&format!("SELECT MAX(id) FROM {t}"), [], |r| r.get::<_, i64>(0)).unwrap();
+    let (run_hi, node_hi) = (max("run"), max("node"));
+    assert_eq!(fx.db().query_row("SELECT ref FROM run WHERE id=?1", [run_hi], |r| r.get::<_, String>(0)).unwrap(), "feat");
+    fx.delete_feat();
+    ok(fx.root(), &["gc", "--refs", "--apply", "--by", "t"]);
+    assert!(max("run") < run_hi, "the newest run was removed");
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "other"]);
+    write(&d, "src/o.py", "def other(x):\n    return x - 1\n");
+    commit(&d, "other");
+    git(&d, &["checkout", "-q", "main"]);
+    let v = fx.build_ref("other");
+    assert!(v["data"]["run"].as_i64().unwrap() > run_hi, "run id {} reused (removed up to {run_hi})", v["data"]["run"]);
+    let low: i64 = fx.db().query_row("SELECT MIN(id) FROM node WHERE run_id=?1", [v["data"]["run"].as_i64().unwrap()], |r| r.get(0)).unwrap();
+    assert!(low > node_hi, "node id {low} reused (removed up to {node_hi})");
+}
+
+/// MINOR: a `--ref` that is not a ref name is never a LIKE pattern over commits (`_` and `%` match anything there).
+#[test]
+fn a_ref_of_wildcards_names_no_run() {
+    let fx = Fx::new();
+    err(fx.root(), &["show", "r", "src/a.py::bar", "--ref", "_______"], "not_found");
+    err(fx.root(), &["show", "r", "src/a.py::bar", "--ref", "%%%%%%%"], "not_found");
+    let c = git_out(&fx.clone(), &["rev-parse", "feat"]);
+    ok(fx.root(), &["show", "r", "src/a.py::bar", "--ref", &c.trim()[..9]]); // a real commit prefix still names the run
+}
+
+/// MINOR: relevance's deterministic "now" is the newest claim or HEAD run; a ref run (a branch cache) does not move it.
+#[test]
+fn a_ref_run_does_not_move_the_store_s_newest_timestamp() {
+    let fx = Fx::new();
+    fx.db().execute("UPDATE run SET started_at='2099-01-01T00:00:00Z' WHERE ref IS NOT NULL", []).unwrap();
+    let t = comparegraph::store::Store::open_existing(fx.root()).unwrap().newest_timestamp().unwrap().unwrap();
+    assert!(t.as_str() < "2099", "{t}");
+}
+
+/// MINOR: COMPAREGRAPH_PREV_RUN is a test hook of ref builds only; a head build takes its own previous run.
+#[test]
+fn the_previous_run_hook_is_ignored_by_a_head_build() {
+    let fx = Fx::new();
+    let head: i64 = fx.db().query_row("SELECT id FROM run WHERE ref IS NULL", [], |r| r.get(0)).unwrap();
+    let feat: i64 = fx.db().query_row("SELECT id FROM run WHERE ref='feat'", [], |r| r.get(0)).unwrap();
+    write(&fx.clone(), "src/c.py", "def c(x):\n    return x * 3\n");
+    let o = cc(fx.root()).args(["build", "r"]).env("COMPAREGRAPH_PREV_RUN", feat.to_string()).output().unwrap();
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["data"]["incremental_from"].as_i64(), Some(head), "{v}");
+}
+
+/// MINOR: `decide --summary-from-delta` with a short commit that names two recorded deltas is refused, never the last one.
+#[test]
+fn an_ambiguous_short_commit_for_a_branch_verdict_is_refused() {
+    let fx = Fx::new();
+    for tail in ["aaaa", "bbbb"] {
+        fx.db().execute("INSERT INTO meta(key, value) VALUES (?1, ?2)", [format!("delta:r:abc1234{tail}"), "{\"summary\":{}}".to_string()]).unwrap();
+    }
+    let e = err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", "abc1234", "--summary-from-delta"], "invalid_arguments");
+    assert!(e["error"]["message"].as_str().unwrap().contains("ambiguous"), "{e}");
+    ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", "abc1234aaaa", "--summary-from-delta"]);
+}
+
+/// MINOR: the meta row `delta` writes is an action-log line, and the log still verifies.
+#[test]
+fn delta_s_record_of_its_summary_is_an_action_log_line() {
+    let fx = Fx::new();
+    ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
+    let log = std::fs::read_to_string(fx.root().join(".comparegraph/actions.jsonl")).unwrap_or_default();
+    assert!(log.lines().any(|l| l.contains("\"delta-record\"")), "{log}");
+    assert_eq!(ok(fx.root(), &["governance", "verify"])["data"]["chain_ok"], true);
 }
 
 /// MAJOR: a clone that cannot be read (moved away, unmounted, git not on PATH) says nothing about its refs: every ref run is
