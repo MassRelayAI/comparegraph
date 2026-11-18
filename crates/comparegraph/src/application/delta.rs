@@ -206,11 +206,18 @@ struct Row {
     /// base changed (or, for an added symbol, holds a different version of) the same symbol since the merge base
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     base_also_changed: bool,
-    /// the symbol the branch changed or removed is gone from base
+    /// the symbol the branch changed or removed is gone from base (under its kind and qualified name)
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     base_removed: bool,
+    /// a changed symbol base no longer holds under its name: where base keeps its merge-base body (same body hash), i.e. base
+    /// moved or renamed it without the branch's change
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    base_moved_to: Vec<Match>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     features: Vec<String>,
+    /// a row of `removed` (the branch deleted the symbol): only there does base removing it too resolve the row
+    #[serde(skip)]
+    is_removal: bool,
 }
 
 impl Row {
@@ -226,12 +233,15 @@ impl Row {
             already_on_base: None,
             base_also_changed: false,
             base_removed: false,
+            base_moved_to: vec![],
             features: vec![],
+            is_removal: false,
         }
     }
-    /// nothing left for the branch to carry: base has it, or base removed it too
+    /// nothing left for the branch to carry: base holds the branch's version (added, changed), or the branch removed the symbol
+    /// and base removed it too. A changed symbol base removed or moved is NOT resolved: the branch's change is not on base.
     fn resolved(&self) -> bool {
-        self.already_on_base.is_some() || self.base_removed
+        self.already_on_base.is_some() || (self.is_removal && self.base_removed)
     }
 }
 /// Not-on-base first, then by path and line.
@@ -310,8 +320,10 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         m.truncate(MAX_MATCHES);
         m
     };
-    // is this head symbol already on base: the very same symbol, the same body elsewhere, or a near copy of the same name
-    let on_base = |s: &Sym| -> Option<OnBase> {
+    // is this head symbol already on base: the very same symbol, the same body elsewhere, or a near copy of the same name.
+    // `prev` is the merge-base version of a changed symbol: a near copy then counts only when it is strictly nearer to head than
+    // to that version (a moved copy of the old body is near head too, but nearer the merge base: base did not take the change).
+    let on_base = |s: &Sym, prev: Option<&Sym>| -> Option<OnBase> {
         if let Some(b) = base.syms.get(&(s.kind.clone(), s.qn.clone())) {
             if b.hash == s.hash {
                 return Some(OnBase { confidence: 1.0, via: "same_symbol", matches: mk(&[b]) });
@@ -326,11 +338,15 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             return None;
         }
         let mine = bigrams(&tokens(&body_of(&head.files, s)?, &s.name));
+        let old = match prev {
+            Some(p) => Some(bigrams(&tokens(&body_of(&mb.files, p)?, &p.name))),
+            None => None,
+        };
         let mut best: Vec<(f64, &Sym)> = vec![];
         for c in cands {
             let theirs = bigrams(&tokens(&body_of(&base.files, c)?, &c.name));
             let sim = jaccard(&mine, &theirs);
-            if sim >= SIMILARITY_FLOOR {
+            if sim >= SIMILARITY_FLOOR && old.as_ref().is_none_or(|o| sim > jaccard(o, &theirs)) {
                 best.push((sim, c));
             }
         }
@@ -348,16 +364,20 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         match mb.syms.get(k) {
             None => {
                 let mut r = Row::of(h);
-                r.already_on_base = on_base(h);
+                r.already_on_base = on_base(h, None);
                 r.base_also_changed = r.already_on_base.is_none() && in_base.is_some();
                 added.push(r);
             }
             Some(m) if m.hash != h.hash => {
                 let mut r = Row::of(h);
                 r.base_body_hash = Some(m.hash.clone());
-                r.already_on_base = on_base(h);
+                r.already_on_base = on_base(h, Some(m));
                 match in_base {
-                    None => r.base_removed = true,
+                    None => {
+                        r.base_removed = true;
+                        let moved: Vec<&Sym> = by_hash.get(m.hash.as_str()).map(|v| v.to_vec()).unwrap_or_default();
+                        r.base_moved_to = mk(&moved);
+                    }
                     Some(b) => r.base_also_changed = b.hash != m.hash,
                 }
                 changed.push(r);
@@ -368,6 +388,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     for (k, m) in &mb.syms {
         if !head.syms.contains_key(k) {
             let mut r = Row::of(m);
+            r.is_removal = true;
             match base.syms.get(k) {
                 None => r.base_removed = true,
                 Some(b) => r.base_also_changed = b.hash != m.hash,
@@ -425,7 +446,8 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     let on_base_n = added.iter().chain(changed.iter()).filter(|r| r.already_on_base.is_some()).count();
     let exact_n = added.iter().chain(changed.iter()).filter(|r| r.already_on_base.as_ref().is_some_and(|m| m.via != "name_and_tokens")).count();
     let base_removed_n = changed.iter().chain(removed.iter()).filter(|r| r.base_removed).count();
-    let stale_conflicts = changed.iter().filter(|r| r.base_also_changed && r.already_on_base.is_none()).count();
+    // a change base does not hold, to a symbol base changed otherwise, removed, or moved without the change
+    let stale_conflicts = changed.iter().filter(|r| (r.base_also_changed || r.base_removed) && r.already_on_base.is_none()).count();
     let resolved = added.iter().chain(changed.iter()).chain(removed.iter()).filter(|r| r.resolved()).count();
     let share = (branch_symbols > 0).then(|| ((resolved as f64 / branch_symbols as f64) * 10_000.0).round() / 10_000.0);
     let summary = json!({
@@ -448,13 +470,13 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             match base.syms.get(k) {
                 None => {
                     let mut r = Row::of(h);
-                    r.already_on_base = on_base(h);
+                    r.already_on_base = on_base(h, None);
                     wa.push(r);
                 }
                 Some(b) if b.hash != h.hash => {
                     let mut r = Row::of(h);
                     r.base_body_hash = Some(b.hash.clone());
-                    r.already_on_base = on_base(h);
+                    r.already_on_base = on_base(h, None);
                     wc.push(r);
                 }
                 Some(_) => unchanged += 1,

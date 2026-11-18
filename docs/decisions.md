@@ -276,3 +276,10 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
 - Keys never include a measured value. Dead-code candidates are in the report but join the ratchet only with `--ratchet-dead-code`
   (confidence unknown; a new unreferenced helper should not fail a gate by default).
 - No dependency added: the toml subset is parsed by hand like the provider table, globs become `regex`.
+
+## Plan 14 review fixes (2026-11-18, branch feat/plan-14)
+- **B1** a branch's `changed` row is on base only when base holds the head body (`same_symbol`, `body_hash`) or a same-name copy
+  strictly nearer to head than to the merge-base body (Jaccard(base, head) > Jaccard(base, merge base), on top of the 0.9 floor).
+  `base_removed` resolves only a `removed` row; a changed symbol base removed or moved without the change is a `stale_conflicts`
+  row, and `base_moved_to` names where base keeps the merge-base body. Why: a moved copy of the old body is near head too, and a
+  wrong "already on base" retires real work. What would change it: a rename-aware identity (base symbol -> merge-base symbol).

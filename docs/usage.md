@@ -83,7 +83,7 @@ working tree never change.
 comparegraph delta myrepo --base origin/main --head origin/feature-x --build-missing --pretty
 # summary.branch_symbols: symbols the branch added, changed or removed since the merge base
 # summary.share_already_on_base: how many of those base has now, under any name or path (1.0 = all)
-# summary.stale_conflicts: symbols the branch changed that base changed differently
+# summary.stale_conflicts: symbols the branch changed that base changed differently, removed or moved (not on base)
 # base_files.deleted: files base deleted that the branch touched
 comparegraph delta myrepo --base origin/main --head origin/feature-x --refresh   # after either ref moved: rebuilds only what moved
 comparegraph repos --stale                  # ref runs whose ref moved or is gone
