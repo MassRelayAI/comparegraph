@@ -1243,7 +1243,9 @@ fn dispatch(cli: &Cli) -> Result<serde_json::Value, Failure> {
         if let Ok(store) = Store::open_existing(&cli.root) {
             if let Some(l) = crate::application::refgc::stale_limitation(&store, repo, r) {
                 if let Some(o) = v.as_object_mut() {
-                    o.entry("limitation_items").or_insert_with(|| serde_json::json!([])).as_array_mut().map(|a| a.push(l));
+                    if let Some(a) = o.entry("limitation_items").or_insert_with(|| serde_json::json!([])).as_array_mut() {
+                        a.push(l);
+                    }
                 }
             }
         }
