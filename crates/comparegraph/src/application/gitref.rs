@@ -786,7 +786,10 @@ mod lock_round3_tests {
         let (cl, st, cc) = (clone.path().to_path_buf(), store.path().to_path_buf(), c.clone());
         let h = std::thread::spawn(move || materialise(&cl, &st, "r", &cc, u64::MAX).map(|t| t.dir.join("src/big.py").is_file()));
         std::thread::sleep(std::time::Duration::from_millis(1500));
-        assert!(small.dir.join("src/a.py").is_file(), "the tree was deleted under its reader");
+        // the old tree is still the one in place (the new one would hold big.py): nothing was deleted or swapped under the reader
+        let (swapped, done) = (small.dir.join("src/big.py").exists(), h.is_finished());
+        assert!(!swapped && !done, "the tree was replaced under its reader (swapped {swapped}, re-extraction done {done})");
+        assert!(small.dir.join("src/a.py").is_file());
         drop(small);
         assert_eq!(h.join().unwrap().map_err(|e| e.to_string()), Ok(true));
     }
