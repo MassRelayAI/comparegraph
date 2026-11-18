@@ -80,6 +80,8 @@ struct Side {
     unread: Option<BTreeMap<String, usize>>,
     /// the tree's gitlinks (submodule entries: path -> the commit they pin), never read; None when git could not list the tree
     gitlinks: Option<BTreeMap<String, String>>,
+    /// the tree's blobs: path -> object id (None when git could not list the tree)
+    blobs: Option<BTreeMap<String, String>>,
 }
 
 /// `a` is a sub-multiset of `b`: every id of `a` is in `b` at least as many times. Not known (None) is never within.
@@ -368,8 +370,9 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         }
         unread
     });
+    let blobs = tree.as_ref().map(|t| t.blobs.iter().map(|(p, (_, oid))| (p.clone(), oid.clone())).collect());
     let gitlinks = tree.map(|t| t.gitlinks);
-    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread, gitlinks };
+    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread, gitlinks, blobs };
     for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
@@ -811,8 +814,9 @@ impl<'a> Judge<'a> {
     }
 }
 
-/// `{yes, no, unknown}` over rows, and `{count, by_why}` of the unknown ones (`by_why` sorted by reason).
-fn answers<'r>(rows: impl Iterator<Item = &'r Row>) -> (Value, Value) {
+/// `{yes, no, unknown}` over rows and residue items (every residue item is unknown), and `{count, by_why}` of the unknown ones
+/// (`by_why` sorted by reason).
+fn answers<'r>(rows: impl Iterator<Item = &'r Row>, residue: &[Residue]) -> (Value, Value) {
     let (mut yes, mut no) = (0usize, 0usize);
     let mut by: BTreeMap<&str, usize> = BTreeMap::new();
     for r in rows {
@@ -822,8 +826,83 @@ fn answers<'r>(rows: impl Iterator<Item = &'r Row>) -> (Value, Value) {
             Answer::Unknown(w) => *by.entry(w).or_default() += 1,
         }
     }
+    for x in residue {
+        *by.entry(x.why).or_default() += 1;
+    }
     let n: usize = by.values().sum();
     (json!({ "yes": yes, "no": no, "unknown": n }), json!({ "count": n, "by_why": by }))
+}
+
+/// One unknown item of the branch's work that is no symbol row (it counts in the denominator of the exact share): a `-U0` hunk
+/// of `git diff mb..head` with a non-blank line outside every symbol span (`outside_symbols`: top-level code, a decorator, a
+/// comment), a touched file in which neither side has a symbol (`file_without_symbols`: SQL, config, prose, a binary or unread
+/// file), or a diff git could not give (`diff_failed`). Paths that hold the same blob on head and base have none.
+#[derive(Serialize)]
+struct Residue {
+    path: String,
+    why: &'static str,
+    /// the hunk header, `@@ -a,b +c,d @@`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hunk: Option<String>,
+}
+
+/// One hunk of a `git diff -U0`: its path (the new side's, or the old side's for a deletion), header, and its removed (old line
+/// number, text) and added (new line number, text) lines.
+struct Hunk {
+    path: String,
+    header: String,
+    old: Vec<(u32, String)>,
+    new: Vec<(u32, String)>,
+}
+
+/// `a/x` or `b/x` (git's default prefixes) as `x`; a C-quoted path loses its quotes (its escapes are kept as written).
+fn diff_path(p: &str) -> Option<String> {
+    let p = p.strip_prefix('"').and_then(|q| q.strip_suffix('"')).unwrap_or(p);
+    p.strip_prefix("a/").or_else(|| p.strip_prefix("b/")).map(String::from)
+}
+
+/// The hunks of `git diff -U0` output.
+fn parse_hunks(lines: &[String]) -> Vec<Hunk> {
+    let (mut out, mut old_path, mut path): (Vec<Hunk>, Option<String>, Option<String>) = (vec![], None, None);
+    let (mut o, mut n) = (0u32, 0u32);
+    let num = |t: &str| -> (u32, u32) {
+        let t = &t[1..];
+        let (a, b) = t.split_once(',').unwrap_or((t, "1"));
+        (a.parse().unwrap_or(0), b.parse().unwrap_or(1))
+    };
+    for l in lines {
+        if l.starts_with("diff --git ") {
+            (old_path, path) = (None, None);
+        } else if let Some(p) = l.strip_prefix("--- ") {
+            old_path = diff_path(p);
+        } else if let Some(p) = l.strip_prefix("+++ ") {
+            path = diff_path(p).or_else(|| old_path.clone());
+        } else if l.starts_with("@@ ") {
+            let mut parts = l.split(' ');
+            let (_, old, new) = (parts.next(), parts.next().unwrap_or("-0"), parts.next().unwrap_or("+0"));
+            (o, n) = (num(old).0, num(new).0);
+            let header = l.split(" @@").next().map(|h| format!("{h} @@")).unwrap_or_default();
+            out.push(Hunk { path: path.clone().unwrap_or_default(), header, old: vec![], new: vec![] });
+        } else if let Some(h) = out.last_mut() {
+            if let Some(t) = l.strip_prefix('-') {
+                h.old.push((o, t.to_string()));
+                o += 1;
+            } else if let Some(t) = l.strip_prefix('+') {
+                h.new.push((n, t.to_string()));
+                n += 1;
+            }
+        }
+    }
+    out
+}
+
+/// The line spans of every symbol of a side, by path.
+fn spans(s: &Side) -> HashMap<&str, Vec<(u32, u32)>> {
+    let mut m: HashMap<&str, Vec<(u32, u32)>> = HashMap::new();
+    for x in &s.all {
+        m.entry(x.path.as_str()).or_default().push((x.ls, x.le));
+    }
+    m
 }
 
 /// Not-on-base first, then by path and line.
@@ -1054,6 +1133,52 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     deleted.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
     rewritten.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
 
+    // backing checks (git, coarser): blob equality, then the branch's work outside symbols
+    let same_blob = |p: &str| match (&head.blobs, &base.blobs) {
+        (Some(h), Some(b)) => h.get(p).is_some_and(|x| b.get(p) == Some(x)),
+        _ => false,
+    };
+    let same: BTreeSet<&str> = touched_head.iter().map(String::as_str).filter(|p| same_blob(p)).collect();
+    for r in added.iter_mut().chain(changed.iter_mut()).chain(removed.iter_mut()) {
+        if !r.resolved() && same.contains(r.path.as_str()) {
+            r.answer = Some(Answer::Yes("same_file"));
+            r.near = None;
+            r.base_also_changed &= r.base_body_hash.is_some(); // an added row base holds as the branch has it
+            r.encode();
+        }
+    }
+    let mut residue: Vec<Residue> = vec![];
+    if diff_failed.iter().any(|d| d.contains("the files the branch touched")) {
+        residue.push(Residue { path: String::new(), why: "diff_failed", hunk: None });
+    }
+    let (sh, sm) = (spans(&head), spans(&mb));
+    let with_syms = |p: &str| sh.contains_key(p) || sm.contains_key(p);
+    let pending: Vec<&str> = touched_head.iter().map(String::as_str).filter(|p| !same.contains(p)).collect();
+    let hunks = if pending.iter().any(|p| with_syms(p)) { git_lines(clone, &["diff", "-U0", "--no-renames", "--no-color", "--no-ext-diff", &mb_c, &head_c]).map(|v| parse_hunks(&v)) } else { Some(vec![]) };
+    let mut by_path: HashMap<&str, Vec<&Hunk>> = HashMap::new();
+    for h in hunks.iter().flatten() {
+        by_path.entry(h.path.as_str()).or_default().push(h);
+    }
+    let inside = |sp: Option<&Vec<(u32, u32)>>, n: u32| sp.is_some_and(|v| v.iter().any(|(a, b)| *a <= n && n <= *b));
+    for p in pending {
+        if !with_syms(p) {
+            residue.push(Residue { path: p.to_string(), why: "file_without_symbols", hunk: None });
+            continue;
+        }
+        if hunks.is_none() {
+            residue.push(Residue { path: p.to_string(), why: "diff_failed", hunk: None });
+            continue;
+        }
+        for h in by_path.get(p).into_iter().flatten() {
+            let out_old = h.old.iter().any(|(n, t)| !t.trim().is_empty() && !inside(sm.get(p), *n));
+            let out_new = h.new.iter().any(|(n, t)| !t.trim().is_empty() && !inside(sh.get(p), *n));
+            if out_old || out_new {
+                residue.push(Residue { path: p.to_string(), why: "outside_symbols", hunk: Some(h.header.clone()) });
+            }
+        }
+    }
+    let u0_failed = hunks.is_none();
+
     let branch_symbols = added.len() + changed.len() + removed.len();
     // landed work is exact only (same_symbol, body_hash); a near match is listed apart, with its two similarities
     let exact_n = added.iter().chain(changed.iter()).filter(|r| r.resolved()).count();
@@ -1067,15 +1192,17 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     // a change or deletion base does not hold, to a symbol base changed otherwise, removed, or moved without it
     let stale_conflicts = changed.iter().chain(removed.iter()).filter(|r| r.stale_conflict()).count();
     let resolved = added.iter().chain(changed.iter()).chain(removed.iter()).filter(|r| r.resolved()).count();
-    let share = (branch_symbols > 0).then(|| ((resolved as f64 / branch_symbols as f64) * 10_000.0).round() / 10_000.0);
+    // every residue item is unknown and counts in the denominator
+    let branch_items = branch_symbols + residue.len();
+    let share = (branch_items > 0).then(|| ((resolved as f64 / branch_items as f64) * 10_000.0).round() / 10_000.0);
     let all_rows = || added.iter().chain(changed.iter()).chain(removed.iter());
-    let (on_base, unknown) = answers(all_rows());
+    let (on_base, unknown) = answers(all_rows(), &residue);
     let summary = json!({
         "branch_symbols": branch_symbols,
         "added": added.len(), "changed": changed.len(), "removed": removed.len(),
         "already_on_base": exact_n, "already_on_base_exact": exact_n, "base_removed": base_removed_n,
         "share_on_base_exact": share, "share_already_on_base": share,
-        "on_base": on_base, "unknown": unknown,
+        "on_base": on_base, "unknown": unknown, "residue": residue.len(), "branch_items": branch_items,
         "near_on_base": { "count": near_rows.len(), "rows": near_rows.iter().take(o.max_nodes).collect::<Vec<_>>() },
         "stale_conflicts": stale_conflicts,
         "features_touched": touched.len(),
@@ -1142,7 +1269,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             "head_only": head_only, "head_only_already_on_base": already,
         });
         let mut ws = ws;
-        (ws["on_base"], ws["unknown"]) = answers(wa.iter().chain(wc.iter()));
+        (ws["on_base"], ws["unknown"]) = answers(wa.iter().chain(wc.iter()), &[]);
         let wshare = (head_only > 0).then(|| ((already as f64 / head_only as f64) * 10_000.0).round() / 10_000.0);
         ws["share_on_base_exact"] = json!(wshare);
         ws["share_already_on_base"] = json!(wshare);
@@ -1156,6 +1283,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     limit_note(&mut limitations, "branch.added", added.len(), cap);
     limit_note(&mut limitations, "branch.changed", changed.len(), cap);
     limit_note(&mut limitations, "branch.removed", removed.len(), cap);
+    limit_note(&mut limitations, "branch.residue", residue.len(), cap);
     limit_note(&mut limitations, "features_touched", feats.len(), cap);
     limit_note(&mut limitations, "summary.near_on_base.rows", near_rows.len(), cap);
     limit_note(&mut limitations, "base_files.deleted", deleted.len(), cap);
@@ -1167,6 +1295,9 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     }
     if trivial_n > 0 {
         limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature (decorators and docstrings excluded): not matched by body hash or tokens (on_base: unknown, why: trivial_body)") }));
+    }
+    if u0_failed {
+        limitations.push(json!({ "code": "partial", "detail": format!("git diff -U0 {}..{} failed: each touched file with symbols is one unknown item (`diff_failed`)", &mb_c[..12.min(mb_c.len())], &head_c[..12.min(head_c.len())]) }));
     }
     if !diff_failed.is_empty() {
         limitations.push(json!({ "code": "partial", "detail": format!("{} failed: base_files and the file counts are not known (null), not empty", diff_failed.join(" and ")) }));
@@ -1226,13 +1357,14 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     }
     deleted.truncate(cap);
     rewritten.truncate(cap);
+    residue.truncate(cap);
     feats.truncate(cap);
     let side = |s: &Side, r: &str| json!({ "ref": r, "commit": s.commit, "run": s.run });
     let mut out = json!({
         "repo": repo_name,
         "base": side(&base, o.base), "head": side(&head, o.head), "merge_base": side(&mb, &mb_c),
         "summary": summary,
-        "branch": { "added": added, "changed": changed, "removed": removed },
+        "branch": { "added": added, "changed": changed, "removed": removed, "residue": residue },
         "features_touched": feats.into_iter().map(|(f, n)| json!({ "feature": f, "branch_symbols": n })).collect::<Vec<_>>(),
         "base_files": { "deleted": deleted, "rewritten": rewritten },
         "rebuilt": rebuilt,
@@ -1259,7 +1391,7 @@ mod tests {
     use super::*;
 
     fn side(files: &[(&str, &str)], syms: &[(&str, &str, u32, u32)]) -> Side {
-        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()), gitlinks: Some(BTreeMap::new()) };
+        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()), gitlinks: Some(BTreeMap::new()), blobs: Some(BTreeMap::new()) };
         for (p, t) in files {
             s.files.insert(p.to_string(), t.lines().map(String::from).collect());
         }
