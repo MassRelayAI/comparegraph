@@ -877,3 +877,60 @@ fn r2_base_took_the_first_of_two_edits_is_near_never_exact() {
         assert!(m["confidence"].as_f64().unwrap() < 1.0, "{row}");
     }
 }
+
+// ---------------------------------------------------------------- review round 2: the trivial-body floor counts from the signature's end
+
+/// Branch adds `branch_src` in src/n.py, base adds `base_src` in src/o.py (both after the fork); the added rows by name.
+fn floor_delta(branch_src: &str, base_src: &str) -> Value {
+    let fx = Fx::new(&[("src/a.py", "def keep():\n    return 1\n")]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/n.py", branch_src);
+    commit(&d, "lane");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/o.py", base_src);
+    commit(&d, "base has look-alikes");
+    fx.delta("main", "feat")
+}
+
+/// The boundary of `MIN_BODY_TOKENS` (8): a body of 7 tokens after the signature is `trivial_body`, one of 8 matches by hash.
+/// Moving the constant either way turns one of the two assertions red.
+#[test]
+fn r2_the_trivial_floor_is_exactly_eight_tokens_after_the_signature() {
+    let v = floor_delta(
+        "def seven(x, y, z):\n    return -x + y + z\n\ndef eight(x, y, z, w):\n    return x + y - z - w\n",
+        "def s7(x, y, z):\n    return -x + y + z\n\ndef e8(x, y, z, w):\n    return x + y - z - w\n",
+    );
+    let (seven, eight) = (row_of(&v, "added", "src/n.py::seven"), row_of(&v, "added", "src/n.py::eight"));
+    assert_eq!(seven["note"], "trivial_body", "7 tokens (return - x + y + z): {seven}");
+    assert!(seven.get("already_on_base").is_some_and(Value::is_null), "{seven}");
+    assert_eq!(eight["already_on_base"]["via"], "body_hash", "8 tokens (return x + y - z - w): {eight}");
+    assert!(eight.get("note").is_none(), "{eight}");
+}
+
+/// A `pass` stub whose signature spans several lines is trivial: the parameters are signature, not body.
+#[test]
+fn r2_a_stub_with_a_multi_line_signature_is_trivial() {
+    let v = floor_delta(
+        "def stub(\n    alpha,\n    beta,\n    gamma,\n):\n    pass\n",
+        "def other(\n    alpha,\n    beta,\n    gamma,\n):\n    pass\n",
+    );
+    let stub = row_of(&v, "added", "src/n.py::stub");
+    assert_eq!(stub["note"], "trivial_body", "a `pass` stub with a multi-line signature matched: {stub}");
+    assert!(stub.get("already_on_base").is_some_and(Value::is_null), "{stub}");
+}
+
+/// A docstring is not body, nor is a decorator above the signature (even one spanning lines with a `)` of its own).
+#[test]
+fn r2_docstrings_and_decorators_do_not_count_as_body() {
+    let doc = "    \"\"\"Explain the thing at some length, with many words, so it is long.\"\"\"\n    pass\n";
+    let deco = "@app.route(\n    \"/a/b/c\", methods=[\"GET\", \"POST\", \"PUT\"])\n";
+    let v = floor_delta(
+        &format!("def documented(a, b):\n{doc}\n{deco}def handler(req):\n    return req\n"),
+        &format!("def other_doc(a, b):\n{doc}\n{deco}def handler2(req):\n    return req\n"),
+    );
+    for qn in ["src/n.py::documented", "src/n.py::handler"] {
+        let row = row_of(&v, "added", qn);
+        assert_eq!(row["note"], "trivial_body", "{qn}: {row}");
+    }
+}
