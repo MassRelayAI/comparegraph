@@ -878,9 +878,13 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
                 m.sort();
                 let lines = m[0].3;
                 let names: Vec<String> = m.iter().take(5).map(|x| x.2.clone()).collect();
+                // keyed by the body AND the member set: a third copy of a baselined pair is a new finding
+                let mut members: Vec<&str> = m.iter().map(|x| x.2.as_str()).collect();
+                members.dedup();
+                let set = content_hash(&members);
                 f.push(Finding::new(
                     "duplicate-body",
-                    format!("duplicate-body:{}", &h[..12]),
+                    format!("duplicate-body:{}:{}", &h[..12], &set[..12.min(set.len())]),
                     format!("{} functions share one body of {} significant lines: {}{}", m.len(), lines, names.join(", "), if m.len() > 5 { ", ..." } else { "" }),
                     m.iter().take(20).map(|x| (x.0.clone(), x.1)).collect(),
                 )?

@@ -1,9 +1,10 @@
 //! CG-REFGC: refs move, so the runs built from them go stale, and nothing may answer silently from old data.
-//! - `status_of`: `current` (the ref still names the commit the run read), `moved` (it names another), `gone` (it names nothing).
+//! - `status_of`: `current` (the ref still names the commit the run read), `moved` (it names another), `gone` (it names nothing),
+//!   `unknown` (the clone cannot be read).
 //! - `stale_limitation`: what a query verb that answered from a ref's run adds to its envelope when the run is not current.
 //! - `gc_refs`: removes ref runs (their graph rows) and their extracted trees when the ref is gone, a newer run of the same ref
 //!   supersedes them (keep the latest N), or they are older than M days. A dry run unless `--apply --by <who>`; every apply is one
-//!   action-log line. It never touches a head run or the clone, and refuses outright while a live claim cites a run it would remove.
+//!   action-log line. It never touches a head run or the clone; a run a claim cites, or whose clone cannot be read, is skipped and listed.
 use super::{gitref, governance, AppError, Result};
 use crate::domain::relevance::parse_ts_secs;
 use crate::store::{now_iso, Store};
@@ -120,7 +121,10 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
             let rel: i64 = store.conn().query_row("SELECT COUNT(*) FROM relatedness WHERE run_id=?1", [row.id], |r| r.get(0))?;
             let item = json!({ "run": row.id, "repo": repo.name, "ref": row.git_ref, "ref_commit": row.commit, "started_at": row.started_at, "why": why });
             if citations + rel > 0 {
-                cited.push(json!({ "run": row.id, "repo": repo.name, "ref": row.git_ref, "claims": citations, "relatedness_rows": rel }));
+                // cited: kept (and its tree), listed, never a refusal of the whole apply
+                cited.push(json!({ "run": row.id, "repo": repo.name, "ref": row.git_ref, "claims": citations, "relatedness_rows": rel, "why": why }));
+                trees.insert((repo.name.clone(), row.commit.clone()), true);
+                continue;
             }
             trees.entry((repo.name.clone(), row.commit.clone())).or_insert(false);
             ids.push(row.id);
@@ -128,6 +132,9 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
         }
     }
     let mut lims = vec![];
+    if !cited.is_empty() {
+        lims.push(json!({ "code": "partial", "detail": format!("{} ref run(s) kept because a claim or relatedness row cites them: {}; supersede those rows, then run gc --refs again", cited.len(), cited.iter().map(|c| c["run"].to_string()).collect::<Vec<_>>().join(", ")) }));
+    }
     if !unknown.is_empty() {
         lims.push(json!({ "code": "partial", "detail": format!("{} ref run(s) skipped, status unknown: their clone cannot be read (moved, unmounted, or git not runnable); nothing of them is removed until it can", unknown.len()) }));
     }
@@ -139,20 +146,15 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
         base["dry_run"] = json!(true);
         return Ok(base);
     }
-    if !cited.is_empty() {
-        return Err(AppError::structured(
-            "check_failed",
-            format!("{} run(s) this would remove are cited by claims; nothing was removed: {}", cited.len(), cited.iter().map(|c| c["run"].to_string()).collect::<Vec<_>>().join(", ")),
-            Some("supersede or retire those claims (or build the ref again and re-claim), then run gc --refs again".into()),
-            Some(json!({ "cited": cited })),
-        ));
-    }
     let builds: Vec<String> = store.other_holders().into_iter().filter(|h| h.starts_with("build")).collect();
     if !builds.is_empty() {
         return Err(AppError::structured("store_busy", format!("a build is running ({}); gc --refs removes nothing while one is", builds.join(", ")), Some("retry when it has finished".into()), None));
     }
     let bytes = store.file_bytes();
     let entry = store.with_write_lock(|s| -> Result<Value> {
+        // the ids of the rows removed here are never handed out again (`Store::next_id_past_hwm`)
+        s.record_id_hwm("run")?;
+        s.record_id_hwm("node")?;
         delete_runs(s, &ids)?;
         governance::append(
             s,

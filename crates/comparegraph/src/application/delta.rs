@@ -351,16 +351,43 @@ fn resolve_live(store: &Store, repo: &crate::store::RepoRow, label: &str) -> Res
     }
 }
 
+/// Keep the summary by value for `decide --ref --summary-from-delta`: one meta row per head commit and one action-log line
+/// (`delta-record`, by `engine`: the engine caching its own computation, never a judgement). Best effort: a read-only store skips it.
 fn record_last(root: &Path, repo: &str, head_commit: &str, v: Value) {
     if let Ok(store) = Store::open_guarded(root) {
-        let _ = store.with_write_lock(|s| -> std::result::Result<(), crate::store::StoreError> { s.meta_set(&format!("delta:{repo}:{head_commit}"), &v.to_string()) });
+        let key = format!("delta:{repo}:{head_commit}");
+        let _ = store.with_write_lock(|s| -> Result<Value> {
+            s.meta_set(&key, &v.to_string())?;
+            super::governance::append(
+                s,
+                root,
+                &super::governance::Action {
+                    verb: "delta-record".into(),
+                    repo: Some(repo.to_string()),
+                    by: "engine".into(),
+                    inputs: json!({ "meta_key": key, "base_commit": v["base_commit"], "head_commit": head_commit, "merge_base": v["merge_base"] }),
+                    ..Default::default()
+                },
+            )
+        });
     }
 }
 
-/// The last delta computed for a head commit (full sha or a prefix of it): `{base_ref, base_commit, head_ref, head_commit, merge_base, summary}`.
-pub fn last_delta(store: &Store, repo: &str, commit: &str) -> Option<Value> {
-    let rows = store.meta_with_prefix(&format!("delta:{repo}:{commit}")).ok()?;
-    rows.last().and_then(|(_, v)| serde_json::from_str(v).ok())
+/// The last delta computed for a head commit (full sha or a prefix of it): `{base_ref, base_commit, head_ref, head_commit,
+/// merge_base, summary}`. A prefix that names deltas of more than one head commit is refused (`invalid_arguments`).
+pub fn last_delta(store: &Store, repo: &str, commit: &str) -> Result<Option<Value>> {
+    let prefix = format!("delta:{repo}:{commit}");
+    let rows = store.meta_with_prefix(&prefix)?;
+    if rows.len() > 1 {
+        let heads: Vec<String> = rows.iter().map(|(k, _)| k[prefix.len() - commit.len()..].to_string()).collect();
+        return Err(AppError::structured(
+            "invalid_arguments",
+            format!("--commit {commit} is ambiguous: deltas were recorded for {} head commits ({})", heads.len(), heads.join(", ")),
+            Some("pass more of the commit (the full sha is never ambiguous)".into()),
+            Some(json!({ "commit": commit, "candidates": heads })),
+        ));
+    }
+    Ok(rows.last().and_then(|(_, v)| serde_json::from_str(v).ok()))
 }
 
 fn limit_note(limitations: &mut Vec<Value>, name: &str, n: usize, cap: usize) {

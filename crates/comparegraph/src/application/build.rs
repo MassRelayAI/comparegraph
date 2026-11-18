@@ -335,7 +335,8 @@ struct PrevComms {
 /// the repo (same provider version) in the commit graph: the fewest commits between it and the target through their merge base, so the
 /// merge base's own run (distance to it is just the branch's commits) wins over the base ref's, which wins over the head run; none: a
 /// full build. Any choice is safe (`incr::plan` compares file hashes and falls back); a near one just copies more.
-/// `COMPAREGRAPH_PREV_RUN=<id>` forces the choice (a test hook: a wrong previous must fall back or match, never change the answer).
+/// `COMPAREGRAPH_PREV_RUN=<id>` forces the choice of a REF build (a test hook, documented as one: a wrong previous must fall back
+/// or match, never change the answer); a head build ignores it.
 fn choose_prev(
     store: &Store,
     clone: &Path,
@@ -344,7 +345,7 @@ fn choose_prev(
     git_ref: Option<&str>,
     target: Option<&str>,
 ) -> Result<Option<crate::domain::Run>> {
-    if let Some(id) = std::env::var("COMPAREGRAPH_PREV_RUN").ok().and_then(|v| v.parse::<i64>().ok()) {
+    if let (Some(_), Some(id)) = (target, std::env::var("COMPAREGRAPH_PREV_RUN").ok().and_then(|v| v.parse::<i64>().ok())) {
         return Ok(store.run(RunId(id))?.filter(|r| r.status == crate::domain::RunStatus::Done && r.repo == repo_id));
     }
     let Some(target) = target else {

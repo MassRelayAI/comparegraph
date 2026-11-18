@@ -305,3 +305,17 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   (`BEFORE UPDATE OF ref, ref_commit ON run`) refuses a change once the run is not a fresh `running` row without nodes (build.rs
   sets both on that row right after inserting it). Schema ruling: within the plan 14 schema ruling (`runs.ref`), it only freezes
   the column CG-REFGC's delete exception reads. `claim_on_with` refuses a chosen run whose `ref` is set, whatever pinned it.
+- **MINORs** (one test commit, one fix commit; each test red on the code before):
+  - `gc --refs`: a cited run is skipped (kept with its tree, listed in `cited`, a `partial` limitation), not a refusal of the whole apply.
+  - ids never reused: `gc --refs` records `meta id_hwm:run` / `id_hwm:node` (the largest id before it deletes); `insert_run` and the
+    first node of `insert_nodes` take the id after it when the table's max is below. A meta row, not AUTOINCREMENT (which would
+    rebuild `run` and `node`); edge and community ids are not referenced outside their run and are left as they are.
+  - `--ref <prefix>`: compared with `substr(ref_commit, 1, n) = prefix`, never `LIKE` (a `_` or `%` matched every commit).
+  - `newest_timestamp` (relevance's deterministic now) reads head runs only.
+  - `COMPAREGRAPH_PREV_RUN` is honoured only for ref builds and documented as a test hook.
+  - `decide --ref --summary-from-delta` with a commit prefix that names two recorded deltas is refused (`invalid_arguments`);
+    `delta`'s summary record (a meta row) is an action-log line (`delta-record`, by `engine`).
+  - `health`: a duplicate group's key is `duplicate-body:<body hash>:<member-set hash>`, so a third copy of a baselined pair is new
+    (and the pair's key reads as fixed). A rename of a member changes the key too: the group is then a different finding.
+  - `ADDED_COLUMNS` listed the four decision columns twice; once now, with a unit test.
+  - Skipped as asked: `show --ref --detail full` is documented as head-only.

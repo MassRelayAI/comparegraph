@@ -290,10 +290,11 @@ impl Store {
     pub fn node_count(&self, run: RunId) -> Result<i64> {
         Ok(self.conn.query_row("SELECT COUNT(*) FROM node WHERE run_id = ?1", params![run.0], |r| r.get(0))?)
     }
-    /// The newest timestamp in the store: max of claim `created_at` and run `started_at` (the deterministic "now").
+    /// The newest timestamp in the store: max of claim `created_at` and head-run `started_at` (the deterministic "now"; a ref run,
+    /// `build --ref`, is a branch cache and does not move it).
     pub fn newest_timestamp(&self) -> Result<Option<String>> {
         Ok(self.conn.query_row(
-            "SELECT MAX(t) FROM (SELECT MAX(created_at) AS t FROM claim UNION ALL SELECT MAX(started_at) FROM run)",
+            "SELECT MAX(t) FROM (SELECT MAX(created_at) AS t FROM claim UNION ALL SELECT MAX(started_at) FROM run WHERE ref IS NULL)",
             [],
             |r| r.get(0),
         )?)

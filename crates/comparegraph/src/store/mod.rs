@@ -184,11 +184,6 @@ const ADDED_COLUMNS: &[(&str, &str, &str, &str)] = &[
     ("decision", "ref_commit", "TEXT", "NULL"),
     ("decision", "bundle", "TEXT", "NULL"),
     ("decision", "summary_json", "TEXT", "NULL"),
-    // CG-REFGC: a branch verdict (`decide --ref`) names its ref and commit by value, never a run id, so it outlives `gc --refs`
-    ("decision", "ref", "TEXT", "NULL"),
-    ("decision", "ref_commit", "TEXT", "NULL"),
-    ("decision", "bundle", "TEXT", "NULL"),
-    ("decision", "summary_json", "TEXT", "NULL"),
     // field-run asks 7, 15 and 5: `claim --at-commit`, `out_of_subset`, and `reach` with its path and note
     ("claim", "at_commit", "TEXT", "NULL"),
     ("claim", "out_of_subset", "TEXT", "NULL"),
@@ -442,7 +437,7 @@ impl Store {
     pub fn open_existing(root: &Path) -> Result<Store> {
         if !root.join(".comparegraph").join("comparegraph.db").is_file() {
             return Err(StoreError::NotFound(format!(
-                "no workspace at {} â€” run `comparegraph add` first",
+                "no workspace at {} — run `comparegraph add` first",
                 root.join(".comparegraph").display()
             )));
         }
@@ -560,9 +555,30 @@ impl Store {
 
     // ---- run ----
     pub fn insert_run(&self, run: &Run) -> Result<RunId> {
-        self.conn.execute("INSERT INTO run(repo_id, provider, provider_version, started_at, seconds, status, limitations_json, store_hash) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-            params![run.repo.0, run.provider, run.provider_version, run.started_at, run.seconds, run.status.as_str(), serde_json::to_string(&run.limitations).unwrap(), run.store_hash])?;
+        let id = self.next_id_past_hwm("run")?;
+        self.conn.execute("INSERT INTO run(id, repo_id, provider, provider_version, started_at, seconds, status, limitations_json, store_hash) VALUES (?9,?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![run.repo.0, run.provider, run.provider_version, run.started_at, run.seconds, run.status.as_str(), serde_json::to_string(&run.limitations).unwrap(), run.store_hash, id])?;
         Ok(RunId(self.conn.last_insert_rowid()))
+    }
+    /// `gc --refs` removes the newest rows of `run` and `node`, and SQLite (`INTEGER PRIMARY KEY`, no AUTOINCREMENT) would hand
+    /// their ids out again. It records the highest id it removed (`meta id_hwm:<table>`); the next insert takes the id after it
+    /// (None: the usual next rowid). A meta row, not a schema change (AUTOINCREMENT would rebuild both tables).
+    pub fn next_id_past_hwm(&self, table: &str) -> Result<Option<i64>> {
+        let Some(hwm) = self.meta_get(&format!("id_hwm:{table}"))?.and_then(|v| v.parse::<i64>().ok()) else {
+            return Ok(None);
+        };
+        let max: i64 = self.conn.query_row(&format!("SELECT COALESCE(MAX(id), 0) FROM {table}"), [], |r| r.get(0))?;
+        Ok((max < hwm).then_some(hwm + 1))
+    }
+    /// Raise the high-water mark of `table` to its current largest id (before rows are removed).
+    pub fn record_id_hwm(&self, table: &str) -> Result<()> {
+        let max: i64 = self.conn.query_row(&format!("SELECT COALESCE(MAX(id), 0) FROM {table}"), [], |r| r.get(0))?;
+        let key = format!("id_hwm:{table}");
+        let old = self.meta_get(&key)?.and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+        if max > old {
+            self.meta_set(&key, &max.to_string())?;
+        }
+        Ok(())
     }
     pub fn finish_run(
         &self,
@@ -633,7 +649,7 @@ impl Store {
             Some(r) => Ok(self
                 .conn
                 .query_row(
-                    &format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND ref IS NOT NULL AND (ref=?2 OR (length(?2) >= 7 AND ref_commit LIKE ?2 || '%')) ORDER BY id DESC LIMIT 1"),
+                    &format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND ref IS NOT NULL AND (ref=?2 OR (length(?2) >= 7 AND substr(ref_commit, 1, length(?2)) = ?2)) ORDER BY id DESC LIMIT 1"),
                     params![repo.0, r],
                     row_to_run,
                 )
@@ -696,9 +712,10 @@ impl Store {
 
     // ---- nodes / edges ----
     pub fn insert_nodes(&self, repo: RepoId, run: RunId, nodes: &mut [Node]) -> Result<()> {
+        let mut first_id = self.next_id_past_hwm("node")?;
         let tx = self.conn.unchecked_transaction()?;
         {
-            let mut st = tx.prepare("INSERT INTO node(repo_id, run_id, kind, name, qualified_name, path, line_start, line_end, content_hash, language, provider_ref) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)")?;
+            let mut st = tx.prepare("INSERT INTO node(id, repo_id, run_id, kind, name, qualified_name, path, line_start, line_end, content_hash, language, provider_ref) VALUES (?12,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)")?;
             let mut fts = tx.prepare(
                 "INSERT INTO node_fts(rowid, name, qualified_name, path) VALUES (?1,?2,?3,?4)",
             )?;
@@ -714,7 +731,8 @@ impl Store {
                     n.line_end,
                     n.content_hash,
                     n.language,
-                    n.provider_ref
+                    n.provider_ref,
+                    first_id.take()
                 ])?;
                 let id = tx.last_insert_rowid();
                 n.id = Some(NodeId(id));

@@ -115,7 +115,7 @@ pub fn decide_on(
         None => (None, None, None),
     };
     let summary: Option<serde_json::Value> = match rv {
-        Some(v) if v.summary_from_delta => Some(super::delta::last_delta(store, repo, &v.commit).ok_or_else(|| {
+        Some(v) if v.summary_from_delta => Some(super::delta::last_delta(store, repo, &v.commit)?.ok_or_else(|| {
             AppError::NotFound(format!("no delta has been computed for {} ({}): run `delta {repo} --base <ref> --head {}` first", v.git_ref, v.commit, v.git_ref))
         })?),
         _ => None,
