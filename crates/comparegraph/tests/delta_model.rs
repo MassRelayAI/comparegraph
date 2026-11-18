@@ -115,8 +115,10 @@ fn p8_whole_tree_has_share_on_base_exact() {
     fx.main();
     let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--refresh", "--whole-tree"]);
     let ws = &v["data"]["whole_tree"]["summary"];
-    assert_eq!(ws["share_on_base_exact"].as_f64(), Some(0.0), "whole_tree.summary lacks share_on_base_exact: {ws}");
-    assert_eq!(ws["share_on_base_exact"], ws["share_already_on_base"], "{ws}");
+    // round 5: the whole-tree share is `share_identical` (not a retirement signal: no residue, unread or merge check), so it
+    // no longer carries the branch summary's exact-share names (was share_on_base_exact = share_already_on_base)
+    assert_eq!(ws["share_identical"].as_f64(), Some(0.0), "{ws}");
+    assert!(ws.get("share_on_base_exact").is_none(), "{ws}");
 }
 
 // ---------------------------------------------------------------- slice 1: copy counts per (kind, body hash) replace `fresh`

@@ -67,11 +67,25 @@ struct Sym {
 /// `text` as compared for raw equality: each line without a trailing CR, the indentation common to every non-blank line
 /// removed, and every whole-word `name` replaced by a placeholder; sha256 of that.
 fn raw_hash(text: &str, name: &str) -> String {
-    let lines: Vec<&str> = text.lines().map(|l| l.strip_suffix('\r').unwrap_or(l)).collect();
-    let indent = lines.iter().filter(|l| !l.trim().is_empty()).map(|l| l.len() - l.trim_start().len()).min().unwrap_or(0);
+    // round 5: a CR is text (B-3), the common indentation is the exact leading bytes every non-blank line shares (tabs are not
+    // spaces), and a whitespace-only line is kept as it is (B-2: inside a string it is content)
+    let lines: Vec<&str> = text.split('\n').collect();
+    let lead = |l: &str| -> usize { l.len() - l.trim_start_matches([' ', '\t']).len() };
+    let mut prefix: Option<&str> = None;
+    for l in lines.iter().filter(|l| !l.trim().is_empty()) {
+        let w = &l[..lead(l)];
+        prefix = Some(match prefix {
+            None => w,
+            Some(p) => {
+                let n = p.bytes().zip(w.bytes()).take_while(|(a, b)| a == b).count();
+                &p[..n]
+            }
+        });
+    }
+    let prefix = prefix.unwrap_or("");
     let mut out = String::new();
     for l in &lines {
-        let l = if l.len() >= indent && l.is_char_boundary(indent) { &l[indent..] } else { l.trim_start() };
+        let l = if l.trim().is_empty() { l } else { l.strip_prefix(prefix).unwrap_or(l) };
         let mut word = String::new();
         let flush = |w: &mut String, out: &mut String| {
             if !w.is_empty() {
@@ -121,6 +135,10 @@ struct Side {
     blobs: Option<BTreeMap<String, (String, String)>>,
     /// the extracted tree, held (its reader registered) while the delta reads it
     _tree: Option<gitref::Tree>,
+    /// the paths with a file node in the run (what it read)
+    read: HashSet<String>,
+    /// keys two tree paths shared (`gitref::TreeIndex::collisions`)
+    collisions: usize,
 }
 
 /// `a` is a sub-multiset of `b`: every id of `a` is in `b` at least as many times. Not known (None) is never within.
@@ -414,19 +432,21 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         let mut unread: BTreeMap<String, usize> = BTreeMap::new();
         // B5: a file outside the subset is never read either: for the A5 and R4 checks it counts as unread
         for (p, (_, oid)) in &tree.blobs {
-            if crate::providers::reference::walker::language_for(Path::new(p)).is_some() && !(subset.contains(p) && read.contains(p)) {
+            if crate::providers::reference::walker::language_for(Path::new(p.trim_matches('"'))).is_some() && !(subset.contains(p) && read.contains(p)) {
                 *unread.entry(oid.clone()).or_default() += 1;
             }
         }
         unread
     });
     let blobs = tree.as_ref().map(|t| t.blobs.clone());
+    let collisions = tree.as_ref().map_or(0, |t| t.collisions);
     let gitlinks = tree.map(|t| t.gitlinks);
-    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread, gitlinks, blobs, _tree: Some(tree_held) };
+    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread, gitlinks, blobs, _tree: Some(tree_held), read, collisions };
     for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
-            side.files.insert(path.clone(), text.map(|t| t.lines().map(String::from).collect()).unwrap_or_default());
+            // lines keep their CR (B-3: the raw text compares it; tokens read it as whitespace)
+            side.files.insert(path.clone(), text.map(|t| t.split_inclusive('\n').map(|l| l.strip_suffix('\n').unwrap_or(l).to_string()).collect()).unwrap_or_default());
         }
         let mut s = Sym { kind: kind.clone(), name, qn: qn.clone(), path, ls: ls as u32, le: le as u32, hash: String::new(), raw: String::new(), trivial: false };
         let Some(body) = body_of(&side.files, &s) else {
@@ -976,7 +996,10 @@ fn parse_hunks(lines: &[String]) -> std::result::Result<Vec<Hunk>, String> {
         let l = &lines[i];
         i += 1;
         if !l.starts_with("@@ -") {
-            continue; // a file header line (diff --git, index, ---, +++): only ever between hunks
+            if !out.is_empty() && !l.starts_with('\\') {
+                return Err(format!("line {l:?} after a hunk is neither a hunk nor its marker"));
+            }
+            continue; // a file header line (diff --git, index, ---, +++): only before the first hunk
         }
         let mut parts = l.split(' ');
         let (_, old, new) = (parts.next(), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
@@ -1011,7 +1034,7 @@ fn hunks_of(clone: &Path, old: Option<&str>, new: Option<&str>) -> std::result::
         (Some(a), Some(b)) => {
             let out = git_lines(
                 clone,
-                &["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "diff", "-U0", "--text", "--no-textconv", "--no-ext-diff", "--no-color", "--ignore-submodules=none", "--src-prefix=a/", "--dst-prefix=b/", a, b],
+                &["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "diff.interHunkContext=0", "-c", "diff.context=0", "diff", "-U0", "--text", "--no-textconv", "--no-ext-diff", "--no-color", "--ignore-submodules=none", "--src-prefix=a/", "--dst-prefix=b/", a, b],
             )
             .ok_or_else(|| format!("git diff {a} {b} failed"))?;
             parse_hunks(&out)
@@ -1129,9 +1152,34 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     let version = crate::providers::by_name_in(root, "reference").map(|p| p.version()).unwrap_or_default();
     let want = Want { version, include: norm(&repo.include), exclude: norm(&repo.exclude) };
     let mut rebuilt = vec![];
-    let base = load_side(&store, root, &repo, o.base, &base_c, &want, mode, &mut rebuilt)?;
+    let mut base = load_side(&store, root, &repo, o.base, &base_c, &want, mode, &mut rebuilt)?;
     let head = load_side(&store, root, &repo, o.head, &head_c, &want, mode, &mut rebuilt)?;
-    let mb = load_side(&store, root, &repo, &mb_c, &mb_c, &want, mode, &mut rebuilt)?;
+    let mut mb = load_side(&store, root, &repo, &mb_c, &mb_c, &want, mode, &mut rebuilt)?;
+    // B-5: a file that parses with errors may hold a symbol the run never extracted: a file base changed since the fork (or the
+    // merge base holds and neither other side does) counts as unread when its grammar reports an error
+    let oids = |s: &Side| -> HashSet<String> { s.blobs.iter().flatten().map(|(_, (_, o))| o.clone()).collect() };
+    let (ob, oh, om) = (oids(&base), oids(&head), oids(&mb));
+    let mut parse_errors = [0usize; 2];
+    for (i, (s, keep)) in [(&mut base, vec![&om]), (&mut mb, vec![&ob, &oh])].into_iter().enumerate() {
+        let Some(dir) = s._tree.as_ref().map(|t| t.dir.clone()) else { continue };
+        let found: Vec<String> = s
+            .blobs
+            .iter()
+            .flatten()
+            .filter(|(p, (_, o))| s.read.contains(*p) && !keep.iter().any(|k| k.contains(o)))
+            .filter_map(|(p, (_, o))| {
+                let lang = crate::providers::reference::walker::language_for(Path::new(p))?;
+                let text = std::fs::read(dir.join(p)).ok()?;
+                crate::providers::reference::has_parse_error(&String::from_utf8_lossy(&text), lang).filter(|e| *e).map(|_| o.clone())
+            })
+            .collect();
+        parse_errors[i] = found.len();
+        if let Some(u) = s.unread.as_mut() {
+            for o in found {
+                *u.entry(o).or_default() += 1;
+            }
+        }
+    }
     // one delta, one set of file limits: a side that read fewer files would make the other side's symbols look added or removed
     let recorded: Vec<(&str, &Side)> = vec![("base", &base), ("head", &head), ("merge_base", &mb)];
     let known: Vec<&(&str, &Side)> = recorded.iter().filter(|(_, s)| s.limits.is_some()).collect();
@@ -1304,8 +1352,11 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             residue.push(Residue { path: p.to_string(), why: "gitlink_changed", hunk: None });
             continue;
         }
-        if old.as_ref().map(|x| &x.1) == new.as_ref().map(|x| &x.1) {
+        let mode_moved = matches!((&old, &new), (Some(o), Some(n)) if o.0 != n.0) && blob_of(&eb, p).map(|b| b.0) != new.as_ref().map(|n| n.0.clone());
+        if mode_moved || old.as_ref().map(|x| &x.1) == new.as_ref().map(|x| &x.1) {
             residue.push(Residue { path: p.to_string(), why: "mode_changed", hunk: None });
+        }
+        if old.as_ref().map(|x| &x.1) == new.as_ref().map(|x| &x.1) {
             continue;
         }
         if !has_syms.contains(p) {
@@ -1469,8 +1520,8 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         let mut ws = ws;
         (ws["on_base"], ws["unknown"]) = answers(wa.iter().chain(wc.iter()), &[]);
         let wshare = (head_only > 0).then(|| ((already as f64 / head_only as f64) * 10_000.0).round() / 10_000.0);
-        ws["share_on_base_exact"] = json!(wshare);
-        ws["share_already_on_base"] = json!(wshare);
+        // how much of head base holds as it is: no residue, unread or merge check, so never a retirement signal (round 5)
+        ws["share_identical"] = json!(wshare);
         Some((ws, wa, wr, wc))
     } else {
         None
@@ -1524,7 +1575,15 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             limitations.push(json!({ "code": "truncated", "detail": format!("{} (run {}): {} run limitations, the first {cap} listed; the rest by code: {}", names.join(" and "), s.run, s.limitations.len(), rest.join(", ")), "data": { "sides": names, "run": s.run } }));
         }
     }
+    for (n, k) in [("base", parse_errors[0]), ("merge_base", parse_errors[1])] {
+        if k > 0 {
+            limitations.push(json!({ "code": "partial", "detail": format!("{n}: {k} file(s) changed since the fork parse with errors (a symbol in an error node is not extracted): counted as unread") }));
+        }
+    }
     for (n, s) in &recorded {
+        if s.collisions > 0 {
+            limitations.push(json!({ "code": "partial", "detail": format!("{n} (run {}): {} tree path(s) share a key with another path and were left out of the listing", s.run, s.collisions) }));
+        }
         match &s.unread {
             None => limitations.push(json!({ "code": "partial", "detail": format!("git ls-tree failed for {n} (run {}): which of its files the run did not read is not known, so no row that needs it is a yes", s.run) })),
             Some(u) if !u.is_empty() => limitations.push(json!({ "code": "partial", "detail": format!("{n} (run {}): {} file(s) in a parsed language are outside the subset or have no file node in the run (unread); the copy counts cannot see into them", s.run, u.values().sum::<usize>()) })),
@@ -1593,7 +1652,7 @@ mod tests {
     use super::*;
 
     fn side(files: &[(&str, &str)], syms: &[(&str, &str, u32, u32)]) -> Side {
-        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()), gitlinks: Some(BTreeMap::new()), blobs: Some(BTreeMap::new()), _tree: None };
+        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()), gitlinks: Some(BTreeMap::new()), blobs: Some(BTreeMap::new()), _tree: None, read: HashSet::new(), collisions: 0 };
         for (p, t) in files {
             s.files.insert(p.to_string(), t.lines().map(String::from).collect());
         }
@@ -1643,7 +1702,7 @@ mod tests {
         // an uncounted line inside a hunk (here a context line, which -U0 never prints)
         assert!(parse_hunks(&lines("@@ -1,1 +1,1 @@\n a\n-a\n+b")).is_err());
         // more removed lines than counted
-        assert!(parse_hunks(&lines("@@ -1,1 +1,0 @@\n-a\n-b")).unwrap().len() == 1);
+        assert!(parse_hunks(&lines("@@ -1,1 +1,0 @@\n-a\n-b")).is_err());
         assert!(parse_hunks(&lines("@@ -x +1 @@\n+a")).is_err(), "an unreadable header");
     }
 

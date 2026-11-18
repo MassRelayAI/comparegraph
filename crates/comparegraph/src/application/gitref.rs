@@ -289,6 +289,27 @@ pub struct TreeIndex {
     pub blobs: std::collections::BTreeMap<String, (String, String)>,
     /// every gitlink (a submodule entry): path -> the commit it pins
     pub gitlinks: std::collections::BTreeMap<String, String>,
+    /// entries whose key another entry already had (two paths one key): the listing is `partial`
+    pub collisions: usize,
+}
+
+/// A tree path as a key: the path itself when it is UTF-8, else git's C-quoted form (`"caf\351.py"`), so two non-UTF-8 paths
+/// never fold into one key (round 5, B-4).
+pub fn path_key(raw: &[u8]) -> String {
+    if let Ok(s) = std::str::from_utf8(raw) {
+        return s.to_string();
+    }
+    let mut out = String::from("\"");
+    for b in raw {
+        match *b {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            0x20..=0x7e => out.push(*b as char),
+            _ => out.push_str(&format!("\\{b:03o}")),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// The `TreeIndex` of `commit` in `clone`.
@@ -319,7 +340,11 @@ pub fn tree_index_with(clone: &Path, commit: &str, env: &[(String, String)]) -> 
         let meta = String::from_utf8_lossy(&rec[..tab]).into_owned();
         let mut m = meta.split_whitespace();
         let (mode, kind, oid) = (m.next().unwrap_or(""), m.next().unwrap_or(""), m.next().unwrap_or(""));
-        let path = String::from_utf8_lossy(&rec[tab + 1..]).into_owned();
+        let path = path_key(&rec[tab + 1..]);
+        if t.blobs.contains_key(&path) || t.gitlinks.contains_key(&path) {
+            t.collisions += 1;
+            continue;
+        }
         match kind {
             "blob" => {
                 t.blobs.insert(path, (mode.to_string(), oid.to_string()));

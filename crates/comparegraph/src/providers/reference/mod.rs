@@ -11,6 +11,47 @@ pub mod rust_ctx;
 pub mod tests_link;
 pub mod vendor;
 pub mod walker;
+
+/// Whether `source` parses with errors under the grammar the reference provider uses for `language` (the same mapping as
+/// `vendor::parser::parse`, read here so the vendored file stays as it is): tree-sitter's `has_error` on the root. A symbol
+/// inside an ERROR node is not extracted, so `delta` counts such a file as unread (round 5, B-5). None: no grammar.
+pub fn has_parse_error(source: &str, language: &str) -> Option<bool> {
+    let lang: tree_sitter::Language = match language {
+        "typescript" | "tsx" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "javascript" | "jsx" | "mjs" => tree_sitter_javascript::LANGUAGE.into(),
+        "python" => tree_sitter_python::LANGUAGE.into(),
+        "go" => tree_sitter_go::LANGUAGE.into(),
+        "rust" => tree_sitter_rust::LANGUAGE.into(),
+        "ruby" => tree_sitter_ruby::LANGUAGE.into(),
+        "hcl" | "terraform" => tree_sitter_hcl::LANGUAGE.into(),
+        "yaml" => tree_sitter_yaml::LANGUAGE.into(),
+        "c" => tree_sitter_c::LANGUAGE.into(),
+        "objc" => tree_sitter_objc::LANGUAGE.into(),
+        "java" => tree_sitter_java::LANGUAGE.into(),
+        "php" => tree_sitter_php::LANGUAGE_PHP.into(),
+        "swift" => tree_sitter_swift::LANGUAGE.into(),
+        "bash" => tree_sitter_bash::LANGUAGE.into(),
+        "perl" => tree_sitter_perl_next::LANGUAGE.into(),
+        "css" => tree_sitter_css::LANGUAGE.into(),
+        "scss" => tree_sitter_scss::language(),
+        "html" => tree_sitter_html::LANGUAGE.into(),
+        "toml" => tree_sitter_toml_ng::language(),
+        "dockerfile" => tree_sitter_containerfile::LANGUAGE.into(),
+        "sql" => tree_sitter_sql::LANGUAGE.into(),
+        "cpp" => tree_sitter_cpp::LANGUAGE.into(),
+        "csharp" => tree_sitter_c_sharp::LANGUAGE.into(),
+        "kotlin" => tree_sitter_kotlin_ng::LANGUAGE.into(),
+        "dart" => tree_sitter_dart::LANGUAGE.into(),
+        "scala" => tree_sitter_scala::LANGUAGE.into(),
+        "r" => tree_sitter_r::LANGUAGE.into(),
+        "graphql" => tree_sitter_graphql::LANGUAGE.into(),
+        "powershell" => tree_sitter_powershell::LANGUAGE.into(),
+        _ => return None,
+    };
+    let mut p = tree_sitter::Parser::new();
+    p.set_language(&lang).ok()?;
+    Some(p.parse(source, None)?.root_node().has_error())
+}
 #[cfg(test)]
 mod tests_recall;
 #[cfg(test)]
