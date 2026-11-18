@@ -511,3 +511,41 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   - the duplicate-key limitation says what the code keeps (every copy counts; the first by path and line is the row).
   - `decide --summary-from-delta` needs `--base <ref>` (batch rows `base`): the kept delta must have used that base (the same
     name, and the commit it names now when it resolves), else `invalid_arguments` naming the base it used.
+
+## Plan 14 round 4 (2026-11-19, branch feat/plan-14)
+- **Invariant (the coordinator's round-4 ruling): every line the branch changed (merge base -> head) is accounted for by a
+  judged row; any change not accounted for is an unknown item.** Judged rows are the added, changed and removed rows; their
+  spans are head's lines for added and changed rows, the merge base's for removed rows and for the merge-base symbol of a
+  changed row. An unchanged symbol accounts for nothing (a re-indent, whitespace in a string or a reordering inside it is an
+  item). Why: round 4 found 11 false yeses in 6 causes, each a change no row and no item saw. What would change it: none.
+- **B1 identity is not tokens alone.** A1 and `body_hash` also need equal raw text: the body's lines without their CR, the
+  indentation common to all of them removed, the symbol's own name masked (`Sym::raw`); counted one to one like the tokens.
+  Tokens equal and text not: unknown, `text_differs`. A hunk is accounted for when every non-blank line of it lies in a judged
+  span on its side and it touches one; a hunk of blank lines alone is an item (whitespace inside a line is never blank).
+  Read so: blank lines inside a hunk that touches a judged row are its separators.
+- **B2 never trust porcelain diff.** A modified file's hunks come from `git diff -U0` of its two blob ids (no path, so no
+  attribute, textconv or diff driver applies), with `--text --no-textconv --no-ext-diff --no-color --ignore-submodules=none
+  --src-prefix=a/ --dst-prefix=b/` and `diff.noprefix`/`diff.mnemonicPrefix` overridden; an added or deleted file is one hunk of
+  its blob's lines (`git cat-file`). Headers are read only between hunks and each hunk takes exactly the lines its header
+  counts (a removed `-- ` line is a line); output that does not add up, or no hunk, is an item (`diff_failed`).
+- **B3** the touched set, `same` and `base_files` come from the TreeIndexes ((mode, oid) of every blob and gitlink): a gitlink
+  change is an item (`gitlink_changed`, whatever `.gitmodules` says), a mode-only change too (`mode_changed`); same_file
+  compares (mode, oid).
+- **B4** A5 also needs the merge base's gitlinks on base and head as they are.
+- **B5** with a subset, every blob in a parsed language outside it counts as unread for A5 and R4 (a symbol base moved out of
+  the subset, or a credit from an excluded copy, is not seen by the counts).
+- **B6** a file of a side's run missing from its cached tree re-extracts the tree once (`rebuilt` says `tree: re-extracted`);
+  a symbol still unreadable on any side blocks A4/A5 (merge base, base or head) and R4 (base).
+- **M1** lock and reader tokens are `<pid> <start>_<pid>-<n>`: on Linux `<start>` is field 22 of `/proc/<pid>/stat` and
+  liveness compares it (a recycled pid is a dead holder); elsewhere a nonce, and on Windows the heartbeat alone decides (no
+  start time without a system call this crate does not make).
+- **M2** the kept delta records `engine`, `provider_version` and `model` (`delta::DELTA_MODEL` = `plan14-r4`); `decide
+  --summary-from-delta` refuses another one, and refuses a `--base` that no longer resolves.
+- **Minors**: same_file compares (mode, oid); a null share (no item at all) is for a person to read too (docs/usage.md).
+- **Changed tests** (reason in each): `a_lane_merged_into_base_with_a_rename_is_entirely_already_on_base` (base's bar2 indents
+  otherwise: `text_differs`, share 0.5, was 1.0); `a_failed_git_diff_is_a_limitation_not_empty_lists` (the failure named is the
+  tree listing); `an_ambiguous_short_commit_for_a_branch_verdict_is_refused` (a real delta under the full sha);
+  `r4_crlf_conversion_only` (also asserts an item).
+- **Guards pinned** (each test fails under its mutation, run one by one): R3 `branch_moved` off, R3 `base_copies` off, `sub()`
+  true for an unknown set, A5's U(mb) within U(head) half removed, the residue's removed-lines side off, the whole-tree
+  `identical` subtraction off, a failing diff made silent, the M2 model check off, a gone base accepted.

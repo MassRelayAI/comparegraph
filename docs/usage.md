@@ -101,12 +101,15 @@ comparegraph show myrepo src/a.py::bar --ref origin/feature-x    # a graph read 
 The fields are facts; whether to restack, take parts or retire the branch is the reader's call. A verdict reads the exact
 share (`share_on_base_exact`), in which only a `yes` counts: `no` and `unknown` both count against it. **A branch with any
 unknown row or residue item (`summary.unknown.count` above 0) is read by a person before it is retired**: unknown means the model
-could not tell (a copy of code the merge base already had, one base copy for several branch rows, a near match, a file a run
-could not read, a submodule, work outside symbols), never that base has it. The `near_on_base` rows are among them.
+could not tell (a copy of code the merge base already had, one base copy for several branch rows, a near match, equal tokens
+in other text, a file a run could not read or outside the subset, a submodule, a change no row accounts for), never that base
+has it. The `near_on_base` rows are among them. **A null share** (the branch has no item at all) is read by a person too:
+nothing was judged. Every line the branch changed is accounted for by a judged row or is an unknown item (`branch.residue`):
+a re-indent, whitespace inside a string, a `.sql` file, a submodule bump.
 
 How a row is answered (docs/decisions.md, "Plan 14: the delta model"): copies of each body (kind + normalised body hash) are
 counted over the whole tree of the merge base (m), head (h) and base (b). An added or changed row is `yes, same_symbol` when base
-holds the very symbol with the branch's body; `unknown, trivial_body` under 8 body tokens; `unknown, body_on_merge_base` when the
+holds the very symbol with the branch's body, tokens and text (`unknown, text_differs` when only the tokens agree); `unknown, trivial_body` under 8 body tokens; `unknown, body_on_merge_base` when the
 branch made no new copy of the body (h - m <= 0: a copy, move or swap of old code); else base's new copies (b - m) credit the
 branch's new ones one to one: enough for every row of the body is `yes, body_hash`, none is `no`, some is `unknown,
 shared_credit`. A removed row is `no` while base keeps the symbol or as many copies of its body as the merge base had, `unknown`

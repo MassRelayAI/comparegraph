@@ -696,7 +696,7 @@ impl<'a> Judge<'a> {
                 // B4: a gitlink of the merge base must be on base and head as it is (a submodule's commit is never read)
                 let links_kept = |o: &Side| match (&f.gitlinks, &o.gitlinks) {
                     (Some(m), Some(x)) => m.iter().all(|(p, c)| x.get(p) == Some(c)),
-                    _ => false,
+                    _ => true, // a tree git could not list: its unread set is unknown, and `sub` refuses that
                 };
                 // B6: a symbol a side could not read from its tree is missing from that side's counts
                 sub(&f.unread, &base.unread) && sub(&f.unread, &head.unread) && links_kept(base) && links_kept(head) && f.unreadable == 0 && base.unreadable == 0 && head.unreadable == 0
@@ -704,7 +704,7 @@ impl<'a> Judge<'a> {
             base_read_whole: fork.is_none_or(|f| {
                 let links_kept = match (&base.gitlinks, &f.gitlinks) {
                     (Some(b), Some(m)) => b.iter().all(|(p, c)| m.get(p) == Some(c)),
-                    _ => false,
+                    _ => true, // a tree git could not list: its unread set is unknown, and `sub` refuses that
                 };
                 sub(&base.unread, &f.unread) && links_kept && base.unreadable == 0
             }),
