@@ -200,6 +200,7 @@ fn calls() -> Vec<(&'static str, Value, usize)> {
         ("comparegraph_tests_for", json!({"repo":"a","qualified_name":q}), 0),
         ("comparegraph_entry_points", json!({"repo":"a"}), 0),
         ("comparegraph_dead_code", json!({"repo":"a"}), 0),
+        ("comparegraph_health", json!({"repo":"a"}), 0),
         ("comparegraph_doctor", json!({}), 0),
         ("comparegraph_ui_limits", json!({}), 0),
         ("comparegraph_ui_products", json!({}), 0),

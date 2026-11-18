@@ -35,6 +35,7 @@ const DATA: &[(&str, &str)] = &[
     ("comparegraph_tests_for", "repo:s! symbol:s! summary:o! items:a! truncated:b! total:i!"),
     ("comparegraph_entry_points", "repo:s! items:a!"),
     ("comparegraph_dead_code", "repo:s! items:a!"),
+    ("comparegraph_health", "repo:s! run_id:i! summary:o! sections:o! thresholds:o"),
     ("comparegraph_doctor", "store:s! schema_version:i! repos:i providers:a! governance:o clients:a"),
     ("comparegraph_ui_limits", "items:a! probe:s"),
     ("comparegraph_ui_products", "items:a!"),

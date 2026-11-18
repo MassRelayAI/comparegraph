@@ -56,9 +56,9 @@ writing them again, so an interrupted batch resumes without doubling its rows.
 ## Navigation parity with codegraph (the maintainer, 2026-10-13: "why not do what codegraph and other OSS do")
 
 Graph-derived answers that codegraph serves and we do not, all plain queries over the store, no model:
-- **Circular dependencies**: cycles in the file-level `imports` graph (and in `extends`), with the cycle listed.
-- **Dead imports**: an `imports` edge whose imported names are never referenced in the importing file.
-- **Complexity and hot paths**: per function the call fan-in / fan-out and the longest path from an entry point; a ranked list.
+- **Circular dependencies** (built: `health`, 2026-11-18): cycles in the file-level `imports` graph (and in `extends`), with the cycle listed.
+- **Dead imports** (built: `health`, 2026-11-18, statement-level from the file text): an `imports` edge whose imported names are never referenced in the importing file.
+- **Complexity and hot paths** (built in part: `health` lists size and call fan-in/fan-out outliers over thresholds; the longest path from an entry point and the ranked list are not built): per function the call fan-in / fan-out and the longest path from an entry point; a ranked list.
 - **Architecture summary**: communities with their labels, sizes, cohesion and the edges between communities, as markdown.
 - **Edit context**: for a symbol, the callers, callees, tests-for and the containing community in one answer (the agent's
   "what do I need to read before I change this").

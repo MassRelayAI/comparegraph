@@ -14,6 +14,7 @@ pub mod decide;
 pub mod export;
 pub mod governance;
 pub mod graph;
+pub mod health;
 pub mod family;
 pub mod lines;
 pub mod map;

@@ -52,6 +52,7 @@ Four levels. Each answer says how it knows.
 | Repo surface | licence, licence lane, head commit, role (root or comparator) | `repos`, `show` |
 | Structure | module communities with label, keywords, cohesion, size | `communities` |
 | Symbols | callers, callees, blast radius, tests that reach a symbol, entry points, dead-code candidates | `show`, `traverse`, `impact`, `tests-for`, `entry-points`, `dead-code` |
+| Health | cycles, dead imports, duplicate bodies, size and coupling outliers, boundary rules, with a baseline ratchet | `health` |
 | Claims | verdict, citation, author, trail of superseded rows | `claim`, `claims`, `matrix` |
 
 A real `show` answer from the quick start (trimmed):
@@ -152,5 +153,25 @@ The stable contracts: the JSON envelope (`export json`, every CLI answer), and
 [`crates/comparegraph/src/store/schema.sql`](../crates/comparegraph/src/store/schema.sql) for read-only SQL on
 `.comparegraph/comparegraph.db`. `claim` and `decision` rows are append-only: read them, do not update them.
 
+
+## Health: findings and a ratchet
+
+```
+comparegraph health myrepo                       # counts per kind, the first 50 findings of each, every one with path:line
+comparegraph health myrepo --baseline health.json   # write the finding keys of today (sorted)
+comparegraph health myrepo --check health.json      # exit 1 only on a finding that is not in the baseline
+```
+A fixed finding does not fail the check; the answer says `3 finding(s) now clean, shrink the baseline`, and rerunning
+with `--baseline` shortens the file. Limits and architecture rules live in the workspace's `comparegraph.toml`:
+
+```toml
+[health]
+max_file_lines = 800
+min_lines = 10                  # shortest duplicated body
+
+[[health.boundary]]
+from  = "apps/web/**"           # no file here may import ...
+never = "apps/api/src/db/**"    # ... any file there
+```
 
 [Back to README](../README.md)

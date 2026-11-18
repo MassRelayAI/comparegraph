@@ -46,6 +46,7 @@ envelope as the CLI. 39 tools: 38 read-only, one write (`comparegraph_claim`). T
 | `comparegraph_tests_for` | Tests linked to a symbol, summary first, then one page | `repo`, `qualified_name`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_entry_points` | Exported, handler or main symbols nothing calls | `repo`, `limit`, `cursor`, `min_confidence` |
 | `comparegraph_dead_code` | Dead-code candidates (never proof) | `repo`, `limit`, `cursor`, `min_confidence` |
+| `comparegraph_health` | Structural findings with evidence: cycles, dead imports, duplicate bodies, size and coupling outliers, boundary violations, dead-code candidates | `repo`, `limit` |
 | `comparegraph_doctor` | Store and provider status | none |
 
 There is no `decide` tool: adopting or rejecting a clone is a human act on the CLI. For the same reason the store-safety

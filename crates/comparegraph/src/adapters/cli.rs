@@ -501,6 +501,23 @@ pub enum Cmd {
         #[arg(long, default_value_t = 0.5)]
         min_confidence: f64,
     },
+    /// Structural findings of a repo: import and extends cycles, dead imports, duplicate bodies, size and coupling
+    /// outliers, boundary rules, dead-code candidates. --baseline writes the finding keys; --check exits 1 on a new one
+    Health {
+        repo: String,
+        /// findings listed per section (the counts, the baseline and the check cover all of them)
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// write the sorted finding keys to FILE
+        #[arg(long, conflicts_with = "check")]
+        baseline: Option<PathBuf>,
+        /// exit 1 only when a finding is not in the baseline FILE
+        #[arg(long)]
+        check: Option<PathBuf>,
+        /// include the dead-code candidates in the baseline and the check
+        #[arg(long)]
+        ratchet_dead_code: bool,
+    },
     /// Report the store, every provider and each agent client's registration of the MCP server
     Doctor {
         /// compare registrations against this command instead of the running executable
@@ -817,6 +834,7 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::TestsFor { .. } => "tests-for",
         Cmd::EntryPoints { .. } => "entry-points",
         Cmd::DeadCode { .. } => "dead-code",
+        Cmd::Health { .. } => "health",
         Cmd::Doctor { .. } => "doctor",
         Cmd::Setup { .. } => "setup",
         Cmd::Catalog { .. } => "catalog",
@@ -1079,7 +1097,7 @@ pub fn envelope_for(cli: &Cli) -> Envelope {
         Ok(v) => {
             let conf = if matches!(
                 cli.cmd,
-                Cmd::Check { .. } | Cmd::Claims { .. } | Cmd::Matrix { .. } | Cmd::Governance { .. }
+                Cmd::Check { .. } | Cmd::Claims { .. } | Cmd::Matrix { .. } | Cmd::Governance { .. } | Cmd::Health { .. }
                     | Cmd::Ui { what: UiCmd::Diff { .. } | UiCmd::Matrix { .. } | UiCmd::NavDiff { .. } | UiCmd::NetDiff { .. } | UiCmd::GraphDiff { .. } | UiCmd::Verify { .. }, .. }
             ) {
                 "derived"
@@ -1450,6 +1468,23 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             cursor,
             min_confidence,
         } => g::dead_code(&cli.root, repo, *limit, cursor.as_deref(), *min_confidence)?,
+        Cmd::Health { repo, limit, baseline, check, ratchet_dead_code } => {
+            let o = crate::application::health::health(
+                &cli.root,
+                repo,
+                &crate::application::health::Options {
+                    limit: *limit,
+                    disable: vec![],
+                    baseline: baseline.clone(),
+                    check: check.clone(),
+                    ratchet_dead_code: *ratchet_dead_code,
+                },
+            )?;
+            if let Some(m) = o.failed {
+                return Ok(Err((AppError::CheckFailed(m), Some(o.data))));
+            }
+            o.data
+        }
         Cmd::Map {
             repo,
             family,

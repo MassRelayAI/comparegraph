@@ -264,3 +264,14 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
 | CMP-UI-LOOP-2 matrix map and nav source: `ui matrix --map <file>`, else `ui/map.csv`, else `<ui-root>/map.csv`; an unknown family lists the map.csv family names; `navSource: heuristic` on a nav carries limitation `nav_inferred` into `ui nav` / `nav-diff` (`navSource` shown only when set) | a sweep keeps map.csv in the run root; a fallback sidebar is a guess | silent proven-looking navs | a probe nav source other than `heuristic` |
 | CMP-UI-LOOP-3 read-only net: `net.readOnly {mode, blocked: [{method, host, path}]}` (probe `--read-only-net`) is accepted; `ui show` prints `read-only net (<mode>): N blocked` in `netLine` and echoes `net.readOnly`; it is a record of what the guard refused and is never compared by `verify` (an unknown field inside it is still `invalid_evidence`) | the engine rejected the whole capture with `unknown field readOnly`, so every read-only capture verified as unreadable | ignore the block | - |
 | CMP-UI-LOOP-3 version: `--version` prints `<crate version>+<short git sha>` (build.rs embeds the commit; `unknown` without git) | every commit printed the same 0.1.3, so a run could not say which engine read it | crate version only | - |
+
+## Health verb (2026-11-18, lane CG-HEALTH) - provisional
+- `health` is one query over the latest run plus the clone's files; baselines are files, never store tables.
+- A cycle is reported as the shortest cycle through each edge inside a strongly connected component (not every elementary cycle):
+  a new edge that closes a cycle then always yields a new key, which is what the ratchet needs, and the listing stays bounded.
+- Dead imports are statement-level, read from the file text (edges carry no names). Rust trait imports used only through methods
+  are skipped by name (`Write`, `Read`, `*Ext`, ...); the JSX `React` default import is skipped. Files changed since the build are
+  skipped and said so. Duplicate bodies drop the signature line, so renamed copies match.
+- Keys never include a measured value. Dead-code candidates are in the report but join the ratchet only with `--ratchet-dead-code`
+  (confidence unknown; a new unreferenced helper should not fail a gate by default).
+- No dependency added: the toml subset is parsed by hand like the provider table, globs become `regex`.

@@ -117,6 +117,8 @@ pub fn tools() -> Vec<Value> {
         tool("comparegraph_dead_code", "Dead-code CANDIDATES (confidence unknown: dynamic dispatch is invisible). Paged.", schema(json!({
             "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500}, "cursor": {"type":"string"},
             "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
+        tool("comparegraph_health", "Structural findings of a repo's latest run, each with path and line evidence: import and extends cycles, dead imports, duplicate function bodies, size and coupling outliers, boundary-rule violations (comparegraph.toml [[health.boundary]]) and dead-code candidates. Counts per section plus the first `limit` findings of each. Reads only; baselines are written by the CLI (`health --baseline`).", schema(json!({
+            "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500,"description":"findings listed per section, default 50"} }), &["repo"])),
         tool("comparegraph_ui_limits", "UI evidence: every cap the ui tools apply (max_nodes, file size, page size, path length) with its unit, control and what is reported when it is hit. Reads nothing.", ui_schema(json!({}), &[])),
         tool("comparegraph_ui_products", "UI evidence: products with screens, evidence files, states, flows, menu trees. Reads files under ui_root/ui only.", ui_schema(json!({}), &[])),
         tool("comparegraph_ui_screens", "UI evidence: the screens of a product with archetype, states and captures.", ui_schema(json!({"product":{"type":"string"}}), &["product"])),
@@ -216,6 +218,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         "comparegraph_entry_points" | "comparegraph_dead_code" => {
             &["repo", "limit", "cursor", "min_confidence"]
         }
+        "comparegraph_health" => &["repo", "limit"],
         "comparegraph_families" => &[],
         "comparegraph_map" => &["repo", "family", "feature", "limit"],
         "comparegraph_absent_check" => &["repo", "family", "feature", "searched", "include_non_code"],
@@ -354,6 +357,13 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             limit: limit_arg(a)?,
             cursor: str_arg(a, "cursor")?,
             min_confidence: conf_arg(a)?,
+        },
+        "comparegraph_health" => Cmd::Health {
+            repo: req(a, "repo")?,
+            limit: if a.get("limit").is_some() { limit_arg(a)? } else { 50 },
+            baseline: None,
+            check: None,
+            ratchet_dead_code: false,
         },
         "comparegraph_families" => Cmd::Family {
             what: FamilyCmd::List,

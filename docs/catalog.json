@@ -1880,6 +1880,192 @@
       }
     },
     {
+      "name": "comparegraph_health",
+      "description": "Structural findings of a repo's latest run, each with path and line evidence: import and extends cycles, dead imports, duplicate function bodies, size and coupling outliers, boundary-rule violations (comparegraph.toml [[health.boundary]]) and dead-code candidates. Counts per section plus the first `limit` findings of each. Reads only; baselines are written by the CLI (`health --baseline`).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "findings listed per section, default 50"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "ok",
+          "verb",
+          "schema",
+          "data",
+          "evidence",
+          "cost"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "verb": {
+            "const": "health"
+          },
+          "schema": {
+            "const": 1
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          },
+          "page": {
+            "type": "object",
+            "required": [
+              "next",
+              "total"
+            ]
+          },
+          "cost": {
+            "type": "object",
+            "required": [
+              "rows",
+              "bytes"
+            ]
+          },
+          "error": {
+            "$ref": "#/$defs/error"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "repo",
+                  "run_id",
+                  "summary",
+                  "sections"
+                ],
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "run_id": {
+                    "type": "integer"
+                  },
+                  "summary": {
+                    "type": "object"
+                  },
+                  "sections": {
+                    "type": "object"
+                  },
+                  "thresholds": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ]
+          }
+        ],
+        "$defs": {
+          "evidence": {
+            "type": "object",
+            "required": [
+              "confidence",
+              "limitations"
+            ],
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "observed",
+                  "derived",
+                  "inferred",
+                  "unknown"
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "required": [
+              "kind",
+              "retryable"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "recovery"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/recovery"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "comparegraph_impact",
       "description": "Blast radius: everything that transitively depends on a symbol or on file(s), summary first (total, by_hop, by_kind) then items paged by limit/cursor (best path_confidence first, each with hop and community), plus the tests that reach it.",
       "inputSchema": {
