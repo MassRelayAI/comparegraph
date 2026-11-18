@@ -60,7 +60,9 @@ Top of each by impact (`--top 3`): cycles `decide.rs <-> step.rs`, `device_doors
 lines), then 536; size `crates/mr-server/src/routes.rs` (27,114 lines), `0000_baseline.sql`, `schema.sql`; coupling
 `mr-kernel/src/db.rs::tenant_scope` (3,446 callers), `audit.rs::now_iso` (743), `gates.rs::authorize` (682).
 
-## Finding: `build` overflows its stack on this repo with the default stack (not fixed in this lane)
+## Finding: `build` overflows its stack on this repo with the default stack
+
+**Fixed in 04c9ec8** (16 MiB `par_map` worker stacks; massrelay builds on the default stack in 6m49s). The text below is the original finding.
 
 - Repro: `comparegraph --root <ws> add F:/repos/massrelay --name mr`, then
   `COMPAREGRAPH_PROGRESS=1 comparegraph --root <ws> build mr` (Linux, debug build, 7,012 files). Result: `thread '<unknown>' has
@@ -73,3 +75,26 @@ lines), then 536; size `crates/mr-server/src/routes.rs` (27,114 lines), `0000_ba
 - Not found cheaply: the single file or nesting depth that triggers it. Next step for whoever takes it: give the `par_map` workers
   an explicit stack size (`std::thread::Builder::stack_size`) or bisect `COMPAREGRAPH_THREADS=1` with `RUST_MIN_STACK` between 2 and
   8 MiB, and print `CURRENT_FILE` from a SIGSEGV handler.
+
+## Exclude dry run (`[health] exclude`, commit 5137d31)
+
+Config used: `exclude = ["tools/_archive/**", "**/0000_baseline.sql", "docs/**/_generated/**", "**/*.generated.*"]` (285 of 89,473
+nodes left out). Same store, massrelay c0c2fbe.
+
+| kind | before | after |
+|---|---:|---:|
+| cycles | 13 | 13 |
+| dead_imports | 99 | 96 |
+| duplicate_bodies | 112 | 109 |
+| size_outliers | 378 | 376 |
+| coupling_outliers | 108 | 108 |
+| boundary_violations | 0 | 0 |
+| dead_code (advisory) | 5,388 | 5,388 |
+| total | 6,098 | 6,090 |
+
+Ratchet baseline: 710 keys to 702.
+
+Note for the consumer's config: the duplicate noise that these globs do not reach is the mirrored site assets (`apps/site/*.js`
+and `tools/site/assets/*.js`) and the two deploy scripts (`deploy/prod/init-env.sh` and `deploy/stag/init-env.sh`). Excluding one
+side of each pair (for example `tools/site/assets/**`) removes the pair from `duplicate_bodies`; the deploy pair is a real
+duplicate that is better fixed than excluded.
