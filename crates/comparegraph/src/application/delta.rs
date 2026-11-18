@@ -1704,6 +1704,11 @@ mod tests {
         // more removed lines than counted
         assert!(parse_hunks(&lines("@@ -1,1 +1,0 @@\n-a\n-b")).is_err());
         assert!(parse_hunks(&lines("@@ -x +1 @@\n+a")).is_err(), "an unreadable header");
+        // a counted side is full: one more `-` line is not taken (it would hide a miscount)
+        assert!(parse_hunks(&lines("@@ -1,1 +1,1 @@\n-a\n-b\n+c")).is_err());
+        // a `\ No newline` marker inside a hunk is skipped, not refused
+        let mid = parse_hunks(&lines("@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b")).unwrap();
+        assert_eq!((mid[0].old.len(), mid[0].new.len()), (1, 1));
     }
 
     /// The bigrams of a body are computed once per symbol, however many times the rule compares it.

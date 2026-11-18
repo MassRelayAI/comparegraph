@@ -654,3 +654,32 @@ fn s5_the_whole_tree_share_is_share_identical() {
     let ws = &v["data"]["whole_tree"]["summary"];
     assert!(ws["share_identical"].is_number() && ws.get("share_on_base_exact").is_none() && ws.get("share_already_on_base").is_none(), "{ws}");
 }
+
+/// The backstop when git cannot merge: base's blob of a file both sides changed is gone from the clone (git merge-tree needs it
+/// for the three-way merge; the delta's own reads do not), so every yes turns unknown (`merge_check_unavailable`).
+#[test]
+fn r5_backstop_unavailable_turns_every_yes_unknown() {
+    let fx = Fx::new(&[("src/a.py", FOO), ("src/x.py", &format!("{G5}\n{KEEP}"))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
+    write(&d, "src/x.py", &format!("{}\n{KEEP}", G5.replace("x * 3", "x * 4")));
+    commit(&d, "lane adds bar, changes g");
+    fx.main();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
+    write(&d, "src/x.py", &format!("{G5}\n{}", KEEP.replace("return 1", "return 2")));
+    commit(&d, "base takes bar, changes keep");
+    let v = fx.delta();
+    assert_eq!(row_of(&v, "added", "src/a.py::bar")["on_base"], "yes", "{}", summ(&v));
+    let blob = git_out(&d, &["rev-parse", "main:src/x.py"]);
+    let obj = d.join(".git/objects").join(&blob[..2]).join(&blob[2..]);
+    let mut p = std::fs::metadata(&obj).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    p.set_readonly(false);
+    std::fs::set_permissions(&obj, p).unwrap();
+    std::fs::remove_file(&obj).unwrap();
+    let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
+    let bar = row_of(&v, "added", "src/a.py::bar");
+    assert_eq!((bar["on_base"].as_str(), bar["why"].as_str()), (Some("unknown"), Some("merge_check_unavailable")), "{bar}");
+    assert!(limits(&v).contains("git merge-tree could not check"), "{}", limits(&v));
+}

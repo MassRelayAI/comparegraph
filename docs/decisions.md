@@ -549,3 +549,36 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
 - **Guards pinned** (each test fails under its mutation, run one by one): R3 `branch_moved` off, R3 `base_copies` off, `sub()`
   true for an unknown set, A5's U(mb) within U(head) half removed, the residue's removed-lines side off, the whole-tree
   `identical` subtraction off, a failing diff made silent, the M2 model check off, a gone base accepted.
+
+## Plan 14 round 5 (2026-11-19, branch feat/plan-14)
+- **Ruling: the backstop** (the coordinator's round-5 ruling). A yes is checked against git's own merge, the thing it predicts:
+  `git merge-tree --write-tree --no-messages <base> <head>` (git >= 2.38), read-only for the clone (its objects go to a
+  temporary object directory under the store; the clone's own objects are an alternate; removed after). For each yes row: if
+  the merged tree's (mode, oid) at the row's path is not base's, or the path conflicts, the row is unknown,
+  `why: merge_changes_file`, and `model_via` keeps how the model had it. If git cannot merge (too old, an error), every yes is
+  unknown, `merge_check_unavailable`, with a `partial` line. A share of exactly 1.0 also needs the merged tree to be base's
+  tree; otherwise one unknown item `merge_changes_tree` names the first path that differs (the share is then below 1, and the
+  item says which). The backstop only turns a yes unknown, never the reverse. Why: five rounds found false yeses in shapes
+  the model did not foresee (modes, CRs, string whitespace, parse errors, path encodings); the merge is the ground truth the
+  share predicts. What would change it: none.
+
+  Consequence, stated so a reader can overturn it: a yes for a copy of the branch's work that base holds under another path
+  (`body_hash` across files) or in a file base otherwise differs from is now unknown (`merge_changes_file`, `model_via:
+  body_hash`): merging would still add or change that file. A yes survives where the merge leaves base's file as it is.
+- **Defence in depth** (each with its own test, read on its own under the backstop): B-1 a `mode_changed` item whenever
+  head's mode is not the merge base's and base's is not head's, whatever the content did; B-2 the raw text's common
+  indentation is the exact leading bytes every non-blank line shares, and a whitespace-only line is kept as it is; B-3 a CR
+  is text (the cached files keep it); B-4 TreeIndex keys a non-UTF-8 path by git's C-quoted form, a key two paths share is
+  counted and `partial`; B-5 a file base changed since the fork (or only the merge base holds) whose grammar reports a parse
+  error (tree-sitter `has_error`, `providers::reference::has_parse_error`; vendor/ untouched) counts as unread.
+- **Minors**: hunks_of sets `diff.interHunkContext=0` and `diff.context=0`; parse_hunks refuses a line after a hunk that is
+  neither a hunk header nor its `\ No newline` marker; `whole_tree.summary.share_identical` replaces its
+  `share_on_base_exact` / `share_already_on_base` (how much of head base holds as it is: no residue, unread or merge check,
+  so never a retirement signal).
+- **Proof**: at 451f025 (the backstop, none of B-1..B-5) all 18 round-5 probes read below 1.0; with B-1..B-5 reverted on the
+  final code the probes still do (mutation `fixes_off_backstop_on`). Each B fix reverted alone turns its own test red, and so
+  does each pinned guard (the `touches` half, the unreadable block for A4/A5 and R4 via `Judge::new`, the parse_hunks cases).
+- **Changed tests** (reason in each): rows_list_what_is_not_on_base_first, r2_the_trivial_floor..., r2_base_took_a_moved_change...
+  (0.0, was 0.5), a_lane_merged_into_base_with_a_rename... (0.0), s1_two_base_copies (0.0), s3 gitlink, s4 top-level (0.0),
+  g4 diff-failed and unlanded-deletion, p8_whole_tree... (share_identical); r5_lossy_path_collision... (its `git branch -f main`
+  on main itself, which git refuses, removed).

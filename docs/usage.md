@@ -105,7 +105,11 @@ could not tell (a copy of code the merge base already had, one base copy for sev
 in other text, a file a run could not read or outside the subset, a submodule, a change no row accounts for), never that base
 has it. The `near_on_base` rows are among them. **A null share** (the branch has no item at all) is read by a person too:
 nothing was judged. Every line the branch changed is accounted for by a judged row or is an unknown item (`branch.residue`):
-a re-indent, whitespace inside a string, a `.sql` file, a submodule bump.
+a re-indent, whitespace inside a string, a `.sql` file, a submodule bump. **Every yes is then checked against git's own merge**
+(`git merge-tree`, git 2.38 or newer, read-only): a yes in a file the merge would change, or that conflicts, is unknown
+(`merge_changes_file`, with `model_via` saying how the model had it), and a share of 1.0 also needs the merged tree to be
+base's tree. So a 1.0 means merging the branch would change nothing on base. `--whole-tree`'s `share_identical` is how much
+of head base holds as it is: it has none of these checks and is never a retirement signal.
 
 How a row is answered (docs/decisions.md, "Plan 14: the delta model"): copies of each body (kind + normalised body hash) are
 counted over the whole tree of the merge base (m), head (h) and base (b). An added or changed row is `yes, same_symbol` when base

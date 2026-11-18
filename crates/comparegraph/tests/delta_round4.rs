@@ -221,6 +221,8 @@ fn r4_a5_ignores_a_gitlink_base_removed() {
     let v = fx.delta();
     let row = row_of(&v, "added", "src/b.py::helper");
     assert_ne!(row["on_base"], "yes", "FALSE YES (gitlink ignored by A5): {row} {}", summ(&v));
+    // round 5: the backstop also stops this yes; the model's own reason is pinned so the specific guard cannot go unseen
+    assert_eq!(row["why"], "merge_base_unread", "{row}");
 }
 
 /// R4-5: a removed line starting with `-- ` (SQL in a module string) prints as `--- ...` in the diff and is read as a file header.
@@ -328,6 +330,8 @@ fn r4_base_moves_a_deleted_symbol_outside_the_subset() {
     let v = fx.delta();
     let row = row_of(&v, "removed", "src/a.py::bar");
     assert_ne!(row["on_base"], "yes", "FALSE YES (base kept bar outside the subset): {row} {}", summ(&v));
+    // round 5: the backstop also stops this yes; the model's own reason is pinned so the specific guard cannot go unseen
+    assert_eq!(row["why"], "base_unread", "{row}");
 }
 
 /// R4-11: the P3 shape through an excluded folder: the merge base holds helper only in legacy/ (outside the subset); the branch
@@ -346,6 +350,8 @@ fn r4_a4_credit_from_code_outside_the_subset() {
     let v = fx.delta();
     let row = row_of(&v, "added", "src/b.py::helper");
     assert_ne!(row["on_base"], "yes", "FALSE YES (credit from an excluded copy): {row} {}", summ(&v));
+    // round 5: the backstop also stops this yes; the model's own reason is pinned so the specific guard cannot go unseen
+    assert_eq!(row["why"], "merge_base_unread", "{row}");
 }
 
 /// R4-12: a submodule bump by the branch, with `ignore = all` in .gitmodules: the bump is the branch's work.
@@ -378,6 +384,8 @@ fn r4_submodule_bump_with_ignore_all() {
     git(&d, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "base takes bar"]);
     let v = fx.delta();
     assert_ne!(exact_share(&v), Some(1.0), "FALSE YES (submodule bump unseen): {}", summ(&v));
+    // round 5: the backstop also stops this yes; the model's own reason is pinned so the specific guard cannot go unseen
+    assert_eq!(v["data"]["summary"]["unknown"]["by_why"]["gitlink_changed"].as_i64(), Some(1), "{}", summ(&v));
 }
 
 // ================================================================ round 4: guards pinned against their mutations
