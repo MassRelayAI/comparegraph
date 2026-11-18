@@ -311,3 +311,76 @@ fn s2_a_credit_needs_the_merge_base_read_whole() {
     assert_eq!(row["note"], "merge_base_unread", "{row}");
     assert_eq!(exact_share(&v), Some(0.0));
 }
+
+// ---------------------------------------------------------------- slice 3: on_base yes | no | unknown, with via and why
+
+/// The duplicate-credit split (A4): the branch writes one new body three times; base took it once, under another name. One
+/// credit for three rows: which row base's copy is cannot be told, so all three are unknown (`shared_credit`), and unknown
+/// counts against the exact share.
+#[test]
+fn s3_one_credit_for_three_rows_is_unknown_for_all_three() {
+    let fx = Fx::new(&[("src/a.py", KEEP)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/n.py", &format!("{}\n{}\n{}", long_named("p", true), long_named("q", true), long_named("r", true)));
+    commit(&d, "lane adds p, q and r, one body");
+    fx.main();
+    write(&d, "src/o.py", &long_named("p2", true));
+    commit(&d, "base takes one copy");
+    let v = fx.delta();
+    for qn in ["src/n.py::p", "src/n.py::q", "src/n.py::r"] {
+        let row = row_of(&v, "added", qn);
+        assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("shared_credit")), "{row}");
+        assert!(row.get("via").is_none(), "{row}");
+    }
+    let s = &v["data"]["summary"];
+    assert_eq!(s["unknown"]["count"].as_i64(), Some(3), "{s}");
+    assert_eq!(s["unknown"]["by_why"]["shared_credit"].as_i64(), Some(3), "{s}");
+    assert_eq!((s["on_base"]["yes"].as_i64(), s["on_base"]["no"].as_i64(), s["on_base"]["unknown"].as_i64()), (Some(0), Some(0), Some(3)), "{s}");
+    assert_eq!(exact_share(&v), Some(0.0), "{s}");
+    assert_eq!(s["share_already_on_base"], s["share_on_base_exact"], "{s}");
+}
+
+/// R4 needs base to have added or changed no gitlink since the fork: a submodule's commit is never read, so a symbol base
+/// "deleted" may live on in it. The branch and base both delete `bar`; base also adds a submodule entry.
+#[test]
+fn s3_a_deletion_with_a_gitlink_added_on_base_is_unknown() {
+    let fx = Fx::new(&[("src/a.py", &format!("{FOO}\n{BAR}"))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", FOO);
+    commit(&d, "lane deletes bar");
+    fx.main();
+    write(&d, "src/a.py", &format!("{FOO}
+")); // not the branch's blob: the file itself is not the same on both
+    commit(&d, "base deletes bar too");
+    let tip = git_out(&d, &["rev-parse", "main"]);
+    let mut entries = std::process::Command::new("git").arg("-C").arg(&d).args(["ls-tree", "main"]).output().unwrap().stdout;
+    entries.extend_from_slice(format!("160000 commit {tip}\tvendored\n").as_bytes());
+    let tree = git_in(&d, &["mktree"], &entries);
+    let c = git_in(&d, &["-c", "user.email=t@t", "-c", "user.name=t", "commit-tree", &tree, "-p", "main", "-m", "base adds a submodule"], b"");
+    git(&d, &["update-ref", "refs/heads/main", &c]);
+    let v = fx.delta();
+    let row = row_of(&v, "removed", "src/a.py::bar");
+    assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("base_unread")), "{row}");
+    assert_eq!(exact_share(&v), Some(0.0), "{}", v["data"]["summary"]);
+    // without the gitlink the same deletion is on base (R4)
+    git(&d, &["update-ref", "refs/heads/main", &tip]);
+    let v = fx.delta();
+    let row = row_of(&v, "removed", "src/a.py::bar");
+    assert_eq!((row["on_base"].as_str(), row["via"].as_str()), (Some("yes"), Some("absent_on_base")), "{row}");
+}
+
+fn git_out(dir: &Path, args: &[&str]) -> String {
+    let o = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
+    assert!(o.status.success(), "git {args:?}");
+    String::from_utf8_lossy(&o.stdout).trim().to_string()
+}
+fn git_in(dir: &Path, args: &[&str], stdin: &[u8]) -> String {
+    use std::io::Write;
+    let mut c = std::process::Command::new("git").arg("-C").arg(dir).args(args).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    c.stdin.take().unwrap().write_all(stdin).unwrap();
+    let o = c.wait_with_output().unwrap();
+    assert!(o.status.success(), "git {args:?}");
+    String::from_utf8_lossy(&o.stdout).trim().to_string()
+}
