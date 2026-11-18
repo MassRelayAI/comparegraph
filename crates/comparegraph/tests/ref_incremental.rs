@@ -62,6 +62,21 @@ impl Fx {
         serde_json::from_slice(&o.stdout).unwrap()
     }
 }
+/// A run's community rows, ids aside: (label, keywords, cohesion, member qualified names), sorted.
+fn communities(fx: &Fx, run: i64) -> Vec<(String, String, Option<String>, Vec<String>)> {
+    let db = rusqlite::Connection::open(fx.root().join(".comparegraph/comparegraph.db")).unwrap();
+    let mut st = db.prepare("SELECT id, label, keywords_json, cohesion FROM community WHERE run_id=?1").unwrap();
+    let rows: Vec<(i64, String, String, Option<f64>)> = st.query_map([run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().map(|r| r.unwrap()).collect();
+    let mut out = vec![];
+    for (id, label, kw, coh) in rows {
+        let mut m = db.prepare("SELECT n.qualified_name FROM community_member x JOIN node n ON n.id = x.node_id WHERE x.community_id=?1 ORDER BY 1").unwrap();
+        let members: Vec<String> = m.query_map([id], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
+        out.push((label, kw, coh.map(|c| format!("{c:.6}")), members));
+    }
+    out.sort();
+    out
+}
+
 fn run_of(v: &Value) -> i64 {
     v["data"]["run"].as_i64().unwrap()
 }
@@ -92,6 +107,10 @@ fn an_incremental_ref_build_equals_a_full_build_of_the_same_ref() {
     assert!(full["data"]["incremental_from"].is_null());
     assert_eq!(full["data"]["edges_copied"], 0);
     assert_eq!(hash_of(&inc), hash_of(&full), "incremental and full builds of one ref must agree");
+    // store_hash covers nodes and edges only: the community rows (members, keywords, cohesion) must agree too
+    let (ci, cf) = (communities(&fx, run_of(&inc)), communities(&fx, run_of(&full)));
+    assert!(!cf.is_empty() && cf.iter().any(|c| !c.3.is_empty()), "the fixture must have communities with members: {cf:?}");
+    assert_eq!(ci, cf, "incremental and full community rows differ");
 }
 
 #[test]

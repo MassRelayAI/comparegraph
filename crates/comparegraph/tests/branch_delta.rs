@@ -225,6 +225,19 @@ fn a_symlink_in_the_tree_is_a_file_holding_its_target_never_followed() {
     assert_eq!(tree_state(&d), before);
 }
 
+/// M4: `search` answers from head runs only, even when a ref run is the newest run of the repo.
+#[test]
+fn search_never_answers_from_a_ref_run_even_the_newest() {
+    let fx = lane(BAR);
+    ok(fx.root(), &["build", "r"]); // the head run (main: no bar)
+    fx.build_ref("feat"); // built after it: the newest run of the repo holds bar
+    let newest: Option<String> = fx.db().query_row("SELECT ref FROM run ORDER BY id DESC LIMIT 1", [], |r| r.get(0)).unwrap();
+    assert_eq!(newest.as_deref(), Some("feat"));
+    let hits = ok(fx.root(), &["search", "bar"]);
+    assert!(hits["data"]["items"].as_array().unwrap().is_empty(), "{hits}");
+    assert!(!ok(fx.root(), &["search", "foo"])["data"]["items"].as_array().unwrap().is_empty(), "the head run still answers");
+}
+
 #[test]
 fn an_unknown_ref_is_a_structured_refusal_and_writes_no_run() {
     let fx = Fx::new(&[("src/a.py", FOO)]);
@@ -662,6 +675,7 @@ fn delta_refuses_what_is_unbuilt_unless_told_to_build_it() {
 fn the_mcp_tools_carry_delta_and_ref() {
     use std::io::{BufRead, BufReader, Write};
     let fx = lane(BAR);
+    fx.family(); // so a claim the MCP layer let through would be written: the refusal is what stops it
     fx.build_ref("main");
     fx.build_ref("feat");
     let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("comparegraph"))
@@ -693,6 +707,12 @@ fn the_mcp_tools_carry_delta_and_ref() {
     assert_eq!(s["error"]["code"], "not_found");
     let s = call("comparegraph_search", json!({"query":"bar","ref":"feat"}));
     assert_eq!(s["error"]["code"], "invalid_arguments");
+    // a claim with a ref is refused over MCP too, and writes nothing
+    ok(fx.root(), &["build", "r"]);
+    let c = call("comparegraph_claim", json!({"repo":"r","feature":"routing.retry","verdict":"unknown","author":"t","ref":"feat"}));
+    assert_eq!(c["ok"], false, "{c}");
+    assert!(c["error"]["message"].as_str().unwrap().contains("ref run"), "{c}");
+    assert_eq!(fx.db().query_row("SELECT COUNT(*) FROM claim", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
     drop(child.stdin.take());
     let _ = child.wait();
 }

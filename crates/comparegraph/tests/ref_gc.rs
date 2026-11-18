@@ -271,6 +271,45 @@ fn an_unreachable_clone_makes_its_ref_runs_unknown_and_gc_removes_nothing() {
     assert_eq!(fx.runs(), runs - 1);
 }
 
+/// M5: a run's `ref` decides whether its rows may be deleted, so it is fixed once the run has rows or is done.
+#[test]
+fn a_run_s_ref_cannot_be_changed_once_the_run_has_rows() {
+    let fx = Fx::new();
+    let db = fx.db();
+    let head: i64 = db.query_row("SELECT id FROM run WHERE ref IS NULL", [], |r| r.get(0)).unwrap();
+    let feat: i64 = db.query_row("SELECT id FROM run WHERE ref='feat'", [], |r| r.get(0)).unwrap();
+    for (sql, id) in [
+        ("UPDATE run SET ref='x' WHERE id=?1", head),
+        ("UPDATE run SET ref_commit='0123456789abcdef0123456789abcdef01234567' WHERE id=?1", head),
+        ("UPDATE run SET ref=NULL, ref_commit=NULL WHERE id=?1", feat),
+        ("UPDATE run SET ref='main' WHERE id=?1", feat),
+    ] {
+        let e = db.execute(sql, [id]);
+        assert!(e.as_ref().is_err_and(|e| e.to_string().contains("run.ref")), "{sql} on run {id} was allowed: {e:?}");
+    }
+    // so a head run's rows stay append-only
+    assert!(db.execute("DELETE FROM node WHERE run_id=?1", [head]).is_err());
+    // the other columns of a run stay writable (finish_run, set_run_head)
+    db.execute("UPDATE run SET head=head WHERE id=?1", [head]).unwrap();
+}
+
+/// M5: `claim` itself refuses to cite a ref run, whatever pinned the run choice to a ref.
+#[test]
+fn a_claim_while_a_ref_is_pinned_is_refused_by_claim_itself() {
+    use comparegraph::application::claim::{claim_batch_with, BatchRow, ClaimOut};
+    let fx = Fx::new();
+    let pack = fx.base.path().join("pack");
+    write(&pack, "rows.md", PACK);
+    ok(fx.root(), &["family", "add", pack.to_str().unwrap()]);
+    let row = "{\"repo\":\"r\",\"feature\":\"routing.retry\",\"verdict\":\"unknown\",\"author\":\"t\",\"no_reach\":true}\n";
+    let mut errors: Vec<String> = vec![];
+    let _ = comparegraph::store::with_run_ref(Some("feat"), || {
+        claim_batch_with(fx.root(), row.as_bytes(), true, |r: BatchRow<ClaimOut>| errors.extend(r.error.map(|e| e.message)))
+    });
+    assert!(errors.iter().any(|m| m.contains("ref run")), "{errors:?}");
+    assert_eq!(fx.db().query_row("SELECT COUNT(*) FROM claim c JOIN run u ON u.id = c.run_id WHERE u.ref IS NOT NULL", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+}
+
 fn trigger_sql(fx: &Fx) -> Vec<(String, String)> {
     let db = fx.db();
     let mut st = db.prepare("SELECT name, sql FROM sqlite_master WHERE type='trigger' ORDER BY name").unwrap();
@@ -280,18 +319,32 @@ fn trigger_sql(fx: &Fx) -> Vec<(String, String)> {
 #[test]
 fn head_runs_stay_append_only_and_gc_refs_prunes_a_ref_run_without_touching_a_trigger() {
     let fx = Fx::new();
-    let head: i64 = fx.db().query_row("SELECT id FROM run WHERE ref IS NULL", [], |r| r.get(0)).unwrap();
+    // a head run with rows in all four tables: two files that call each other form a community with members
+    let d = fx.clone();
+    write(&d, "src/c.py", "from src.d import g
+
+def f(x):
+    return g(x) + 1
+");
+    write(&d, "src/d.py", "from src.c import f
+
+def g(x):
+    return f(x) * 2
+");
+    commit(&d, "two modules that call each other");
+    ok(fx.root(), &["build", "r"]);
+    let head: i64 = fx.db().query_row("SELECT MAX(id) FROM run WHERE ref IS NULL", [], |r| r.get(0)).unwrap();
     // the ruling: ref runs are a prunable cache, head runs are append-only exactly as before
-    for sql in [
-        "DELETE FROM community_member WHERE community_id IN (SELECT id FROM community WHERE run_id=?1)",
-        "DELETE FROM community WHERE run_id=?1",
-        "DELETE FROM edge WHERE run_id=?1",
-        "DELETE FROM node WHERE run_id=?1",
+    for (sql, rows) in [
+        ("DELETE FROM community_member WHERE community_id IN (SELECT id FROM community WHERE run_id=?1)", "SELECT COUNT(*) FROM community_member WHERE community_id IN (SELECT id FROM community WHERE run_id=?1)"),
+        ("DELETE FROM community WHERE run_id=?1", "SELECT COUNT(*) FROM community WHERE run_id=?1"),
+        ("DELETE FROM edge WHERE run_id=?1", "SELECT COUNT(*) FROM edge WHERE run_id=?1"),
+        ("DELETE FROM node WHERE run_id=?1", "SELECT COUNT(*) FROM node WHERE run_id=?1"),
     ] {
-        let n: i64 = fx.db().query_row("SELECT COUNT(*) FROM node WHERE run_id=?1", [head], |r| r.get(0)).unwrap();
-        assert!(n > 0);
+        let n: i64 = fx.db().query_row(rows, [head], |r| r.get(0)).unwrap();
+        assert!(n > 0, "the head run has no rows to protect for: {sql}");
         let e = fx.db().execute(sql, [head]);
-        assert!(e.as_ref().is_err_and(|e| e.to_string().contains("append-only")) || sql.contains("community_member") && e.is_ok_and(|c| c == 0), "a head run row was deletable: {sql}");
+        assert!(e.as_ref().is_err_and(|e| e.to_string().contains("append-only")), "a head run row was deletable: {sql}: {e:?}");
     }
     let triggers = trigger_sql(&fx);
     for t in ["node_no_delete", "edge_no_delete", "community_no_delete", "community_member_no_delete"] {
