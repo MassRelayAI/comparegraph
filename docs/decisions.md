@@ -301,3 +301,7 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   `unknown`, never `gone` (`gitref::probe`). `gc --refs` skips every run of such a ref, whatever else would remove it, lists them
   in `unknown` and says so; `repos --stale` and the query `stale` limitation show `unknown`. Why: an unmounted disk made every ref
   `gone` and an apply deleted every ref run. What would change it: none.
+- **M5** `run.ref` / `run.ref_commit` decide whether a run's graph rows may be deleted, so a `run_ref_fixed` trigger
+  (`BEFORE UPDATE OF ref, ref_commit ON run`) refuses a change once the run is not a fresh `running` row without nodes (build.rs
+  sets both on that row right after inserting it). Schema ruling: within the plan 14 schema ruling (`runs.ref`), it only freezes
+  the column CG-REFGC's delete exception reads. `claim_on_with` refuses a chosen run whose `ref` is set, whatever pinned it.

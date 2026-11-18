@@ -70,6 +70,9 @@ CREATE TRIGGER IF NOT EXISTS community_no_update BEFORE UPDATE ON community BEGI
 CREATE TRIGGER IF NOT EXISTS community_no_delete BEFORE DELETE ON community WHEN NOT EXISTS (SELECT 1 FROM run WHERE id = OLD.run_id AND ref IS NOT NULL) BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS community_member_no_update BEFORE UPDATE ON community_member BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 CREATE TRIGGER IF NOT EXISTS community_member_no_delete BEFORE DELETE ON community_member WHEN NOT EXISTS (SELECT 1 FROM community c JOIN run r ON r.id = c.run_id WHERE c.id = OLD.community_id AND r.ref IS NOT NULL) BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+-- run.ref decides whether a run's graph rows may be deleted (the four triggers above), so it is fixed once the run is done or has
+-- nodes; build.rs sets it on the fresh `running` row right after inserting it (review fix M5).
+CREATE TRIGGER IF NOT EXISTS run_ref_fixed BEFORE UPDATE OF ref, ref_commit ON run WHEN (NEW.ref IS NOT OLD.ref OR NEW.ref_commit IS NOT OLD.ref_commit) AND (OLD.status <> 'running' OR EXISTS (SELECT 1 FROM node WHERE run_id = OLD.id)) BEGIN SELECT RAISE(ABORT, 'run.ref is fixed once a run is done or has rows'); END;
 -- Ruling (CG-REFGC): the graph tables are append-only for every run EXCEPT a ref run (`build --ref`, run.ref IS NOT NULL), a prunable
 -- cache like parse_cache that only `gc --refs` removes. The exception is in the four delete triggers themselves; head runs stay append-only.
 -- per-file parse cache (incremental builds): prunable, so no append-only triggers.

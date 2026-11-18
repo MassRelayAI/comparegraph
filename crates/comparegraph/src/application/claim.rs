@@ -254,6 +254,10 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
         })?
         .id
         .unwrap();
+    // a claim records the repository's head: whatever pinned the run choice to a ref, a ref run is never cited
+    if let (Some(r), _) = store.run_ref(run)? {
+        return Err(super::refgc::claim_on_ref_refused(&r));
+    }
     let (fid, fam) = lookup_feature(store, i.feature, i.family)?;
     let tier: String = store.conn().query_row(
         "SELECT tier FROM feature WHERE id = ?1",
