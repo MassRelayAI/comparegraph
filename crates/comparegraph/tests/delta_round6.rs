@@ -188,14 +188,15 @@ fn r6_modify_delete_non_utf8_path() {
     assert_ne!(v["data"]["summary"]["share_on_base_exact"].as_f64(), Some(1.0), "{}", s(&v));
 }
 
-/// B1 pin: the plain modify/delete row is turned unknown by the per-row conflict check itself, and a share of 1.0 also needs
-/// no conflict at all (`merge_conflict`).
+/// B1 pin: the plain modify/delete row is turned unknown by the per-row conflict check itself (a conflict path is always a
+/// path the branch touched, so its row or item is there for the per-row check; the share-level `merge_conflict` item backs a
+/// per-row key that misses, as the quoted paths did, and is reached through them: see the quoted, tab and non-UTF-8 probes).
+/// (First version also asserted a `merge_conflict` item here; the per-row check already makes the share 0.0, so it cannot be.)
 #[test]
-fn r6_modify_delete_row_and_share_checks() {
+fn r6_modify_delete_row_check() {
     let v = modify_delete("src/ab.py");
     let row = v["data"]["branch"]["removed"].as_array().unwrap().iter().find(|r| r["qualified_name"] == "src/ab.py::g").unwrap().clone();
     assert_eq!((row["why"].as_str(), row["model_via"].as_str()), (Some("merge_changes_file"), Some("absent_on_base")), "{row}");
-    assert_eq!(v["data"]["summary"]["unknown"]["by_why"]["merge_conflict"].as_i64(), Some(1), "{}", s(&v));
 }
 
 /// B2: a criss-cross history (each side merged the other) where base then reverted the branch's g.
@@ -306,7 +307,7 @@ fn r6_a_jsx_class_extends_edge_is_found_in_tsx() {
     let db = rusqlite::Connection::open(fx.ws.path().join(".comparegraph/comparegraph.db")).unwrap();
     let n: i64 = db
         .query_row(
-            "SELECT COUNT(*) FROM edge e JOIN node a ON a.id = e.src JOIN node b ON b.id = e.dst WHERE e.kind = 'extends' AND a.qualified_name = 'src/Card.tsx::Card' AND b.qualified_name = 'src/Base.tsx::Base'",
+            "SELECT COUNT(*) FROM edge e JOIN node a ON a.id = e.source_node_id JOIN node b ON b.id = e.target_node_id WHERE e.kind = 'extends' AND a.qualified_name = 'src/Card.tsx::Card' AND b.qualified_name = 'src/Base.tsx::Base'",
             [],
             |r| r.get(0),
         )

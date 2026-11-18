@@ -379,44 +379,96 @@ pub fn merge_tree(clone: &Path, store_root: &Path, base: &str, head: &str) -> st
         return Err("git rev-parse --git-path objects failed".into());
     }
     let objects = String::from_utf8_lossy(&objects.stdout).trim().to_string();
-    let tmp = store_root.join(".comparegraph").join(format!("tmp-merge-{}", new_token().replace(' ', "-")));
-    std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    let env = vec![("GIT_OBJECT_DIRECTORY".to_string(), tmp.display().to_string()), ("GIT_ALTERNATE_OBJECT_DIRECTORIES".to_string(), objects)];
-    let res = (|| {
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(clone)
-            .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-            .args(["-c", "core.quotepath=false", "merge-tree", "--write-tree", "--no-messages", base, head])
-            .output()
-            .map_err(|e| format!("cannot run git merge-tree: {e}"))?;
-        // 0: clean, 1: conflicts (the tree is still written); anything else is an error (an old git does not know --write-tree)
-        if !matches!(out.status.code(), Some(0) | Some(1)) {
-            return Err(format!("git merge-tree failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    let store = store_root.join(".comparegraph");
+    sweep_stale_tmp_merges(&store);
+    let tmp = TmpDir(store.join(format!("tmp-merge-{}", new_token().replace(' ', "-"))));
+    std::fs::create_dir_all(&tmp.0).map_err(|e| format!("{}: {e}", tmp.0.display()))?;
+    // the clone's own settings never shape the merge: no global or system config, no attributes (so no merge driver, no
+    // textconv, no eol renormalisation), renames as `git merge` does them, a directory rename a conflict
+    let env = vec![
+        ("GIT_OBJECT_DIRECTORY".to_string(), tmp.0.display().to_string()),
+        ("GIT_ALTERNATE_OBJECT_DIRECTORIES".to_string(), objects),
+        ("GIT_CONFIG_GLOBAL".to_string(), "/dev/null".to_string()),
+        ("GIT_CONFIG_NOSYSTEM".to_string(), "1".to_string()),
+    ];
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(clone)
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .args([
+            &format!("--attr-source={EMPTY_TREE}"),
+            "-c",
+            "core.attributesFile=/dev/null",
+            "-c",
+            "merge.renormalize=false",
+            "-c",
+            "merge.renames=true",
+            "-c",
+            "merge.directoryRenames=conflict",
+            "merge-tree",
+            "--write-tree",
+            "--no-messages",
+            "-z",
+            base,
+            head,
+        ])
+        .output()
+        .map_err(|e| format!("cannot run git merge-tree: {e}"))?;
+    // 0: clean, 1: conflicts (the tree is still written); anything else is an error (a git older than 2.42 knows no
+    // --attr-source, one older than 2.38 no --write-tree: the backstop is then unavailable)
+    if !matches!(out.status.code(), Some(0) | Some(1)) {
+        return Err(format!("git merge-tree failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    // -z: `<tree>\0`, then one `<mode> <oid> <stage>\t<path>\0` per conflicted entry (paths raw, never quoted)
+    let mut recs = out.stdout.split(|b| *b == 0);
+    let tree = String::from_utf8_lossy(recs.next().unwrap_or(b"")).trim().to_string();
+    if tree.len() < 40 || !tree.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!("git merge-tree gave no tree id: {tree:?}"));
+    }
+    let mut conflicts = std::collections::BTreeSet::new();
+    for r in recs {
+        if r.is_empty() {
+            break;
         }
-        let text = String::from_utf8_lossy(&out.stdout).into_owned();
-        let mut lines = text.lines();
-        let tree = lines.next().unwrap_or("").trim().to_string();
-        if tree.len() < 40 || !tree.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(format!("git merge-tree gave no tree id: {:?}", text.lines().next().unwrap_or("")));
+        let Some(tab) = r.iter().position(|b| *b == b'\t') else { return Err(format!("unreadable conflict entry {:?}", String::from_utf8_lossy(r))) };
+        conflicts.insert(path_key(&r[tab + 1..]));
+    }
+    if out.status.code() == Some(1) && conflicts.is_empty() {
+        return Err("git merge-tree reported conflicts but listed none".into());
+    }
+    let index = tree_index_with(clone, &tree, &env).map_err(|e| e.to_string())?;
+    Ok(Merged { tree, index, conflicts })
+}
+
+/// git's empty tree: an attribute source with no attributes in it.
+const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/// A temporary folder removed when it goes out of scope (an early return or a panic included).
+struct TmpDir(PathBuf);
+impl Drop for TmpDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Remove the `tmp-merge-*` folders of runs that no longer live: the holder of the name's token is known dead (Linux: its
+/// pid runs under another start time, or not at all), or the folder is older than an hour where that cannot be told.
+fn sweep_stale_tmp_merges(store: &Path) {
+    for e in std::fs::read_dir(store).into_iter().flatten().flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Some(token) = name.strip_prefix("tmp-merge-") else { continue };
+        let mut f = token.splitn(2, '-');
+        let pid: Option<u32> = f.next().and_then(|p| p.parse().ok());
+        let start = f.next().and_then(|r| r.split_once('_')).map(|(s, _)| s.to_string());
+        let dead = match (pid, cfg!(target_os = "linux")) {
+            (Some(pid), true) => proc_start(pid).is_none_or(|now| start.as_deref().is_some_and(|s| !s.starts_with('n') && s != now)),
+            _ => false,
+        };
+        let old = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|a| a.as_secs() > 3600);
+        if dead || old {
+            let _ = std::fs::remove_dir_all(e.path());
         }
-        let mut conflicts = std::collections::BTreeSet::new();
-        for l in lines {
-            if l.is_empty() {
-                break;
-            }
-            if let Some((_, p)) = l.split_once('\t') {
-                conflicts.insert(p.to_string());
-            }
-        }
-        if out.status.code() == Some(1) && conflicts.is_empty() {
-            return Err("git merge-tree reported conflicts but listed none".into());
-        }
-        let index = tree_index_with(clone, &tree, &env).map_err(|e| e.to_string())?;
-        Ok(Merged { tree, index, conflicts })
-    })();
-    let _ = std::fs::remove_dir_all(&tmp);
-    res
+    }
 }
 
 /// The tree id of a commit.

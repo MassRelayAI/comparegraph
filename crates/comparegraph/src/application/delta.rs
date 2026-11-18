@@ -1382,6 +1382,42 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         }
     }
 
+    // round 6 (B2): the merge base is the newest common commit, but base may have merged the branch's earlier work and taken
+    // it back (a revert), which lies before the merge base and so outside merge base -> head. F is the newest commit of base's
+    // first-parent chain that head reaches: every path whose entry differs between F and head, and between head and base, is
+    // one unknown item (`merged_into_base_before`) unless an item names it already.
+    let ancestors: Option<HashSet<String>> = git_lines(clone, &["rev-list", &head_c]).map(|v| v.into_iter().collect());
+    let first_parent = git_lines(clone, &["rev-list", "--first-parent", &base_c]);
+    let fork_f = match (&ancestors, &first_parent) {
+        (Some(a), Some(fp)) => fp.iter().find(|c| a.contains(*c)).cloned(),
+        _ => None,
+    };
+    match (&fork_f, &eh, &eb) {
+        (Some(f), Some(h), Some(b)) if *f != mb_c => {
+            let ef = gitref::tree_index(clone, f).ok().map(|t| {
+                let mut m = t.blobs;
+                for (p, c) in t.gitlinks {
+                    m.insert(p, ("160000".into(), c));
+                }
+                m
+            });
+            match ef {
+                Some(ef) => {
+                    let named: HashSet<String> = residue.iter().map(|r| r.path.clone()).collect();
+                    let paths: BTreeSet<&String> = ef.keys().chain(h.keys()).collect();
+                    for p in paths {
+                        if ef.get(p) != h.get(p) && h.get(p) != b.get(p) && !named.contains(p) {
+                            residue.push(Residue { path: p.clone(), why: "merged_into_base_before", hunk: None });
+                        }
+                    }
+                }
+                None => residue.push(Residue { path: String::new(), why: "merged_into_base_before", hunk: None }),
+            }
+        }
+        (None, _, _) if ancestors.is_none() || first_parent.is_none() => residue.push(Residue { path: String::new(), why: "diff_failed", hunk: None }),
+        _ => {}
+    }
+
     // THE BACKSTOP (docs/decisions.md, "Plan 14 round 5"): a yes is checked against git's own merge, the thing it predicts.
     // A path whose merged entry is not base's, or that conflicts, turns every yes row in it unknown (`merge_changes_file`);
     // git unable to merge turns every yes unknown (`merge_check_unavailable`); a share of 1.0 also needs the merged tree to
@@ -1418,7 +1454,10 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         Ok(m) => {
             let resolved_now = added.iter().chain(changed.iter()).chain(removed.iter()).filter(|r| r.resolved()).count();
             let items = added.len() + changed.len() + removed.len() + residue.len();
-            if items > 0 && resolved_now == items && gitref::tree_of(clone, &base_c).as_deref() != Some(m.tree.as_str()) {
+            // round 6: a conflict anywhere means the merge is not base, whatever tree git wrote (modify/delete keeps base's side)
+            if items > 0 && resolved_now == items && !m.conflicts.is_empty() {
+                residue.push(Residue { path: m.conflicts.iter().next().cloned().unwrap_or_default(), why: "merge_conflict", hunk: None });
+            } else if items > 0 && resolved_now == items && gitref::tree_of(clone, &base_c).as_deref() != Some(m.tree.as_str()) {
                 let first = match (&merged_entries, &eb) {
                     (Some(me), Some(b)) => me.keys().chain(b.keys()).find(|p| me.get(*p) != b.get(*p)).cloned().unwrap_or_default(),
                     _ => String::new(),

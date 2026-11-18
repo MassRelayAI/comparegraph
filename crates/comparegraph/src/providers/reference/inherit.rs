@@ -19,7 +19,9 @@ pub struct Raw {
 
 fn language_of(lang: &str) -> Option<tree_sitter::Language> {
     Some(match lang {
-        "typescript" | "tsx" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        // the provider's choice (`parse_file`): `tsx` reads with the TSX grammar, which knows JSX
+        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
         "javascript" | "jsx" | "mjs" => tree_sitter_javascript::LANGUAGE.into(),
         "python" => tree_sitter_python::LANGUAGE.into(),
         "rust" => tree_sitter_rust::LANGUAGE.into(),
