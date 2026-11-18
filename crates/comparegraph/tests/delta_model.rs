@@ -430,21 +430,22 @@ fn s4_an_unlanded_sql_change_reads_below_one() {
     assert_eq!(exact_share(&fx.delta()), Some(1.0));
 }
 
-/// Blob equality: base made the branch's very change to the file (here a swap of two bodies, which the copy counts alone read
-/// as unknown, A3): the path holds the same blob on head and base, so every row in it is yes (`same_file`).
+/// Blob equality: base made the branch's very change to the file, a swap of the bodies of a name defined twice (`f` and its
+/// redefinition `f#2`). A1 does not trust a `#n` name and the copy counts read a swap as unknown (A3); the path holds the same
+/// blob on head and base, so every row in it is yes (`same_file`).
 #[test]
 fn s4_the_same_file_on_head_and_base_makes_its_rows_yes() {
-    let fx = Fx::new(&[("src/a.py", &format!("{}\n{}", long_named("f", false), long_named("g", true)))]);
+    let fx = Fx::new(&[("src/a.py", &format!("{}\n{}", long_named("f", false), long_named("f", true)))]);
     let d = fx.d();
     fx.feat();
-    let swapped = format!("{}\n{}", long_named("f", true), long_named("g", false));
+    let swapped = format!("{}\n{}", long_named("f", true), long_named("f", false));
     write(&d, "src/a.py", &swapped);
     commit(&d, "lane swaps");
     fx.main();
     write(&d, "src/a.py", &swapped);
     commit(&d, "base makes the same swap");
     let v = fx.delta();
-    for qn in ["src/a.py::f", "src/a.py::g"] {
+    for qn in ["src/a.py::f", "src/a.py::f#2"] {
         let row = row_of(&v, "changed", qn);
         assert_eq!((row["on_base"].as_str(), row["via"].as_str()), (Some("yes"), Some("same_file")), "{row}");
     }
