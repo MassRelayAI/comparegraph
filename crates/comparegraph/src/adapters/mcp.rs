@@ -63,7 +63,8 @@ fn tools_base() -> Vec<Value> {
     let mut repos_props = json!({
         "archived": {"type":"boolean","description":"only the archived repos"},
         "all": {"type":"boolean","description":"active and archived repos"},
-        "no_port": {"type":"boolean","description":"only the repos whose code must not be ported: lane not take, a never-copy licence (AGPL, GPL, LGPL, SSPL, BUSL, fair-code ...) or no licence read; each row says why"} });
+        "no_port": {"type":"boolean","description":"only the repos whose code must not be ported: lane not take, a never-copy licence (AGPL, GPL, LGPL, SSPL, BUSL, fair-code ...) or no licence read; each row says why"},
+        "stale": {"type":"boolean","description":"only the repos with a ref run (build --ref) whose ref moved or is gone, and only those runs in ref_runs"} });
     repos_props.as_object_mut().unwrap().extend(page_props().as_object().unwrap().clone());
     let mut comm_props = json!({ "repo": {"type":"string"} });
     comm_props
@@ -222,7 +223,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
     const UI_COMMON: &[&str] = &["allow_input_drift", "cursor", "page_size", "locale", "theme"];
     let known: &[&str] = match name {
         "comparegraph_check" | "comparegraph_doctor" => &[],
-        "comparegraph_repos" => &["limit", "cursor", "archived", "all", "no_port"],
+        "comparegraph_repos" => &["limit", "cursor", "archived", "all", "no_port", "stale"],
         "comparegraph_relevance" => &["policy", "family", "explain", "class", "as_of", "limit", "cursor"],
         "comparegraph_governance_verify" => &[],
         "comparegraph_search" => &["query", "repo", "kind", "limit", "cursor"],
@@ -297,6 +298,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 archived: flag("archived")?,
                 all: flag("all")?,
                 no_port: flag("no_port")?,
+                stale: flag("stale")?,
                 policy: None,
             }
         }

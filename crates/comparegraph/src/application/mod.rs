@@ -22,6 +22,7 @@ pub mod map;
 pub mod matrix;
 pub mod propose;
 pub mod reach;
+pub mod refgc;
 pub mod relevance;
 pub mod retain;
 pub mod search;

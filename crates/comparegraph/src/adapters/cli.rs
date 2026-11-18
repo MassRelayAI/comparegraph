@@ -353,8 +353,18 @@ pub enum Cmd {
     /// Store retention: prune the parse cache (--parse-cache) or mark stuck runs abandoned (--stale-runs); dry-run by default
     Gc {
         /// drop parse-cache rows of other provider versions, then VACUUM
-        #[arg(long, required_unless_present = "stale_runs", conflicts_with = "stale_runs")]
+        #[arg(long, required_unless_present_any = ["stale_runs", "refs"], conflicts_with_all = ["stale_runs", "refs"])]
         parse_cache: bool,
+        /// remove ref runs (`build --ref`) and their extracted trees when the ref is gone, a newer run of the same ref supersedes
+        /// them (--keep), or they are older than --older-than-days; never a head run; refused while a claim cites one
+        #[arg(long, conflicts_with = "stale_runs")]
+        refs: bool,
+        /// with --refs: keep the latest N runs of each ref (default 1)
+        #[arg(long, default_value_t = 1, requires = "refs")]
+        keep: usize,
+        /// with --refs: also remove ref runs older than this many days
+        #[arg(long, requires = "refs")]
+        older_than_days: Option<u64>,
         /// runs still `running` past --older-than-hours become `abandoned`
         #[arg(long)]
         stale_runs: bool,
@@ -610,6 +620,9 @@ pub enum Cmd {
         /// a relevance-policy/1 file whose licences.never_copy_extra extends the never-copy set
         #[arg(long)]
         policy: Option<PathBuf>,
+        /// only the repos with a ref run whose ref moved or is gone, and only those runs in `ref_runs`
+        #[arg(long)]
+        stale: bool,
     },
     /// Module clusters of a repo's latest run
     Communities {
@@ -1224,7 +1237,33 @@ fn cmd_ref(c: &Cmd) -> Option<&str> {
 fn dispatch(cli: &Cli) -> Result<serde_json::Value, Failure> {
     // `build --ref` names the tree to read; every other verb names the run to answer from
     let pin = if matches!(cli.cmd, Cmd::Build { .. }) { None } else { cmd_ref(&cli.cmd).or(cli.git_ref.as_deref()) };
-    crate::store::with_run_ref(pin, || dispatch_inner(cli).map_err(|e| (e, None)).and_then(|r| r))
+    let mut out = crate::store::with_run_ref(pin, || dispatch_inner(cli).map_err(|e| (e, None)).and_then(|r| r));
+    // a query answered from a ref's run says so when that ref has moved or is gone
+    if let (Ok(v), Some(r), Some(repo)) = (out.as_mut(), pin, cmd_repo(&cli.cmd)) {
+        if let Ok(store) = Store::open_existing(&cli.root) {
+            if let Some(l) = crate::application::refgc::stale_limitation(&store, repo, r) {
+                if let Some(o) = v.as_object_mut() {
+                    o.entry("limitation_items").or_insert_with(|| serde_json::json!([])).as_array_mut().map(|a| a.push(l));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn cmd_repo(c: &Cmd) -> Option<&str> {
+    match c {
+        Cmd::Show { repo, .. }
+        | Cmd::Traverse { repo, .. }
+        | Cmd::Impact { repo, .. }
+        | Cmd::TestsFor { repo, .. }
+        | Cmd::EntryPoints { repo, .. }
+        | Cmd::DeadCode { repo, .. }
+        | Cmd::Communities { repo, .. }
+        | Cmd::Map { repo, .. }
+        | Cmd::AbsentCheck { repo, .. } => Some(repo),
+        _ => None,
+    }
 }
 
 fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppError> {
@@ -1359,9 +1398,11 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         Cmd::RestoreStore { backup, apply, by } => {
             crate::application::backup::restore_store(&cli.root, backup, *apply, by.as_deref().unwrap_or(""))?
         }
-        Cmd::Gc { parse_cache, stale_runs: _, keep_versions, all_cache, older_than_hours, policy, apply, by } => {
+        Cmd::Gc { parse_cache, refs, keep, older_than_days, stale_runs: _, keep_versions, all_cache, older_than_hours, policy, apply, by } => {
             let by = by.as_deref().unwrap_or("");
-            if *parse_cache {
+            if *refs {
+                crate::application::refgc::gc_refs(&cli.root, *keep, *older_than_days, *apply, by)?
+            } else if *parse_cache {
                 let policy_keep = crate::application::relevance::load_policy(&cli.root, policy.as_deref())?
                     .and_then(|p| p.policy.retention.map(|r| r.parse_cache_versions));
                 crate::application::retain::gc_parse_cache(
@@ -1875,7 +1916,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             serde_json::json!({ "file": p, "stale": false })
         }
         Cmd::Mcp => unreachable!("mcp is served by run()"),
-        Cmd::Repos { limit, cursor, archived, all, no_port, policy } => {
+        Cmd::Repos { limit, cursor, archived, all, no_port, policy, stale } => {
             let offset = match cursor {
                 Some(c) => c
                     .parse::<usize>()
@@ -1921,14 +1962,22 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     "head": r.head, "source_commit": r.source_commit, "moved_to": r.moved_to,
                     "include": r.include, "exclude": r.exclude, "latest_run": latest,
                 });
-                row["ref_runs"] = serde_json::json!(match r.id {
+                let ref_runs: Vec<serde_json::Value> = match r.id {
                     Some(id) => store
-                        .ref_runs(id)?
+                        .ref_run_rows(id)?
                         .into_iter()
-                        .map(|(run, git_ref, commit)| serde_json::json!({ "run": run, "ref": git_ref, "ref_commit": commit }))
-                        .collect::<Vec<_>>(),
+                        .map(|x| {
+                            let status = crate::application::refgc::status_of(std::path::Path::new(&r.path), &x.git_ref, &x.commit);
+                            serde_json::json!({ "run": x.id, "ref": x.git_ref, "ref_commit": x.commit, "status": status })
+                        })
+                        .filter(|x| !*stale || x["status"] != "current")
+                        .collect(),
                     None => vec![],
-                });
+                };
+                if *stale && ref_runs.is_empty() {
+                    continue;
+                }
+                row["ref_runs"] = serde_json::json!(ref_runs);
                 if *archived || *all {
                     row["archived"] = serde_json::json!(arch.contains(&r.name));
                 }

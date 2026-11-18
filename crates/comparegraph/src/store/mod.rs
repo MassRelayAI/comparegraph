@@ -175,6 +175,8 @@ const ADDED_COLUMNS: &[(&str, &str, &str, &str)] = &[
     // CG-BR1: a run built from a git ref (`build --ref`): the ref as given and the commit it named; NULL on a head run
     ("run", "ref", "TEXT", "NULL"),
     ("run", "ref_commit", "TEXT", "NULL"),
+    // the run an incremental build took its previous graph from (None: a full build)
+    ("run", "incremental_from", "INTEGER", "NULL"),
     // field-run asks 7, 15 and 5: `claim --at-commit`, `out_of_subset`, and `reach` with its path and note
     ("claim", "at_commit", "TEXT", "NULL"),
     ("claim", "out_of_subset", "TEXT", "NULL"),
@@ -634,6 +636,19 @@ impl Store {
     pub fn run_ref(&self, id: RunId) -> Result<(Option<String>, Option<String>)> {
         Ok(self.conn.query_row("SELECT ref, ref_commit FROM run WHERE id=?1", params![id.0], |r| Ok((r.get(0)?, r.get(1)?)))?)
     }
+    /// Every done ref run with the time it started, newest first within a ref.
+    pub fn ref_run_rows(&self, repo: RepoId) -> Result<Vec<RefRunRow>> {
+        let mut st = self.conn.prepare("SELECT id, ref, COALESCE(ref_commit,''), started_at FROM run WHERE repo_id=?1 AND status='done' AND ref IS NOT NULL ORDER BY ref, id DESC")?;
+        let rows = st.query_map(params![repo.0], |r| Ok(RefRunRow { id: r.get(0)?, git_ref: r.get(1)?, commit: r.get(2)?, started_at: r.get(3)? }))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+    pub fn set_run_incremental_from(&self, id: RunId, from: Option<i64>) -> Result<()> {
+        self.conn.execute("UPDATE run SET incremental_from=?2 WHERE id=?1", params![id.0, from])?;
+        Ok(())
+    }
+    pub fn run_incremental_from(&self, id: RunId) -> Result<Option<i64>> {
+        Ok(self.conn.query_row("SELECT incremental_from FROM run WHERE id=?1", params![id.0], |r| r.get(0))?)
+    }
     /// Every done run built from a ref: `(run id, ref, commit)`, sorted by ref then newest first.
     pub fn ref_runs(&self, repo: RepoId) -> Result<Vec<(i64, String, String)>> {
         let mut st = self.conn.prepare("SELECT id, ref, ref_commit FROM run WHERE repo_id=?1 AND status='done' AND ref IS NOT NULL ORDER BY ref, id DESC")?;
@@ -861,6 +876,13 @@ fn row_to_repo(r: &rusqlite::Row<'_>) -> rusqlite::Result<RepoRow> {
         include: serde_json::from_str(&r.get::<_, String>(13)?).unwrap_or_default(),
         exclude: serde_json::from_str(&r.get::<_, String>(14)?).unwrap_or_default(),
     })
+}
+#[derive(Debug, Clone)]
+pub struct RefRunRow {
+    pub id: i64,
+    pub git_ref: String,
+    pub commit: String,
+    pub started_at: String,
 }
 const RUN_COLS: &str = "id,repo_id,provider,provider_version,started_at,seconds,status,limitations_json,store_hash";
 
