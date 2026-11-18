@@ -220,7 +220,9 @@ fn a_failed_git_diff_is_a_limitation_not_empty_lists() {
     std::fs::set_permissions(&obj, p).unwrap();
     std::fs::remove_file(&obj).unwrap();
     let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
-    assert!(limits(&v).contains("git diff"), "a failed git diff answered empty lists silently: {}", limits(&v));
+    // round 4 (B3): the touched set comes from the two trees (`git ls-tree`), so the failure is named as the listing that failed
+    assert!(limits(&v).contains("the files the branch touched"), "a failed tree listing answered empty lists silently: {}", limits(&v));
+    assert_eq!(v["data"]["summary"]["files_branch_touched"], Value::Null, "{}", v["data"]["summary"]);
 }
 
 /// MINOR: `repos --stale` pages over the repos that have a stale ref run, not over all repos.

@@ -96,7 +96,22 @@ fn commit_reached(clone: &Path, git_ref: &str, commit: &str) -> Result<()> {
 
 /// The delta kept for the commit must have used `base`: the same ref name, and (when the ref still resolves) the commit it
 /// names now. Otherwise its numbers are about another comparison and are not stored.
-fn check_delta_base(clone: &Path, last: &serde_json::Value, base: &str, repo: &str, head: &str) -> Result<()> {
+fn check_delta_base(clone: &Path, last: &serde_json::Value, base: &str, repo: &str, head: &str, provider_version: Option<&str>) -> Result<()> {
+    // M2: a delta kept by another engine, provider or model version is not this engine's answer
+    let root_engine = env!("CARGO_PKG_VERSION");
+    if last["engine"].as_str() != Some(root_engine) || last["model"].as_str() != Some(super::delta::DELTA_MODEL) {
+        return invalid(format!(
+            "the last delta for this commit was computed by engine {} model {} (this is {root_engine} model {}): run `delta {repo} --base {base} --head {head}` again",
+            last["engine"].as_str().unwrap_or("<unknown>"),
+            last["model"].as_str().unwrap_or("<unknown>"),
+            super::delta::DELTA_MODEL
+        ));
+    }
+    if let Some(v) = provider_version {
+        if last["provider_version"].as_str() != Some(v) {
+            return invalid(format!("the last delta for this commit was read with provider {} (this is {v}): run `delta {repo} --base {base} --head {head}` again", last["provider_version"].as_str().unwrap_or("<unknown>")));
+        }
+    }
     let used = last["base_ref"].as_str().unwrap_or("");
     if used != base {
         return invalid(format!(
@@ -104,7 +119,10 @@ fn check_delta_base(clone: &Path, last: &serde_json::Value, base: &str, repo: &s
             if used.is_empty() { "<unknown>" } else { used }
         ));
     }
-    if let (Some(then), Ok(now)) = (last["base_commit"].as_str(), super::gitref::resolve(clone, base)) {
+    let Ok(now) = super::gitref::resolve(clone, base) else {
+        return invalid(format!("--base {base} no longer names a commit of the clone: the kept delta cannot be checked against it"));
+    };
+    if let Some(then) = last["base_commit"].as_str() {
         if then != now {
             return invalid(format!(
                 "{base} moved since the last delta for this commit (then {}, now {}): run `delta {repo} --base {base} --head {head}` again",
@@ -181,7 +199,8 @@ pub fn decide_on(
             let last = super::delta::last_delta(store, repo, &v.commit)?.ok_or_else(|| {
                 AppError::NotFound(format!("no delta has been computed for {} ({}): run `delta {repo} --base {base} --head {}` first", v.git_ref, v.commit, v.git_ref))
             })?;
-            check_delta_base(Path::new(&r.path), &last, base, repo, &v.git_ref)?;
+            let pv = crate::providers::by_name("reference").map(|p| p.version());
+            check_delta_base(Path::new(&r.path), &last, base, repo, &v.git_ref, pv.as_deref())?;
             Some(last)
         }
         _ => None,

@@ -305,10 +305,11 @@ fn the_previous_run_hook_is_ignored_by_a_head_build() {
 fn an_ambiguous_short_commit_for_a_branch_verdict_is_refused() {
     let fx = Fx::new();
     let sha = git_out(&fx.clone(), &["rev-parse", "feat"]).trim().to_string();
-    // round 3: the stored delta must have used the base the decision names (`--base`), so the kept values name it
-    for key in [sha.clone(), format!("{}zzzz", &sha[..7])] {
-        fx.db().execute("INSERT INTO meta(key, value) VALUES (?1, ?2)", [format!("delta:r:{key}"), "{\"base_ref\":\"main\",\"summary\":{}}".to_string()]).unwrap();
-    }
+    // round 3: the stored delta must have used the base the decision names (`--base`); round 4 (M2): and this engine, provider
+    // and model, so the full sha's record is a real delta, and only the second, faked row shares its prefix
+    ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--build-missing"]);
+    let fake = format!("{}zzzz", &sha[..7]);
+    fx.db().execute("INSERT INTO meta(key, value) VALUES (?1, ?2)", [format!("delta:r:{fake}"), "{\"base_ref\":\"main\",\"summary\":{}}".to_string()]).unwrap();
     let e = err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha[..7], "--summary-from-delta", "--base", "main"], "invalid_arguments");
     assert!(e["error"]["message"].as_str().unwrap().contains("ambiguous"), "{e}");
     ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--base", "main"]);

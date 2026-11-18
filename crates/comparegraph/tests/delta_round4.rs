@@ -285,6 +285,8 @@ fn r4_crlf_conversion_only() {
     let v = fx.delta();
     eprintln!("CRLF: {}", summ(&v));
     assert_ne!(exact_share(&v), Some(1.0));
+    // the CRLF-only change is the branch's work: at least one item (the coordinator's round-4 note)
+    assert!(v["data"]["summary"]["branch_items"].as_u64().unwrap_or(0) > 0, "WORK INVISIBLE: {}", summ(&v));
 }
 
 /// R4-9: base keeps bar, but base's cached tree lost src/a.py (by hand, an interrupted gc, antivirus). The symbols of that file

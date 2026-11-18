@@ -340,14 +340,16 @@ fn a_lane_merged_into_base_with_a_rename_is_entirely_already_on_base() {
     let v = fx.delta("main", "feat");
     let s = &v["data"]["summary"];
     assert_eq!(qns(&branch(&v)["added"]), vec!["src/a.py::bar", "src/a.py::qux"]);
-    assert_eq!((s["branch_symbols"].as_i64(), s["already_on_base"].as_i64()), (Some(2), Some(2)));
-    assert_eq!(s["share_already_on_base"].as_f64(), Some(1.0));
-    for (i, to) in [(0, "lib/b.py::bar2"), (1, "lib/b.py::qux2")] {
-        // the delta model: a yes is `on_base: yes` with `via` and `matches` on the row (was an `already_on_base` object)
-        let m = &branch(&v)["added"][i];
-        assert_eq!((m["on_base"].as_str().unwrap(), m["via"].as_str().unwrap()), ("yes", "body_hash"));
-        assert_eq!(m["matches"][0]["qualified_name"], to);
-    }
+    // round 4 (B1): a body_hash yes also needs the raw text to agree. Base's bar2 indents its body by 8 spaces where the lane's
+    // bar has 4: the tokens agree, the text does not, so bar is unknown (`text_differs`) and the share is 0.5 (was 1.0, 2 yes).
+    assert_eq!((s["branch_symbols"].as_i64(), s["already_on_base"].as_i64()), (Some(2), Some(1)));
+    assert_eq!(s["share_already_on_base"].as_f64(), Some(0.5));
+    let bar = &branch(&v)["added"][0];
+    assert_eq!((bar["qualified_name"].as_str(), bar["on_base"].as_str(), bar["why"].as_str()), (Some("src/a.py::bar"), Some("unknown"), Some("text_differs")), "{bar}");
+    // the delta model: a yes is `on_base: yes` with `via` and `matches` on the row (was an `already_on_base` object)
+    let m = &branch(&v)["added"][1];
+    assert_eq!((m["on_base"].as_str().unwrap(), m["via"].as_str().unwrap()), ("yes", "body_hash"));
+    assert_eq!(m["matches"][0]["qualified_name"], "lib/b.py::qux2");
     // base deleted src/a.py, which the lane edited
     assert_eq!(v["data"]["base_files"]["deleted"], json!([{ "path": "src/a.py", "head_modified": true }]));
     // whole-tree on request: foo (unchanged by the lane) shows too
