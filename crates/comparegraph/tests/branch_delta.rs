@@ -283,7 +283,8 @@ fn one_new_function_is_exactly_the_one_branch_symbol() {
     let s = &data["summary"];
     assert_eq!((s["branch_symbols"].as_i64(), s["already_on_base"].as_i64(), s["stale_conflicts"].as_i64()), (Some(1), Some(0), Some(0)));
     assert_eq!(s["share_already_on_base"].as_f64(), Some(0.0));
-    assert!(branch(&v)["added"][0].get("already_on_base").is_none());
+    // the delta model (slice 3): every row answers on_base yes | no | unknown (was: `already_on_base` absent for not on base)
+    assert_eq!(branch(&v)["added"][0]["on_base"], "no");
     assert!(data.get("verdict").is_none() && s.get("verdict").is_none());
     assert!(data.get("whole_tree").is_none(), "the whole-tree section is off by default");
     assert_eq!(data["merge_base"]["commit"], git_out(&fx.clone(), &["rev-parse", "main"]).trim());
@@ -342,8 +343,9 @@ fn a_lane_merged_into_base_with_a_rename_is_entirely_already_on_base() {
     assert_eq!((s["branch_symbols"].as_i64(), s["already_on_base"].as_i64()), (Some(2), Some(2)));
     assert_eq!(s["share_already_on_base"].as_f64(), Some(1.0));
     for (i, to) in [(0, "lib/b.py::bar2"), (1, "lib/b.py::qux2")] {
-        let m = &branch(&v)["added"][i]["already_on_base"];
-        assert_eq!((m["confidence"].as_f64().unwrap(), m["via"].as_str().unwrap()), (1.0, "body_hash"));
+        // the delta model: a yes is `on_base: yes` with `via` and `matches` on the row (was an `already_on_base` object)
+        let m = &branch(&v)["added"][i];
+        assert_eq!((m["on_base"].as_str().unwrap(), m["via"].as_str().unwrap()), ("yes", "body_hash"));
         assert_eq!(m["matches"][0]["qualified_name"], to);
     }
     // base deleted src/a.py, which the lane edited
@@ -360,8 +362,8 @@ fn a_lane_merged_unchanged_is_already_on_base_as_the_same_symbol() {
     write(&d, "src/a.py", &format!("{FOO}\n{BAR}")); // main took the lane's work as is
     commit(&d, "main merges the lane");
     let v = fx.delta("main", "feat");
-    let m = &branch(&v)["added"][0]["already_on_base"];
-    assert_eq!((m["via"].as_str().unwrap(), m["confidence"].as_f64().unwrap()), ("same_symbol", 1.0));
+    let m = &branch(&v)["added"][0]; // the delta model: on the row (was an `already_on_base` object with confidence 1.0)
+    assert_eq!((m["on_base"].as_str().unwrap(), m["via"].as_str().unwrap()), ("yes", "same_symbol"));
     assert_eq!(v["data"]["summary"]["share_already_on_base"].as_f64(), Some(1.0));
 }
 
@@ -380,7 +382,8 @@ fn a_function_the_lane_changed_and_base_rewrote_is_a_stale_conflict() {
     assert_eq!((s["branch_symbols"].as_i64(), s["stale_conflicts"].as_i64(), s["already_on_base"].as_i64()), (Some(1), Some(1), Some(0)));
     let row = &branch(&v)["changed"][0];
     assert_eq!(row["base_also_changed"], true);
-    assert!(row["already_on_base"].is_null(), "not on base (a one-line body is not judged: null, note trivial_body)");
+    // the delta model: a one-line body is not judged: unknown, why trivial_body (was `already_on_base: null`, note trivial_body)
+    assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("trivial_body")), "{row}");
     assert_eq!(v["data"]["base_files"]["rewritten"], json!([{ "path": "src/a.py", "head_modified": true }]));
 
     // base changed it to the very same thing: no conflict, the lane's change is on base
@@ -388,7 +391,7 @@ fn a_function_the_lane_changed_and_base_rewrote_is_a_stale_conflict() {
     commit(&d, "base now agrees");
     let v = fx.delta("main", "feat");
     assert_eq!(v["data"]["summary"]["stale_conflicts"], 0);
-    assert_eq!(branch(&v)["changed"][0]["already_on_base"]["via"], "same_symbol");
+    assert_eq!(branch(&v)["changed"][0]["via"], "same_symbol");
 }
 
 // ---------------------------------------------------------------- B1: a change to a symbol base moved is not "already on base"
@@ -436,7 +439,7 @@ fn a_change_to_a_function_base_only_moved_is_a_stale_conflict_not_on_base() {
     assert_eq!(s["stale_conflicts"].as_i64(), Some(1), "{s}");
     assert_eq!(s["already_on_base"].as_i64(), Some(0), "{s}");
     let row = &branch(&v)["changed"][0];
-    assert!(row["already_on_base"].is_null(), "{row}");
+    assert_eq!(row["on_base"], "no", "{row}"); // the delta model (was `already_on_base` null): A4 credits nothing, no near hit
     assert_eq!(row["base_removed"], true);
     // where base keeps the merge-base body: the moved copy, without the branch's change
     assert_eq!(row["base_moved_to"][0]["qualified_name"], "src/b.py::handle", "{row}");
@@ -449,11 +452,12 @@ fn a_long_body_whose_moved_copy_lacks_the_branch_s_two_new_lines_is_not_on_base(
     let s = &v["data"]["summary"];
     let row = &branch(&v)["changed"][0];
     assert_eq!(row["qualified_name"], "src/a.py::process");
-    assert!(row["already_on_base"].is_null(), "the moved copy is nearer the merge base than the branch: {row}");
+    assert_eq!(row["on_base"], "no", "the moved copy is nearer the merge base than the branch: {row}");
     // the moved copy IS within the name_and_tokens floor of head: only the nearer-to-head rule keeps it off base
     let w = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--whole-tree"]);
     let near = w["data"]["whole_tree"]["added"].as_array().unwrap().iter().find(|r| r["qualified_name"] == "src/a.py::process").unwrap().clone();
-    assert_eq!(near["already_on_base"]["via"], "name_and_tokens", "{near}");
+    // the delta model: a near hit is never a yes; it is `unknown`, why `near`, with the hit in `near` (was via name_and_tokens)
+    assert_eq!((near["on_base"].as_str(), near["why"].as_str()), (Some("unknown"), Some("near")), "{near}");
     assert_eq!((s["share_already_on_base"].as_f64(), s["stale_conflicts"].as_i64()), (Some(0.0), Some(1)), "{s}");
 }
 
@@ -463,13 +467,13 @@ fn a_branch_change_base_took_after_a_rename_is_on_base() {
     let fx = lane_then_base_moves(&long_process(false, ""), &long_process(true, ""), Some(&long_process(true, "")));
     let v = fx.delta("main", "feat");
     let row = &branch(&v)["changed"][0];
-    assert_eq!((row["already_on_base"]["via"].as_str(), row["already_on_base"]["matches"][0]["qualified_name"].as_str()), (Some("body_hash"), Some("src/b.py::process")), "{row}");
+    assert_eq!((row["via"].as_str(), row["matches"][0]["qualified_name"].as_str()), (Some("body_hash"), Some("src/b.py::process")), "{row}");
     assert_eq!((v["data"]["summary"]["share_already_on_base"].as_f64(), v["data"]["summary"]["stale_conflicts"].as_i64()), (Some(1.0), Some(0)));
     // nearly: base took the branch's two lines and tweaked the return; it is nearer the branch than the merge base
     let fx = lane_then_base_moves(&long_process(false, ""), &long_process(true, ""), Some(&long_process(true, " + 1")));
     let v = fx.delta("main", "feat");
     let row = &branch(&v)["changed"][0];
-    assert_eq!(row["already_on_base"]["via"], "name_and_tokens", "{row}");
+    assert_eq!((row["why"].as_str(), row["near"]["matches"][0]["qualified_name"].as_str()), (Some("near"), Some("src/b.py::process")), "{row}");
     // round 3: a near match is for a person to read, never landed work: the exact share is 0, the row is one `near_on_base`, and
     // base moved the symbol without the branch's exact change, so it stays a stale conflict
     let s = &v["data"]["summary"];
@@ -489,16 +493,15 @@ fn a_stub_body_is_not_on_base_by_hash_or_tokens() {
     let v = fx.delta("main", "feat");
     let row = &branch(&v)["added"][0];
     assert_eq!(row["qualified_name"], "src/auth.py::verify_token");
-    // answered, and the answer is "not known": null, with the reason
-    assert!(row.get("already_on_base").is_some_and(Value::is_null), "{row}");
-    assert_eq!(row["note"], "trivial_body", "{row}");
+    // answered, and the answer is "not known", with the reason (the delta model: was `already_on_base: null`, note)
+    assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("trivial_body")), "{row}");
     assert_eq!(v["data"]["summary"]["share_already_on_base"].as_f64(), Some(0.0));
     assert!(v["evidence"]["limitations"].to_string().contains("trivial_body"), "{}", v["evidence"]);
     // the same stub under the same identity on base is still the same symbol (identity, not a body match)
     write(&d, "src/auth.py", "def verify_token(x): pass\n");
     commit(&d, "main takes the stub as is");
     let v = fx.delta("main", "feat");
-    assert_eq!(branch(&v)["added"][0]["already_on_base"]["via"], "same_symbol");
+    assert_eq!(branch(&v)["added"][0]["via"], "same_symbol");
 }
 
 #[test]
@@ -583,8 +586,9 @@ fn the_same_name_with_a_near_identical_body_is_matched_at_a_lower_stated_confide
     let v = fx.delta("main", "feat");
     let row = &branch(&v)["added"][0];
     assert_eq!(row["qualified_name"], "src/a.py::process");
-    let m = &row["already_on_base"];
-    assert_eq!(m["via"], "name_and_tokens");
+    // the delta model: a near hit is unknown (why near), the hit in `near` (was `already_on_base` via name_and_tokens)
+    assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("near")), "{row}");
+    let m = &row["near"];
     let c = m["confidence"].as_f64().unwrap();
     assert!((0.9..1.0).contains(&c), "{c}");
     assert_eq!(m["matches"][0]["qualified_name"], "pkg/p.py::process");
@@ -593,7 +597,7 @@ fn the_same_name_with_a_near_identical_body_is_matched_at_a_lower_stated_confide
     write(&d, "pkg/p.py", "def process(items):\n    return sorted(items)\n");
     commit(&d, "main rewrites process");
     let v = fx.delta("main", "feat");
-    assert!(branch(&v)["added"][0].get("already_on_base").is_none(), "{v}");
+    assert_eq!(branch(&v)["added"][0]["on_base"], "no", "{v}");
 }
 
 #[test]
@@ -726,8 +730,9 @@ fn the_mcp_tools_carry_delta_and_ref() {
 fn long_named(name: &str, guard: bool) -> String {
     long_process(guard, "").replacen("def process(", &format!("def {name}("), 1)
 }
+/// The row's yes: the row itself when `on_base` is `yes` (the delta model; was the `already_on_base` object, near hits included).
 fn on_base_of(row: &Value) -> Option<&Value> {
-    row.get("already_on_base").filter(|v| !v.is_null())
+    (row["on_base"] == "yes").then_some(row)
 }
 fn row_of<'a>(v: &'a Value, section: &str, qn: &str) -> &'a Value {
     branch(v)[section].as_array().unwrap().iter().find(|r| r["qualified_name"] == qn).unwrap_or_else(|| panic!("no {section} row {qn}: {}", branch(v)))
@@ -832,8 +837,13 @@ fn r2_base_took_a_moved_change_under_another_path_exactly_and_nearly() {
         commit(&d, "base takes the guard, at c");
         let v = fx.delta("main", "feat");
         let row = row_of(&v, "added", "src/b.py::process");
-        assert_eq!(on_base_of(row).map(|m| m["via"].clone()), Some(json!(via)), "{row}");
-        assert_eq!(row["already_on_base"]["matches"][0]["qualified_name"], "src/c.py::process", "{row}");
+        // the delta model: the near take is unknown (why near), never a yes; the exact take a yes, body_hash
+        if via == "body_hash" {
+            assert_eq!(on_base_of(row).map(|m| m["via"].clone()), Some(json!(via)), "{row}");
+            assert_eq!(row["matches"][0]["qualified_name"], "src/c.py::process", "{row}");
+        } else {
+            assert_eq!((row["why"].as_str(), row["near"]["matches"][0]["qualified_name"].as_str()), (Some("near"), Some("src/c.py::process")), "{row}");
+        }
         // the removal half: base no longer holds the merge-base body anywhere
         assert!(row_of(&v, "removed", "src/a.py::process").get("base_removed").is_some(), "{}", branch(&v));
         // round 3: only the exact take is landed work; the near take leaves the added row to a person (`near_on_base`).
@@ -841,7 +851,7 @@ fn r2_base_took_a_moved_change_under_another_path_exactly_and_nearly() {
         // whether base removed the old body or keeps a changed copy of it is not known: the removed row is unknown (`near`) and
         // counts against the share, in both cases (design read 2026-11-19: "moves the branch made that base also took read
         // unknown"). Was 1.0 / 0.5.
-        assert_eq!(row_of(&v, "removed", "src/a.py::process")["note"], "near", "{}", branch(&v));
+        assert_eq!(row_of(&v, "removed", "src/a.py::process")["why"], "near", "{}", branch(&v));
         let s = &v["data"]["summary"];
         let (share, near) = if via == "body_hash" { (0.5, 0) } else { (0.0, 1) };
         assert_eq!((s["share_already_on_base"].as_f64(), s["near_on_base"]["count"].as_i64()), (Some(share), Some(near)), "{s}");
@@ -883,9 +893,10 @@ fn r2_base_took_the_first_of_two_edits_is_near_never_exact() {
     let s = &v["data"]["summary"];
     assert_eq!(s["already_on_base_exact"].as_i64(), Some(0), "{s}");
     let row = row_of(&v, "changed", "src/a.py::process");
-    if let Some(m) = on_base_of(row) {
-        assert_eq!(m["via"], "name_and_tokens", "{row}");
-        assert!(m["confidence"].as_f64().unwrap() < 1.0, "{row}");
+    // the delta model: never a yes; the near hit is unknown, why near, with its confidence below 1
+    assert!(on_base_of(row).is_none(), "{row}");
+    if row["why"] == "near" {
+        assert!(row["near"]["confidence"].as_f64().unwrap() < 1.0, "{row}");
     }
 }
 
@@ -913,10 +924,10 @@ fn r2_the_trivial_floor_is_exactly_eight_tokens_after_the_signature() {
         "def s7(x, y, z):\n    return -x + y + z\n\ndef e8(x, y, z, w):\n    return x + y - z - w\n",
     );
     let (seven, eight) = (row_of(&v, "added", "src/n.py::seven"), row_of(&v, "added", "src/n.py::eight"));
-    assert_eq!(seven["note"], "trivial_body", "7 tokens (return - x + y + z): {seven}");
-    assert!(seven.get("already_on_base").is_some_and(Value::is_null), "{seven}");
-    assert_eq!(eight["already_on_base"]["via"], "body_hash", "8 tokens (return x + y - z - w): {eight}");
-    assert!(eight.get("note").is_none(), "{eight}");
+    // the delta model: unknown with why (was `already_on_base: null` with note); a yes with via (was an object)
+    assert_eq!((seven["on_base"].as_str(), seven["why"].as_str()), (Some("unknown"), Some("trivial_body")), "7 tokens (return - x + y + z): {seven}");
+    assert_eq!(eight["via"], "body_hash", "8 tokens (return x + y - z - w): {eight}");
+    assert!(eight.get("why").is_none(), "{eight}");
 }
 
 /// A `pass` stub whose signature spans several lines is trivial: the parameters are signature, not body.
@@ -927,8 +938,7 @@ fn r2_a_stub_with_a_multi_line_signature_is_trivial() {
         "def other(\n    alpha,\n    beta,\n    gamma,\n):\n    pass\n",
     );
     let stub = row_of(&v, "added", "src/n.py::stub");
-    assert_eq!(stub["note"], "trivial_body", "a `pass` stub with a multi-line signature matched: {stub}");
-    assert!(stub.get("already_on_base").is_some_and(Value::is_null), "{stub}");
+    assert_eq!((stub["on_base"].as_str(), stub["why"].as_str()), (Some("unknown"), Some("trivial_body")), "a `pass` stub with a multi-line signature matched: {stub}");
 }
 
 /// A docstring is not body, nor is a decorator above the signature (even one spanning lines with a `)` of its own).
@@ -942,7 +952,7 @@ fn r2_docstrings_and_decorators_do_not_count_as_body() {
     );
     for qn in ["src/n.py::documented", "src/n.py::handler"] {
         let row = row_of(&v, "added", qn);
-        assert_eq!(row["note"], "trivial_body", "{qn}: {row}");
+        assert_eq!(row["why"], "trivial_body", "{qn}: {row}");
     }
 }
 

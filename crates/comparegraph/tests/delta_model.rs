@@ -121,9 +121,9 @@ fn p8_whole_tree_has_share_on_base_exact() {
 
 // ---------------------------------------------------------------- slice 1: copy counts per (kind, body hash) replace `fresh`
 
-/// A row is landed work (exact): its answer is an exact match, never a near one.
+/// A row is landed work: `on_base: yes`.
 fn exact(row: &Value) -> bool {
-    row.get("already_on_base").is_some_and(|m| m.is_object() && m["via"] != "name_and_tokens")
+    row["on_base"] == "yes"
 }
 fn row_of<'a>(v: &'a Value, section: &str, qn: &str) -> &'a Value {
     branch(v)[section].as_array().unwrap().iter().find(|r| r["qualified_name"] == qn).unwrap_or_else(|| panic!("no {section} row {qn}: {}", branch(v)))
@@ -162,7 +162,7 @@ fn p2_swapped_bodies_with_base_moving_the_file() {
     let v = fx.delta();
     assert_eq!(exact_share(&v), Some(0.0), "FALSE EXACT: {}", branch(&v));
     for qn in ["src/a.py::f", "src/a.py::g"] {
-        assert_eq!(row_of(&v, "changed", qn)["note"], "body_on_merge_base", "{}", branch(&v));
+        assert_eq!(row_of(&v, "changed", qn)["why"], "body_on_merge_base", "{}", branch(&v));
     }
 }
 
@@ -212,7 +212,7 @@ fn p9_one_base_copy_vouches_for_one_branch_row_only() {
     let v = fx.delta();
     let f = row_of(&v, "changed", "src/a.py::f");
     assert!(!exact(f), "FALSE EXACT: base's f is unguarded: {f}");
-    assert_eq!(row_of(&v, "added", "src/k.py::k")["already_on_base"]["via"], "same_symbol", "{}", branch(&v));
+    assert_eq!(row_of(&v, "added", "src/k.py::k")["via"], "same_symbol", "{}", branch(&v));
     assert_eq!(exact_share(&v), Some(0.5), "{}", v["data"]["summary"]);
 }
 
@@ -231,7 +231,7 @@ fn s1_two_base_copies_credit_two_branch_rows() {
     commit(&d, "base takes both under other names");
     let v = fx.delta();
     for qn in ["src/n.py::p", "src/n.py::q"] {
-        assert_eq!(row_of(&v, "added", qn)["already_on_base"]["via"], "body_hash", "{}", branch(&v));
+        assert_eq!(row_of(&v, "added", qn)["via"], "body_hash", "{}", branch(&v));
     }
     assert_eq!(exact_share(&v), Some(1.0));
 }
@@ -260,7 +260,7 @@ fn p4_deletion_where_base_file_is_oversize() {
         write(d, "src/a.py", &format!("{}\n{KEEP}\n{pad}", long_process(false, "")));
     });
     assert_eq!(exact_share(&v), Some(0.0), "FALSE EXACT: base still holds process: {}", branch(&v));
-    assert_eq!(row_of(&v, "removed", "src/a.py::process")["note"], "base_unread", "{}", branch(&v));
+    assert_eq!(row_of(&v, "removed", "src/a.py::process")["why"], "base_unread", "{}", branch(&v));
 }
 
 /// P4b: base adds one latin-1 byte to the file (its run skips a non-UTF-8 file).
@@ -273,7 +273,7 @@ fn p4b_deletion_where_base_file_became_non_utf8() {
         std::fs::write(d.join("src/a.py"), bytes).unwrap();
     });
     assert_eq!(exact_share(&v), Some(0.0), "FALSE EXACT: base still holds process: {}", branch(&v));
-    assert!(!row_of(&v, "removed", "src/a.py::process")["note"].is_null(), "{}", branch(&v));
+    assert_ne!(row_of(&v, "removed", "src/a.py::process")["on_base"], "yes", "{}", branch(&v));
 }
 
 /// P5: base renames the file to a Windows reserved name (skipped by base's run); base holds `process` at src/aux.py.
@@ -282,7 +282,7 @@ fn p5_deletion_where_base_renamed_the_file_to_a_reserved_name() {
     let v = deletion_with_base(|d| git(d, &["mv", "src/a.py", "src/aux.py"]));
     assert!(limits(&v).contains("windows_reserved_skipped"), "{}", limits(&v));
     assert_eq!(exact_share(&v), Some(0.0), "FALSE EXACT: base still holds process: {}", branch(&v));
-    assert_eq!(row_of(&v, "removed", "src/a.py::process")["note"], "base_unread", "{}", branch(&v));
+    assert_eq!(row_of(&v, "removed", "src/a.py::process")["why"], "base_unread", "{}", branch(&v));
 }
 
 /// R4: base deleted the symbol too, and base has no blob its run did not read: yes.
@@ -308,7 +308,7 @@ fn s2_a_credit_needs_the_merge_base_read_whole() {
     let v = fx.delta();
     let row = row_of(&v, "added", "src/n.py::h");
     assert!(!exact(row), "FALSE EXACT: g was on the merge base, unread: {row}");
-    assert_eq!(row["note"], "merge_base_unread", "{row}");
+    assert_eq!(row["why"], "merge_base_unread", "{row}");
     assert_eq!(exact_share(&v), Some(0.0));
 }
 
@@ -351,8 +351,7 @@ fn s3_a_deletion_with_a_gitlink_added_on_base_is_unknown() {
     write(&d, "src/a.py", FOO);
     commit(&d, "lane deletes bar");
     fx.main();
-    write(&d, "src/a.py", &format!("{FOO}
-")); // not the branch's blob: the file itself is not the same on both
+    write(&d, "src/a.py", &format!("{FOO}\n")); // not the branch's blob: the file itself is not the same on both
     commit(&d, "base deletes bar too");
     let tip = git_out(&d, &["rev-parse", "main"]);
     let mut entries = std::process::Command::new("git").arg("-C").arg(&d).args(["ls-tree", "main"]).output().unwrap().stdout;

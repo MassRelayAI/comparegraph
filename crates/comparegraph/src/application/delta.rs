@@ -26,8 +26,8 @@ pub const FEATURE_POOL: usize = 500;
 /// The similarity floor of the `name_and_tokens` rule.
 pub const SIMILARITY_FLOOR: f64 = 0.9;
 /// A body with fewer tokens than this after the end of its signature (`body_tokens`: `def f(x): pass`, `return 1`, a docstring
-/// and `pass`) is too little evidence for a `body_hash` or `name_and_tokens` match: such a row answers `already_on_base: null`
-/// with the note `trivial_body`. `r2_the_trivial_floor_is_exactly_eight_tokens_after_the_signature` pins the value.
+/// and `pass`) is too little evidence for a `body_hash` or `name_and_tokens` match: such a row answers `on_base: unknown`
+/// with `why: trivial_body`. `r2_the_trivial_floor_is_exactly_eight_tokens_after_the_signature` pins the value.
 pub const MIN_BODY_TOKENS: usize = 8;
 const MAX_MATCHES: usize = 3;
 const MAX_FEATURES_PER_ROW: usize = 10;
@@ -78,6 +78,8 @@ struct Side {
     /// reserved name, a case collision, past `max_files`, minified, or skipped by the walker. None when git could not list the
     /// tree (`partial`): nothing that needs the set is then a yes.
     unread: Option<BTreeMap<String, usize>>,
+    /// the tree's gitlinks (submodule entries: path -> the commit they pin), never read; None when git could not list the tree
+    gitlinks: Option<BTreeMap<String, String>>,
 }
 
 /// `a` is a sub-multiset of `b`: every id of `a` is in `b` at least as many times. Not known (None) is never within.
@@ -356,7 +358,8 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         }
     }
     let subset = crate::providers::reference::walker::Subset::new(&want.include, &want.exclude).map_err(AppError::InvalidArguments)?;
-    let unread = gitref::tree_index(clone, commit).ok().map(|tree| {
+    let tree = gitref::tree_index(clone, commit).ok();
+    let unread = tree.as_ref().map(|tree| {
         let mut unread: BTreeMap<String, usize> = BTreeMap::new();
         for (p, (_, oid)) in &tree.blobs {
             if subset.contains(p) && crate::providers::reference::walker::language_for(Path::new(p)).is_some() && !read.contains(p) {
@@ -365,7 +368,8 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         }
         unread
     });
-    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread };
+    let gitlinks = tree.map(|t| t.gitlinks);
+    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread, gitlinks };
     for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
@@ -396,21 +400,17 @@ struct Match {
     qualified_name: String,
     path: String,
 }
+/// A `name_and_tokens` hit (A6): base symbols of the row's name and kind whose token-bigram Jaccard with the head body is >= 0.9
+/// and nearer the branch than the merge base. Evidence for a person, never a yes.
 #[derive(Serialize, Clone)]
-struct OnBase {
+struct Near {
+    /// J(B,H) of the top match floored to two decimals, at most 0.99
     confidence: f64,
-    via: &'static str,
     matches: Vec<Match>,
-    /// `name_and_tokens` only: J(B,H) of the top match, and J(B,M) when the row has a merge-base body (4 decimals)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    j_head: Option<f64>,
+    /// J(B,H) of the top match, and J(B,M) when the row has a merge-base body (4 decimals)
+    j_head: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     j_merge_base: Option<f64>,
-}
-impl OnBase {
-    fn exact(via: &'static str, matches: Vec<Match>) -> OnBase {
-        OnBase { confidence: 1.0, via, matches, j_head: None, j_merge_base: None }
-    }
 }
 fn round4(x: f64) -> f64 {
     (x * 10_000.0).round() / 10_000.0
@@ -436,11 +436,19 @@ struct Row {
     body_hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     base_body_hash: Option<String>,
-    /// absent: not on base; null: not known (`note` says why); else the match
+    /// `yes`: base holds the branch's change (`via` says how); `no`: it does not; `unknown`: not known (`why` says why). Only a
+    /// yes is landed work: unknown counts against `share_on_base_exact`.
+    on_base: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    already_on_base: Option<Option<OnBase>>,
+    via: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<&'static str>,
+    why: Option<&'static str>,
+    /// a yes: the base symbols that hold the branch's version
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    matches: Vec<Match>,
+    /// a `name_and_tokens` hit (A6): evidence for unknown only
+    #[serde(skip_serializing_if = "Option::is_none")]
+    near: Option<Near>,
     /// base changed (or, for an added symbol, holds a different version of) the same symbol since the merge base
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     base_also_changed: bool,
@@ -456,12 +464,6 @@ struct Row {
     /// the model's answer (None until judged: read as `No`)
     #[serde(skip)]
     answer: Option<Answer>,
-    /// a yes: the base symbols that hold the branch's version
-    #[serde(skip)]
-    matches: Vec<Match>,
-    /// a `name_and_tokens` hit (A6): evidence for unknown only
-    #[serde(skip)]
-    near_m: Option<OnBase>,
 }
 
 impl Row {
@@ -474,15 +476,16 @@ impl Row {
             line_end: s.le,
             body_hash: s.hash.clone(),
             base_body_hash: None,
-            already_on_base: None,
-            note: None,
+            on_base: "no",
+            via: None,
+            why: None,
+            matches: vec![],
+            near: None,
             base_also_changed: false,
             base_removed: false,
             base_moved_to: vec![],
             features: vec![],
             answer: None,
-            matches: vec![],
-            near_m: None,
         }
     }
     fn answer(&self) -> &Answer {
@@ -492,27 +495,20 @@ impl Row {
     fn resolved(&self) -> bool {
         matches!(self.answer(), Answer::Yes(_))
     }
-    fn near(&self) -> Option<&OnBase> {
-        self.near_m.as_ref()
+    fn near(&self) -> Option<&Near> {
+        self.near.as_ref()
     }
     /// changed or removed, not on base, and base changed, removed or moved the same symbol its own way since the merge base
     fn stale_conflict(&self) -> bool {
         !self.resolved() && (self.base_also_changed || self.base_removed)
     }
-    /// write the answer into the row's JSON fields (`removed`: a removed row, whose yes has no match to show)
-    fn encode(&mut self, removed: bool) {
-        match self.answer().clone() {
-            Answer::Yes(_) if removed => {}
-            Answer::Yes(via) => self.already_on_base = Some(Some(OnBase::exact(via, std::mem::take(&mut self.matches)))),
-            Answer::Unknown("near") if !removed => self.already_on_base = Some(self.near_m.clone()),
-            Answer::Unknown(why) => {
-                if !removed {
-                    self.already_on_base = Some(None);
-                }
-                self.note = Some(why);
-            }
-            Answer::No => {}
-        }
+    /// write the answer into the row's JSON fields: `on_base`, `via` (a yes), `why` (an unknown)
+    fn encode(&mut self) {
+        (self.on_base, self.via, self.why) = match self.answer() {
+            Answer::Yes(v) => ("yes", Some(*v), None),
+            Answer::No => ("no", None, None),
+            Answer::Unknown(w) => ("unknown", None, Some(*w)),
+        };
     }
 }
 /// The token bigrams of one side's symbol bodies, computed once per symbol and kept for the whole delta (a body is compared with
@@ -594,7 +590,8 @@ struct Judge<'a> {
     names_head: HashMap<(String, String), usize>,
     /// A5: U(mb) is a sub-multiset of U(base) and of U(head) (every count of the merge base is whole on both other sides)
     mb_read_whole: bool,
-    /// R4: U(base) is a sub-multiset of U(mb) (base gained no blob its run did not read)
+    /// R4: U(base) is a sub-multiset of U(mb) (base gained no blob its run did not read), and base added or changed no gitlink
+    /// since the fork (a submodule's commit is never read)
     base_read_whole: bool,
     g_base: Grams<'a>,
     g_head: Grams<'a>,
@@ -627,7 +624,13 @@ impl<'a> Judge<'a> {
             names_base: names_per_file(base),
             names_head: names_per_file(head),
             mb_read_whole: fork.is_none_or(|f| sub(&f.unread, &base.unread) && sub(&f.unread, &head.unread)),
-            base_read_whole: fork.is_none_or(|f| sub(&base.unread, &f.unread)),
+            base_read_whole: fork.is_none_or(|f| {
+                let links_kept = match (&base.gitlinks, &f.gitlinks) {
+                    (Some(b), Some(m)) => b.iter().all(|(p, c)| m.get(p) == Some(c)),
+                    _ => false,
+                };
+                sub(&base.unread, &f.unread) && links_kept
+            }),
             g_base: Grams::new(base),
             g_head: Grams::new(head),
             g_fork: fork.map(Grams::new),
@@ -692,7 +695,7 @@ impl<'a> Judge<'a> {
             if rows[i].answer() == &Answer::No {
                 if let Some(near) = self.near_of(h, *m) {
                     rows[i].answer = Some(Answer::Unknown("near"));
-                    rows[i].near_m = Some(near);
+                    rows[i].near = Some(near);
                 }
             }
         }
@@ -700,7 +703,7 @@ impl<'a> Judge<'a> {
 
     /// A6: a base symbol of H's name and kind (under any path; with no fork, not H's own key) whose token-bigram Jaccard with H is
     /// >= 0.9 and, when the row has a merge-base body M, strictly above its Jaccard with M (nearer the branch than the merge base).
-    fn near_of(&self, h: &'a Sym, m: Option<&'a Sym>) -> Option<OnBase> {
+    fn near_of(&self, h: &'a Sym, m: Option<&'a Sym>) -> Option<Near> {
         if h.trivial {
             return None;
         }
@@ -727,7 +730,7 @@ impl<'a> Judge<'a> {
         let &(top, top_old, _) = best.first()?;
         let confidence = ((top * 100.0).floor() / 100.0).min(0.99);
         let at_top: Vec<&Sym> = best.iter().filter(|b| b.0 == top).map(|b| b.2).collect();
-        Some(OnBase { confidence, via: "name_and_tokens", matches: matches_of(&at_top), j_head: Some(round4(top)), j_merge_base: top_old.map(round4) })
+        Some(Near { confidence, matches: matches_of(&at_top), j_head: round4(top), j_merge_base: top_old.map(round4) })
     }
 
     /// Every base symbol with `s`'s (kind, body hash) under another (kind, qualified name), sorted by path and name.
@@ -742,8 +745,9 @@ impl<'a> Judge<'a> {
     /// - R2 b >= m: no; `base_moved_to` lists every base symbol with y;
     /// - R3 0 < b < m (`base_copies`), or a near copy of y on base (`near`: same name and kind, J >= 0.9), or h >= m (the branch
     ///   only moved it, `branch_moved`): unknown;
-    /// - R4 b = 0 and U(base) within U(mb) (base gained no blob its run did not read): yes, `absent_on_base`;
-    /// - R5 b = 0 but base gained an unread blob: unknown, `base_unread`.
+    /// - R4 b = 0, U(base) within U(mb) (base gained no blob its run did not read) and base added or changed no gitlink since the
+    ///   fork: yes, `absent_on_base`;
+    /// - R5 b = 0 but base gained an unread blob or a gitlink: unknown, `base_unread`.
     fn removed(&self, m: &'a Sym) -> Answer {
         if self.base.syms.contains_key(&key(m)) {
             return Answer::No; // R1: base keeps it in place (as it was, or changed its own way)
@@ -805,6 +809,21 @@ impl<'a> Judge<'a> {
         let near: Vec<&'a Sym> = fork.all.iter().filter(|m| m.kind == h.kind && removed(m) && score(m) >= SIMILARITY_FLOOR).collect();
         pick(near)
     }
+}
+
+/// `{yes, no, unknown}` over rows, and `{count, by_why}` of the unknown ones (`by_why` sorted by reason).
+fn answers<'r>(rows: impl Iterator<Item = &'r Row>) -> (Value, Value) {
+    let (mut yes, mut no) = (0usize, 0usize);
+    let mut by: BTreeMap<&str, usize> = BTreeMap::new();
+    for r in rows {
+        match r.answer() {
+            Answer::Yes(_) => yes += 1,
+            Answer::No => no += 1,
+            Answer::Unknown(w) => *by.entry(w).or_default() += 1,
+        }
+    }
+    let n: usize = by.values().sum();
+    (json!({ "yes": yes, "no": no, "unknown": n }), json!({ "count": n, "by_why": by }))
 }
 
 /// Not-on-base first, then by path and line.
@@ -954,6 +973,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         }
     }
     judge.judge_heads(&mut hrows, &heads, &HashMap::new());
+    hrows.iter_mut().for_each(Row::encode);
     let (mut added, mut changed, mut removed) = (vec![], vec![], vec![]);
     for (mut r, c) in hrows.into_iter().zip(is_changed) {
         if c {
@@ -968,6 +988,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         if !head.syms.contains_key(k) {
             let mut r = Row::of(m);
             r.answer = Some(judge.removed(m));
+            r.encode();
             r.base_moved_to = judge.moved_to(m);
             match base.syms.get(k) {
                 None => r.base_removed = true,
@@ -1047,11 +1068,14 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     let stale_conflicts = changed.iter().chain(removed.iter()).filter(|r| r.stale_conflict()).count();
     let resolved = added.iter().chain(changed.iter()).chain(removed.iter()).filter(|r| r.resolved()).count();
     let share = (branch_symbols > 0).then(|| ((resolved as f64 / branch_symbols as f64) * 10_000.0).round() / 10_000.0);
+    let all_rows = || added.iter().chain(changed.iter()).chain(removed.iter());
+    let (on_base, unknown) = answers(all_rows());
     let summary = json!({
         "branch_symbols": branch_symbols,
         "added": added.len(), "changed": changed.len(), "removed": removed.len(),
         "already_on_base": exact_n, "already_on_base_exact": exact_n, "base_removed": base_removed_n,
         "share_on_base_exact": share, "share_already_on_base": share,
+        "on_base": on_base, "unknown": unknown,
         "near_on_base": { "count": near_rows.len(), "rows": near_rows.iter().take(o.max_nodes).collect::<Vec<_>>() },
         "stale_conflicts": stale_conflicts,
         "features_touched": touched.len(),
@@ -1097,6 +1121,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             }
         }
         wj.judge_heads(&mut wrows, &wheads, &identical);
+        wrows.iter_mut().for_each(Row::encode);
         for (r, c) in wrows.into_iter().zip(wchanged) {
             if c {
                 wc.push(r);
@@ -1117,6 +1142,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             "head_only": head_only, "head_only_already_on_base": already,
         });
         let mut ws = ws;
+        (ws["on_base"], ws["unknown"]) = answers(wa.iter().chain(wc.iter()));
         let wshare = (head_only > 0).then(|| ((already as f64 / head_only as f64) * 10_000.0).round() / 10_000.0);
         ws["share_on_base_exact"] = json!(wshare);
         ws["share_already_on_base"] = json!(wshare);
@@ -1140,7 +1166,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         limit_note(&mut limitations, "whole_tree.changed", wc.len(), cap);
     }
     if trivial_n > 0 {
-        limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature (decorators and docstrings excluded): not matched by body hash or tokens (already_on_base: null)") }));
+        limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature (decorators and docstrings excluded): not matched by body hash or tokens (on_base: unknown, why: trivial_body)") }));
     }
     if !diff_failed.is_empty() {
         limitations.push(json!({ "code": "partial", "detail": format!("{} failed: base_files and the file counts are not known (null), not empty", diff_failed.join(" and ")) }));
@@ -1185,7 +1211,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         }
     }
     let mut moved_cut = 0usize;
-    for (v, rm) in [(&mut added, false), (&mut changed, false), (&mut removed, true)] {
+    for v in [&mut added, &mut changed, &mut removed] {
         sort_rows(v);
         v.truncate(cap);
         for r in v.iter_mut() {
@@ -1193,7 +1219,6 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
                 r.base_moved_to.truncate(cap);
                 moved_cut += 1;
             }
-            r.encode(rm);
         }
     }
     if moved_cut > 0 {
@@ -1220,10 +1245,9 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         "summary": out["summary"],
     }));
     if let Some((ws, mut wa, mut wr, mut wc)) = whole {
-        for (v, rm) in [(&mut wa, false), (&mut wr, true), (&mut wc, false)] {
+        for v in [&mut wa, &mut wr, &mut wc] {
             sort_rows(v);
             v.truncate(cap);
-            v.iter_mut().for_each(|r| r.encode(rm));
         }
         out["whole_tree"] = json!({ "summary": ws, "added": wa, "removed": wr, "changed": wc });
     }
@@ -1235,7 +1259,7 @@ mod tests {
     use super::*;
 
     fn side(files: &[(&str, &str)], syms: &[(&str, &str, u32, u32)]) -> Side {
-        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()) };
+        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()), gitlinks: Some(BTreeMap::new()) };
         for (p, t) in files {
             s.files.insert(p.to_string(), t.lines().map(String::from).collect());
         }
