@@ -324,5 +324,5 @@ fn the_advertised_schemas_are_compact_and_share_their_definitions() {
         assert!(s.len() <= 1700, "{} output schema is {} bytes", t["name"], s.len());
         assert!(t["outputSchema"]["$defs"].is_object());
     }
-    assert!(total <= 55_000, "all output schemas together are {total} bytes");
+    assert!(total <= 56_000, "all output schemas together are {total} bytes");
 }

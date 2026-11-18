@@ -45,7 +45,8 @@ envelope as the CLI. 40 tools: 39 read-only, one write (`comparegraph_claim`). T
 | `comparegraph_impact` | Blast radius: summary (`by_hop`, `by_kind`, `tests_total`), then one page, plus the tests that reach it (capped at `limit`) | `repo`, `qualified_name` or `files[]`, `depth`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_tests_for` | Tests linked to a symbol, summary first, then one page | `repo`, `qualified_name`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_entry_points` | Exported, handler or main symbols nothing calls | `repo`, `limit`, `cursor`, `min_confidence` |
-| `comparegraph_dead_code` | Dead-code candidates (never proof) | `repo`, `limit`, `cursor`, `min_confidence` |
+| `comparegraph_dead_code` | Dead-code candidates (never proof) | `repo`, `limit`, `cursor`, `min_confidence`, `ref` |
+| `comparegraph_delta` | A branch against its base: symbols added, removed, changed, how many the base already has, features touched, files base deleted or rewrote (facts, no verdict; both refs built with `build --ref`) | `repo`, `base`, `head`, `family`, `max_nodes` |
 | `comparegraph_doctor` | Store and provider status | none |
 
 There is no `decide` tool: adopting or rejecting a clone is a human act on the CLI. For the same reason the store-safety
@@ -69,4 +70,4 @@ other keys stay open, so the schema is always a widening of the real answer). `t
 the text content. A failed call has `ok: false`, `data: null` and an `error` with `code`, `message`, optional `hint` and a machine-readable `recovery`
 (`{kind, operation?, retryable}`; `kind` is `fix_arguments`, `retry`, `run_command`, `inspect`, `choose_candidate` or `none`). The per-tool part is
 one line of `crates/comparegraph/src/application/output_schema.rs`; `tests/output_schema.rs` calls every tool on the fixtures and validates the real
-answer against the advertised schema. Together the 40 schemas are about 54 KB on the wire (the input schemas are about 27 KB).
+answer against the advertised schema. Together the 40 schemas are about 55 KB on the wire (the input schemas are about 27 KB).
