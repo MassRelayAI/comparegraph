@@ -1606,6 +1606,47 @@ mod tests {
         s
     }
 
+    /// Round 5: a symbol a side could not read blocks the yeses that need every copy counted (A4/A5 on any side, R4 on base).
+    #[test]
+    fn an_unreadable_symbol_blocks_the_whole_side_checks() {
+        let mk = || side(&[("a.py", "def f(x):\n    return x + 1\n")], &[("f", "a.py", 1, 2)]);
+        for who in ["base", "head", "merge_base"] {
+            let (mut b, mut h, mut m) = (mk(), mk(), mk());
+            match who {
+                "base" => b.unreadable = 1,
+                "head" => h.unreadable = 1,
+                _ => m.unreadable = 1,
+            }
+            let j = Judge::new(&b, &h, Some(&m));
+            assert!(!j.mb_read_whole, "{who}: A4/A5 not blocked");
+            assert_eq!(j.base_read_whole, who != "base", "{who}: R4");
+        }
+        let j = { let (b, h, m) = (mk(), mk(), mk()); let j = Judge::new(&b, &h, Some(&m)); (j.mb_read_whole, j.base_read_whole) };
+        assert_eq!(j, (true, true), "nothing unreadable: nothing blocked");
+    }
+
+    fn lines(t: &str) -> Vec<String> {
+        t.lines().map(String::from).collect()
+    }
+
+    /// Round 5: `parse_hunks` takes exactly the lines each header counts.
+    #[test]
+    fn parse_hunks_reads_by_the_counts() {
+        // a removed `-- ` line and a `+@@` line are lines, never headers; `\ No newline` is skipped
+        let ok = parse_hunks(&lines("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -2,2 +2,1 @@\n--- only active\n-@@ not a header\n+@@ x\n\\ No newline at end of file\n@@ -9,0 +9 @@\n+z")).unwrap();
+        assert_eq!(ok.len(), 2);
+        assert_eq!(ok[0].old, vec![(2, "-- only active".to_string()), (3, "@@ not a header".to_string())]);
+        assert_eq!(ok[0].new, vec![(2, "@@ x".to_string())]);
+        assert_eq!(ok[1].new, vec![(9, "z".to_string())]);
+        // cut short: a header counts more lines than follow
+        assert!(parse_hunks(&lines("@@ -1,2 +1,0 @@\n-a")).is_err());
+        // an uncounted line inside a hunk (here a context line, which -U0 never prints)
+        assert!(parse_hunks(&lines("@@ -1,1 +1,1 @@\n a\n-a\n+b")).is_err());
+        // more removed lines than counted
+        assert!(parse_hunks(&lines("@@ -1,1 +1,0 @@\n-a\n-b")).unwrap().len() == 1);
+        assert!(parse_hunks(&lines("@@ -x +1 @@\n+a")).is_err(), "an unreadable header");
+    }
+
     /// The bigrams of a body are computed once per symbol, however many times the rule compares it.
     #[test]
     fn bigrams_are_computed_once_per_symbol_and_side() {

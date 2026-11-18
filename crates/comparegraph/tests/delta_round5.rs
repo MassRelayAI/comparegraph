@@ -493,3 +493,164 @@ fn r5_backstop_turns_a_contradicted_yes_unknown() {
     let bar = row_of(&v, "added", "src/a.py::bar");
     assert_eq!((bar["on_base"].as_str(), bar["why"].as_str(), bar["model_via"].as_str()), (Some("unknown"), Some("merge_changes_file"), Some("same_symbol")), "{bar}");
 }
+
+// ================================================================ round 5: the specific fixes (each read on its own, under the backstop)
+
+fn by_why(v: &Value, w: &str) -> i64 {
+    v["data"]["summary"]["unknown"]["by_why"][w].as_i64().unwrap_or(0)
+}
+
+/// B-1: a mode the branch changed, base did not, is an item even when the content changed too.
+#[cfg(unix)]
+#[test]
+fn s5_a_mode_change_with_a_content_change_is_an_item() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = Fx::new(&[("src/a.py", G5)]);
+    let d = fx.d();
+    fx.feat();
+    let g2 = G5.replace("x * 3", "x * 4");
+    write(&d, "src/a.py", &g2);
+    std::fs::set_permissions(d.join("src/a.py"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    commit(&d, "lane");
+    fx.main();
+    write(&d, "src/a.py", &g2);
+    commit(&d, "base takes g only");
+    let v = fx.delta();
+    assert_eq!(by_why(&v, "mode_changed"), 1, "{}", summ(&v));
+}
+
+/// B-2: a whitespace-only line inside a string is text: kept verbatim in the raw hash, so A1 reads `text_differs`.
+#[test]
+fn s5_a_whitespace_line_in_a_string_is_text() {
+    let m = |blank: &str, n: u32| format!("pub struct S;\n\nimpl S {{\n    pub fn m(&self) -> String {{\n        let s = \"alpha\n{blank}\n        beta\";\n        format!(\"{{}} {{}} {{}} {{}}\", s, 1, 2, {n})\n    }}\n}}\n");
+    let fx = Fx::new(&[("src/a.rs", &m("", 3))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.rs", &m("  ", 4));
+    commit(&d, "lane");
+    fx.main();
+    write(&d, "src/a.rs", &m("", 4));
+    commit(&d, "base");
+    let v = fx.delta();
+    let row = row_of(&v, "changed", "src/a.rs::m");
+    assert_eq!(row["why"], "text_differs", "{row}");
+}
+
+/// B-2: the common indentation is an exact byte prefix: tabs are not spaces.
+#[test]
+fn s5_tabs_are_not_spaces() {
+    let m = |ind: &str, n: u32| format!("pub struct S;\n\nimpl S {{\n{ind}pub fn m(&self) -> String {{\n{ind}{ind}let s = \"alpha\n{ind}{ind}beta\";\n{ind}{ind}format!(\"{{}} {{}} {{}} {{}}\", s, 1, 2, {n})\n{ind}}}\n}}\n");
+    let fx = Fx::new(&[("src/a.rs", &m("\t", 3))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.rs", &m("    ", 4));
+    commit(&d, "lane");
+    fx.main();
+    write(&d, "src/a.rs", &m("\t", 4));
+    commit(&d, "base");
+    let v = fx.delta();
+    assert_eq!(row_of(&v, "changed", "src/a.rs::m")["why"], "text_differs", "{}", summ(&v));
+}
+
+/// B-3: a CR is text: a CRLF body is not base's LF body.
+#[test]
+fn s5_a_cr_is_text() {
+    let fx = Fx::new(&[("src/a.py", G5)]);
+    let d = fx.d();
+    fx.feat();
+    let g2 = G5.replace("x * 3", "x * 4");
+    write(&d, "src/a.py", &g2.replace('\n', "\r\n"));
+    commit(&d, "lane");
+    fx.main();
+    write(&d, "src/a.py", &g2);
+    commit(&d, "base");
+    let v = fx.delta();
+    assert_eq!(row_of(&v, "changed", "src/a.py::g")["why"], "text_differs", "{}", summ(&v));
+}
+
+/// B-4: two non-UTF-8 paths are two entries: the branch's change to one of them is an item.
+#[cfg(unix)]
+#[test]
+fn s5_two_non_utf8_paths_are_two_entries() {
+    use std::os::unix::ffi::OsStrExt;
+    let fx = Fx::new(&[("src/a.py", G5)]);
+    let d = fx.d();
+    let p1 = d.join(std::ffi::OsStr::from_bytes(b"notes\xfe.txt"));
+    let p2 = d.join(std::ffi::OsStr::from_bytes(b"notes\xff.txt"));
+    std::fs::write(&p1, "one\n").unwrap();
+    std::fs::write(&p2, "two\n").unwrap();
+    commit(&d, "two non-utf8 paths");
+    fx.feat();
+    std::fs::write(&p1, "one CHANGED by the lane\n").unwrap();
+    commit(&d, "lane");
+    fx.main();
+    let v = fx.delta();
+    let res = branch(&v)["residue"].to_string();
+    assert!(res.contains("notes\\\\376.txt"), "the changed path is not an item: {}", summ(&v));
+}
+
+/// B-5: base keeps g in a file its grammar cannot parse cleanly (g lands in an ERROR node): the file counts as unread on base,
+/// so the deletion is not R4's yes.
+#[test]
+fn s5_a_base_file_with_parse_errors_counts_as_unread() {
+    let fx = Fx::new(&[("src/a.py", &format!("{FOO}\n{G5}")), ("src/k.py", KEEP)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", FOO);
+    commit(&d, "lane deletes g");
+    fx.main();
+    write(&d, "src/a.py", &format!("{FOO}\nx = (1,\n{G5}"));
+    commit(&d, "base keeps g, breaks the parse above it");
+    let v = fx.delta();
+    assert_eq!(row_of(&v, "removed", "src/a.py::g")["why"], "base_unread", "{}", summ(&v));
+}
+
+/// The `touches` half of the span check: a hunk of one blank line inside a module string is in no judged row: an item.
+#[test]
+fn s5_a_blank_line_hunk_outside_every_row_is_an_item() {
+    let mb = format!("DOC = \"\"\"\nline one\nline two\n\"\"\"\n\n{G5}");
+    let fx = Fx::new(&[("src/a.py", &mb)]);
+    let d = fx.d();
+    fx.feat();
+    let g2 = G5.replace("x * 3", "x * 4");
+    write(&d, "src/a.py", &format!("DOC = \"\"\"\nline one\n\nline two\n\"\"\"\n\n{g2}"));
+    commit(&d, "lane");
+    fx.main();
+    write(&d, "src/a.py", &format!("DOC = \"\"\"\nline one\nline two\n\"\"\"\n\n{g2}"));
+    commit(&d, "base takes g only");
+    let v = fx.delta();
+    assert_eq!(by_why(&v, "outside_symbols"), 1, "{}", summ(&v));
+}
+
+/// Minor: the clone's diff.interHunkContext / diff.context never fuse or widen the -U0 hunks.
+#[test]
+fn s5_the_clone_diff_context_settings_do_not_apply() {
+    let mb = format!("X = 1\n{G5}");
+    let fx = Fx::new(&[("src/a.py", &mb)]);
+    let d = fx.d();
+    git(&d, &["config", "diff.interHunkContext", "5"]);
+    git(&d, &["config", "diff.context", "4"]);
+    fx.feat();
+    write(&d, "src/a.py", &format!("X = 2\n{}", G5.replace("x * 3", "x * 4")));
+    commit(&d, "lane");
+    fx.main();
+    let v = fx.delta();
+    // the X hunk is an item; g's hunk lies inside g: one item, not a fused hunk taking g's line along
+    assert_eq!(by_why(&v, "outside_symbols"), 1, "{}", summ(&v));
+    assert_eq!(branch(&v)["residue"][0]["hunk"], "@@ -1 +1 @@", "{}", summ(&v));
+}
+
+/// Minor: the whole-tree share is `share_identical` (how much of head base holds as it is), not a retirement signal: the
+/// exact-share names are the branch summary's only.
+#[test]
+fn s5_the_whole_tree_share_is_share_identical() {
+    let fx = Fx::new(&[("src/a.py", G5)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &G5.replace("x * 3", "x * 4"));
+    commit(&d, "lane");
+    fx.main();
+    let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--refresh", "--whole-tree"]);
+    let ws = &v["data"]["whole_tree"]["summary"];
+    assert!(ws["share_identical"].is_number() && ws.get("share_on_base_exact").is_none() && ws.get("share_already_on_base").is_none(), "{ws}");
+}
