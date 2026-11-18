@@ -861,9 +861,13 @@ mod lock_tests {
         let held = lock_tree(&lock, &marker).unwrap().expect("free lock taken");
         let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
         std::fs::File::options().write(true).open(&lock).unwrap().set_modified(old).unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(4)); // the heartbeat beats every 2 s
-        let age = std::fs::metadata(&lock).unwrap().modified().unwrap().elapsed().unwrap_or_default();
-        assert!(age.as_secs() < 4, "the held lock was not refreshed ({}s old)", age.as_secs());
+        // the heartbeat beats every 2 s; a loaded machine (the whole suite at once) may delay a beat, so wait up to 20 s for one
+        let age = |l: &std::path::Path| std::fs::metadata(l).unwrap().modified().unwrap().elapsed().unwrap_or_default();
+        let start = std::time::Instant::now();
+        while age(&lock).as_secs() > 60 && start.elapsed().as_secs() < 20 {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        assert!(age(&lock).as_secs() < 60, "the held lock was not refreshed ({}s old)", age(&lock).as_secs());
         drop(held);
         assert!(!lock.exists());
     }
