@@ -181,7 +181,8 @@ fn an_unknown_ref_is_a_structured_refusal_and_writes_no_run() {
 
 // ---------------------------------------------------------------- CG-DELTA (the branch's own work: merge base -> head)
 
-const QUX: &str = "def qux(z):\n    return z - 3\n";
+/// two statements: a one-line body is too little evidence for a body match (`delta`'s trivial_body rule)
+const QUX: &str = "def qux(z):\n    w = z - 3\n    return w * w\n";
 
 fn branch(v: &Value) -> &Value {
     &v["data"]["branch"]
@@ -254,7 +255,7 @@ fn merged_with_rename() -> Fx {
     let fx = lane(&format!("{BAR}\n{QUX}"));
     let d = fx.clone();
     git(&d, &["rm", "-q", "src/a.py"]);
-    write(&d, "lib/b.py", "def foo2():\n    return 1\n\ndef bar2(x):\n        y = x * 2\n        return y + 1\n\ndef qux2(z):\n    return z - 3\n");
+    write(&d, "lib/b.py", "def foo2():\n    return 1\n\ndef bar2(x):\n        y = x * 2\n        return y + 1\n\ndef qux2(z):\n    w = z - 3\n    return w * w\n");
     commit(&d, "main moves and renames");
     fx
 }
@@ -400,6 +401,31 @@ fn a_branch_change_base_took_after_a_rename_is_on_base() {
 }
 
 #[test]
+fn a_stub_body_is_not_on_base_by_hash_or_tokens() {
+    let fx = Fx::new(&[("src/a.py", FOO)]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/auth.py", "def verify_token(x): pass\n");
+    commit(&d, "feat adds a stub");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/old.py", "def legacy_noop(x): pass\n");
+    commit(&d, "main has another stub");
+    let v = fx.delta("main", "feat");
+    let row = &branch(&v)["added"][0];
+    assert_eq!(row["qualified_name"], "src/auth.py::verify_token");
+    // answered, and the answer is "not known": null, with the reason
+    assert!(row.get("already_on_base").is_some_and(Value::is_null), "{row}");
+    assert_eq!(row["note"], "trivial_body", "{row}");
+    assert_eq!(v["data"]["summary"]["share_already_on_base"].as_f64(), Some(0.0));
+    assert!(v["evidence"]["limitations"].to_string().contains("trivial_body"), "{}", v["evidence"]);
+    // the same stub under the same identity on base is still the same symbol (identity, not a body match)
+    write(&d, "src/auth.py", "def verify_token(x): pass\n");
+    commit(&d, "main takes the stub as is");
+    let v = fx.delta("main", "feat");
+    assert_eq!(branch(&v)["added"][0]["already_on_base"]["via"], "same_symbol");
+}
+
+#[test]
 fn a_symbol_the_lane_removed_and_base_removed_too_is_marked_base_removed() {
     let fx = Fx::new(&[("src/a.py", &format!("{FOO}\n{BAR}"))]);
     let d = fx.clone();
@@ -474,7 +500,7 @@ fn the_same_name_with_a_near_identical_body_is_matched_at_a_lower_stated_confide
 fn rows_list_what_is_not_on_base_first() {
     let fx = lane(&format!("{QUX}\n{BAR}"));
     let d = fx.clone();
-    write(&d, "lib/b.py", "def qux2(z):\n    return z - 3\n"); // base has qux (renamed), not bar
+    write(&d, "lib/b.py", "def qux2(z):\n    w = z - 3\n    return w * w\n"); // base has qux (renamed), not bar
     commit(&d, "main has qux2");
     let v = fx.delta("main", "feat");
     // bar (not on base) before qux (on base), though qux comes first by line
