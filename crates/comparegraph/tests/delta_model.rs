@@ -235,3 +235,79 @@ fn s1_two_base_copies_credit_two_branch_rows() {
     }
     assert_eq!(exact_share(&v), Some(1.0));
 }
+
+// ---------------------------------------------------------------- slice 2: the unread set U(T); removed rows R1-R5; A5
+
+/// The branch deletes `process` from src/a.py (keeping `keep`); `base_change` then edits base's src/a.py.
+fn deletion_with_base(base_change: impl Fn(&Path)) -> Value {
+    let fx = Fx::new(&[("src/a.py", &format!("{}\n{KEEP}", long_process(false, ""))), ("src/k.py", KEEP)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", KEEP);
+    commit(&d, "lane deletes process");
+    fx.main();
+    base_change(&d);
+    commit(&d, "base changes the file");
+    fx.delta()
+}
+
+/// P4: base keeps `process` but its file grows over max_file_bytes, so base's run never reads it. "No copy found" is not "gone":
+/// base gained a blob its run did not read (R5).
+#[test]
+fn p4_deletion_where_base_file_is_oversize() {
+    let v = deletion_with_base(|d| {
+        let pad = format!("# {}\n", "x".repeat(1_100_000));
+        write(d, "src/a.py", &format!("{}\n{KEEP}\n{pad}", long_process(false, "")));
+    });
+    assert_eq!(exact_share(&v), Some(0.0), "FALSE EXACT: base still holds process: {}", branch(&v));
+    assert_eq!(row_of(&v, "removed", "src/a.py::process")["note"], "base_unread", "{}", branch(&v));
+}
+
+/// P4b: base adds one latin-1 byte to the file (its run skips a non-UTF-8 file).
+#[test]
+fn p4b_deletion_where_base_file_became_non_utf8() {
+    let v = deletion_with_base(|d| {
+        let mut bytes = format!("{}\n{KEEP}\n# caf", long_process(false, "")).into_bytes();
+        bytes.push(0xe9);
+        bytes.push(b'\n');
+        std::fs::write(d.join("src/a.py"), bytes).unwrap();
+    });
+    assert_eq!(exact_share(&v), Some(0.0), "FALSE EXACT: base still holds process: {}", branch(&v));
+    assert!(!row_of(&v, "removed", "src/a.py::process")["note"].is_null(), "{}", branch(&v));
+}
+
+/// P5: base renames the file to a Windows reserved name (skipped by base's run); base holds `process` at src/aux.py.
+#[test]
+fn p5_deletion_where_base_renamed_the_file_to_a_reserved_name() {
+    let v = deletion_with_base(|d| git(d, &["mv", "src/a.py", "src/aux.py"]));
+    assert!(limits(&v).contains("windows_reserved_skipped"), "{}", limits(&v));
+    assert_eq!(exact_share(&v), Some(0.0), "FALSE EXACT: base still holds process: {}", branch(&v));
+    assert_eq!(row_of(&v, "removed", "src/a.py::process")["note"], "base_unread", "{}", branch(&v));
+}
+
+/// R4: base deleted the symbol too, and base has no blob its run did not read: yes.
+#[test]
+fn s2_a_deletion_base_made_too_with_nothing_unread_is_on_base() {
+    let v = deletion_with_base(|d| write(d, "src/a.py", &format!("{KEEP}\n")));
+    assert_eq!(exact_share(&v), Some(1.0), "{}", branch(&v));
+}
+
+/// A5: the merge base holds g's body in a file its run could not read (over max_file_bytes); base trims the file, so base's run
+/// reads g. Base's copy of the body is old code the merge base already had: b - m is only positive because m missed it.
+#[test]
+fn s2_a_credit_needs_the_merge_base_read_whole() {
+    let pad = format!("# {}\n", "x".repeat(1_100_000));
+    let fx = Fx::new(&[("src/big.py", &format!("{}\n{pad}", long_named("g", true))), ("src/k.py", KEEP)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/n.py", &long_named("h", true));
+    commit(&d, "lane adds h, a copy of g");
+    fx.main();
+    write(&d, "src/big.py", &long_named("g", true));
+    commit(&d, "base trims big.py: its run now reads g");
+    let v = fx.delta();
+    let row = row_of(&v, "added", "src/n.py::h");
+    assert!(!exact(row), "FALSE EXACT: g was on the merge base, unread: {row}");
+    assert_eq!(row["note"], "merge_base_unread", "{row}");
+    assert_eq!(exact_share(&v), Some(0.0));
+}
