@@ -104,12 +104,13 @@ pub fn build_repo(
         None => None,
     };
     // what extraction left out (unsafe-for-this-OS names never get here: such a tree is refused) goes to the run's limitations
-    let (read_path, tree_limitations): (String, Vec<Limitation>) = match &ref_commit {
+    // the tree's reader lives as long as the build: gc and a re-extraction leave the tree in place while it is read
+    let (read_path, tree_limitations, _tree_reader): (String, Vec<Limitation>, Option<super::gitref::TreeReader>) = match &ref_commit {
         Some(c) => {
             let t = super::gitref::materialise(Path::new(&repo.path), root, repo_name, c, opts.max_file_bytes)?;
-            (t.dir.to_string_lossy().into_owned(), t.limitations)
+            (t.dir.to_string_lossy().into_owned(), t.limitations, t.reader)
         }
-        None => (repo.path.clone(), vec![]),
+        None => (repo.path.clone(), vec![], None),
     };
     let head_of = |p: &str| match &ref_commit {
         Some(c) => Some(c.chars().take(7).collect::<String>()),

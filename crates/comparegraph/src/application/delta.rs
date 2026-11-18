@@ -82,6 +82,8 @@ struct Side {
     gitlinks: Option<BTreeMap<String, String>>,
     /// the tree's blobs: path -> object id (None when git could not list the tree)
     blobs: Option<BTreeMap<String, String>>,
+    /// the extracted tree, held (its reader registered) while the delta reads it
+    _tree: Option<gitref::Tree>,
 }
 
 /// `a` is a sub-multiset of `b`: every id of `a` is in `b` at least as many times. Not known (None) is never within.
@@ -340,7 +342,8 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
     let run_id = run.id.expect("stored run has id").0;
     let limits: Option<Value> = store.meta_get(&super::build::run_limits_key(run_id))?.and_then(|t| serde_json::from_str(&t).ok());
     let max_bytes = limits.as_ref().and_then(|l| l["max_file_bytes"].as_u64()).unwrap_or(crate::providers::BuildOptions::default().max_file_bytes);
-    let dir = gitref::materialise(clone, root, &repo.name, commit, max_bytes)?.dir;
+    let tree_held = gitref::materialise(clone, root, &repo.name, commit, max_bytes)?;
+    let dir = tree_held.dir.clone();
     let mut rows: Vec<NodeRow> = vec![];
     {
         let mut st = store.conn().prepare(
@@ -372,7 +375,7 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
     });
     let blobs = tree.as_ref().map(|t| t.blobs.iter().map(|(p, (_, oid))| (p.clone(), oid.clone())).collect());
     let gitlinks = tree.map(|t| t.gitlinks);
-    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread, gitlinks, blobs };
+    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread, gitlinks, blobs, _tree: Some(tree_held) };
     for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
@@ -1335,7 +1338,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     }
     for (n, what) in [
         (base.unreadable + head.unreadable + mb.unreadable, "symbols whose source could not be read from the cached tree were left out"),
-        (base.duplicates + head.duplicates + mb.duplicates, "symbols share a kind and qualified name with another; the first by path and line is kept"),
+        (base.duplicates + head.duplicates + mb.duplicates, "symbols share a kind and qualified name with another symbol of their side: every copy counts in the body-hash copy counts, and the first by path and line is the row and the identity (A1) lookup"),
     ] {
         if n > 0 {
             limitations.push(json!({ "code": "partial", "detail": format!("{n} {what}") }));
@@ -1391,7 +1394,7 @@ mod tests {
     use super::*;
 
     fn side(files: &[(&str, &str)], syms: &[(&str, &str, u32, u32)]) -> Side {
-        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()), gitlinks: Some(BTreeMap::new()), blobs: Some(BTreeMap::new()) };
+        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()), gitlinks: Some(BTreeMap::new()), blobs: Some(BTreeMap::new()), _tree: None };
         for (p, t) in files {
             s.files.insert(p.to_string(), t.lines().map(String::from).collect());
         }

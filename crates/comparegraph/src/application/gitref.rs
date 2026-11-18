@@ -7,7 +7,8 @@
 //! (`unsafe_tree`); paths that fold to one name on a case-insensitive file system, paths holding a Windows reserved device name
 //! (`aux.c`), and paths that are not UTF-8 are left out with a limitation. The folder is keyed by the commit, so it is immutable and shared by every
 //! name for it; a lock file beside it makes two builds of one commit extract it once, and the tree is extracted into a temporary
-//! sibling and renamed into place before it is marked complete.
+//! sibling and renamed into place before it is marked complete. A reader (a build or a delta reading the tree) registers a
+//! reader file under the lock, and neither `gc --refs` nor a re-extraction deletes a tree while a live reader holds it.
 use super::{AppError, Result};
 use crate::domain::Limitation;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -393,34 +394,66 @@ fn write_blobs(clone: &Path, into: &Path, entries: &[Entry]) -> std::result::Res
     Ok(())
 }
 
-/// The lock beside a tree folder: held by one extractor (or `gc --refs`) at a time, removed on drop. It holds the holder's pid,
-/// and a heartbeat thread refreshes its mtime every `HEARTBEAT_SECS` while held, so a long extraction never looks stale. A lock
-/// is taken over only when its heartbeat stopped `STALE_LOCK_SECS` ago AND its holder is not known to be running (on Linux the
-/// pid is looked up in `/proc`; elsewhere the heartbeat alone decides).
+/// A lock or reader file beside a tree folder, held while this value lives. It holds `<pid> <token>` (the token is unique per
+/// process and per take, so two threads of one process never mistake each other's file), and a heartbeat thread refreshes its
+/// mtime every `HEARTBEAT_SECS` while held, so a long extraction or read never looks stale. Such a file is taken over only when
+/// its heartbeat stopped `STALE_LOCK_SECS` ago AND its holder is not known to be running (on Linux the pid is looked up in
+/// `/proc`; elsewhere the heartbeat alone decides), by renaming it aside atomically and checking that the file moved is the stale
+/// one (`take_over_stale`). A holder removes its file on drop only after reading its own token back from it.
 pub struct TreeLock {
     path: PathBuf,
+    token: String,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     beat: Option<std::thread::JoinHandle<()>>,
 }
 const HEARTBEAT_SECS: u64 = 2;
 const STALE_LOCK_SECS: u64 = 120;
 const LOCK_WAIT_SECS: u64 = 1800;
+/// `<pid> <pid>-<n>`: what a lock or reader file holds, unique per process and per call
+fn new_token() -> String {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let pid = std::process::id();
+    format!("{pid} {pid}-{}", N.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+}
+/// The token part of a lock file's text (`<pid> <token>`), or the whole text for an older file.
+fn token_of(text: &str) -> &str {
+    text.split_once(' ').map_or(text, |(_, t)| t).trim()
+}
 impl TreeLock {
-    fn hold(path: &Path) -> TreeLock {
+    /// Create `path` (create-new) holding a fresh token: None when it exists.
+    fn create(path: &Path) -> std::io::Result<Option<TreeLock>> {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
+            Ok(mut f) => {
+                let token = new_token();
+                let _ = write!(f, "{token}");
+                Ok(Some(TreeLock::hold(path, token)))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+    fn hold(path: &Path, token: String) -> TreeLock {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (p, s) = (path.to_path_buf(), stop.clone());
+        let (p, s, t) = (path.to_path_buf(), stop.clone(), token_of(&token).to_string());
         let beat = std::thread::spawn(move || {
             while !s.load(std::sync::atomic::Ordering::Relaxed) {
                 std::thread::park_timeout(std::time::Duration::from_secs(HEARTBEAT_SECS));
                 if s.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
-                if let Ok(f) = std::fs::File::options().write(true).open(&p) {
-                    let _ = f.set_modified(std::time::SystemTime::now());
+                // only our own file is kept fresh: a file someone else took over is theirs
+                if std::fs::read_to_string(&p).is_ok_and(|x| token_of(&x) == t) {
+                    if let Ok(f) = std::fs::File::options().write(true).open(&p) {
+                        let _ = f.set_modified(std::time::SystemTime::now());
+                    }
                 }
             }
         });
-        TreeLock { path: path.to_path_buf(), stop, beat: Some(beat) }
+        TreeLock { path: path.to_path_buf(), token, stop, beat: Some(beat) }
+    }
+    /// The file still holds this holder's token.
+    fn still_ours(&self) -> bool {
+        std::fs::read_to_string(&self.path).is_ok_and(|x| token_of(&x) == token_of(&self.token))
     }
 }
 impl Drop for TreeLock {
@@ -430,12 +463,14 @@ impl Drop for TreeLock {
             b.thread().unpark();
             let _ = b.join();
         }
-        let _ = std::fs::remove_file(&self.path);
+        if self.still_ours() {
+            let _ = std::fs::remove_file(&self.path); // just verified: ours
+        }
     }
 }
 /// Whether the process that wrote `lock` still runs: Some on Linux (`/proc/<pid>`), None where that cannot be told.
 fn holder_alive(lock: &Path) -> Option<bool> {
-    let pid: u32 = std::fs::read_to_string(lock).ok()?.trim().parse().ok()?;
+    let pid: u32 = std::fs::read_to_string(lock).ok()?.split_whitespace().next()?.parse().ok()?;
     if cfg!(target_os = "linux") {
         Some(Path::new(&format!("/proc/{pid}")).exists())
     } else {
@@ -448,22 +483,42 @@ fn lock_is_live(lock: &Path) -> bool {
     let stale = m.modified().ok().and_then(|t| t.elapsed().ok()).is_some_and(|a| a.as_secs() > STALE_LOCK_SECS);
     !stale || holder_alive(lock) == Some(true)
 }
+/// Take over a stale lock or reader file: rename it aside to a name unique to this call (atomic: of two who try, one wins), then
+/// check that the file moved is the one seen stale and is stale still; only then is it removed. A file that turns out live
+/// (re-created between the check and the rename) is put back where it was. True when the stale file is gone.
+fn take_over_stale(lock: &Path) -> bool {
+    if lock_is_live(lock) {
+        return false;
+    }
+    let seen = std::fs::read_to_string(lock).unwrap_or_default();
+    let name = lock.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let aside = lock.with_file_name(format!("{name}.stale-{}", new_token().replace(' ', "-")));
+    if std::fs::rename(lock, &aside).is_err() {
+        return false; // gone already, or taken by another
+    }
+    let moved = std::fs::read_to_string(&aside).unwrap_or_default();
+    if moved == seen && !lock_is_live(&aside) {
+        let _ = std::fs::remove_file(&aside); // just verified: the stale file
+        return true;
+    }
+    // a live file was moved: put it back (never over a file now at the path), and remove the aside name only once it is back
+    if std::fs::hard_link(&aside, lock).is_ok() {
+        let _ = std::fs::remove_file(&aside);
+    }
+    false
+}
 /// Take the lock, or None when the tree was completed by another holder while waiting.
 fn lock_tree(lock: &Path, marker: &Path) -> Result<Option<TreeLock>> {
     let start = std::time::Instant::now();
     loop {
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(lock) {
-            Ok(mut f) => {
-                let _ = write!(f, "{}", std::process::id());
-                return Ok(Some(TreeLock::hold(lock)));
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+        match TreeLock::create(lock) {
+            Ok(Some(l)) => return Ok(Some(l)),
+            Ok(None) => {
                 if marker.is_file() {
                     return Ok(None);
                 }
-                if !lock_is_live(lock) {
-                    let _ = std::fs::remove_file(lock); // a crashed holder's: no heartbeat, no running holder
-                    continue;
+                if take_over_stale(lock) {
+                    continue; // a crashed holder's: no heartbeat, no running holder
                 }
                 if start.elapsed().as_secs() > LOCK_WAIT_SECS {
                     return Err(AppError::structured(
@@ -479,13 +534,63 @@ fn lock_tree(lock: &Path, marker: &Path) -> Result<Option<TreeLock>> {
         }
     }
 }
+/// Take the lock now, or None when a live holder has it (extracting, or creating it this instant); a stale one is taken over.
+fn try_lock(lock: &Path) -> Result<Option<TreeLock>> {
+    loop {
+        match TreeLock::create(lock) {
+            Ok(Some(l)) => return Ok(Some(l)),
+            Ok(None) if take_over_stale(lock) => continue,
+            Ok(None) => return Ok(None),
+            Err(e) => return Err(AppError::Io(lock.to_path_buf(), e)),
+        }
+    }
+}
+
+/// The reader files of `commit`'s tree (`<commit>.read-<token>`, beside the folder).
+fn reader_files(dir: &Path, commit: &str) -> Vec<PathBuf> {
+    let prefix = format!("{commit}.read-");
+    let Some(parent) = dir.parent() else { return vec![] };
+    let mut v: Vec<PathBuf> = std::fs::read_dir(parent)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix) && !e.file_name().to_string_lossy().contains(".stale-"))
+        .map(|e| e.path())
+        .collect();
+    v.sort();
+    v
+}
+/// Whether a live reader holds `commit`'s tree; stale reader files (a crashed reader's) are taken over and removed on the way.
+fn readers_live(dir: &Path, commit: &str) -> bool {
+    reader_files(dir, commit).iter().any(|r| !take_over_stale(r) && r.exists())
+}
+
+/// A reader of an extracted tree: while it lives, `gc --refs` and a re-extraction leave the tree in place.
+pub struct TreeReader(#[allow(dead_code)] TreeLock);
+impl std::fmt::Debug for TreeReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TreeReader({})", self.0.path.display())
+    }
+}
+/// Register a reader of `commit`'s tree; the caller holds the tree's lock (so no remover is between its check and its delete).
+fn register_reader(dir: &Path, commit: &str) -> Result<TreeReader> {
+    loop {
+        let p = dir.with_file_name(format!("{commit}.read-{}", new_token().replace(' ', "-")));
+        match TreeLock::create(&p) {
+            Ok(Some(l)) => return Ok(TreeReader(l)),
+            Ok(None) => continue,
+            Err(e) => return Err(AppError::Io(p, e)),
+        }
+    }
+}
 
 /// An extracted tree: its folder, and the limitations of what extraction left out (kept in the `.complete` marker, so a tree
-/// extracted once reports them to every build that reads it).
+/// extracted once reports them to every build that reads it). While the value lives, its reader keeps the folder in place.
 #[derive(Debug)]
 pub struct Tree {
     pub dir: PathBuf,
     pub limitations: Vec<Limitation>,
+    pub reader: Option<TreeReader>,
 }
 
 /// The tree behind a `.complete` marker, when it serves a read with `max_file_bytes`: the folder exists and the marker's own
@@ -502,29 +607,36 @@ fn read_marker(marker: &Path, dir: &Path, max_file_bytes: u64) -> Option<Tree> {
         return None; // extracted with a smaller size limit than this read needs
     }
     let limitations = v.and_then(|v| serde_json::from_value::<Vec<Limitation>>(v["limitations"].clone()).ok()).unwrap_or_default();
-    Some(Tree { dir: dir.to_path_buf(), limitations })
+    Some(Tree { dir: dir.to_path_buf(), limitations, reader: None })
 }
 
-/// Extract the tree of `commit` into its cache folder (a no-op when a complete one serves `max_file_bytes`) and return it.
-/// Blobs over `max_file_bytes` (the walker's size limit) are never read from git; a later read with a larger limit extracts
-/// the tree again.
+/// Extract the tree of `commit` into its cache folder (a no-op when a complete one serves `max_file_bytes`) and return it with a
+/// reader registered. Every step runs under the tree's lock: a reader registers only on a complete tree, and a re-extraction
+/// (a larger size limit) waits, holding the lock, until the readers of the old tree are gone. Blobs over `max_file_bytes` (the
+/// walker's size limit) are never read from git; a later read with a larger limit extracts the tree again.
 pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str, max_file_bytes: u64) -> Result<Tree> {
     let dir = cache_dir(store_root, repo, commit);
     let marker = dir.with_file_name(format!("{commit}.complete")); // beside the tree, so the walker never sees it
-    if let Some(t) = read_marker(&marker, &dir, max_file_bytes) {
-        return Ok(t);
-    }
     let parent = dir.parent().expect("cache dir has a parent").to_path_buf();
     std::fs::create_dir_all(&parent).map_err(|e| AppError::Io(parent.clone(), e))?;
-    let lock = lock_tree(&dir.with_file_name(format!("{commit}.lock")), &marker)?;
-    if let Some(t) = read_marker(&marker, &dir, max_file_bytes) {
-        return Ok(t); // completed by the holder before us (or while we waited)
+    let _lock = lock_tree(&dir.with_file_name(format!("{commit}.lock")), Path::new(""))?.expect("a wait without a marker ends with the lock");
+    if let Some(mut t) = read_marker(&marker, &dir, max_file_bytes) {
+        t.reader = Some(register_reader(&dir, commit)?);
+        return Ok(t);
     }
-    let _lock = match lock {
-        Some(l) => l,
-        // another holder completed a tree that does not serve this read: wait for the lock (no marker ends that wait) to extract it again
-        None => lock_tree(&dir.with_file_name(format!("{commit}.lock")), Path::new(""))?.expect("a wait without a marker ends with the lock"),
-    };
+    // the tree is (re-)extracted: wait for the readers of the one in place, the lock held so no new reader comes
+    let start = std::time::Instant::now();
+    while readers_live(&dir, commit) {
+        if start.elapsed().as_secs() > LOCK_WAIT_SECS {
+            return Err(AppError::structured(
+                "store_busy",
+                format!("{} is being read; it is extracted again once its readers are done", dir.display()),
+                Some("retry when the other build or delta has finished".into()),
+                None,
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
     let io = |p: &Path, e: std::io::Error| AppError::Io(p.to_path_buf(), e);
     // the marker goes first: a tree without it is never read as complete
     if marker.exists() {
@@ -533,7 +645,8 @@ pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str, ma
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| io(&dir, e))?; // a half-written folder of a crashed run: ours, rebuilt whole
     }
-    let tmp = dir.with_file_name(format!("{commit}.tmp-{}", std::process::id()));
+    // unique per process and per call: two threads of one process never share it
+    let tmp = dir.with_file_name(format!("{commit}.tmp-{}", new_token().replace(' ', "-")));
     if tmp.exists() {
         std::fs::remove_dir_all(&tmp).map_err(|e| io(&tmp, e))?;
     }
@@ -562,32 +675,27 @@ pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str, ma
     })?;
     let body = serde_json::json!({ "commit": commit, "max_file_bytes": max_file_bytes, "limitations": limitations }).to_string();
     std::fs::write(&marker, body).map_err(|e| io(&marker, e))?;
-    Ok(Tree { dir, limitations })
+    let reader = Some(register_reader(&dir, commit)?);
+    Ok(Tree { dir, limitations, reader })
 }
 
-/// Whether a live holder has the lock of `commit`'s tree (an extraction is running): `gc --refs` then leaves the tree and its
-/// runs alone.
+/// Whether `commit`'s tree is busy: a live holder has its lock (an extraction is running) or a live reader holds it. `gc --refs`
+/// then leaves the tree and its runs alone.
 pub fn tree_locked(store_root: &Path, repo: &str, commit: &str) -> bool {
     let dir = cache_dir(store_root, repo, commit);
-    lock_is_live(&dir.with_file_name(format!("{commit}.lock")))
+    lock_is_live(&dir.with_file_name(format!("{commit}.lock"))) || readers_live(&dir, commit)
 }
 
 /// Remove `commit`'s tree under its lock: the `.complete` marker first (so no reader takes a half-removed tree as complete),
-/// then the folder. Ok(false) when a live holder has the lock (nothing is removed), Ok(true) when the folder was there and went.
+/// then the folder. Ok(false) when a live holder has the lock (extracting, or creating it this instant) or a live reader holds
+/// the tree (nothing is removed); Ok(true) when the folder was there and went. A stale lock is taken over by `take_over_stale`.
 pub fn remove_tree(store_root: &Path, repo: &str, commit: &str) -> Result<bool> {
     let dir = cache_dir(store_root, repo, commit);
-    let lock = dir.with_file_name(format!("{commit}.lock"));
-    if lock_is_live(&lock) {
+    let Some(held) = try_lock(&dir.with_file_name(format!("{commit}.lock")))? else { return Ok(false) };
+    if readers_live(&dir, commit) {
+        drop(held);
         return Ok(false);
     }
-    let _ = std::fs::remove_file(&lock); // a crashed holder's
-    let held = match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock) {
-        Ok(mut f) => {
-            let _ = write!(f, "{}", std::process::id());
-            TreeLock::hold(&lock)
-        }
-        Err(_) => return Ok(false), // taken in between
-    };
     let marker = dir.with_file_name(format!("{commit}.complete"));
     let io = |p: &Path, e: std::io::Error| AppError::Io(p.to_path_buf(), e);
     if marker.exists() {

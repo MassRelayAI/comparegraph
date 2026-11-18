@@ -983,7 +983,8 @@ fn r3_near_matches_are_listed_apart_and_never_in_the_share() {
     let (jh, jm) = (near["j_head"].as_f64().unwrap(), near["j_merge_base"].as_f64().unwrap());
     assert!(jh >= 0.9 && jh > jm, "{near}");
     let sha = git_out(&d, &["rev-parse", "feat"]).trim().to_string();
-    ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta"]);
+    // round 3: --summary-from-delta names the base the delta used (`--base`)
+    ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--base", "main"]);
     let rec = &ok(fx.root(), &["decisions", "--ref", "feat"])["data"]["items"][0]["summary"]["summary"];
     assert_eq!((rec["share_on_base_exact"].as_f64(), rec["near_on_base"]["count"].as_i64()), (Some(0.0), Some(1)), "{rec}");
 }

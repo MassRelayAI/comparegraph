@@ -780,9 +780,12 @@ pub enum Cmd {
         /// the commit of that branch the verdict is about
         #[arg(long, requires = "git_ref")]
         commit: Option<String>,
-        /// store the numbers of the last `delta` computed for --commit in the decision
+        /// store the numbers of the last `delta` computed for --commit in the decision (needs --base)
         #[arg(long, requires = "git_ref")]
         summary_from_delta: bool,
+        /// with --summary-from-delta: the base that delta must have used (`delta --base`)
+        #[arg(long, value_name = "REF", requires = "summary_from_delta")]
+        base: Option<String>,
         /// where the branch's git bundle was written (a string: nothing reads it)
         #[arg(long, requires = "git_ref")]
         bundle: Option<String>,
@@ -1080,9 +1083,10 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
                 && family.is_none() && at.is_empty() && searched.is_none() && read_hits.is_empty() && note.is_none())
                 || at_commit.is_some() || !anchor.is_empty() || !expect.is_empty() || *allow_comment || out_of_subset.is_some() || *no_reach
         }
-        Cmd::Decide { repo, disposition, why, by, feature, family, git_ref, commit, bundle, summary_from_delta, .. } => {
+        Cmd::Decide { repo, disposition, why, by, feature, family, git_ref, commit, bundle, summary_from_delta, base, .. } => {
             !(repo.is_none() && disposition.is_none() && why.is_none() && by.is_none()
-                && feature.is_none() && family.is_none() && git_ref.is_none() && commit.is_none() && bundle.is_none() && !*summary_from_delta)
+                && feature.is_none() && family.is_none() && git_ref.is_none() && commit.is_none() && bundle.is_none() && !*summary_from_delta
+                && base.is_none())
         }
         _ => false,
     };
@@ -1757,6 +1761,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             git_ref,
             commit,
             summary_from_delta,
+            base,
             bundle,
             batch: _,
         } => serde_json::to_value(crate::application::decide::decide(
@@ -1774,6 +1779,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     commit: commit.clone().unwrap_or_default(),
                     bundle: bundle.clone(),
                     summary_from_delta: *summary_from_delta,
+                    base: base.clone(),
                 })
                 .as_ref(),
         )?)

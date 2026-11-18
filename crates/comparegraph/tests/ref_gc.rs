@@ -305,12 +305,13 @@ fn the_previous_run_hook_is_ignored_by_a_head_build() {
 fn an_ambiguous_short_commit_for_a_branch_verdict_is_refused() {
     let fx = Fx::new();
     let sha = git_out(&fx.clone(), &["rev-parse", "feat"]).trim().to_string();
+    // round 3: the stored delta must have used the base the decision names (`--base`), so the kept values name it
     for key in [sha.clone(), format!("{}zzzz", &sha[..7])] {
-        fx.db().execute("INSERT INTO meta(key, value) VALUES (?1, ?2)", [format!("delta:r:{key}"), "{\"summary\":{}}".to_string()]).unwrap();
+        fx.db().execute("INSERT INTO meta(key, value) VALUES (?1, ?2)", [format!("delta:r:{key}"), "{\"base_ref\":\"main\",\"summary\":{}}".to_string()]).unwrap();
     }
-    let e = err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha[..7], "--summary-from-delta"], "invalid_arguments");
+    let e = err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha[..7], "--summary-from-delta", "--base", "main"], "invalid_arguments");
     assert!(e["error"]["message"].as_str().unwrap().contains("ambiguous"), "{e}");
-    ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta"]);
+    ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--base", "main"]);
 }
 
 /// MINOR: the meta row `delta` writes is an action-log line, and the log still verifies.
@@ -489,10 +490,11 @@ fn a_branch_verdict_names_ref_and_commit_by_value_and_survives_gc_of_the_ref() {
     let clone = fx.clone();
     let sha = git_out(&clone, &["rev-parse", "feat"]).trim().to_string();
     // the numbers come from the last delta; none computed yet is a refusal, a missing commit too
-    err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta"], "not_found");
+    // round 3: --summary-from-delta names the base the delta used (`--base`)
+    err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--base", "main"], "not_found");
     err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat"], "invalid_arguments");
     ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
-    let d = ok(fx.root(), &["decide", "r", "reject", "--why", "already on main", "--by", "tester", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--bundle", "D:/bundles/feat.bundle"]);
+    let d = ok(fx.root(), &["decide", "r", "reject", "--why", "already on main", "--by", "tester", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--base", "main", "--bundle", "D:/bundles/feat.bundle"]);
     assert_eq!(d["data"]["scope"], "ref");
     assert_eq!(d["data"]["ref"], "feat");
     assert_eq!(d["data"]["ref_commit"], sha.as_str());

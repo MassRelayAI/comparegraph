@@ -38,6 +38,8 @@ pub struct RefVerdict {
     pub bundle: Option<String>,
     /// store the numbers of the last `delta` computed for this commit
     pub summary_from_delta: bool,
+    /// with `summary_from_delta`: the base that delta must have used (`delta --base`)
+    pub base: Option<String>,
 }
 
 fn invalid<T>(m: impl Into<String>) -> Result<T> {
@@ -87,6 +89,28 @@ fn commit_reached(clone: &Path, git_ref: &str, commit: &str) -> Result<()> {
             .map_err(|e| AppError::Io(clone.to_path_buf(), e))?;
         if !reached.success() {
             return invalid(format!("--commit {commit} is not reachable from {git_ref} (now {}): a branch verdict is about a commit of that branch", &tip[..12.min(tip.len())]));
+        }
+    }
+    Ok(())
+}
+
+/// The delta kept for the commit must have used `base`: the same ref name, and (when the ref still resolves) the commit it
+/// names now. Otherwise its numbers are about another comparison and are not stored.
+fn check_delta_base(clone: &Path, last: &serde_json::Value, base: &str, repo: &str, head: &str) -> Result<()> {
+    let used = last["base_ref"].as_str().unwrap_or("");
+    if used != base {
+        return invalid(format!(
+            "the last delta computed for this commit used --base {} (not {base}): run `delta {repo} --base {base} --head {head}` first",
+            if used.is_empty() { "<unknown>" } else { used }
+        ));
+    }
+    if let (Some(then), Ok(now)) = (last["base_commit"].as_str(), super::gitref::resolve(clone, base)) {
+        if then != now {
+            return invalid(format!(
+                "{base} moved since the last delta for this commit (then {}, now {}): run `delta {repo} --base {base} --head {head}` again",
+                &then[..12.min(then.len())],
+                &now[..12.min(now.len())]
+            ));
         }
     }
     Ok(())
@@ -150,9 +174,16 @@ pub fn decide_on(
         None => (None, None, None),
     };
     let summary: Option<serde_json::Value> = match rv {
-        Some(v) if v.summary_from_delta => Some(super::delta::last_delta(store, repo, &v.commit)?.ok_or_else(|| {
-            AppError::NotFound(format!("no delta has been computed for {} ({}): run `delta {repo} --base <ref> --head {}` first", v.git_ref, v.commit, v.git_ref))
-        })?),
+        Some(v) if v.summary_from_delta => {
+            let Some(base) = v.base.as_deref().filter(|b| !b.trim().is_empty()) else {
+                return invalid("--summary-from-delta needs --base <ref>: the stored delta must be the one computed against that base");
+            };
+            let last = super::delta::last_delta(store, repo, &v.commit)?.ok_or_else(|| {
+                AppError::NotFound(format!("no delta has been computed for {} ({}): run `delta {repo} --base {base} --head {}` first", v.git_ref, v.commit, v.git_ref))
+            })?;
+            check_delta_base(Path::new(&r.path), &last, base, repo, &v.git_ref)?;
+            Some(last)
+        }
         _ => None,
     };
     let summary_json: Option<String> = summary.as_ref().map(|s| s.to_string());
@@ -218,6 +249,8 @@ pub struct DecideLine {
     pub bundle: Option<String>,
     #[serde(default)]
     pub summary_from_delta: bool,
+    #[serde(default)]
+    pub base: Option<String>,
 }
 
 /// `decide` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line, each handed to
@@ -239,7 +272,7 @@ pub fn decide_batch(
                 &l.by,
                 l.feature.as_deref(),
                 l.family.as_deref(),
-                l.git_ref.as_ref().map(|r| RefVerdict { git_ref: r.clone(), commit: l.commit.clone().unwrap_or_default(), bundle: l.bundle.clone(), summary_from_delta: l.summary_from_delta }).as_ref(),
+                l.git_ref.as_ref().map(|r| RefVerdict { git_ref: r.clone(), commit: l.commit.clone().unwrap_or_default(), bundle: l.bundle.clone(), summary_from_delta: l.summary_from_delta, base: l.base.clone() }).as_ref(),
             )
         },
         |_| false,
