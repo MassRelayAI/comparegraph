@@ -470,7 +470,10 @@ fn a_branch_change_base_took_after_a_rename_is_on_base() {
     let v = fx.delta("main", "feat");
     let row = &branch(&v)["changed"][0];
     assert_eq!(row["already_on_base"]["via"], "name_and_tokens", "{row}");
-    assert_eq!((v["data"]["summary"]["share_already_on_base"].as_f64(), v["data"]["summary"]["stale_conflicts"].as_i64()), (Some(1.0), Some(0)));
+    // round 3: a near match is for a person to read, never landed work: the exact share is 0, the row is one `near_on_base`, and
+    // base moved the symbol without the branch's exact change, so it stays a stale conflict
+    let s = &v["data"]["summary"];
+    assert_eq!((s["share_already_on_base"].as_f64(), s["near_on_base"]["count"].as_i64(), s["stale_conflicts"].as_i64()), (Some(0.0), Some(1), Some(1)), "{s}");
 }
 
 #[test]
@@ -833,7 +836,10 @@ fn r2_base_took_a_moved_change_under_another_path_exactly_and_nearly() {
         assert_eq!(row["already_on_base"]["matches"][0]["qualified_name"], "src/c.py::process", "{row}");
         // the removal half: base no longer holds the merge-base body anywhere
         assert!(row_of(&v, "removed", "src/a.py::process").get("base_removed").is_some(), "{}", branch(&v));
-        assert_eq!(v["data"]["summary"]["share_already_on_base"].as_f64(), Some(1.0), "{}", v["data"]["summary"]);
+        // round 3: only the exact take is landed work; the near take leaves the added row to a person (`near_on_base`)
+        let s = &v["data"]["summary"];
+        let (share, near) = if via == "body_hash" { (1.0, 0) } else { (0.5, 1) };
+        assert_eq!((s["share_already_on_base"].as_f64(), s["near_on_base"]["count"].as_i64()), (Some(share), Some(near)), "{s}");
     }
 }
 

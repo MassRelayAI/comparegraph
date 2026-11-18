@@ -369,6 +369,22 @@ struct OnBase {
     confidence: f64,
     via: &'static str,
     matches: Vec<Match>,
+    /// `name_and_tokens` only: J(B,H) of the top match, and J(B,M) when the row has a merge-base body (4 decimals)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    j_head: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    j_merge_base: Option<f64>,
+}
+impl OnBase {
+    fn exact(via: &'static str, matches: Vec<Match>) -> OnBase {
+        OnBase { confidence: 1.0, via, matches, j_head: None, j_merge_base: None }
+    }
+    fn is_near(&self) -> bool {
+        self.via == "name_and_tokens"
+    }
+}
+fn round4(x: f64) -> f64 {
+    (x * 10_000.0).round() / 10_000.0
 }
 #[derive(Serialize)]
 struct Row {
@@ -421,10 +437,13 @@ impl Row {
             removal_resolved: false,
         }
     }
-    /// nothing left for the branch to carry, by `Judge::rule`: base holds the branch's version (added, changed), or holds the
-    /// removed symbol nowhere (removed).
+    /// nothing left for the branch to carry, by `Judge::rule`: base holds the branch's version EXACTLY (added, changed: a near
+    /// match is for a person to read, never landed work), or holds the removed symbol nowhere (removed).
     fn resolved(&self) -> bool {
-        self.on_base().is_some() || self.removal_resolved
+        self.on_base().is_some_and(|m| !m.is_near()) || self.removal_resolved
+    }
+    fn near(&self) -> Option<&OnBase> {
+        self.on_base().filter(|m| m.is_near())
     }
     /// changed or removed, not on base, and base changed, removed or moved the same symbol its own way since the merge base
     fn stale_conflict(&self) -> bool {
@@ -564,7 +583,7 @@ impl<'a> Judge<'a> {
             Change::Head { h, m } => {
                 if let Some(b) = self.base.syms.get(&key(h)) {
                     if b.hash == h.hash && self.fresh(b) {
-                        return Verdict { on_base: Some(OnBase { confidence: 1.0, via: "same_symbol", matches: matches_of(&[b]) }), ..none };
+                        return Verdict { on_base: Some(OnBase::exact("same_symbol", matches_of(&[b]))), ..none };
                     }
                 }
                 if h.trivial {
@@ -572,7 +591,7 @@ impl<'a> Judge<'a> {
                 }
                 let exact: Vec<&Sym> = self.by_hash.get(h.hash.as_str()).map(|v| v.iter().copied().filter(|b| key(b) != key(h) && self.fresh(b)).collect()).unwrap_or_default();
                 if !exact.is_empty() {
-                    return Verdict { on_base: Some(OnBase { confidence: 1.0, via: "body_hash", matches: matches_of(&exact) }), ..none };
+                    return Verdict { on_base: Some(OnBase::exact("body_hash", matches_of(&exact))), ..none };
                 }
                 let same_key_ok = self.fork.is_some();
                 let cands: Vec<&Sym> = self
@@ -588,19 +607,21 @@ impl<'a> Judge<'a> {
                     (Some(m), Some(g)) => g.of(m),
                     _ => None,
                 };
-                let mut best: Vec<(f64, &Sym)> = vec![];
+                let mut best: Vec<(f64, Option<f64>, &Sym)> = vec![];
                 for c in cands {
                     let Some(theirs) = self.g_base.of(c) else { continue };
                     let sim = jaccard(&mine, &theirs);
-                    if sim >= SIMILARITY_FLOOR && old.as_ref().is_none_or(|o| sim > jaccard(o, &theirs)) {
-                        best.push((sim, c));
+                    let to_old = old.as_ref().map(|o| jaccard(o, &theirs));
+                    if sim >= SIMILARITY_FLOOR && to_old.is_none_or(|t| sim > t) {
+                        best.push((sim, to_old, c));
                     }
                 }
-                best.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then((&a.1.path, &a.1.qn).cmp(&(&b.1.path, &b.1.qn))));
-                let Some(top) = best.first().map(|b| b.0) else { return none };
+                best.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then((&a.2.path, &a.2.qn).cmp(&(&b.2.path, &b.2.qn))));
+                let Some(&(top, top_old, _)) = best.first() else { return none };
                 let confidence = ((top * 100.0).floor() / 100.0).min(0.99);
-                let at_top: Vec<&Sym> = best.iter().filter(|b| b.0 == top).map(|b| b.1).collect();
-                Verdict { on_base: Some(OnBase { confidence, via: "name_and_tokens", matches: matches_of(&at_top) }), ..none }
+                let at_top: Vec<&Sym> = best.iter().filter(|b| b.0 == top).map(|b| b.2).collect();
+                let on = OnBase { confidence, via: "name_and_tokens", matches: matches_of(&at_top), j_head: Some(round4(top)), j_merge_base: top_old.map(round4) };
+                Verdict { on_base: Some(on), ..none }
             }
             Change::Removed { m } => {
                 if self.base.syms.contains_key(&key(m)) {
@@ -873,8 +894,13 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     rewritten.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
 
     let branch_symbols = added.len() + changed.len() + removed.len();
-    let on_base_n = added.iter().chain(changed.iter()).filter(|r| r.on_base().is_some()).count();
-    let exact_n = added.iter().chain(changed.iter()).filter(|r| r.on_base().is_some_and(|m| m.via != "name_and_tokens")).count();
+    // landed work is exact only (same_symbol, body_hash); a near match is listed apart, with its two similarities
+    let exact_n = added.iter().chain(changed.iter()).filter(|r| r.on_base().is_some_and(|m| !m.is_near())).count();
+    let near_rows: Vec<Value> = [("added", &added), ("changed", &changed)]
+        .iter()
+        .flat_map(|(sec, rows)| rows.iter().filter_map(move |r| r.near().map(|m| (sec, r, m))))
+        .map(|(sec, r, m)| json!({ "section": sec, "qualified_name": r.qualified_name, "kind": r.kind, "path": r.path, "confidence": m.confidence, "j_head": m.j_head, "j_merge_base": m.j_merge_base, "matches": m.matches }))
+        .collect();
     let trivial_n = added.iter().chain(changed.iter()).filter(|r| r.note == Some("trivial_body")).count();
     let base_removed_n = changed.iter().chain(removed.iter()).filter(|r| r.base_removed).count();
     // a change or deletion base does not hold, to a symbol base changed otherwise, removed, or moved without it
@@ -884,8 +910,9 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     let summary = json!({
         "branch_symbols": branch_symbols,
         "added": added.len(), "changed": changed.len(), "removed": removed.len(),
-        "already_on_base": on_base_n, "already_on_base_exact": exact_n, "base_removed": base_removed_n,
-        "share_already_on_base": share,
+        "already_on_base": exact_n, "already_on_base_exact": exact_n, "base_removed": base_removed_n,
+        "share_on_base_exact": share, "share_already_on_base": share,
+        "near_on_base": { "count": near_rows.len(), "rows": near_rows.iter().take(o.max_nodes).collect::<Vec<_>>() },
         "stale_conflicts": stale_conflicts,
         "features_touched": touched.len(),
         "files_base_deleted": deleted.len(), "files_base_rewritten": rewritten.len(), "files_branch_touched": touched_head.len(),
@@ -928,7 +955,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             }
         }
         let head_only = wa.len() + wc.len();
-        let already = wa.iter().chain(wc.iter()).filter(|r| r.on_base().is_some()).count();
+        let already = wa.iter().chain(wc.iter()).filter(|r| r.resolved()).count(); // exact only, as in the branch summary
         let ws = json!({
             "base_symbols": base.syms.len(), "head_symbols": head.syms.len(),
             "added": wa.len(), "removed": wr.len(), "changed": wc.len(), "unchanged": unchanged,
@@ -946,6 +973,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     limit_note(&mut limitations, "branch.changed", changed.len(), cap);
     limit_note(&mut limitations, "branch.removed", removed.len(), cap);
     limit_note(&mut limitations, "features_touched", feats.len(), cap);
+    limit_note(&mut limitations, "summary.near_on_base.rows", near_rows.len(), cap);
     limit_note(&mut limitations, "base_files.deleted", deleted.len(), cap);
     limit_note(&mut limitations, "base_files.rewritten", rewritten.len(), cap);
     if let Some((_, wa, wr, wc)) = &whole {

@@ -400,3 +400,15 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
     `an_ambiguous_short_commit_for_a_branch_verdict_is_refused` now keys its two recorded deltas on feat's real sha prefix (its
     fake commits are refused before the ambiguity is reached).
   - bigrams are cached per side and symbol (`delta::Grams`; unit test only, no behaviour to turn red).
+- **Round 3: near matches are never landed work** (the coordinator, 2026-11-18): `share_on_base_exact` counts exact rows only
+  (`same_symbol`, `body_hash`, and removed rows base holds nowhere); `share_already_on_base` is KEPT and equals it (older readers
+  and `decide` records keep working, none of them silently reads near rows as landed); `already_on_base` equals
+  `already_on_base_exact`. Near matches are `summary.near_on_base {count, rows}`, each row with `j_head` = J(B,H) and
+  `j_merge_base` = J(B,M) (null for a pure add), rows capped at `--max-nodes` (a `truncated` limitation). A near row sorts with the
+  rows not on base and a changed near row base changed or moved counts as a stale conflict. `decide --summary-from-delta` stores
+  both. The verdict reads the exact share; near rows are for a person (`docs/usage.md`). The whole-tree share is exact-only too.
+- **Round 3: Windows reserved device names** (`con`, `prn`, `aux`, `nul`, `com1`-`com9`, `lpt1`-`lpt9`, any case, with or
+  without an extension: `aux.c`, `NUL.txt`) refuse the tree as `unsafe_tree` (rule `windows_reserved_name`) on EVERY platform:
+  a tree must extract the same everywhere. This supersedes the "not covered" note on reserved names above; a tree that holds one
+  (the Linux kernel holds `aux.c`) cannot be ref-built. **Known and unhandled:** Unicode normalisation collisions (an NFC and an
+  NFD spelling of one name, which HFS+ and some macOS file systems fold to one file) are neither refused nor skipped.

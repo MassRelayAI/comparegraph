@@ -91,6 +91,7 @@ fn hfs_ignorable(c: char) -> bool {
 /// - `ntfs_dotgit`: `.git` followed by dots or spaces only (NTFS drops them: `.git.`, `.git `)
 /// - `ntfs_8dot3_dotgit`: `git~1`, the 8.3 short name of `.git` (with trailing dots or spaces too)
 /// - `ntfs_stream`: a `:` (an NTFS alternate data stream such as `.git::$INDEX_ALLOCATION`, or a drive letter)
+/// - `windows_reserved_name`: `con`, `prn`, `aux`, `nul`, `com1`-`com9`, `lpt1`-`lpt9`, any case, with or without an extension
 /// - `trailing_dot_or_space`: Windows drops them, so the name would alias another path
 pub fn unsafe_component(c: &str) -> Option<&'static str> {
     if c.is_empty() || c == "." || c == ".." {
@@ -112,6 +113,12 @@ pub fn unsafe_component(c: &str) -> Option<&'static str> {
     }
     if trimmed.eq_ignore_ascii_case("git~1") {
         return Some("ntfs_8dot3_dotgit");
+    }
+    // a device name opens the device on Windows whatever the extension (`aux.c`, `NUL.txt`): one tree must extract the same everywhere
+    let stem = trimmed.split('.').next().unwrap_or("").trim_end_matches(' ').to_ascii_lowercase();
+    let numbered = stem.len() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) && matches!(stem.as_bytes()[3], b'1'..=b'9');
+    if matches!(stem.as_str(), "con" | "prn" | "aux" | "nul") || numbered {
+        return Some("windows_reserved_name");
     }
     if trimmed.len() != c.len() {
         return Some("trailing_dot_or_space");
@@ -557,10 +564,15 @@ mod tests {
             ("a/\u{feff}.GIT/x", "hfs_dotgit"),
             ("a/name./x", "trailing_dot_or_space"),
             ("a/name /x", "trailing_dot_or_space"),
+            ("src/aux.c", "windows_reserved_name"),
+            ("NUL.txt", "windows_reserved_name"),
+            ("a/Com1/x", "windows_reserved_name"),
+            ("LPT9.tar.gz", "windows_reserved_name"),
+            ("con", "windows_reserved_name"),
         ] {
             assert_eq!(safe_rel_path(p), Err(rule), "{p:?}");
         }
-        for ok in [".gitignore", ".github/workflows/ci.yml", "git~2/x", "a/.git-blame-ignore-revs", "x.y/z", "...a"] {
+        for ok in [".gitignore", ".github/workflows/ci.yml", "git~2/x", "a/.git-blame-ignore-revs", "x.y/z", "...a", "src/console.c", "com10.c", "com0", "auxiliary.py", "nul_check.py"] {
             assert!(safe_rel_path(ok).is_ok(), "{ok:?} refused");
         }
     }

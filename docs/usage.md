@@ -82,7 +82,10 @@ working tree never change.
 ```bash
 comparegraph delta myrepo --base origin/main --head origin/feature-x --build-missing --pretty
 # summary.branch_symbols: symbols the branch added, changed or removed since the merge base
-# summary.share_already_on_base: how many of those base has now, under any name or path (1.0 = all)
+# summary.share_on_base_exact: how many of those base has now EXACTLY (same body hash, any name or path; 1.0 = all)
+# summary.share_already_on_base: the same number (kept for older readers)
+# summary.near_on_base: rows base holds only nearly (J >= 0.9, nearer the branch than the merge base), each with its
+#   j_head and j_merge_base: never counted as landed, for a person to read
 # summary.stale_conflicts: symbols the branch changed that base changed differently, removed or moved (not on base)
 # base_files.deleted: files base deleted that the branch touched
 comparegraph delta myrepo --base origin/main --head origin/feature-x --refresh   # after either ref moved: rebuilds only what moved
@@ -91,7 +94,9 @@ comparegraph gc --refs                      # dry run: gone, superseded and old 
 comparegraph show myrepo src/a.py::bar --ref origin/feature-x    # a graph read verb answers from a ref's run (and says `stale` if the ref moved)
 ```
 
-The fields are facts; whether to restack, take parts or retire the branch is the reader's call.
+The fields are facts; whether to restack, take parts or retire the branch is the reader's call. A verdict reads the exact
+share (`share_on_base_exact`); the `near_on_base` rows are for a person to read, one by one, before a branch with any of them is
+retired.
 
 ## From a branch to a verdict to a deleted branch
 
@@ -99,6 +104,7 @@ The fields are facts; whether to restack, take parts or retire the branch is the
 comparegraph build myrepo --ref origin/feature-x               # the branch's tree, read as raw git blobs
 comparegraph delta myrepo --base origin/main --head origin/feature-x --build-missing
 comparegraph decide myrepo reject --why "already on main as bar2" --by me --ref origin/feature-x --commit <sha> --summary-from-delta --bundle D:/bundles/feature-x.bundle
+# the record keeps the exact share and the near rows; the verdict is read off the exact share, the near rows by a person
 git bundle create D:/bundles/feature-x.bundle origin/feature-x   # outside CompareGraph: the only archive of the branch
 git branch -D feature-x                                          # then the branch can go
 comparegraph gc --refs                                           # dry run: what is gone, superseded or old
