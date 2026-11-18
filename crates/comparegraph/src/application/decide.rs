@@ -44,6 +44,7 @@ fn invalid<T>(m: impl Into<String>) -> Result<T> {
     Err(AppError::InvalidArguments(m.into()))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn decide(
     root: &Path,
     repo: &str,
@@ -75,6 +76,7 @@ fn check_input(disposition: &str, why: &str, by: &str) -> Result<()> {
 }
 
 /// The body of `decide` on an already open store; inside a batch transaction the write is a savepoint.
+#[allow(clippy::too_many_arguments)]
 pub fn decide_on(
     store: &Store,
     repo: &str,
