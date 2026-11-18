@@ -627,3 +627,21 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
 - **Pinned** (each removed alone turns a test red; `mut7.json`): the per-row conflict check, the entry comparison, the 1.0
   tree rule (base renames the changed file away and holds the new body elsewhere), `-z` with raw-path keys, the
   `merged_into_base_before` items, `--attr-source`, the sweep, the tsx inheritance grammar.
+
+## Plan 14 round 7 (2026-11-19, branch feat/plan-14)
+- **B2, back-merges**: walking base's first-parent chain for F, a merge whose non-first parent head reaches is stepped past
+  (head's work entered base there; a back-merge carries that merge into head). F is the first commit of the chain head reaches
+  that is not such a merge (P1, P1b).
+- **B2, joined histories and shallow clones**: when F is None but a merge base exists (unrelated histories joined by a merge),
+  one unknown item `merged_into_base_before` and a limitation saying why (P3); when `git rev-parse --is-shallow-repository`
+  says true, B2 is unknown: one item and a `shallow_history` limitation (P4).
+- **Any conflict**: every yes row turns unknown, `merge_conflict` (a conflict on the row's own path stays
+  `merge_changes_file`), the share-level item kept, and a `merge_conflicts` limitation lists the conflicted paths as keyed from
+  `merge-tree -z` (P10; the non-UTF-8 modify/delete pins the C-quoted key). With this rule the share-level `merge_conflict`
+  item is reached only when every row and item is a yes, which a conflict now never leaves: it stays as a second guard.
+- **A known limit (P2)**: base fast-forwarded to the branch and then reverted its work, the branch going on: the merge base and
+  F are the branch's first tip, on base's own first-parent chain, and the graph cannot tell it from base reverting its own
+  commit from before the fork. The delta reads 1.0; `known_limit_fast_forward_then_revert_reads_one` asserts it so a change is
+  seen. A 1.0 means git considers the branch fully merged and every change is accounted for, not that base never reverted
+  earlier branch work: a person confirms before a branch is deleted, and a deleted branch is always bundled first.
+- **The B2 fallback** is pinned through a test hook, `COMPAREGRAPH_TEST_NO_MERGE_BASE` (a git without `--merge-base`).
