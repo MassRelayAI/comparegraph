@@ -265,3 +265,57 @@ fn a_branch_verdict_needs_a_commit_the_ref_reaches() {
     assert_eq!(call(&feat)["ok"], true);
     assert_eq!(call(&git_out(&d, &["rev-parse", "feat~1"]))["ok"], true, "an ancestor of the ref is reached");
 }
+
+// ---------------------------------------------------------------- review round 3, the minors
+
+/// a 30-line body named `name`, with a tweak on its return
+fn long_fn(name: &str, tweak: &str) -> String {
+    let mut s = format!("def {name}(items):\n    total = 0\n");
+    for i in 0..30 {
+        s.push_str(&format!("    total = total + items[{i}] * {} - len(items) + k{i}\n", i + 2));
+    }
+    s.push_str(&format!("    return total{tweak}\n"));
+    s
+}
+
+/// MINOR (round 3): the near rows of the summary are capped at `--max-nodes`, and the cut says `truncated`.
+#[test]
+fn the_near_rows_are_capped_at_max_nodes() {
+    let fx = Fx::new(&[]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "feat"]);
+    write(&d, "src/n.py", &format!("{}\n{}", long_fn("p1", ""), long_fn("p2", "")));
+    commit(&d, "feat adds p1 and p2");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/o.py", &format!("{}\n{}", long_fn("p1", " + 1"), long_fn("p2", " + 1")));
+    commit(&d, "main has near copies of both");
+    let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--refresh", "--max-nodes", "1"]);
+    let near = &v["data"]["summary"]["near_on_base"];
+    assert_eq!((near["count"].as_i64(), near["rows"].as_array().map(Vec::len)), (Some(2), Some(1)), "{near}");
+    assert!(limits(&v).contains("summary.near_on_base.rows"), "{}", limits(&v));
+}
+
+/// MINOR (round 3): `decide --summary-from-delta` stores the last delta of the commit only when that delta used the base the
+/// decision names (`--base`): a delta against another base is refused, and so is a call that names none.
+#[test]
+fn a_summary_from_delta_needs_the_base_the_delta_used() {
+    let fx = Fx::new(&[]);
+    let d = fx.clone();
+    git(&d, &["branch", "-q", "other", "main"]);
+    let sha = git_out(&d, &["rev-parse", "feat"]);
+    ok(fx.root(), &["delta", "r", "--base", "other", "--head", "feat", "--build-missing"]);
+    let call = |base: Option<&str>| {
+        let mut a = vec!["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", sha.as_str(), "--summary-from-delta"];
+        if let Some(b) = base {
+            a.extend(["--base", b]);
+        }
+        run(fx.root(), &a)
+    };
+    let e = call(Some("main"));
+    assert_eq!((e["ok"].clone(), e["error"]["code"].clone()), (Value::Bool(false), Value::from("invalid_arguments")), "a delta against `other` was stored for --base main: {e}");
+    assert!(e["error"]["message"].as_str().unwrap().contains("other"), "{e}");
+    assert_eq!(call(None)["error"]["code"], "invalid_arguments", "--summary-from-delta without --base must be refused");
+    let v = call(Some("other"));
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["data"]["summary"]["base_ref"], "other", "{v}");
+}

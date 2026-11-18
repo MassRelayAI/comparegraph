@@ -731,3 +731,63 @@ mod lock_tests {
         assert!(!lock.exists());
     }
 }
+
+#[cfg(test)]
+mod lock_round3_tests {
+    use super::{lock_tree, materialise, remove_tree};
+    use std::path::Path;
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let o = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
+        assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+        String::from_utf8_lossy(&o.stdout).trim().to_string()
+    }
+    /// a clone with one commit (a small file and a 2,000-byte one); its sha
+    fn clone_one(d: &Path) -> String {
+        git(d, &["init", "-q", "-b", "main"]);
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("src/a.py"), "def f(x):\n    return x + 1\n").unwrap();
+        std::fs::write(d.join("src/big.py"), "X = 1\n".repeat(400)).unwrap();
+        git(d, &["add", "-A"]);
+        git(d, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c"]);
+        git(d, &["rev-parse", "HEAD"])
+    }
+
+    /// MINOR (round 3): a holder never removes a lock file that is no longer its own (taken over and re-created by another).
+    #[test]
+    fn a_lock_is_removed_only_by_its_own_holder() {
+        let d = tempfile::tempdir().unwrap();
+        let (lock, marker) = (d.path().join("c.lock"), d.path().join("c.complete"));
+        let held = lock_tree(&lock, &marker).unwrap().expect("free lock taken");
+        std::fs::write(&lock, "1 someone-else").unwrap(); // another holder's lock now sits at the path
+        drop(held);
+        assert!(lock.exists(), "a holder removed a lock file it did not hold");
+    }
+
+    /// MINOR (round 3): `remove_tree` (gc) never deletes a tree a reader still holds.
+    #[test]
+    fn remove_tree_refuses_while_a_reader_holds_the_tree() {
+        let (clone, store) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let c = clone_one(clone.path());
+        let tree = materialise(clone.path(), store.path(), "r", &c, u64::MAX).unwrap();
+        assert!(!remove_tree(store.path(), "r", &c).unwrap(), "gc removed a tree a reader holds");
+        assert!(tree.dir.join("src/a.py").is_file());
+        drop(tree);
+        assert!(remove_tree(store.path(), "r", &c).unwrap(), "the tree stays after its reader went");
+    }
+
+    /// MINOR (round 3): a re-extraction (a larger size limit) waits for the readers of the tree it replaces.
+    #[test]
+    fn a_re_extraction_waits_for_the_readers_of_the_old_tree() {
+        let (clone, store) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let c = clone_one(clone.path());
+        let small = materialise(clone.path(), store.path(), "r", &c, 1000).unwrap();
+        assert!(!small.dir.join("src/big.py").exists());
+        let (cl, st, cc) = (clone.path().to_path_buf(), store.path().to_path_buf(), c.clone());
+        let h = std::thread::spawn(move || materialise(&cl, &st, "r", &cc, u64::MAX).map(|t| t.dir.join("src/big.py").is_file()));
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        assert!(small.dir.join("src/a.py").is_file(), "the tree was deleted under its reader");
+        drop(small);
+        assert_eq!(h.join().unwrap().map_err(|e| e.to_string()), Ok(true));
+    }
+}
