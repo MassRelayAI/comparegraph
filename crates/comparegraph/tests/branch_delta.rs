@@ -322,14 +322,15 @@ fn a_function_the_lane_changed_and_base_rewrote_is_a_stale_conflict() {
 const HANDLE: &str = "def handle(req):\n    user = req.user\n    data = load(req.path)\n    out = render(user, data)\n    return out\n";
 const HANDLE_GUARDED: &str = "def handle(req):\n    if not req.ok:\n        raise Denied()\n    user = req.user\n    data = load(req.path)\n    out = render(user, data)\n    return out\n";
 
-/// `def process(items)`: 14 near-identical lines, optionally a 2-line guard after the first line and a tweak on the return.
+/// `def process(items)`: 30 lines with their own names (so the token-bigram Jaccard of a 2-line change stays above 0.9),
+/// optionally a 2-line guard after the first line and a tweak on the return.
 fn long_process(guard: bool, tweak: &str) -> String {
     let mut s = String::from("def process(items):\n    total = 0\n");
     if guard {
         s.push_str("    if not items:\n        raise Denied()\n");
     }
-    for i in 0..14 {
-        s.push_str(&format!("    total = total + items[{i}] * {} - len(items)\n", i + 2));
+    for i in 0..30 {
+        s.push_str(&format!("    total = total + items[{i}] * {} - len(items) + k{i}\n", i + 2));
     }
     s.push_str(&format!("    return total{tweak}\n"));
     s
@@ -375,6 +376,10 @@ fn a_long_body_whose_moved_copy_lacks_the_branch_s_two_new_lines_is_not_on_base(
     let row = &branch(&v)["changed"][0];
     assert_eq!(row["qualified_name"], "src/a.py::process");
     assert!(row["already_on_base"].is_null(), "the moved copy is nearer the merge base than the branch: {row}");
+    // the moved copy IS within the name_and_tokens floor of head: only the nearer-to-head rule keeps it off base
+    let w = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--whole-tree"]);
+    let near = w["data"]["whole_tree"]["added"].as_array().unwrap().iter().find(|r| r["qualified_name"] == "src/a.py::process").unwrap().clone();
+    assert_eq!(near["already_on_base"]["via"], "name_and_tokens", "{near}");
     assert_eq!((s["share_already_on_base"].as_f64(), s["stale_conflicts"].as_i64()), (Some(0.0), Some(1)), "{s}");
 }
 
