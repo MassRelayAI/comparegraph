@@ -73,6 +73,17 @@ struct Side {
     /// what the run's own read left out (truncation, skipped files, the size limit, tree hazards): every one is carried into the
     /// delta's limitations, naming the side
     limitations: Vec<crate::domain::Limitation>,
+    /// U(T): the blob ids (a multiset: id -> copies) of the tree's files inside the repo's subset, in a parsed language, with no
+    /// `file` node in the run. One set for every reason a file went unread: over the size limit, not UTF-8 (content or path), a
+    /// reserved name, a case collision, past `max_files`, minified, or skipped by the walker. None when git could not list the
+    /// tree (`partial`): nothing that needs the set is then a yes.
+    unread: Option<BTreeMap<String, usize>>,
+}
+
+/// `a` is a sub-multiset of `b`: every id of `a` is in `b` at least as many times. Not known (None) is never within.
+fn sub(a: &Option<BTreeMap<String, usize>>, b: &Option<BTreeMap<String, usize>>) -> bool {
+    let (Some(a), Some(b)) = (a, b) else { return false };
+    a.iter().all(|(k, n)| b.get(k).copied().unwrap_or(0) >= *n)
 }
 
 fn tokens(text: &str, name: &str) -> Vec<String> {
@@ -337,7 +348,24 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         }
     }
     let limitations = run.limitations.clone();
-    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations };
+    let mut read: HashSet<String> = HashSet::new();
+    {
+        let mut st = store.conn().prepare("SELECT path FROM node WHERE run_id=?1 AND kind IN ('file','test')")?;
+        for p in st.query_map([run_id], |r| r.get::<_, String>(0))? {
+            read.insert(p?);
+        }
+    }
+    let subset = crate::providers::reference::walker::Subset::new(&want.include, &want.exclude).map_err(AppError::InvalidArguments)?;
+    let unread = gitref::tree_index(clone, commit).ok().map(|tree| {
+        let mut unread: BTreeMap<String, usize> = BTreeMap::new();
+        for (p, (_, oid)) in &tree.blobs {
+            if subset.contains(p) && crate::providers::reference::walker::language_for(Path::new(p)).is_some() && !read.contains(p) {
+                *unread.entry(oid.clone()).or_default() += 1;
+            }
+        }
+        unread
+    });
+    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations, unread };
     for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
@@ -558,13 +586,16 @@ struct Judge<'a> {
     by_hash: HashMap<CKey, Vec<&'a Sym>>,
     by_name: HashMap<(&'a str, &'a str), Vec<&'a Sym>>,
     fork_by_name: HashMap<(&'a str, &'a str), Vec<&'a Sym>>,
-    head_by_name: HashMap<(&'a str, &'a str), Vec<&'a Sym>>,
     /// copies per (kind, body hash): base, head, merge base
     cb: HashMap<CKey, i64>,
     ch: HashMap<CKey, i64>,
     cm: HashMap<CKey, i64>,
     names_base: HashMap<(String, String), usize>,
     names_head: HashMap<(String, String), usize>,
+    /// A5: U(mb) is a sub-multiset of U(base) and of U(head) (every count of the merge base is whole on both other sides)
+    mb_read_whole: bool,
+    /// R4: U(base) is a sub-multiset of U(mb) (base gained no blob its run did not read)
+    base_read_whole: bool,
     g_base: Grams<'a>,
     g_head: Grams<'a>,
     g_fork: Option<Grams<'a>>,
@@ -590,26 +621,17 @@ impl<'a> Judge<'a> {
             by_hash,
             by_name: index(base),
             fork_by_name: fork.map(index).unwrap_or_default(),
-            head_by_name: index(head),
             cb: counts(base),
             ch: counts(head),
             cm: fork.map(counts).unwrap_or_default(),
             names_base: names_per_file(base),
             names_head: names_per_file(head),
+            mb_read_whole: fork.is_none_or(|f| sub(&f.unread, &base.unread) && sub(&f.unread, &head.unread)),
+            base_read_whole: fork.is_none_or(|f| sub(&base.unread, &f.unread)),
             g_base: Grams::new(base),
             g_head: Grams::new(head),
             g_fork: fork.map(Grams::new),
         }
-    }
-
-    /// base symbol `b` is new or changed on base since the fork (with no fork, every base symbol is). Used by the removed-row
-    /// reading only, until the removed rules (R1-R5) replace it.
-    fn fresh(&self, b: &Sym) -> bool {
-        self.fork.is_none_or(|f| f.syms.get(&key(b)).is_none_or(|m| m.hash != b.hash))
-    }
-
-    fn sim_base(&self, b: &Sym, other: &HashSet<String>) -> Option<f64> {
-        self.g_base.of(b).map(|g| jaccard(&g, other))
     }
 
     /// A1: base holds the row's (kind, qualified name) with the head body, and the name is defined once in that file on base and
@@ -628,6 +650,8 @@ impl<'a> Judge<'a> {
     /// - A3 h - m <= 0 (a copy, move or swap of merge-base code): unknown, `body_on_merge_base`;
     /// - A4 credits = min(h - m, b - m) less the A1 rows of x (and, with no fork, less the head symbols base holds as they are);
     ///   of the r rows of x left: credits >= r: yes, `body_hash`; credits <= 0: no; else all r unknown, `shared_credit`;
+    /// - A5 an A4 yes also needs U(mb) within U(base) and within U(head) (multisets): else unknown, `merge_base_unread` (a copy
+    ///   the merge base's run could not read is missing from m);
     /// - A6 a `name_and_tokens` hit is never a yes: it turns a no into unknown, `near`.
     fn judge_heads(&self, rows: &mut [Row], heads: &[HeadPair<'a>], identical: &HashMap<CKey, i64>) {
         let mut a1: HashMap<CKey, i64> = identical.clone();
@@ -652,9 +676,10 @@ impl<'a> Judge<'a> {
                 let h = heads[i].0;
                 rows[i].answer = Some(if hm <= 0 {
                     Answer::Unknown("body_on_merge_base")
+                } else if credits >= r && !self.mb_read_whole {
+                    Answer::Unknown("merge_base_unread")
                 } else if credits >= r {
-                    let at: Vec<&Sym> = self.by_hash.get(&ck).map(|v| v.iter().copied().filter(|b| key(b) != key(h)).collect()).unwrap_or_default();
-                    rows[i].matches = matches_of(&at);
+                    rows[i].matches = matches_of(&self.copies(h));
                     Answer::Yes("body_hash")
                 } else if credits <= 0 {
                     Answer::No
@@ -705,34 +730,61 @@ impl<'a> Judge<'a> {
         Some(OnBase { confidence, via: "name_and_tokens", matches: matches_of(&at_top), j_head: Some(round4(top)), j_merge_base: top_old.map(round4) })
     }
 
-    /// A removed row (merge-base body M): resolved iff base holds the symbol under its own (kind, qualified name) nowhere and keeps
-    /// no copy of M (`copies_of`) under another name or path. A copy fills `base_moved_to` and leaves the row unresolved.
-    fn removed(&self, m: &'a Sym) -> (bool, Vec<&'a Sym>) {
-        if self.base.syms.contains_key(&key(m)) {
-            return (false, vec![]); // base keeps it in place (as it was, or changed its own way: a stale conflict)
-        }
-        let copies = self.copies_of(m);
-        (copies.is_empty(), copies)
+    /// Every base symbol with `s`'s (kind, body hash) under another (kind, qualified name), sorted by path and name.
+    fn copies(&self, s: &Sym) -> Vec<&'a Sym> {
+        let mut v: Vec<&'a Sym> = self.by_hash.get(&ckey(s)).map(|v| v.iter().copied().filter(|b| key(b) != key(s)).collect()).unwrap_or_default();
+        v.sort_by(|a, b| (&a.path, &a.qn, a.ls).cmp(&(&b.path, &b.qn, b.ls)));
+        v
     }
 
-    /// Where base keeps merge-base body `m` under another (kind, qualified name): a fresh base symbol with M's hash, or of M's
-    /// name and kind with J(B,M) >= 0.9 that is not nearer the branch's own new version of it (the head partner of a move) than M.
-    /// A base symbol that already held its body on the merge base is a duplicate there, not a place base moved `m` to.
-    fn copies_of(&self, m: &'a Sym) -> Vec<&'a Sym> {
-        let mut out: Vec<&'a Sym> = self.by_hash.get(&ckey(m)).map(|v| v.iter().copied().filter(|b| key(b) != key(m) && self.fresh(b)).collect()).unwrap_or_default();
-        let (Some(gf), false) = (&self.g_fork, m.trivial) else { return out };
-        let Some(old) = gf.of(m) else { return out };
-        let new = self.head_partner(m).and_then(|h| self.g_head.of(h));
-        for b in self.by_name.get(&(m.name.as_str(), m.kind.as_str())).into_iter().flatten().copied() {
-            if key(b) == key(m) || b.hash == m.hash || !self.fresh(b) {
-                continue;
-            }
-            let Some(to_old) = self.sim_base(b, &old) else { continue };
-            if to_old >= SIMILARITY_FLOOR && new.as_ref().is_none_or(|n| to_old > self.sim_base(b, n).unwrap_or(0.0)) {
-                out.push(b);
-            }
+    /// **THE MODEL** for a removed row (merge-base body y; m, b, h the copies of (kind, y) on merge base, base and head):
+    /// - R1 base still holds the key: no (a stale conflict when base changed it);
+    /// - R2 b >= m: no; `base_moved_to` lists every base symbol with y;
+    /// - R3 0 < b < m (`base_copies`), or a near copy of y on base (`near`: same name and kind, J >= 0.9), or h >= m (the branch
+    ///   only moved it, `branch_moved`): unknown;
+    /// - R4 b = 0 and U(base) within U(mb) (base gained no blob its run did not read): yes, `absent_on_base`;
+    /// - R5 b = 0 but base gained an unread blob: unknown, `base_unread`.
+    fn removed(&self, m: &'a Sym) -> Answer {
+        if self.base.syms.contains_key(&key(m)) {
+            return Answer::No; // R1: base keeps it in place (as it was, or changed its own way)
         }
-        out
+        let ck = ckey(m);
+        let (mm, bb, hh) = (n_of(&self.cm, &ck), n_of(&self.cb, &ck), n_of(&self.ch, &ck));
+        if bb >= mm {
+            return Answer::No; // R2
+        }
+        if bb > 0 {
+            return Answer::Unknown("base_copies");
+        }
+        if self.near_copy(m) {
+            return Answer::Unknown("near");
+        }
+        if hh >= mm {
+            return Answer::Unknown("branch_moved");
+        }
+        if !self.base_read_whole {
+            return Answer::Unknown("base_unread"); // R5
+        }
+        Answer::Yes("absent_on_base") // R4
+    }
+
+    /// Where base keeps merge-base body `m` under another (kind, qualified name): every base symbol with its body.
+    fn moved_to(&self, m: &Sym) -> Vec<Match> {
+        let mut v: Vec<Match> = self.copies(m).into_iter().map(|b| Match { qualified_name: b.qn.clone(), path: b.path.clone() }).collect();
+        v.dedup_by(|a, b| a.path == b.path && a.qualified_name == b.qualified_name);
+        v
+    }
+
+    /// R3: base holds a near copy of removed `m`: a symbol of its name and kind under another key whose token-bigram Jaccard with
+    /// M is >= 0.9.
+    fn near_copy(&self, m: &'a Sym) -> bool {
+        let (Some(gf), false) = (&self.g_fork, m.trivial) else { return false };
+        let Some(old) = gf.of(m) else { return false };
+        self.by_name
+            .get(&(m.name.as_str(), m.kind.as_str()))
+            .into_iter()
+            .flatten()
+            .any(|b| key(b) != key(m) && self.g_base.of(b).is_some_and(|g| jaccard(&g, &old) >= SIMILARITY_FLOOR))
     }
 
     /// The merge-base body an added head symbol replaces: the merge-base symbol of its name and kind (one the branch removed
@@ -752,13 +804,6 @@ impl<'a> Judge<'a> {
         }
         let near: Vec<&'a Sym> = fork.all.iter().filter(|m| m.kind == h.kind && removed(m) && score(m) >= SIMILARITY_FLOOR).collect();
         pick(near)
-    }
-
-    /// The reverse of `fork_partner`: the head symbol the branch added in place of removed `m` (its name and kind, not on the
-    /// merge base), if any.
-    fn head_partner(&self, m: &'a Sym) -> Option<&'a Sym> {
-        let fork = self.fork?;
-        self.head_by_name.get(&(m.name.as_str(), m.kind.as_str()))?.iter().copied().find(|h| !fork.syms.contains_key(&key(h)))
     }
 }
 
@@ -897,7 +942,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
                 match in_base {
                     None => {
                         r.base_removed = true;
-                        r.base_moved_to = matches_of(&judge.copies_of(m));
+                        r.base_moved_to = judge.moved_to(m);
                     }
                     Some(b) => r.base_also_changed = b.hash != m.hash,
                 }
@@ -922,11 +967,8 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     for (k, m) in &mb.syms {
         if !head.syms.contains_key(k) {
             let mut r = Row::of(m);
-            let (resolved, copies) = judge.removed(m);
-            if resolved {
-                r.answer = Some(Answer::Yes("absent_on_base"));
-            }
-            r.base_moved_to = matches_of(&copies);
+            r.answer = Some(judge.removed(m));
+            r.base_moved_to = judge.moved_to(m);
             match base.syms.get(k) {
                 None => r.base_removed = true,
                 Some(b) => r.base_also_changed = b.hash != m.hash,
@@ -1124,6 +1166,13 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             limitations.push(json!({ "code": "truncated", "detail": format!("{} (run {}): {} run limitations, the first {cap} listed; the rest by code: {}", names.join(" and "), s.run, s.limitations.len(), rest.join(", ")), "data": { "sides": names, "run": s.run } }));
         }
     }
+    for (n, s) in &recorded {
+        match &s.unread {
+            None => limitations.push(json!({ "code": "partial", "detail": format!("git ls-tree failed for {n} (run {}): which of its files the run did not read is not known, so no row that needs it is a yes", s.run) })),
+            Some(u) if !u.is_empty() => limitations.push(json!({ "code": "partial", "detail": format!("{n} (run {}): {} file(s) of the subset in a parsed language have no file node in the run (unread); the copy counts cannot see into them", s.run, u.values().sum::<usize>()) })),
+            Some(_) => {}
+        }
+    }
     if recorded.iter().any(|(_, s)| s.limits.is_none()) {
         limitations.push(json!({ "code": "partial", "detail": "a side's run was built before file limits were recorded: whether all sides read the same files is not known" }));
     }
@@ -1135,10 +1184,20 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             limitations.push(json!({ "code": "partial", "detail": format!("{n} {what}") }));
         }
     }
+    let mut moved_cut = 0usize;
     for (v, rm) in [(&mut added, false), (&mut changed, false), (&mut removed, true)] {
         sort_rows(v);
         v.truncate(cap);
-        v.iter_mut().for_each(|r| r.encode(rm));
+        for r in v.iter_mut() {
+            if r.base_moved_to.len() > cap {
+                r.base_moved_to.truncate(cap);
+                moved_cut += 1;
+            }
+            r.encode(rm);
+        }
+    }
+    if moved_cut > 0 {
+        limitations.push(json!({ "code": "truncated", "detail": format!("base_moved_to: {moved_cut} row(s) list more than {cap} base copies, the first {cap} by path listed; raise --max-nodes, up to 2000") }));
     }
     deleted.truncate(cap);
     rewritten.truncate(cap);
@@ -1176,7 +1235,7 @@ mod tests {
     use super::*;
 
     fn side(files: &[(&str, &str)], syms: &[(&str, &str, u32, u32)]) -> Side {
-        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![] };
+        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), all: vec![], files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![], unread: Some(BTreeMap::new()) };
         for (p, t) in files {
             s.files.insert(p.to_string(), t.lines().map(String::from).collect());
         }

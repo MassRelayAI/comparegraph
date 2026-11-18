@@ -836,9 +836,14 @@ fn r2_base_took_a_moved_change_under_another_path_exactly_and_nearly() {
         assert_eq!(row["already_on_base"]["matches"][0]["qualified_name"], "src/c.py::process", "{row}");
         // the removal half: base no longer holds the merge-base body anywhere
         assert!(row_of(&v, "removed", "src/a.py::process").get("base_removed").is_some(), "{}", branch(&v));
-        // round 3: only the exact take is landed work; the near take leaves the added row to a person (`near_on_base`)
+        // round 3: only the exact take is landed work; the near take leaves the added row to a person (`near_on_base`).
+        // The delta model (R3) changed the removal half: base holds a near copy of the merge-base body (its guarded take), so
+        // whether base removed the old body or keeps a changed copy of it is not known: the removed row is unknown (`near`) and
+        // counts against the share, in both cases (design read 2026-11-19: "moves the branch made that base also took read
+        // unknown"). Was 1.0 / 0.5.
+        assert_eq!(row_of(&v, "removed", "src/a.py::process")["note"], "near", "{}", branch(&v));
         let s = &v["data"]["summary"];
-        let (share, near) = if via == "body_hash" { (1.0, 0) } else { (0.5, 1) };
+        let (share, near) = if via == "body_hash" { (0.5, 0) } else { (0.0, 1) };
         assert_eq!((s["share_already_on_base"].as_f64(), s["near_on_base"]["count"].as_i64()), (Some(share), Some(near)), "{s}");
     }
 }

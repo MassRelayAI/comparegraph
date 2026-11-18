@@ -279,6 +279,52 @@ fn list_tree(clone: &Path, commit: &str, max_file_bytes: u64) -> std::result::Re
     Ok((kept, lims))
 }
 
+/// Every entry of a commit's tree as git lists it (`git ls-tree -r -z --full-tree`), nothing skipped: what a run of the commit
+/// could have read. Paths that are not UTF-8 are kept lossily (they are compared, never written).
+#[derive(Debug, Default, Clone)]
+pub struct TreeIndex {
+    /// every blob: path -> (mode, object id)
+    pub blobs: std::collections::BTreeMap<String, (String, String)>,
+    /// every gitlink (a submodule entry): path -> the commit it pins
+    pub gitlinks: std::collections::BTreeMap<String, String>,
+}
+
+/// The `TreeIndex` of `commit` in `clone`.
+pub fn tree_index(clone: &Path, commit: &str) -> Result<TreeIndex> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(clone)
+        .args(["ls-tree", "-r", "-z", "--full-tree", commit])
+        .output()
+        .map_err(|e| AppError::Io(clone.to_path_buf(), e))?;
+    if !out.status.success() {
+        return Err(AppError::structured(
+            "io_error",
+            format!("git ls-tree {commit} failed: {}", String::from_utf8_lossy(&out.stderr).trim()),
+            Some("the clone must be a git repository that holds this commit".into()),
+            None,
+        ));
+    }
+    let mut t = TreeIndex::default();
+    for rec in out.stdout.split(|b| *b == 0).filter(|r| !r.is_empty()) {
+        let Some(tab) = rec.iter().position(|b| *b == b'\t') else { continue };
+        let meta = String::from_utf8_lossy(&rec[..tab]).into_owned();
+        let mut m = meta.split_whitespace();
+        let (mode, kind, oid) = (m.next().unwrap_or(""), m.next().unwrap_or(""), m.next().unwrap_or(""));
+        let path = String::from_utf8_lossy(&rec[tab + 1..]).into_owned();
+        match kind {
+            "blob" => {
+                t.blobs.insert(path, (mode.to_string(), oid.to_string()));
+            }
+            "commit" => {
+                t.gitlinks.insert(path, oid.to_string());
+            }
+            _ => {}
+        }
+    }
+    Ok(t)
+}
+
 /// Write every blob of `entries` under `into`, reading them raw through one `git cat-file --batch`.
 fn write_blobs(clone: &Path, into: &Path, entries: &[Entry]) -> std::result::Result<(), String> {
     let mut child = Command::new("git")
