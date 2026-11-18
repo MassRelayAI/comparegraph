@@ -21,6 +21,9 @@ use std::path::{Path, PathBuf};
 pub const SECTIONS: &[&str] =
     &["cycles", "dead_imports", "duplicate_bodies", "size_outliers", "coupling_outliers", "boundary_violations", "dead_code"];
 
+/// Sections whose measured precision is under the bar and that have no mechanical fix: reported, never in the ratchet.
+const ADVISORY: &[&str] = &[];
+
 const MAX_CYCLES: usize = 10_000;
 const BFS_BUDGET: usize = 20_000_000;
 
@@ -31,6 +34,8 @@ pub struct Finding {
     pub key: String,
     pub message: String,
     pub evidence: Vec<(String, u32)>,
+    /// impact for ranking, larger first (ties broken by key)
+    pub weight: (i64, i64),
 }
 impl Finding {
     pub fn new(kind: &'static str, key: String, message: String, evidence: Vec<(String, u32)>) -> Result<Self> {
@@ -39,11 +44,15 @@ impl Finding {
                 "health: finding `{key}` has no evidence location (a path and a 1-based line are required)"
             )));
         }
-        Ok(Self { kind, key, message, evidence })
+        Ok(Self { kind, key, message, evidence, weight: (0, 0) })
+    }
+    fn weighted(mut self, a: i64, b: i64) -> Self {
+        self.weight = (a, b);
+        self
     }
     fn to_json(&self) -> Value {
         json!({
-            "kind": self.kind, "key": self.key, "message": self.message,
+            "kind": self.kind, "key": self.key, "message": self.message, "impact": [self.weight.0, self.weight.1],
             "evidence": self.evidence.iter().map(|(p, l)| json!({"path": p, "line": l})).collect::<Vec<_>>(),
         })
     }
@@ -236,6 +245,19 @@ fn load_edges(store: &Store, run: i64, kind: &str) -> Result<Edges> {
 
 // ---- cycles ----
 
+/// The directory prefix a Rust file's child modules live under: `lib.rs`/`main.rs`/`mod.rs` -> its directory, `name.rs` -> `dir/name/`.
+fn rust_module_dir(path: &str) -> Option<String> {
+    let stem = path.strip_suffix(".rs")?;
+    let (dir, name) = stem.rsplit_once('/').unwrap_or(("", stem));
+    let pre = if dir.is_empty() { String::new() } else { format!("{dir}/") };
+    Some(if matches!(name, "lib" | "main" | "mod") { pre } else { format!("{pre}{name}/") })
+}
+/// `a` declares (directly or through nested modules) the module `b`: an edge either way is `mod b;` or `use super::`/`use crate::`, never a dependency cycle.
+fn rust_ancestor(a: &str, b: &str) -> bool {
+    a != b && rust_module_dir(a).is_some_and(|d| b.ends_with(".rs") && b.starts_with(&d))
+}
+
+
 /// Elementary cycles of a directed graph given as sorted labels: for every edge inside a strongly connected component, the
 /// shortest cycle through that edge, rotated to start at its smallest label. A new edge that closes a cycle therefore always
 /// yields a new cycle. Returns the cycles sorted, and whether a cap was hit.
@@ -346,6 +368,7 @@ fn cycle_findings(
     by_id: &HashMap<i64, &N>,
     label: &dyn Fn(&N) -> String,
     lines: bool,
+    fan_in: &HashMap<String, usize>,
     lims: &mut Vec<Limitation>,
 ) -> Result<Vec<Finding>> {
     let mut set = BTreeSet::new();
@@ -370,7 +393,8 @@ fn cycle_findings(
             format!("cycle:{kind_label}:{}", c.join(">")),
             format!("{kind_label} cycle of {}: {}", c.len(), shown.join(" -> ")),
             c.iter().map(|l| at[l].clone()).collect(),
-        )?);
+        )?
+        .weighted(-(c.len() as i64), c.iter().map(|l| fan_in.get(l).copied().unwrap_or(0) as i64).sum()));
     }
     Ok(out)
 }
@@ -640,13 +664,24 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
 
     // cycles
     if on("cycles") {
-        let imports: Edges = load_edges(&store, run_id, "imports")?
+        let raw = load_edges(&store, run_id, "imports")?;
+        let mut fi: HashMap<String, HashSet<i64>> = HashMap::new();
+        for (a, b) in &raw {
+            if let (Some(_), Some(nb)) = (by_id.get(a), by_id.get(b)) {
+                fi.entry(nb.path.clone()).or_default().insert(*a);
+            }
+        }
+        let fan_in: HashMap<String, usize> = fi.into_iter().map(|(k, v)| (k, v.len())).collect();
+        let imports: Edges = raw
             .into_iter()
-            .filter(|(a, b)| by_id.get(a).is_some_and(|n| is_file(n)) && by_id.get(b).is_some_and(|n| is_file(n)))
+            .filter(|(a, b)| match (by_id.get(a), by_id.get(b)) {
+                (Some(x), Some(y)) => is_file(x) && is_file(y) && !rust_ancestor(&x.path, &y.path) && !rust_ancestor(&y.path, &x.path),
+                _ => false,
+            })
             .collect();
-        let mut f = cycle_findings("imports", &imports, &by_id, &|n| n.path.clone(), false, &mut lims)?;
+        let mut f = cycle_findings("imports", &imports, &by_id, &|n| n.path.clone(), false, &fan_in, &mut lims)?;
         let ext = load_edges(&store, run_id, "extends")?;
-        f.extend(cycle_findings("extends", &ext, &by_id, &|n| format!("{}@{}", n.qn, n.path), true, &mut lims)?);
+        f.extend(cycle_findings("extends", &ext, &by_id, &|n| format!("{}@{}", n.qn, n.path), true, &HashMap::new(), &mut lims)?);
         sections.insert("cycles", f);
     }
 
@@ -663,7 +698,8 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
                     format!("size:file:{}", n.path),
                     format!("file has {} lines (limit {})", n.le, cfg.max_file_lines),
                     vec![(n.path.clone(), 1)],
-                )?);
+                )?
+                .weighted(n.le as i64, 0));
             } else if is_fn(n) && !is_test_path(&n.path) {
                 let len = (n.le + 1).saturating_sub(n.ls) as usize;
                 if len > cfg.max_function_lines {
@@ -672,7 +708,8 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
                         format!("size:function:{}@{}", n.qn, n.path),
                         format!("{} has {} lines (limit {})", n.qn, len, cfg.max_function_lines),
                         vec![(n.path.clone(), n.ls.max(1))],
-                    )?);
+                    )?
+                    .weighted(len as i64, 0));
                 }
             }
         }
@@ -697,7 +734,8 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
                     format!("coupling:{what}:{key}"),
                     format!("{what} {count} (limit {limit}): {key}"),
                     vec![(n.path.clone(), n.ls.max(1))],
-                )?);
+                )?
+                .weighted(count as i64, 0));
             }
             Ok(())
         };
@@ -816,7 +854,8 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
                     format!("duplicate-body:{}", &h[..12]),
                     format!("{} functions share one body of {} significant lines: {}{}", m.len(), lines, names.join(", "), if m.len() > 5 { ", ..." } else { "" }),
                     m.iter().take(20).map(|x| (x.0.clone(), x.1)).collect(),
-                )?);
+                )?
+                .weighted((m.len() * lines) as i64, m.len() as i64));
             }
             sections.insert("duplicate_bodies", f);
         }
@@ -850,6 +889,8 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
     for f in sections.values_mut() {
         f.sort_by(|a, b| a.key.cmp(&b.key));
         f.dedup_by(|a, b| a.key == b.key);
+        // by impact, largest first; the key order above is the stable tiebreak
+        f.sort_by_key(|x| std::cmp::Reverse(x.weight));
     }
 
     // output
@@ -864,7 +905,7 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
         truncated |= f.len() > o.limit;
         out_sections.insert(
             (*s).into(),
-            json!({ "total": f.len(), "items": f.iter().take(o.limit).map(Finding::to_json).collect::<Vec<_>>() }),
+            json!({ "total": f.len(), "advisory": ADVISORY.contains(s) || (*s == "dead_code" && !o.ratchet_dead_code), "items": f.iter().take(o.limit).map(Finding::to_json).collect::<Vec<_>>() }),
         );
     }
     summary.insert("total".into(), json!(total));
@@ -873,7 +914,7 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
     }
     let ratchet: Vec<&Finding> = SECTIONS
         .iter()
-        .filter(|s| **s != "dead_code" || o.ratchet_dead_code)
+        .filter(|s| !ADVISORY.contains(s) && (**s != "dead_code" || o.ratchet_dead_code))
         .flat_map(|s| sections[s].iter())
         .collect();
     let keys: BTreeSet<&str> = ratchet.iter().map(|f| f.key.as_str()).collect();

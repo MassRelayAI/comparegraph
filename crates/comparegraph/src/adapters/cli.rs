@@ -508,6 +508,9 @@ pub enum Cmd {
         /// findings listed per section (the counts, the baseline and the check cover all of them)
         #[arg(long, default_value_t = 50)]
         limit: usize,
+        /// a short report: only the N highest-impact findings of each section (overrides --limit)
+        #[arg(long)]
+        top: Option<usize>,
         /// write the sorted finding keys to FILE
         #[arg(long, conflicts_with = "check")]
         baseline: Option<PathBuf>,
@@ -1468,12 +1471,12 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             cursor,
             min_confidence,
         } => g::dead_code(&cli.root, repo, *limit, cursor.as_deref(), *min_confidence)?,
-        Cmd::Health { repo, limit, baseline, check, ratchet_dead_code } => {
+        Cmd::Health { repo, limit, top, baseline, check, ratchet_dead_code } => {
             let o = crate::application::health::health(
                 &cli.root,
                 repo,
                 &crate::application::health::Options {
-                    limit: *limit,
+                    limit: top.unwrap_or(*limit),
                     disable: vec![],
                     baseline: baseline.clone(),
                     check: check.clone(),

@@ -285,3 +285,55 @@ fn the_dead_code_section_joins_the_ratchet_only_when_asked() {
     json(cc(ws.path()).args(["health", "r", "--ratchet-dead-code", "--baseline", b.to_str().unwrap()]).assert().success());
     assert_eq!(serde_json::from_str::<Value>(&std::fs::read_to_string(&b).unwrap()).unwrap()["keys"].as_array().unwrap().len(), 1);
 }
+
+const CARGO: &str = "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
+
+#[test]
+fn rust_parent_child_module_pairs_are_not_cycles() {
+    let (ws, _c) = ws_with(
+        &[
+            ("Cargo.toml", CARGO),
+            ("src/lib.rs", "pub mod child;\npub mod deep;\npub fn top() -> u8 { 1 }\n"),
+            ("src/child.rs", "use super::top;\npub fn c() -> u8 { top() }\n"),
+            ("src/deep/mod.rs", "pub mod leaf;\npub fn d() -> u8 { 2 }\n"),
+            ("src/deep/leaf.rs", "use crate::top;\nuse super::d;\npub fn l() -> u8 { top() + d() }\n"),
+        ],
+        "",
+    );
+    assert_eq!(count(ws.path(), "cycles"), 0);
+}
+
+#[test]
+fn a_real_rust_cycle_between_siblings_is_still_reported() {
+    let (ws, _c) = ws_with(
+        &[
+            ("Cargo.toml", CARGO),
+            ("src/lib.rs", "pub mod a;\npub mod b;\n"),
+            ("src/a.rs", "use crate::b::y;\npub fn x() -> u8 { y() }\n"),
+            ("src/b.rs", "use crate::a::x;\npub fn y() -> u8 { x() }\n"),
+        ],
+        "",
+    );
+    let v = json(cc(ws.path()).args(["health", "r"]).assert().success());
+    let items = v["data"]["sections"]["cycles"]["items"].as_array().unwrap();
+    assert!(items.iter().any(|i| i["key"] == "cycle:imports:src/a.rs>src/b.rs"), "{items:?}");
+    assert!(items.iter().all(|i| !i["key"].as_str().unwrap().contains("lib.rs")), "{items:?}");
+}
+
+#[test]
+fn findings_are_ranked_by_impact_and_top_shortens_the_report() {
+    let (ws, _c) = ws_with(
+        &[
+            ("a_small.ts", "export const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport const d = 4;\n"),
+            ("z_big.ts", "export const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport const d = 4;\nexport const e = 5;\nexport const f = 6;\nexport const g = 7;\n"),
+        ],
+        "[health]\nmax_file_lines = 3\n",
+    );
+    let v = json(cc(ws.path()).args(["health", "r"]).assert().success());
+    let items = v["data"]["sections"]["size_outliers"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["key"], "size:file:z_big.ts", "the bigger file first, though its key sorts last");
+    let v = json(cc(ws.path()).args(["health", "r", "--top", "1"]).assert().success());
+    assert_eq!(v["data"]["sections"]["size_outliers"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(v["data"]["summary"]["size_outliers"], 2, "the count still covers every finding");
+}

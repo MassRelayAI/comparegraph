@@ -360,7 +360,8 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         },
         "comparegraph_health" => Cmd::Health {
             repo: req(a, "repo")?,
-            limit: if a.get("limit").is_some() { limit_arg(a)? } else { 50 },
+            limit: limit_arg(a)?,
+            top: None,
             baseline: None,
             check: None,
             ratchet_dead_code: false,
