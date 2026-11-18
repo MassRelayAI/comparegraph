@@ -426,6 +426,30 @@ fn a_stub_body_is_not_on_base_by_hash_or_tokens() {
 }
 
 #[test]
+fn runs_built_with_other_options_are_never_mixed_into_one_delta() {
+    let fx = Fx::new(&[("src/a.py", FOO), ("other/o.py", BAR)]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/n.py", HANDLE);
+    commit(&d, "feat adds handle");
+    git(&d, &["checkout", "-q", "main"]);
+    ok(fx.root(), &["build", "r", "--ref", "main", "--include", "src/**"]);
+    fx.build_ref("feat");
+    // main is also the merge base; its only run read src/** while feat read the whole tree: other/o.py::bar is not the branch's
+    let v = run(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
+    assert_eq!(v["ok"], false, "a delta over runs of different subsets must refuse, never answer: {v}");
+    assert_eq!(v["error"]["data"]["ref"], "main", "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("include"), "{v}");
+    assert_eq!(v["error"]["data"]["found"]["include"], json!(["src/**"]), "{v}");
+    // told to build, it builds main with the delta's options and answers: only the branch's own symbol
+    let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--build-missing"]);
+    assert_eq!(qns(&branch(&v)["added"]), vec!["src/n.py::handle"], "{v}");
+    assert_eq!(v["data"]["rebuilt"].as_array().unwrap().len(), 1, "{v}");
+    // and the strict call now answers from the matching runs
+    assert_eq!(ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"])["data"]["summary"]["added"], 1);
+}
+
+#[test]
 fn a_symbol_the_lane_removed_and_base_removed_too_is_marked_base_removed() {
     let fx = Fx::new(&[("src/a.py", &format!("{FOO}\n{BAR}"))]);
     let d = fx.clone();
