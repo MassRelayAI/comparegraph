@@ -307,7 +307,7 @@ fn a_function_the_lane_changed_and_base_rewrote_is_a_stale_conflict() {
     assert_eq!((s["branch_symbols"].as_i64(), s["stale_conflicts"].as_i64(), s["already_on_base"].as_i64()), (Some(1), Some(1), Some(0)));
     let row = &branch(&v)["changed"][0];
     assert_eq!(row["base_also_changed"], true);
-    assert!(row.get("already_on_base").is_none());
+    assert!(row["already_on_base"].is_null(), "not on base (a one-line body is not judged: null, note trivial_body)");
     assert_eq!(v["data"]["base_files"]["rewritten"], json!([{ "path": "src/a.py", "head_modified": true }]));
 
     // base changed it to the very same thing: no conflict, the lane's change is on base

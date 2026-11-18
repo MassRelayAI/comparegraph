@@ -23,6 +23,9 @@ use std::path::Path;
 pub const FEATURE_POOL: usize = 500;
 /// The similarity floor of the `name_and_tokens` rule.
 pub const SIMILARITY_FLOOR: f64 = 0.9;
+/// A body with fewer tokens than this after its signature line (`def f(x): pass`, `return 1`) is too little evidence for a
+/// `body_hash` or `name_and_tokens` match: such a row answers `already_on_base: null` with the note `trivial_body`.
+pub const MIN_BODY_TOKENS: usize = 8;
 const MAX_MATCHES: usize = 3;
 const MAX_FEATURES_PER_ROW: usize = 10;
 
@@ -48,6 +51,8 @@ struct Sym {
     ls: u32,
     le: u32,
     hash: String,
+    /// fewer than MIN_BODY_TOKENS tokens after the signature line
+    trivial: bool,
 }
 
 struct Side {
@@ -165,7 +170,7 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
             side.files.insert(path.clone(), text.map(|t| t.lines().map(String::from).collect()).unwrap_or_default());
         }
-        let mut s = Sym { kind: kind.clone(), name, qn: qn.clone(), path, ls: ls as u32, le: le as u32, hash: String::new() };
+        let mut s = Sym { kind: kind.clone(), name, qn: qn.clone(), path, ls: ls as u32, le: le as u32, hash: String::new(), trivial: false };
         let Some(body) = body_of(&side.files, &s) else {
             side.unreadable += 1;
             continue;
@@ -173,6 +178,7 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         let mut h = Sha256::new();
         h.update(tokens(&body, &s.name).join("\u{0}").as_bytes());
         s.hash = hex::encode(h.finalize());
+        s.trivial = body.lines().skip(1).map(|l| tokens(l, &s.name).len()).sum::<usize>() < MIN_BODY_TOKENS;
         if side.syms.insert((kind, qn), s).is_some() {
             side.duplicates += 1;
         }
@@ -201,8 +207,11 @@ struct Row {
     body_hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     base_body_hash: Option<String>,
+    /// absent: not on base; null: not judged (`note` says why); else the match
     #[serde(skip_serializing_if = "Option::is_none")]
-    already_on_base: Option<OnBase>,
+    already_on_base: Option<Option<OnBase>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<&'static str>,
     /// base changed (or, for an added symbol, holds a different version of) the same symbol since the merge base
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     base_also_changed: bool,
@@ -231,6 +240,7 @@ impl Row {
             body_hash: s.hash.clone(),
             base_body_hash: None,
             already_on_base: None,
+            note: None,
             base_also_changed: false,
             base_removed: false,
             base_moved_to: vec![],
@@ -241,7 +251,21 @@ impl Row {
     /// nothing left for the branch to carry: base holds the branch's version (added, changed), or the branch removed the symbol
     /// and base removed it too. A changed symbol base removed or moved is NOT resolved: the branch's change is not on base.
     fn resolved(&self) -> bool {
-        self.already_on_base.is_some() || (self.is_removal && self.base_removed)
+        self.on_base().is_some() || (self.is_removal && self.base_removed)
+    }
+    fn on_base(&self) -> Option<&OnBase> {
+        self.already_on_base.as_ref().and_then(|m| m.as_ref())
+    }
+    /// set the base lookup of a head symbol: a trivial body that is not the very same symbol is not judged
+    fn set_on_base(&mut self, s: &Sym, m: Option<OnBase>) {
+        match m {
+            Some(m) => self.already_on_base = Some(Some(m)),
+            None if s.trivial => {
+                self.already_on_base = Some(None);
+                self.note = Some("trivial_body");
+            }
+            None => {}
+        }
     }
 }
 /// Not-on-base first, then by path and line.
@@ -329,6 +353,9 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
                 return Some(OnBase { confidence: 1.0, via: "same_symbol", matches: mk(&[b]) });
             }
         }
+        if s.trivial {
+            return None;
+        }
         let exact: Vec<&Sym> = by_hash.get(s.hash.as_str()).map(|v| v.iter().copied().filter(|b| b.qn != s.qn || b.kind != s.kind).collect()).unwrap_or_default();
         if !exact.is_empty() {
             return Some(OnBase { confidence: 1.0, via: "body_hash", matches: mk(&exact) });
@@ -364,14 +391,14 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         match mb.syms.get(k) {
             None => {
                 let mut r = Row::of(h);
-                r.already_on_base = on_base(h, None);
-                r.base_also_changed = r.already_on_base.is_none() && in_base.is_some();
+                r.set_on_base(h, on_base(h, None));
+                r.base_also_changed = r.on_base().is_none() && in_base.is_some();
                 added.push(r);
             }
             Some(m) if m.hash != h.hash => {
                 let mut r = Row::of(h);
                 r.base_body_hash = Some(m.hash.clone());
-                r.already_on_base = on_base(h, Some(m));
+                r.set_on_base(h, on_base(h, Some(m)));
                 match in_base {
                     None => {
                         r.base_removed = true;
@@ -443,11 +470,12 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     rewritten.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
 
     let branch_symbols = added.len() + changed.len() + removed.len();
-    let on_base_n = added.iter().chain(changed.iter()).filter(|r| r.already_on_base.is_some()).count();
-    let exact_n = added.iter().chain(changed.iter()).filter(|r| r.already_on_base.as_ref().is_some_and(|m| m.via != "name_and_tokens")).count();
+    let on_base_n = added.iter().chain(changed.iter()).filter(|r| r.on_base().is_some()).count();
+    let exact_n = added.iter().chain(changed.iter()).filter(|r| r.on_base().is_some_and(|m| m.via != "name_and_tokens")).count();
+    let trivial_n = added.iter().chain(changed.iter()).filter(|r| r.note == Some("trivial_body")).count();
     let base_removed_n = changed.iter().chain(removed.iter()).filter(|r| r.base_removed).count();
     // a change base does not hold, to a symbol base changed otherwise, removed, or moved without the change
-    let stale_conflicts = changed.iter().filter(|r| (r.base_also_changed || r.base_removed) && r.already_on_base.is_none()).count();
+    let stale_conflicts = changed.iter().filter(|r| (r.base_also_changed || r.base_removed) && r.on_base().is_none()).count();
     let resolved = added.iter().chain(changed.iter()).chain(removed.iter()).filter(|r| r.resolved()).count();
     let share = (branch_symbols > 0).then(|| ((resolved as f64 / branch_symbols as f64) * 10_000.0).round() / 10_000.0);
     let summary = json!({
@@ -470,13 +498,13 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             match base.syms.get(k) {
                 None => {
                     let mut r = Row::of(h);
-                    r.already_on_base = on_base(h, None);
+                    r.set_on_base(h, on_base(h, None));
                     wa.push(r);
                 }
                 Some(b) if b.hash != h.hash => {
                     let mut r = Row::of(h);
                     r.base_body_hash = Some(b.hash.clone());
-                    r.already_on_base = on_base(h, None);
+                    r.set_on_base(h, on_base(h, None));
                     wc.push(r);
                 }
                 Some(_) => unchanged += 1,
@@ -488,7 +516,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             }
         }
         let head_only = wa.len() + wc.len();
-        let already = wa.iter().chain(wc.iter()).filter(|r| r.already_on_base.is_some()).count();
+        let already = wa.iter().chain(wc.iter()).filter(|r| r.on_base().is_some()).count();
         let ws = json!({
             "base_symbols": base.syms.len(), "head_symbols": head.syms.len(),
             "added": wa.len(), "removed": wr.len(), "changed": wc.len(), "unchanged": unchanged,
@@ -512,6 +540,9 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         limit_note(&mut limitations, "whole_tree.added", wa.len(), cap);
         limit_note(&mut limitations, "whole_tree.removed", wr.len(), cap);
         limit_note(&mut limitations, "whole_tree.changed", wc.len(), cap);
+    }
+    if trivial_n > 0 {
+        limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature line: not matched by body hash or tokens (already_on_base: null)") }));
     }
     for (n, what) in [
         (base.unreadable + head.unreadable + mb.unreadable, "symbols whose source could not be read from the cached tree were left out"),

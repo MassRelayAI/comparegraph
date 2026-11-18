@@ -283,3 +283,7 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   `base_removed` resolves only a `removed` row; a changed symbol base removed or moved without the change is a `stale_conflicts`
   row, and `base_moved_to` names where base keeps the merge-base body. Why: a moved copy of the old body is near head too, and a
   wrong "already on base" retires real work. What would change it: a rename-aware identity (base symbol -> merge-base symbol).
+- **M3** trivial bodies: `body_hash` and `name_and_tokens` need at least `MIN_BODY_TOKENS` = 8 tokens after the signature line
+  (a token minimum, not health's `min_lines`: lines would make every two-statement fixture and real helper trivial, and a
+  one-line stub is the case that matched at 1.0). Below it the row answers `already_on_base: null`, `note: trivial_body`;
+  `same_symbol` (identity) still applies. What would change it: a measured false match above 8 tokens.
