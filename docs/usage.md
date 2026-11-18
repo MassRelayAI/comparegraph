@@ -92,6 +92,28 @@ comparegraph show myrepo src/a.py::bar --ref origin/feature-x    # a graph read 
 
 The fields are facts; whether to restack, take parts or retire the branch is the reader's call.
 
+## From a branch to a verdict to a deleted branch
+
+```bash
+comparegraph build myrepo --ref origin/feature-x               # the branch's tree, read through git archive
+comparegraph delta myrepo --base origin/main --head origin/feature-x --build-missing
+comparegraph decide myrepo reject --why "already on main as bar2" --by me --ref origin/feature-x --commit <sha> --summary-from-delta --bundle D:/bundles/feature-x.bundle
+git bundle create D:/bundles/feature-x.bundle origin/feature-x   # outside CompareGraph: the only archive of the branch
+git branch -D feature-x                                          # then the branch can go
+comparegraph gc --refs                                           # dry run: what is gone, superseded or old
+comparegraph gc --refs --apply --by me                           # deletes that ref's runs and extracted trees; the verdict stays
+comparegraph decisions --ref origin/feature-x                    # the verdict, by ref and commit
+```
+
+A ref run is only for `delta`: `claim` refuses `--ref` (claims record a repository's head), so no claim ever cites one and `gc --refs`
+is never blocked by a citation. A branch verdict names its ref and commit by value, so it outlives the data.
+
+## Revisiting a deleted branch (only when asked)
+
+Nothing in CompareGraph reads a deleted branch on its own, and it keeps no copy. To look again: restore the branch from its git
+bundle (the path is in the `decide --ref` record, `decisions --ref <ref>`), `build --ref` it, run `delta`, then delete the branch and
+run `gc --refs --apply --by <who>` again.
+
 ## Family packs
 
 A family is a directory with a `rows.md`: front matter with `family:` and `description:`, then a table with `id`, `group`,

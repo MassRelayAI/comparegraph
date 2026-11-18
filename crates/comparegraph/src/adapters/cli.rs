@@ -700,6 +700,9 @@ pub enum Cmd {
         /// on commas and spaces (the older `a,b` form). A none whose top candidates are all named is recorded `observed`
         #[arg(long = "read-hits")]
         read_hits: Vec<String>,
+        /// refused: a claim records the repository's head; a ref run (`build --ref`) is only for `delta`
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         #[arg(long)]
         note: Option<String>,
         /// the upstream commit the citations were read at (7-40 hex); must agree with the head the build read
@@ -751,6 +754,18 @@ pub enum Cmd {
         /// disambiguates --feature when its id exists in several families
         #[arg(long)]
         family: Option<String>,
+        /// a verdict on a BRANCH: the ref it is about (needs --commit); kept by value, so it outlives `gc --refs` of the ref's data
+        #[arg(long = "ref", value_name = "REF", conflicts_with = "feature")]
+        git_ref: Option<String>,
+        /// the commit of that branch the verdict is about
+        #[arg(long, requires = "git_ref")]
+        commit: Option<String>,
+        /// store the numbers of the last `delta` computed for --commit in the decision
+        #[arg(long, requires = "git_ref")]
+        summary_from_delta: bool,
+        /// where the branch's git bundle was written (a string: nothing reads it)
+        #[arg(long, requires = "git_ref")]
+        bundle: Option<String>,
     },
     /// Latest decision per scope; --history lists every row
     Decisions {
@@ -758,6 +773,9 @@ pub enum Cmd {
         repo: Option<String>,
         #[arg(long)]
         history: bool,
+        /// only the verdicts on this branch
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
     },
     /// Active features of a family against every clone: verdicts, prevalence, gaps and differentiators
     Matrix {
@@ -1041,9 +1059,9 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
                 && family.is_none() && at.is_empty() && searched.is_none() && read_hits.is_empty() && note.is_none())
                 || at_commit.is_some() || !anchor.is_empty() || !expect.is_empty() || *allow_comment || out_of_subset.is_some() || *no_reach
         }
-        Cmd::Decide { repo, disposition, why, by, feature, family, .. } => {
+        Cmd::Decide { repo, disposition, why, by, feature, family, git_ref, commit, bundle, summary_from_delta, .. } => {
             !(repo.is_none() && disposition.is_none() && why.is_none() && by.is_none()
-                && feature.is_none() && family.is_none())
+                && feature.is_none() && family.is_none() && git_ref.is_none() && commit.is_none() && bundle.is_none() && !*summary_from_delta)
         }
         _ => false,
     };
@@ -1235,6 +1253,9 @@ fn cmd_ref(c: &Cmd) -> Option<&str> {
 }
 
 fn dispatch(cli: &Cli) -> Result<serde_json::Value, Failure> {
+    if let Cmd::Claim { git_ref: Some(r), .. } = &cli.cmd {
+        return Err((crate::application::refgc::claim_on_ref_refused(r), None));
+    }
     // `build --ref` names the tree to read; every other verb names the run to answer from
     let pin = if matches!(cli.cmd, Cmd::Build { .. }) { None } else { cmd_ref(&cli.cmd).or(cli.git_ref.as_deref()) };
     let mut out = crate::store::with_run_ref(pin, || dispatch_inner(cli).map_err(|e| (e, None)).and_then(|r| r));
@@ -1640,6 +1661,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             searched,
             read_hits,
             note,
+            git_ref: _,
             batch: _,
             at_commit,
             anchor,
@@ -1694,6 +1716,10 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             by,
             feature,
             family,
+            git_ref,
+            commit,
+            summary_from_delta,
+            bundle,
             batch: _,
         } => serde_json::to_value(crate::application::decide::decide(
             &cli.root,
@@ -1703,11 +1729,20 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             by.as_deref().unwrap_or_default(),
             feature.as_deref(),
             family.as_deref(),
+            git_ref
+                .as_ref()
+                .map(|r| crate::application::decide::RefVerdict {
+                    git_ref: r.clone(),
+                    commit: commit.clone().unwrap_or_default(),
+                    bundle: bundle.clone(),
+                    summary_from_delta: *summary_from_delta,
+                })
+                .as_ref(),
         )?)
         .unwrap(),
-        Cmd::Decisions { repo, history } => {
+        Cmd::Decisions { repo, history, git_ref } => {
             let items =
-                crate::application::decide::decisions(&cli.root, repo.as_deref(), *history)?;
+                crate::application::decide::decisions_with(&cli.root, repo.as_deref(), *history, git_ref.as_deref(), true)?;
             let total = items.len();
             serde_json::json!({ "items": items, "page": { "next": null, "total": total } })
         }

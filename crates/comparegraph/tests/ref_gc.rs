@@ -211,6 +211,7 @@ fn a_ref_run_that_is_superseded_goes_when_the_ref_lives_on_and_keep_says_how_man
 }
 
 #[test]
+/// Defensive only: `claim` refuses `--ref`, so no claim cites a ref run through the CLI (see `a_claim_never_cites_a_ref_run`); a row inserted by hand is still protected.
 fn a_run_a_claim_cites_is_never_removed() {
     let fx = Fx::new();
     let pack = fx.base.path().join("pack");
@@ -287,4 +288,66 @@ fn a_store_with_the_old_unconditional_triggers_is_upgraded_on_open() {
     assert!(!trigger_sql(&fx).iter().find(|x| x.0 == "node_no_delete").unwrap().1.contains("ref IS NOT NULL"));
     ok(fx.root(), &["build", "r"]); // a writer open migrates
     assert!(trigger_sql(&fx).iter().find(|x| x.0 == "node_no_delete").unwrap().1.contains("ref IS NOT NULL"));
+}
+
+#[test]
+fn a_claim_never_cites_a_ref_run() {
+    let fx = Fx::new();
+    let pack = fx.base.path().join("pack");
+    write(&pack, "rows.md", PACK);
+    ok(fx.root(), &["family", "add", pack.to_str().unwrap()]);
+    let e = err(fx.root(), &["claim", "r", "routing.retry", "unknown", "--author", "t", "--ref", "feat"], "invalid_arguments");
+    assert!(e["error"]["message"].as_str().unwrap().contains("ref run"), "{e}");
+    assert_eq!(e["error"]["data"]["ref"], "feat");
+    assert!(e["error"]["hint"].as_str().unwrap().contains("decide --ref"), "{e}");
+    // a batch row with a ref is refused row by row
+    let f = fx.base.path().join("rows.jsonl");
+    std::fs::write(&f, "{\"repo\":\"r\",\"feature\":\"routing.retry\",\"verdict\":\"unknown\",\"author\":\"t\",\"ref\":\"feat\"}\n").unwrap();
+    let o = cc(fx.root()).args(["claim", "--batch", f.to_str().unwrap()]).output().unwrap();
+    let text = String::from_utf8_lossy(&o.stdout);
+    assert!(!o.status.success() && text.contains("ref run"), "{text}");
+    // and nothing cites a ref run
+    assert_eq!(fx.db().query_row("SELECT COUNT(*) FROM claim c JOIN run u ON u.id = c.run_id WHERE u.ref IS NOT NULL", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    // the head claim still works
+    ok(fx.root(), &["claim", "r", "routing.retry", "unknown", "--author", "t", "--no-reach"]);
+}
+
+#[test]
+fn a_branch_verdict_names_ref_and_commit_by_value_and_survives_gc_of_the_ref() {
+    let fx = Fx::new();
+    let clone = fx.clone();
+    let sha = git_out(&clone, &["rev-parse", "feat"]).trim().to_string();
+    // the numbers come from the last delta; none computed yet is a refusal, a missing commit too
+    err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta"], "not_found");
+    err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat"], "invalid_arguments");
+    ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
+    let d = ok(fx.root(), &["decide", "r", "reject", "--why", "already on main", "--by", "tester", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--bundle", "D:/bundles/feat.bundle"]);
+    assert_eq!(d["data"]["scope"], "ref");
+    assert_eq!(d["data"]["ref"], "feat");
+    assert_eq!(d["data"]["ref_commit"], sha.as_str());
+    assert_eq!(d["data"]["bundle"], "D:/bundles/feat.bundle"); // a string: the file does not exist and is never read
+    assert_eq!(d["data"]["summary"]["summary"]["branch_symbols"], 1);
+    // a later verdict on the same branch supersedes the first; a verdict on another branch does not
+    let d2 = ok(fx.root(), &["decide", "r", "adopt", "--why", "after all", "--by", "tester", "--ref", "feat", "--commit", &sha]);
+    assert_eq!(d2["data"]["supersedes_id"], d["data"]["id"]);
+    // a branch verdict is not a repo adoption: nothing treats the repo as adopted
+    let guard = fx.db().query_row("SELECT COUNT(*) FROM decision WHERE scope='repo'", [], |r| r.get::<_, i64>(0)).unwrap();
+    assert_eq!(guard, 0);
+    let latest = ok(fx.root(), &["decisions", "--ref", "feat"]);
+    assert_eq!(latest["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(latest["data"]["items"][0]["disposition"], "adopt");
+    assert_eq!(ok(fx.root(), &["decisions", "--ref", "feat", "--history"])["data"]["items"].as_array().unwrap().len(), 2);
+    assert!(ok(fx.root(), &["decisions", "--ref", "other"])["data"]["items"].as_array().unwrap().is_empty());
+
+    // the bundle is written outside CompareGraph, the branch is deleted, and its data goes; the verdicts stay
+    fx.delete_feat();
+    ok(fx.root(), &["gc", "--refs", "--apply", "--by", "t"]);
+    assert_eq!(fx.db().query_row("SELECT COUNT(*) FROM run WHERE ref='feat'", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    let after = ok(fx.root(), &["decisions", "--ref", "feat", "--history"]);
+    assert_eq!(after["data"]["items"].as_array().unwrap().len(), 2);
+    assert_eq!(after["data"]["items"][1]["ref_commit"], sha.as_str());
+    assert_eq!(after["data"]["items"][0]["bundle"], "D:/bundles/feat.bundle");
+    // the append-only guard of decisions holds for the new columns too
+    assert!(fx.db().execute("UPDATE decision SET bundle='x'", []).is_err());
+    ok(fx.root(), &["governance", "verify"]);
 }

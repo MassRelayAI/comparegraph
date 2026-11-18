@@ -315,7 +315,7 @@ impl Store {
     /// The repos whose latest decision of some scope (the repo, or one of its features) is `adopt`, sorted.
     pub fn adopted_repos(&self) -> Result<Vec<String>> {
         let mut st = self.conn.prepare(
-            "WITH l AS (SELECT MAX(id) AS id FROM decision GROUP BY repo_id, scope, feature_id)              SELECT DISTINCT r.name FROM l JOIN decision d ON d.id = l.id JOIN repo r ON r.id = d.repo_id WHERE d.disposition = 'adopt' ORDER BY r.name",
+            "WITH l AS (SELECT MAX(id) AS id FROM decision WHERE scope != 'ref' GROUP BY repo_id, scope, feature_id)              SELECT DISTINCT r.name FROM l JOIN decision d ON d.id = l.id JOIN repo r ON r.id = d.repo_id WHERE d.disposition = 'adopt' ORDER BY r.name",
         )?;
         let rows = st.query_map([], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
         Ok(rows)

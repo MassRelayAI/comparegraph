@@ -268,7 +268,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             _ => return Err(format!("unknown tool {name}")),
         },
         "comparegraph_claim" => &[
-            "repo", "feature", "family", "verdict", "author", "at", "searched", "read_hits", "note",
+            "repo", "feature", "family", "verdict", "author", "at", "searched", "read_hits", "note", "ref",
         ],
         _ => return Err(format!("unknown tool {name}")),
     };
@@ -487,6 +487,9 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             reach: str_arg(a, "reach")?,
         },
         "comparegraph_claim" => {
+            if a.get("ref").is_some_and(|v| !v.is_null()) {
+                return Err("claims record a repository's head; a ref run (build --ref) is only for delta".into());
+            }
             let author = req(a, "author")?;
             if author.trim().is_empty() {
                 return Err("author must not be empty".into());
@@ -529,6 +532,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 searched,
                 read_hits,
                 note: str_arg(a, "note")?,
+                git_ref: None,
                 batch: None,
                 at_commit: None,
                 anchor: vec![],

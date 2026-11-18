@@ -11,6 +11,16 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+/// A claim never cites a ref run: claims record a repository's head, a ref run is only for `delta` (and `decide --ref` records the verdict).
+pub fn claim_on_ref_refused(git_ref: &str) -> AppError {
+    AppError::structured(
+        "invalid_arguments",
+        "claims record a repository's head; a ref run (build --ref) is only for delta".to_string(),
+        Some("drop --ref (the claim is made on the head run), or record the branch verdict with `decide --ref <ref> --commit <sha>`".into()),
+        Some(json!({ "ref": git_ref })),
+    )
+}
+
 /// `current`, `moved` or `gone`.
 pub fn status_of(clone: &Path, git_ref: &str, commit: &str) -> &'static str {
     match gitref::resolve(clone, git_ref) {

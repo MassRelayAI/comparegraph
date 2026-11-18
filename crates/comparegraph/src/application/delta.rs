@@ -262,6 +262,18 @@ fn resolve_live(store: &Store, repo: &crate::store::RepoRow, label: &str) -> Res
     }
 }
 
+fn record_last(root: &Path, repo: &str, head_commit: &str, v: Value) {
+    if let Ok(store) = Store::open_guarded(root) {
+        let _ = store.with_write_lock(|s| -> std::result::Result<(), crate::store::StoreError> { s.meta_set(&format!("delta:{repo}:{head_commit}"), &v.to_string()) });
+    }
+}
+
+/// The last delta computed for a head commit (full sha or a prefix of it): `{base_ref, base_commit, head_ref, head_commit, merge_base, summary}`.
+pub fn last_delta(store: &Store, repo: &str, commit: &str) -> Option<Value> {
+    let rows = store.meta_with_prefix(&format!("delta:{repo}:{commit}")).ok()?;
+    rows.last().and_then(|(_, v)| serde_json::from_str(v).ok())
+}
+
 fn limit_note(limitations: &mut Vec<Value>, name: &str, n: usize, cap: usize) {
     if n > cap {
         limitations.push(json!({ "code": "truncated", "detail": format!("{name}: {n} rows, the first {cap} listed (not-on-base first, then path and line); raise --max-nodes, up to 2000") }));
@@ -506,6 +518,11 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         "feature_pool": FEATURE_POOL,
         "limitation_items": limitations,
     });
+    // the last delta computed for this head commit, kept by value for `decide --ref --summary-from-delta` (best effort: a read-only store skips it)
+    record_last(root, repo_name, &head_c, json!({
+        "base_ref": o.base, "base_commit": base_c, "head_ref": o.head, "head_commit": head_c, "merge_base": mb_c,
+        "summary": out["summary"],
+    }));
     if let Some((ws, mut wa, mut wr, mut wc)) = whole {
         for v in [&mut wa, &mut wr, &mut wc] {
             sort_rows(v);

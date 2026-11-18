@@ -863,6 +863,9 @@ pub struct ClaimLine {
     pub out_of_subset: Option<String>,
     #[serde(default)]
     pub no_reach: bool,
+    /// refused: a claim records the head, a ref run is only for `delta`
+    #[serde(default, rename = "ref")]
+    pub git_ref: Option<String>,
 }
 
 /// `claim` for a JSONL stream: one store open, one transaction, one `BatchRow` per non-blank line, each handed to
@@ -886,6 +889,9 @@ pub fn claim_batch_with(
 ) -> Result<BatchSummary> {
     let mut cache = super::reach::ReachCache::new(reach_cache);
     run_batch(root, lines, |store, l: ClaimLine| {
+        if let Some(r) = &l.git_ref {
+            return Err(super::refgc::claim_on_ref_refused(r));
+        }
         claim_on_with(
             store,
             &ClaimInput {

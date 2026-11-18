@@ -179,6 +179,16 @@ const ADDED_COLUMNS: &[(&str, &str, &str, &str)] = &[
     ("run", "incremental_from", "INTEGER", "NULL"),
     // why an incremental build resolved everything again (the `incremental_fallback` limitation's detail), if it did
     ("run", "incremental_fallback", "TEXT", "NULL"),
+    // CG-REFGC: a branch verdict (`decide --ref`) names its ref and commit by value, never a run id, so it outlives `gc --refs`
+    ("decision", "ref", "TEXT", "NULL"),
+    ("decision", "ref_commit", "TEXT", "NULL"),
+    ("decision", "bundle", "TEXT", "NULL"),
+    ("decision", "summary_json", "TEXT", "NULL"),
+    // CG-REFGC: a branch verdict (`decide --ref`) names its ref and commit by value, never a run id, so it outlives `gc --refs`
+    ("decision", "ref", "TEXT", "NULL"),
+    ("decision", "ref_commit", "TEXT", "NULL"),
+    ("decision", "bundle", "TEXT", "NULL"),
+    ("decision", "summary_json", "TEXT", "NULL"),
     // field-run asks 7, 15 and 5: `claim --at-commit`, `out_of_subset`, and `reach` with its path and note
     ("claim", "at_commit", "TEXT", "NULL"),
     ("claim", "out_of_subset", "TEXT", "NULL"),
