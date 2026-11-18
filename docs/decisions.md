@@ -353,3 +353,9 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
 
   Why: a wrong "already on base" retires real work, and the per-row patches disagreed with each other. What would change it: a
   rename-aware identity (base symbol -> merge-base symbol), or a measured false match.
+- **Trivial-body floor (amends M3)**: `MIN_BODY_TOKENS` = 8 counts the tokens after the END of the signature, not after its
+  first line: decorator lines (`@...` with their bracketed continuation) are skipped, then from the symbol's name the first
+  depth-0 `:` (Python) or `{` (`=>` for an arrow function), brackets and string literals skipped; else the depth-0 `)` closing
+  the parameters; else the first line. A leading Python docstring is not body. The provider records no body start, so there is
+  none to prefer. Why: a `pass` stub with a multi-line signature and a docstring + `pass` matched at 1.0. Pinned by a boundary
+  test (7 tokens `trivial_body`, 8 a match). What would change it: a provider body-start column.

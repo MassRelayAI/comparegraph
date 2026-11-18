@@ -26,8 +26,9 @@ use std::rc::Rc;
 pub const FEATURE_POOL: usize = 500;
 /// The similarity floor of the `name_and_tokens` rule.
 pub const SIMILARITY_FLOOR: f64 = 0.9;
-/// A body with fewer tokens than this after its signature line (`def f(x): pass`, `return 1`) is too little evidence for a
-/// `body_hash` or `name_and_tokens` match: such a row answers `already_on_base: null` with the note `trivial_body`.
+/// A body with fewer tokens than this after the end of its signature (`body_tokens`: `def f(x): pass`, `return 1`, a docstring
+/// and `pass`) is too little evidence for a `body_hash` or `name_and_tokens` match: such a row answers `already_on_base: null`
+/// with the note `trivial_body`. `r2_the_trivial_floor_is_exactly_eight_tokens_after_the_signature` pins the value.
 pub const MIN_BODY_TOKENS: usize = 8;
 const MAX_MATCHES: usize = 3;
 const MAX_FEATURES_PER_ROW: usize = 10;
@@ -90,6 +91,111 @@ fn tokens(text: &str, name: &str) -> Vec<String> {
     out
 }
 
+/// The tokens of a symbol's body after the end of its signature, decorators and a leading docstring excluded. The provider
+/// records no body start, so the signature ends at the first depth-0 `:` (Python) or `{` (`=>` for an arrow function) after the
+/// symbol's name, brackets and string literals skipped; else after the depth-0 `)` that closes its parameters; else after the
+/// first line. Decorator lines (`@...`, with their bracketed continuation) above the name are skipped first.
+fn body_tokens(body: &str, name: &str, python: bool) -> usize {
+    let chars: Vec<char> = body.chars().collect();
+    let n = chars.len();
+    // skip decorator lines: a line starting with `@`, and the lines its open brackets carry on to
+    let mut i = 0usize;
+    loop {
+        let mut j = i;
+        while j < n && chars[j].is_whitespace() {
+            j += 1;
+        }
+        if j >= n || chars[j] != '@' {
+            break;
+        }
+        let mut depth = 0i32;
+        while j < n {
+            match chars[j] {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                '\n' if depth <= 0 => break,
+                _ => {}
+            }
+            j += 1;
+        }
+        i = j;
+    }
+    // the symbol's name as a whole word
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let name_chars: Vec<char> = name.chars().collect();
+    let mut start = i;
+    if !name_chars.is_empty() {
+        let mut k = i;
+        while k + name_chars.len() <= n {
+            let whole = (k == 0 || !is_word(chars[k - 1])) && chars.get(k + name_chars.len()).is_none_or(|c| !is_word(*c));
+            if chars[k..k + name_chars.len()] == name_chars[..] && whole {
+                start = k + name_chars.len();
+                break;
+            }
+            k += 1;
+        }
+    }
+    let (mut depth, mut k) = (0i32, start);
+    let (mut body_at, mut closed_at): (Option<usize>, Option<usize>) = (None, None);
+    while k < n {
+        let c = chars[k];
+        match c {
+            '"' | '\'' | '`' => {
+                k += 1;
+                while k < n && chars[k] != c {
+                    if chars[k] == '\\' {
+                        k += 1;
+                    }
+                    k += 1;
+                }
+            }
+            '(' | '[' => depth += 1,
+            ')' | ']' => {
+                depth -= 1;
+                if depth == 0 && c == ')' && closed_at.is_none() {
+                    closed_at = Some(k + 1);
+                }
+            }
+            ':' if depth == 0 && python => {
+                body_at = Some(k + 1);
+                break;
+            }
+            '{' if depth == 0 && !python => {
+                body_at = Some(k + 1);
+                break;
+            }
+            '=' if depth == 0 && !python && chars.get(k + 1) == Some(&'>') => {
+                body_at = Some(k + 2);
+                break;
+            }
+            _ => {}
+        }
+        k += 1;
+    }
+    let from = body_at.or(closed_at).unwrap_or_else(|| chars.iter().position(|c| *c == '\n').map_or(n, |p| p + 1)).min(n);
+    let rest: String = chars[from..].iter().collect();
+    let rest = if python { strip_docstring(&rest) } else { &rest };
+    tokens(rest, name).len()
+}
+
+/// `text` without a leading Python string literal (a docstring: triple-quoted or one-quote, with an `r`/`u`/`b`/`f` prefix).
+fn strip_docstring(text: &str) -> &str {
+    let t = text.trim_start();
+    let body = t.trim_start_matches(|c: char| "rRuUbBfF".contains(c));
+    if body.len() + 2 < t.len() {
+        return text; // more than a two-letter prefix: a name, not a string prefix
+    }
+    for q in ["\"\"\"", "'''", "\"", "'"] {
+        if let Some(after) = body.strip_prefix(q) {
+            return match after.find(q) {
+                Some(end) => &after[end + q.len()..],
+                None => text,
+            };
+        }
+    }
+    text
+}
+
 fn body_of(files: &HashMap<String, Vec<String>>, s: &Sym) -> Option<String> {
     let lines = files.get(&s.path)?;
     let (a, b) = (s.ls as usize, s.le as usize);
@@ -114,7 +220,7 @@ fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
     i / (a.len() as f64 + b.len() as f64 - i)
 }
 
-type NodeRow = (String, String, String, String, i64, i64);
+type NodeRow = (String, String, String, String, i64, i64, String);
 
 /// The options every side of one delta is read with: the running reference provider's version and the repo's `add` subset
 /// (sorted), exactly what `build --ref` uses when given none. A run read otherwise is never mixed into the delta.
@@ -214,15 +320,15 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
     let mut rows: Vec<NodeRow> = vec![];
     {
         let mut st = store.conn().prepare(
-            "SELECT kind, name, qualified_name, path, line_start, line_end FROM node WHERE run_id=?1 AND kind IN ('function','method','class','type','route') \
+            "SELECT kind, name, qualified_name, path, line_start, line_end, language FROM node WHERE run_id=?1 AND kind IN ('function','method','class','type','route') \
              ORDER BY qualified_name, kind, path, line_start",
         )?;
-        for r in st.query_map([run_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))? {
+        for r in st.query_map([run_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))? {
             rows.push(r?);
         }
     }
     let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), files: HashMap::new(), unreadable: 0, duplicates: 0 };
-    for (kind, name, qn, path, ls, le) in rows {
+    for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
             side.files.insert(path.clone(), text.map(|t| t.lines().map(String::from).collect()).unwrap_or_default());
@@ -235,7 +341,7 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         let mut h = Sha256::new();
         h.update(tokens(&body, &s.name).join("\u{0}").as_bytes());
         s.hash = hex::encode(h.finalize());
-        s.trivial = body.lines().skip(1).map(|l| tokens(l, &s.name).len()).sum::<usize>() < MIN_BODY_TOKENS;
+        s.trivial = body_tokens(&body, &s.name, language == "python") < MIN_BODY_TOKENS;
         if side.syms.insert((kind, qn), s).is_some() {
             side.duplicates += 1;
         }
@@ -805,7 +911,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         limit_note(&mut limitations, "whole_tree.changed", wc.len(), cap);
     }
     if trivial_n > 0 {
-        limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature line: not matched by body hash or tokens (already_on_base: null)") }));
+        limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature (decorators and docstrings excluded): not matched by body hash or tokens (already_on_base: null)") }));
     }
     for (n, what) in [
         (base.unreadable + head.unreadable + mb.unreadable, "symbols whose source could not be read from the cached tree were left out"),
@@ -876,5 +982,39 @@ mod tests {
             assert!(g.of(f).is_some() && g.of(gg).is_some());
         }
         assert_eq!(g.computed.get(), 2);
+    }
+
+    /// The signature ends where the body starts, whatever the language and however many lines the parameters take.
+    #[test]
+    fn body_tokens_start_after_the_signature() {
+        let py = |b: &str, n: &str| body_tokens(b, n, true);
+        let other = |b: &str, n: &str| body_tokens(b, n, false);
+        assert_eq!(py("def f(x): pass", "f"), 1);
+        assert_eq!(py("def f(
+    a,
+    b,
+):
+    pass", "f"), 1);
+        assert_eq!(py("def f(x: int = 1) -> Dict[str, int]:
+    return x", "f"), 2);
+        assert_eq!(py("def f(s=\")\"):
+    return s", "f"), 2, "a `)` in a default string is not the signature's end");
+        assert_eq!(py("@route(
+  \"/a\", m=[1])
+def f(x):
+    \"\"\"Doc of many words here.\"\"\"
+    return x", "f"), 2);
+        assert_eq!(py("class C(Base):
+    x = 1", "C"), 3);
+        assert_eq!(other("function f(a: number): number {
+  return a;
+}", "f"), 4);
+        assert_eq!(other("fn f<T: Clone>(x: [u8; 4]) -> Vec<T> {
+    x
+}", "f"), 2);
+        assert_eq!(other("func (r *T) Name(x int) (int, error) {
+	return 1, nil
+}", "Name"), 5);
+        assert_eq!(other("const f = (x) => x + 1", "f"), 3);
     }
 }
