@@ -425,3 +425,20 @@ fn exclude_globs_drop_findings_from_counts_sections_and_the_ratchet() {
     let (bad, _c3) = ws_with(&files, "[health]\nexclude = [src/one.ts]\n");
     cc(bad.path()).args(["health", "r"]).assert().code(1);
 }
+
+/// MINOR (review round 2): a `--check` that read only part of the repo (files skipped, cycles truncated) says so in
+/// `check.partial`, with the reasons; a full read says `partial: false`.
+#[test]
+fn a_check_over_skipped_files_is_flagged_partial() {
+    let (ws, clone) = ws_with(&cyc_files(&[]), "");
+    let base = ws.path().join("base.json");
+    let b = base.to_str().unwrap();
+    cc(ws.path()).args(["health", "r", "--baseline", b]).assert().success();
+    let v = json(cc(ws.path()).args(["health", "r", "--check", b]).assert().success());
+    assert_eq!(v["data"]["check"]["partial"], false, "{v}");
+    write(clone.path(), &[("src/a.ts", "import { b } from './b';\nexport function a() { return b() + 1; }\n")]);
+    let v = json(cc(ws.path()).args(["health", "r", "--check", b]).assert().success());
+    assert_eq!(v["data"]["check"]["partial"], true, "a check over a skipped file passed as a full one: {v}");
+    assert!(v["data"]["check"]["partial_reasons"].to_string().contains("files_skipped"), "{v}");
+    assert!(v["data"]["check"]["message"].as_str().unwrap().starts_with("partial"), "{v}");
+}

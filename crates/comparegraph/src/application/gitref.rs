@@ -501,3 +501,42 @@ mod race_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod lock_tests {
+    use super::lock_tree;
+
+    /// MINOR: a lock whose mtime is old but whose holder still runs is never taken over (the holder may be in a long extraction).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_lock_whose_holder_lives_is_not_taken_over() {
+        let d = tempfile::tempdir().unwrap();
+        let (lock, marker) = (d.path().join("c.lock"), d.path().join("c.complete"));
+        std::fs::write(&lock, std::process::id().to_string()).unwrap(); // a live pid: this test
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&lock).unwrap().set_modified(old).unwrap();
+        let (l2, m2) = (lock.clone(), marker.clone());
+        let h = std::thread::spawn(move || lock_tree(&l2, &m2).map(|l| l.is_some()).map_err(|e| e.to_string()));
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let taken = h.is_finished();
+        std::fs::write(&marker, "{}").unwrap(); // the holder finishes: the waiter returns without the lock
+        let got = h.join().unwrap();
+        assert!(!taken, "a lock whose holder lives was taken over: {got:?}");
+        assert_eq!(got, Ok(false));
+    }
+
+    /// MINOR: a held lock is kept fresh by a heartbeat, so a long extraction never looks stale to a waiter.
+    #[test]
+    fn a_held_lock_is_kept_fresh_by_a_heartbeat() {
+        let d = tempfile::tempdir().unwrap();
+        let (lock, marker) = (d.path().join("c.lock"), d.path().join("c.complete"));
+        let held = lock_tree(&lock, &marker).unwrap().expect("free lock taken");
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&lock).unwrap().set_modified(old).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(4)); // the heartbeat beats every 2 s
+        let age = std::fs::metadata(&lock).unwrap().modified().unwrap().elapsed().unwrap_or_default();
+        assert!(age.as_secs() < 4, "the held lock was not refreshed ({}s old)", age.as_secs());
+        drop(held);
+        assert!(!lock.exists());
+    }
+}
