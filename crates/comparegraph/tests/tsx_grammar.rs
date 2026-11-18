@@ -72,3 +72,13 @@ fn a_sql_parse_error_on_base_does_not_block_a_removal_yes() {
     let row = v["data"]["branch"]["removed"].as_array().unwrap().iter().find(|r| r["qualified_name"] == "src/a.py::g").unwrap().clone();
     assert_eq!((row["on_base"].as_str(), row["via"].as_str()), (Some("yes"), Some("absent_on_base")), "{row} {}", v["evidence"]["limitations"]);
 }
+
+/// Round 6: the SQL pin, at the grammar: none of the four node kinds the vendored SQL extractor matches exists in the SQL
+/// grammar it is given (`id_for_node_kind` 0), so it can never yield a symbol.
+#[test]
+fn the_sql_grammar_has_none_of_the_kinds_the_sql_extractor_matches() {
+    let lang: tree_sitter::Language = tree_sitter_sql::LANGUAGE.into();
+    for k in ["create_table_statement", "create_function_statement", "create_view_statement", "create_index_statement"] {
+        assert_eq!(lang.id_for_node_kind(k, true), 0, "{k} is a node kind of the SQL grammar now");
+    }
+}
