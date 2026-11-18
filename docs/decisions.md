@@ -319,3 +319,37 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
     (and the pair's key reads as fixed). A rename of a member changes the key too: the group is then a different finding.
   - `ADDED_COLUMNS` listed the four decision columns twice; once now, with a unit test.
   - Skipped as asked: `show --ref --detail full` is documented as head-only.
+
+## Plan 14 review round 2 (2026-11-18, branch feat/plan-14)
+- **Ruling: one rule for "already on base"** (replaces B1's per-row logic; code: `delta.rs::Judge::rule`, one function, one doc
+  comment). Two review rounds found "already on base" wrong in different row types (changed, then added and removed), each
+  patched on its own; the rule is now stated once and applied to every row:
+
+  > A branch change is on base only if base holds the branch's version of it, and that version was not already on the merge base.
+  > - **added / changed** (head body H, merge-base body M; M is absent for a pure add): resolved iff some base symbol B (the
+  >   same qualified name, or another name or path) has the same normalised hash as H, or near-matches H with J(B,H) >= 0.9 AND
+  >   J(B,H) > J(B,M); AND that B's (kind, qualified name) did not have the same hash on the merge base (B is new or changed on
+  >   base since the fork; old code never shows the branch's work). For an added symbol, M is the merge-base body of the same
+  >   name and kind if one exists (one the branch removed first), else its `removed` partner from a move (the removed
+  >   merge-base symbol of its kind nearest to it at J >= 0.9).
+  > - **removed** (merge-base body M): resolved iff base holds no symbol with hash M and no near copy of M (J >= 0.9) under any
+  >   qualified name or path, and does not hold the symbol under its own (kind, qualified name). If base holds a copy,
+  >   `base_moved_to` names it and the row stays unresolved.
+  > - Everything else is not on base. `base_moved_to` names where base keeps the old body when relevant, and a changed or
+  >   removed symbol that base changed, removed or moved its own way is a stale conflict (`stale_conflicts` counts both).
+
+  Read this way where the brief left it open, each stated so a reader can overturn it:
+  - near candidates are base symbols of H's (or M's) name and kind, under any path (the same qualified name included); a symbol
+    base renamed AND edited is found only by an exact hash. Comparing every base symbol is quadratic on a 90,000-node repo.
+  - a copy of M under another name counts only when that base symbol is fresh (new or changed since the fork): a symbol that
+    already held M's body on the merge base is a duplicate there, not a place base moved the deletion's target to.
+  - a near copy of M counts only when it is not nearer the branch's own new version (the head partner of a move) than M:
+    otherwise base took the branch's moved change and the old half of the move is gone from base (R2-5 is then wholly on base).
+  - `trivial_body` (below `MIN_BODY_TOKENS`) still blocks `body_hash` and `name_and_tokens`, never `same_symbol`.
+  - the whole-tree comparison has no merge base: every base symbol counts as fresh and the same key is not a near candidate.
+  - a branch that made two edits of which base took the first is read as near (`name_and_tokens`, confidence < 1, never in
+    `already_on_base_exact`): base is nearer the branch than the merge base. The review probe wanted 0; the brief's rule gives
+    near, and the confidence says it is not exact.
+
+  Why: a wrong "already on base" retires real work, and the per-row patches disagreed with each other. What would change it: a
+  rename-aware identity (base symbol -> merge-base symbol), or a measured false match.
