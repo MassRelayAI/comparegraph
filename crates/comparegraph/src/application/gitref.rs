@@ -861,6 +861,25 @@ mod lock_round3_tests {
         git(d, &["rev-parse", "HEAD"])
     }
 
+    /// M1 (round 4): a lock whose pid runs but under another start time (a recycled pid) is a dead holder's: taken over once
+    /// its heartbeat is stale.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_recycled_pid_does_not_hold_a_lock() {
+        let d = tempfile::tempdir().unwrap();
+        let (lock, marker) = (d.path().join("c.lock"), d.path().join("c.complete"));
+        std::fs::write(&lock, format!("{} 1_{}-0", std::process::id(), std::process::id())).unwrap(); // our pid, another start
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&lock).unwrap().set_modified(old).unwrap();
+        let (l2, m2) = (lock.clone(), marker.clone());
+        let h = std::thread::spawn(move || lock_tree(&l2, &m2).map(|l| l.is_some()).map_err(|e| e.to_string()));
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let taken = h.is_finished();
+        std::fs::write(&marker, "{}").unwrap();
+        assert!(taken, "a lock held by a recycled pid was never taken over");
+        assert_eq!(h.join().unwrap(), Ok(true));
+    }
+
     /// MINOR (round 3): a holder never removes a lock file that is no longer its own (taken over and re-created by another).
     #[test]
     fn a_lock_is_removed_only_by_its_own_holder() {

@@ -379,3 +379,146 @@ fn r4_submodule_bump_with_ignore_all() {
     let v = fx.delta();
     assert_ne!(exact_share(&v), Some(1.0), "FALSE YES (submodule bump unseen): {}", summ(&v));
 }
+
+// ================================================================ round 4: guards pinned against their mutations
+
+/// Remove one loose object of the clone (a fixture repo: every object is loose).
+fn drop_object(d: &Path, oid: &str) {
+    let obj = d.join(".git/objects").join(&oid[..2]).join(&oid[2..]);
+    let mut p = std::fs::metadata(&obj).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    p.set_readonly(false);
+    std::fs::set_permissions(&obj, p).unwrap();
+    std::fs::remove_file(&obj).unwrap();
+}
+
+/// R3 `branch_moved`: the branch deletes f from a.py and adds its very body under another name; base deletes f outright. Head
+/// still holds as many copies of f's body as the merge base (h >= m): the branch only moved it, so the deletion is unknown.
+#[test]
+fn g4_a_deletion_the_branch_only_moved_is_unknown() {
+    let fx = Fx::new(&[("src/a.py", &format!("{KEEP}\n{}", long_named("f", true)))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", KEEP);
+    write(&d, "src/b.py", &long_named("g", true));
+    commit(&d, "lane moves f's body to g");
+    fx.main();
+    write(&d, "src/a.py", &format!("{KEEP}\n"));
+    commit(&d, "base deletes f");
+    let v = fx.delta();
+    let row = row_of(&v, "removed", "src/a.py::f");
+    assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("branch_moved")), "{row}");
+}
+
+/// R3 `base_copies`: the merge base holds f's body twice (f and f2); the branch deletes f; base deletes f and keeps f2. Base has
+/// fewer copies than the merge base but not none: unknown.
+#[test]
+fn g4_a_deletion_with_fewer_base_copies_is_unknown() {
+    let fx = Fx::new(&[("src/a.py", &format!("{}\n{}", long_named("f", true), long_named("f2", true)))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &long_named("f2", true));
+    commit(&d, "lane deletes f");
+    fx.main();
+    write(&d, "src/a.py", &format!("{}\n", long_named("f2", true)));
+    commit(&d, "base deletes f too, its file otherwise");
+    let v = fx.delta();
+    let row = row_of(&v, "removed", "src/a.py::f");
+    assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("base_copies")), "{row}");
+}
+
+/// `sub()` with an unknown unread set: base's tree can no longer be listed (its root tree object is gone from the clone), so
+/// which files base's run did not read is not known, and a deletion base made too is not a yes.
+#[test]
+fn g4_an_unlisted_base_tree_blocks_a_removal_yes() {
+    let fx = Fx::new(&[("src/a.py", &format!("{}\n{KEEP}", long_process(false, ""))), ("src/k.py", KEEP)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", KEEP);
+    commit(&d, "lane deletes process");
+    fx.main();
+    write(&d, "src/a.py", &format!("{KEEP}\n"));
+    commit(&d, "base deletes it too");
+    let v = fx.delta();
+    assert_eq!(row_of(&v, "removed", "src/a.py::process")["via"], "absent_on_base", "{}", branch(&v));
+    let tree = git_out(&d, &["rev-parse", "main^{tree}"]);
+    drop_object(&d, &tree);
+    let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
+    let row = row_of(&v, "removed", "src/a.py::process");
+    assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("base_unread")), "{row}");
+    assert!(limits(&v).contains("git ls-tree failed for base"), "{}", limits(&v));
+}
+
+/// A5's U(mb) within U(head) half: the merge base's run could not read big.py (over max_file_bytes), which holds g; head trims
+/// it (head's run reads g) and adds a copy h; base keeps big.py as it was and adds two copies. Head's g is old code: no credit.
+#[test]
+fn g4_a_credit_needs_the_merge_base_read_whole_on_head_too() {
+    let pad = format!("# {}\n", "x".repeat(1_100_000));
+    let fx = Fx::new(&[("src/big.py", &format!("{}\n{pad}", long_named("g", true))), ("src/k.py", KEEP)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/big.py", &long_named("g", true));
+    write(&d, "src/n.py", &long_named("h", true));
+    commit(&d, "lane trims big.py and adds h");
+    fx.main();
+    write(&d, "src/o.py", &format!("{}\n{}", long_named("p", true), long_named("q", true)));
+    commit(&d, "base adds two copies");
+    let v = fx.delta();
+    for qn in ["src/big.py::g", "src/n.py::h"] {
+        let row = row_of(&v, "added", qn);
+        assert_eq!((row["on_base"].as_str(), row["why"].as_str()), (Some("unknown"), Some("merge_base_unread")), "{row}");
+    }
+}
+
+/// The residue's removed-lines side: the branch deletes a top-level statement (and adds bar, which base takes); base keeps the
+/// statement. The deletion is in no judged row: one unknown item.
+#[test]
+fn g4_an_unlanded_deletion_of_top_level_code_is_an_item() {
+    let fx = Fx::new(&[("src/a.py", &format!("{FOO}\nRETRIES = compute_retries(3, backoff=2)\n"))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
+    commit(&d, "lane drops the constant and adds bar");
+    fx.main();
+    write(&d, "src/a.py", &format!("{FOO}\nRETRIES = compute_retries(3, backoff=2)\n\n{BAR}"));
+    commit(&d, "base takes bar only");
+    let v = fx.delta();
+    assert_eq!(row_of(&v, "added", "src/a.py::bar")["via"], "same_symbol", "{}", branch(&v));
+    assert_eq!(v["data"]["summary"]["unknown"]["by_why"]["outside_symbols"].as_i64(), Some(1), "{}", summ(&v));
+    assert_eq!(exact_share(&v), Some(0.5), "{}", summ(&v));
+}
+
+/// The whole-tree comparison subtracts the head symbols base holds as they are: head's new g copies f's body, and base's only
+/// copy of that body is f itself.
+#[test]
+fn g4_whole_tree_credit_leaves_out_what_base_holds_as_it_is() {
+    let fx = Fx::new(&[("src/a.py", &long_named("f", true))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/b.py", &long_named("g", true));
+    commit(&d, "lane adds g, a copy of f");
+    fx.main();
+    let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--refresh", "--whole-tree"]);
+    let g = v["data"]["whole_tree"]["added"].as_array().unwrap().iter().find(|r| r["qualified_name"] == "src/b.py::g").unwrap().clone();
+    assert_eq!(g["on_base"], "no", "{g}");
+}
+
+/// A diff git cannot give (head's blob of a touched file is gone from the clone) is one unknown item, never a silent pass.
+#[test]
+fn g4_a_diff_that_fails_is_an_item() {
+    let fx = Fx::new(&[("src/a.py", FOO)]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}"));
+    commit(&d, "lane adds bar");
+    fx.main();
+    write(&d, "src/a.py", &format!("{FOO}\n{BAR}\n"));
+    commit(&d, "base takes bar, its file otherwise");
+    let v = fx.delta();
+    assert_eq!(exact_share(&v), Some(1.0), "{}", summ(&v));
+    let blob = git_out(&d, &["rev-parse", "feat:src/a.py"]);
+    drop_object(&d, &blob);
+    let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat"]);
+    assert_eq!(v["data"]["summary"]["unknown"]["by_why"]["diff_failed"].as_i64(), Some(1), "{}", summ(&v));
+    assert_eq!(exact_share(&v), Some(0.5), "{}", summ(&v));
+}

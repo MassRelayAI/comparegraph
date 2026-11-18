@@ -321,3 +321,36 @@ fn a_summary_from_delta_needs_the_base_the_delta_used() {
     assert_eq!(v["ok"], true, "{v}");
     assert_eq!(v["data"]["summary"]["base_ref"], "other", "{v}");
 }
+
+/// M2 (round 4): the kept delta names the engine, provider and model that computed it; `decide --summary-from-delta` refuses
+/// one kept under another model (here the kept value is edited to say so).
+#[test]
+fn a_summary_from_another_model_is_refused() {
+    let fx = Fx::new(&[]);
+    let sha = git_out(&fx.clone(), &["rev-parse", "feat"]);
+    let v = ok(fx.root(), &["delta", "r", "--base", "main", "--head", "feat", "--build-missing"]);
+    assert!(v["ok"].as_bool().unwrap());
+    let key = format!("delta:r:{sha}");
+    let kept: String = fx.db().query_row("SELECT value FROM meta WHERE key=?1", [&key], |r| r.get(0)).unwrap();
+    let mut j: Value = serde_json::from_str(&kept).unwrap();
+    assert!(j["engine"].is_string() && j["model"].is_string() && j["provider_version"].is_string(), "{j}");
+    j["model"] = Value::from("an-older-model");
+    fx.db().execute("UPDATE meta SET value=?1 WHERE key=?2", [j.to_string(), key]).unwrap();
+    let e = run(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--base", "main"]);
+    assert_eq!(e["error"]["code"], "invalid_arguments", "{e}");
+    assert!(e["error"]["message"].as_str().unwrap().contains("an-older-model"), "{e}");
+}
+
+/// Round 4 minor: a `--base` that no longer resolves cannot be checked against the kept delta: refused.
+#[test]
+fn a_summary_from_delta_against_a_gone_base_is_refused() {
+    let fx = Fx::new(&[]);
+    let d = fx.clone();
+    git(&d, &["branch", "-q", "other", "main"]);
+    let sha = git_out(&d, &["rev-parse", "feat"]);
+    ok(fx.root(), &["delta", "r", "--base", "other", "--head", "feat", "--build-missing"]);
+    git(&d, &["branch", "-q", "-D", "other"]);
+    let e = run(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta", "--base", "other"]);
+    assert_eq!(e["error"]["code"], "invalid_arguments", "{e}");
+    assert!(e["error"]["message"].as_str().unwrap().contains("no longer names"), "{e}");
+}
