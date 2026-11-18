@@ -29,7 +29,7 @@ pub struct BuildOptions {
     /// include reads every file; an exclude match wins over an include match. See `reference::walker::Subset`.
     pub include: Vec<String>,
     pub exclude: Vec<String>,
-    /// `build --ref`: read this git ref's tree (through `git archive`) instead of the clone's working tree
+    /// `build --ref`: read this git ref's tree (raw blobs, gitref::materialise) instead of the clone's working tree
     pub git_ref: Option<String>,
 }
 

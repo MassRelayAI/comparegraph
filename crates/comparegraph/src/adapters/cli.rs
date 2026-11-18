@@ -259,7 +259,7 @@ pub enum Cmd {
     },
     /// Parse a registered clone into the graph (one run)
     Build {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -462,7 +462,7 @@ pub enum Cmd {
     },
     /// A symbol with callers, callees, community, licence lane; --detail full adds its current lines
     Show {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -475,7 +475,7 @@ pub enum Cmd {
     },
     /// Nodes reachable from a symbol over calls/extends/implements, with hop distance and the path to each
     Traverse {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -498,7 +498,7 @@ pub enum Cmd {
     },
     /// Everything that transitively depends on a symbol or file(s), by hop, plus the tests that reach it
     Impact {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -519,7 +519,7 @@ pub enum Cmd {
     },
     /// Tests linked to a symbol directly or through at most 3 call hops
     TestsFor {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -536,7 +536,7 @@ pub enum Cmd {
     },
     /// Symbols nothing calls that are exported, handlers or main
     EntryPoints {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -549,7 +549,7 @@ pub enum Cmd {
     },
     /// Candidates nothing references (dynamic dispatch is invisible)
     DeadCode {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -646,7 +646,7 @@ pub enum Cmd {
     },
     /// Module clusters of a repo's latest run
     Communities {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -659,7 +659,7 @@ pub enum Cmd {
     Mcp,
     /// Candidate symbols and communities per feature of a family in one clone; writes nothing
     Map {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,
@@ -672,7 +672,7 @@ pub enum Cmd {
     /// Is a feature absent from a clone's graph? Four channels (symbols, paths, communities, kinds) plus the ranked
     /// `read_set` a `none` must read; reads, writes nothing
     AbsentCheck {
-        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        /// `build`: read this git ref's tree (raw git blobs, nothing checked out, no clone filter runs) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
         #[arg(long = "ref", value_name = "REF")]
         git_ref: Option<String>,
         repo: String,

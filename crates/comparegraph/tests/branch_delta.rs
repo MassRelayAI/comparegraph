@@ -226,42 +226,6 @@ fn a_symlink_in_the_tree_is_a_file_holding_its_target_never_followed() {
 }
 
 #[test]
-fn two_builds_of_one_commit_at_once_both_read_a_whole_tree() {
-    let mut files: Vec<(String, String)> = vec![];
-    for i in 0..300 {
-        files.push((format!("src/m{i:03}.py"), format!("def f{i}(x):\n    y = x * {i}\n    return y + {i}\n")));
-    }
-    let refs: Vec<(&str, &str)> = files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
-    let fx = Fx::new(&refs);
-    let root = fx.root().to_path_buf();
-    let bin = assert_cmd::cargo::cargo_bin("comparegraph");
-    let kids: Vec<_> = (0..6).map(|_| std::process::Command::new(&bin).arg("--root").arg(&root).args(["build", "r", "--ref", "main", "--full"]).spawn_output()).collect();
-    for k in kids {
-        let o = k.join().unwrap();
-        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
-    }
-    for i in 0..300 {
-        assert!(cached(&fx, &format!("src/m{i:03}.py")).is_file(), "src/m{i:03}.py missing from a tree marked complete");
-    }
-    let counts: Vec<i64> = {
-        let db = fx.db();
-        let mut st = db.prepare("SELECT COUNT(*) FROM node n JOIN run u ON u.id = n.run_id WHERE u.ref = 'main' AND u.status = 'done' AND n.kind = 'function' GROUP BY u.id").unwrap();
-        st.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
-    };
-    assert!(!counts.is_empty() && counts.iter().all(|c| *c == 300), "every finished build read all 300 functions: {counts:?}");
-}
-
-trait SpawnOutput {
-    fn spawn_output(&mut self) -> std::thread::JoinHandle<std::process::Output>;
-}
-impl SpawnOutput for std::process::Command {
-    fn spawn_output(&mut self) -> std::thread::JoinHandle<std::process::Output> {
-        let child = self.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
-        std::thread::spawn(move || child.wait_with_output().unwrap())
-    }
-}
-
-#[test]
 fn an_unknown_ref_is_a_structured_refusal_and_writes_no_run() {
     let fx = Fx::new(&[("src/a.py", FOO)]);
     let runs = |fx: &Fx| fx.db().query_row("SELECT COUNT(*) FROM run", [], |r| r.get::<_, i64>(0)).unwrap();

@@ -76,7 +76,7 @@ otherwise. List verbs take `--limit` (default 50, maximum 500) and `--cursor`. E
 ## Judging a branch against its base
 
 `delta` answers "what did this branch introduce since it left its base, and does the base have it now", from builds of the same
-clone at three refs: the base, the head and their merge base. The clone is only read (`git archive`); its checkout, index and
+clone at three refs: the base, the head and their merge base. The clone is only read (raw blobs through `git ls-tree` and `git cat-file`, no filter of the clone runs); its checkout, index and
 working tree never change.
 
 ```bash
@@ -96,7 +96,7 @@ The fields are facts; whether to restack, take parts or retire the branch is the
 ## From a branch to a verdict to a deleted branch
 
 ```bash
-comparegraph build myrepo --ref origin/feature-x               # the branch's tree, read through git archive
+comparegraph build myrepo --ref origin/feature-x               # the branch's tree, read as raw git blobs
 comparegraph delta myrepo --base origin/main --head origin/feature-x --build-missing
 comparegraph decide myrepo reject --why "already on main as bar2" --by me --ref origin/feature-x --commit <sha> --summary-from-delta --bundle D:/bundles/feature-x.bundle
 git bundle create D:/bundles/feature-x.bundle origin/feature-x   # outside CompareGraph: the only archive of the branch

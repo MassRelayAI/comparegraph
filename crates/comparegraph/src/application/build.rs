@@ -98,7 +98,7 @@ pub fn build_repo(
             crate::providers::ProviderError::Unavailable(provider_name.into(), status.detail),
         ));
     }
-    // `--ref`: the tree of the ref's commit, read through `git archive` into a cache folder; the clone is not touched
+    // `--ref`: the tree of the ref's commit, read as raw blobs (gitref::materialise) into a cache folder; the clone is not touched
     let ref_commit = match opts.git_ref.as_deref() {
         Some(r) => Some(super::gitref::resolve(Path::new(&repo.path), r)?),
         None => None,

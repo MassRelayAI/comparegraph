@@ -291,3 +291,9 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   the repo's `add` subset (what `build --ref` uses when given none). A run of the commit read otherwise is refused, naming the
   difference; `--build-missing` / `--refresh` build the side with the delta's options. Why: a `--include src/**` base and a whole
   head made everything outside `src/` look added. What would change it: `delta --include/--exclude` (the wanted subset given).
+- **M1** a ref's tree is read as raw blobs (`git ls-tree -r -z`, `git cat-file --batch`) and written by the engine, replacing
+  `git archive | tar -x`, which ran the clone's smudge filters (git-lfs fetches and writes `.git/lfs/objects`), converted eol and
+  honoured export-ignore. Symlinks become regular files holding the target (git's `core.symlinks=false` form; never followed, never
+  a failed build on Windows); submodules are skipped; an unsafe path (absolute, `..`, `.git`, a Windows drive colon) refuses the
+  tree. Still a process call, no new dependency. MINOR (same lane): `<commit>.lock` (create-new, stale after 10 min) serialises the
+  extraction, which goes to `<commit>.tmp-<pid>` and is renamed into place before `<commit>.complete` is written.
