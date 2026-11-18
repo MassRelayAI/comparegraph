@@ -608,7 +608,13 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   of earlier work is undone by that merge. (The approved "the F merge of head and the regular merge disagree" read as a
   conflict on the very work both sides hold, so it flagged ordinary post-merge-base work; this form keeps every fixture the
   coordinator named. Earlier forms: the broad rule, 374 items on massrelay's loop-remind delta; "the F merge of head differs
-  from base", 337.) If that merge cannot be had, the broad rule stands in: every path whose
+  from base", 337.)
+  **Ruling (the coordinator, 2026-11-19): ONE item per delta.** The detection stays as built (2692e98), but whenever it flags
+  any path it is reported as one unknown item `merged_into_base_before` (the first path, sorted), plus a limitation
+  `merged_into_base_before_paths` with the count and the first 20 paths (sorted). Why: on a repository whose lanes reach main
+  as second parents of merge commits (massrelay), F lies far back and the per-path form floods every stacked lane with hundreds
+  of items that drown the real rows; the guarantee needed is only that such a branch never reads 1.0 and is read by a person,
+  which one item gives. If that merge cannot be had, the broad rule stands in: every path whose
   entry differs between F and head and between head and base. A listing git cannot give is one `diff_failed` item.
 - **The merge is not the clone's to shape**: `--attr-source=<the empty tree>` (git >= 2.42; with an older git the backstop is
   unavailable, every yes unknown), `core.attributesFile=/dev/null`, `merge.renormalize=false`, `merge.renames=true`,

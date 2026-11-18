@@ -1409,6 +1409,9 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     let merged_entries = merged.as_ref().ok().map(merge_entries);
     // the branch's work before the merge base is F -> mb: merged into base from F, does it change base? (a revert: yes)
     let from_f = fork_f.as_ref().filter(|f| **f != mb_c).and_then(|f| gitref::merge_tree_from(clone, root, &base_c, &mb_c, Some(f)).ok());
+    // the ruling of round 6: the paths are collected, and reported as ONE item and a limitation listing them
+    let mut b2_paths: Vec<String> = vec![];
+    let named: HashSet<String> = residue.iter().map(|x| x.path.clone()).collect();
     match (&fork_f, &eh, &eb) {
         // an item where base lacks some of that earlier work (the merge from F of base and the merge base changes base's
         // entry, or conflicts) and head still differs from base there; base's kept earlier work merges to base's own entry,
@@ -1416,11 +1419,10 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         (Some(f), Some(h), Some(b)) if *f != mb_c && from_f.is_some() => {
             let m = from_f.as_ref().expect("checked above");
             let me = merge_entries(m);
-            let named: HashSet<String> = residue.iter().map(|x| x.path.clone()).collect();
             let paths: BTreeSet<&String> = me.keys().chain(b.keys()).chain(m.conflicts.iter()).collect();
             for p in paths {
                 if (me.get(p) != b.get(p) || m.conflicts.contains(p)) && h.get(p) != b.get(p) && !named.contains(p) {
-                    residue.push(Residue { path: p.clone(), why: "merged_into_base_before", hunk: None });
+                    b2_paths.push(p.clone());
                 }
             }
         }
@@ -1434,19 +1436,23 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             });
             match ef {
                 Some(ef) => {
-                    let named: HashSet<String> = residue.iter().map(|r| r.path.clone()).collect();
                     let paths: BTreeSet<&String> = ef.keys().chain(h.keys()).collect();
                     for p in paths {
                         if ef.get(p) != h.get(p) && h.get(p) != b.get(p) && !named.contains(p) {
-                            residue.push(Residue { path: p.clone(), why: "merged_into_base_before", hunk: None });
+                            b2_paths.push(p.clone());
                         }
                     }
                 }
-                None => residue.push(Residue { path: String::new(), why: "merged_into_base_before", hunk: None }),
+                None => b2_paths.push(String::new()),
             }
         }
         (None, _, _) if ancestors.is_none() || first_parent.is_none() => residue.push(Residue { path: String::new(), why: "diff_failed", hunk: None }),
         _ => {}
+    }
+    b2_paths.sort();
+    b2_paths.dedup();
+    if let Some(first) = b2_paths.first() {
+        residue.push(Residue { path: first.clone(), why: "merged_into_base_before", hunk: None });
     }
 
     // THE BACKSTOP (docs/decisions.md, "Plan 14 round 5"): a yes is checked against git's own merge, the thing it predicts.
@@ -1606,6 +1612,14 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     }
     if trivial_n > 0 {
         limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature (decorators and docstrings excluded): not matched by body hash or tokens (on_base: unknown, why: trivial_body)") }));
+    }
+    if !b2_paths.is_empty() {
+        let shown: Vec<&String> = b2_paths.iter().take(20).collect();
+        limitations.push(json!({
+            "code": "merged_into_base_before_paths",
+            "detail": format!("{} path(s) hold work base merged before the merge base and no longer holds as it was (one unknown item, `merged_into_base_before`; a person reads the branch): {}{}", b2_paths.len(), shown.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", "), if b2_paths.len() > shown.len() { ", ..." } else { "" }),
+            "data": { "count": b2_paths.len(), "paths": shown },
+        }));
     }
     if let Some(n) = merge_note {
         limitations.push(json!({ "code": "partial", "detail": n }));
