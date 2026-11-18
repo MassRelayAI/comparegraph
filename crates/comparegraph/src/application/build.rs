@@ -45,6 +45,9 @@ pub struct BuildReport {
     /// incremental build: edges copied from the previous run instead of resolved again
     #[serde(default)]
     pub edges_copied: usize,
+    /// the run an incremental build took its previous graph from (None: a full build)
+    #[serde(default)]
+    pub incremental_from: Option<i64>,
 }
 
 /// The workspace db as the provider's parse cache (its own connection; written only after the parse loop). It notes
@@ -144,14 +147,21 @@ pub fn build_repo(
     store.set_run_ref(run, opts.git_ref.as_deref(), ref_commit.as_deref())?;
     let mut opts = opts.clone();
     let mut prev_comms: Option<PrevComms> = None;
+    let mut incremental_from: Option<i64> = None;
     if opts.full {
         opts.cache = None;
         opts.prev = None;
     } else if provider.name() == "reference" && opts.prev.is_none() {
         let tp = Instant::now();
-        let loaded = load_prev(&store, repo_id, &provider.version(), opts.git_ref.as_deref())?;
+        let chosen = choose_prev(&store, Path::new(&repo.path), repo_id, &provider.version(), opts.git_ref.as_deref(), ref_commit.as_deref())?;
+        let loaded = match &chosen {
+            Some(last) => Some(load_prev(&store, last)?),
+            None => None,
+        };
         crate::providers::reference::profile_line("load_prev", tp, loaded.as_ref().map_or(0, |l| l.0.edges.len()));
-        if let Some((g, c)) = loaded {
+        if let (Some((g, c)), Some(last)) = (loaded, chosen) {
+            incremental_from = last.id.map(|i| i.0);
+            store.set_run_incremental_from(run, incremental_from)?;
             opts.prev = Some(std::rc::Rc::new(g));
             prev_comms = Some(c);
         }
@@ -303,6 +313,7 @@ pub fn build_repo(
         seconds: secs,
         reused: false,
         edges_copied: out.edges_copied,
+        incremental_from,
     })
 }
 
@@ -312,22 +323,59 @@ struct PrevComms {
 }
 
 /// The latest done run of the same provider version as the base of an incremental build.
-fn load_prev(
+/// The run an incremental build starts from. A head build takes the latest head run, as ever. A ref build takes the NEAREST done run of
+/// the repo (same provider version) in the commit graph: the fewest commits between it and the target through their merge base, so the
+/// merge base's own run (distance to it is just the branch's commits) wins over the base ref's, which wins over the head run; none: a
+/// full build. Any choice is safe (`incr::plan` compares file hashes and falls back); a near one just copies more.
+/// `COMPAREGRAPH_PREV_RUN=<id>` forces the choice (a test hook: a wrong previous must fall back or match, never change the answer).
+fn choose_prev(
     store: &Store,
+    clone: &Path,
     repo_id: crate::domain::RepoId,
     version: &str,
     git_ref: Option<&str>,
-) -> Result<Option<(crate::providers::PrevGraph, PrevComms)>> {
+    target: Option<&str>,
+) -> Result<Option<crate::domain::Run>> {
+    if let Some(id) = std::env::var("COMPAREGRAPH_PREV_RUN").ok().and_then(|v| v.parse::<i64>().ok()) {
+        return Ok(store.run(RunId(id))?.filter(|r| r.status == crate::domain::RunStatus::Done && r.repo == repo_id));
+    }
+    let Some(target) = target else {
+        return Ok(store.latest_done_run_of(repo_id, "reference", version, None, None)?);
+    };
+    let _ = git_ref;
+    let count = |range: String| -> Option<u64> { super::git(clone, &["rev-list", "--count", &range]).and_then(|s| s.parse().ok()) };
+    let mut best: Option<(u64, i64, crate::domain::Run)> = None;
+    for cand in store.done_runs_of(repo_id, "reference", version, 60)? {
+        let Some(id) = cand.id else { continue };
+        let commit = match store.run_ref(id)? {
+            (_, Some(c)) => c,
+            _ => match store.run_head(id)?.and_then(|h| super::git(clone, &["rev-parse", &h])) {
+                Some(c) => c,
+                None => continue,
+            },
+        };
+        let dist = if commit == target {
+            0
+        } else {
+            let Some(mb) = super::git(clone, &["merge-base", target, &commit]) else { continue };
+            match (count(format!("{mb}..{target}")), count(format!("{mb}..{commit}"))) {
+                (Some(a), Some(b)) => a + b,
+                _ => continue,
+            }
+        };
+        if best.as_ref().is_none_or(|(d, i, _)| (dist, -id.0) < (*d, -*i)) {
+            best = Some((dist, id.0, cand));
+        }
+    }
+    Ok(best.map(|b| b.2))
+}
+
+fn load_prev(store: &Store, last: &crate::domain::Run) -> Result<(crate::providers::PrevGraph, PrevComms)> {
     use crate::domain::{EdgeKind, NodeKind};
-    let Some(last) = store.latest_done_run_of(repo_id, "reference", version, git_ref, None)? else {
-        return Ok(None);
-    };
-    let Some(last_id) = last.id else {
-        return Ok(None);
-    };
+    let last_id = last.id.expect("stored run has id");
     let nodes = store.nodes_of_run(last_id)?;
     let mut g = crate::providers::PrevGraph {
-        go_fp: go_fp_of(&last),
+        go_fp: go_fp_of(last),
         ..Default::default()
     };
     let mut qn_of: HashMap<NodeId, &str> = HashMap::new();
@@ -367,7 +415,7 @@ fn load_prev(
         paths.dedup();
         by_files.insert(paths, (c.keywords, c.cohesion));
     }
-    Ok(Some((g, PrevComms { by_files })))
+    Ok((g, PrevComms { by_files }))
 }
 
 /// The no-op rule: the (path, content hash) set the walker would parse equals the latest done run's file nodes, and the provider
@@ -461,6 +509,7 @@ fn try_reuse(
         seconds: t.elapsed().as_secs_f64(),
         reused: true,
         edges_copied: 0,
+        incremental_from: None,
     }))
 }
 

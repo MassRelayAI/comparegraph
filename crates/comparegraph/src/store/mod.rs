@@ -623,6 +623,12 @@ impl Store {
     pub fn latest_done_run_of(&self, repo: RepoId, provider: &str, version: &str, git_ref: Option<&str>, commit: Option<&str>) -> Result<Option<Run>> {
         Ok(self.conn.query_row(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND provider=?2 AND provider_version=?3 AND ref IS ?4 AND (?5 IS NULL OR ref_commit=?5) ORDER BY id DESC LIMIT 1"), params![repo.0, provider, version, git_ref, commit], row_to_run).optional()?)
     }
+    /// The latest `limit` done runs of one provider at one version, head and ref runs alike, newest first.
+    pub fn done_runs_of(&self, repo: RepoId, provider: &str, version: &str, limit: usize) -> Result<Vec<Run>> {
+        let mut st = self.conn.prepare(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND provider=?2 AND provider_version=?3 ORDER BY id DESC LIMIT ?4"))?;
+        let rows = st.query_map(params![repo.0, provider, version, limit as i64], row_to_run)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
     /// The latest done reference run that read exactly this commit (any name it was built under).
     pub fn done_run_at_commit(&self, repo: RepoId, commit: &str) -> Result<Option<Run>> {
         Ok(self.conn.query_row(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND ref_commit=?2 AND provider='reference' ORDER BY id DESC LIMIT 1"), params![repo.0, commit], row_to_run).optional()?)
