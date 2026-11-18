@@ -934,3 +934,35 @@ fn r2_docstrings_and_decorators_do_not_count_as_body() {
         assert_eq!(row["note"], "trivial_body", "{qn}: {row}");
     }
 }
+
+// ---------------------------------------------------------------- review round 3: near matches never count as landed work
+
+/// The first-of-two-edits probe: base took edit 1 of 2. The exact share is 0 (`share_on_base_exact`, and
+/// `share_already_on_base`, which now equals it); the near match is one `near_on_base` row with its J(B,H) and J(B,M), for a
+/// person to read. `decide --summary-from-delta` stores both.
+#[test]
+fn r3_near_matches_are_listed_apart_and_never_in_the_share() {
+    let fx = Fx::new(&[("src/a.py", &long_process(false, ""))]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", &long_process(true, ""));
+    commit(&d, "edit 1");
+    write(&d, "src/a.py", &long_process(true, " * 2"));
+    commit(&d, "edit 2");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/a.py", &long_process(true, ""));
+    commit(&d, "base takes edit 1");
+    let v = fx.delta("main", "feat");
+    let s = &v["data"]["summary"];
+    assert_eq!(s["share_on_base_exact"].as_f64(), Some(0.0), "{s}");
+    assert_eq!(s["share_already_on_base"].as_f64(), Some(0.0), "the share counts exact rows only: {s}");
+    assert_eq!(s["near_on_base"]["count"].as_i64(), Some(1), "{s}");
+    let near = &s["near_on_base"]["rows"][0];
+    assert_eq!(near["qualified_name"], "src/a.py::process", "{near}");
+    let (jh, jm) = (near["j_head"].as_f64().unwrap(), near["j_merge_base"].as_f64().unwrap());
+    assert!(jh >= 0.9 && jh > jm, "{near}");
+    let sha = git_out(&d, &["rev-parse", "feat"]).trim().to_string();
+    ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta"]);
+    let rec = &ok(fx.root(), &["decisions", "--ref", "feat"])["data"]["items"][0]["summary"]["summary"];
+    assert_eq!((rec["share_on_base_exact"].as_f64(), rec["near_on_base"]["count"].as_i64()), (Some(0.0), Some(1)), "{rec}");
+}

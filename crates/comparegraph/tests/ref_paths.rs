@@ -178,3 +178,20 @@ fn a_non_utf8_path_is_skipped_with_a_limitation_not_renamed() {
     files_under(&fx.refs_dir().join(&commit), Path::new(""), &mut all);
     assert!(all.iter().all(|p| !p.to_string_lossy().contains('\u{fffd}') && !p.to_string_lossy().contains("caf")), "{all:?}");
 }
+
+/// Review round 3: a Windows reserved device name (any case, with or without an extension) refuses the tree on every platform:
+/// a tree must extract the same everywhere.
+#[test]
+fn a_windows_reserved_device_name_refuses_the_tree_everywhere() {
+    let fx = Fx::new();
+    for (i, path) in ["src/aux.c", "NUL.txt", "a/Com1/x", "lpt9.h", "con", "docs/PRN.md"].into_iter().enumerate() {
+        let name = format!("dev{i}");
+        let commit = fx.hostile(&name, &[path.as_bytes()]);
+        let v = err(fx.root(), &["build", "r", "--ref", &name], "unsafe_tree");
+        assert_eq!((v["error"]["data"]["path"].as_str(), v["error"]["data"]["rule"].as_str()), (Some(path), Some("windows_reserved_name")), "{v}");
+        assert_nothing_written(&fx, &commit, path.rsplit('/').next().unwrap());
+    }
+    // names that only start like one are fine
+    fx.hostile("fine", &[b"src/console.c", b"src/com10.c", b"src/auxiliary.py", b"src/nul_check.py"]);
+    ok(fx.root(), &["build", "r", "--ref", "fine"]);
+}
