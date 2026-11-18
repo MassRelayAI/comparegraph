@@ -130,6 +130,14 @@ pub fn adopt_file_head(store: &Store, root: &Path) -> Result<Option<String>> {
         Some(h) => store.meta_set(HEAD_KEY, &h)?,
         None => store.meta_delete(HEAD_KEY)?,
     }
+    // the id high-water marks every `gc-refs` line carries: ids removed after the store's own copy was taken stay retired
+    for e in w.entries.iter().filter(|e| e["verb"] == "gc-refs") {
+        for t in ["run", "node"] {
+            if let Some(n) = e["inputs"]["id_hwm"][t].as_i64() {
+                store.raise_id_hwm(t, n)?;
+            }
+        }
+    }
     Ok(w.head_text())
 }
 

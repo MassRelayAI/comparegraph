@@ -60,6 +60,38 @@ pub fn decide(
     decide_on(&store, repo, disposition, why, by, feature, family, rv)
 }
 
+/// A branch verdict is about a commit of that branch: `commit` (a prefix too) names one commit of the clone, and the ref, while it
+/// still resolves, reaches it (`git merge-base --is-ancestor`). A ref that is gone (deleted after its delta) is still judged by
+/// its commit alone; a clone that cannot be read refuses (`clone_unavailable`): nothing can be checked.
+fn commit_reached(clone: &Path, git_ref: &str, commit: &str) -> Result<()> {
+    use super::gitref::{probe, resolve, Probe};
+    let tip = match probe(clone, git_ref) {
+        Probe::Unreadable(why) => {
+            return Err(AppError::structured(
+                "clone_unavailable",
+                format!("cannot check that {git_ref} reaches {commit}: {why}"),
+                Some("make the clone readable (mounted, a git repository) and retry".into()),
+                Some(serde_json::json!({ "ref": git_ref, "commit": commit })),
+            ))
+        }
+        Probe::Commit(c) => Some(c),
+        Probe::Missing => None,
+    };
+    let full = resolve(clone, commit).map_err(|_| AppError::InvalidArguments(format!("--commit {commit} names no single commit of the clone (unknown or ambiguous)")))?;
+    if let Some(tip) = tip {
+        let reached = std::process::Command::new("git")
+            .arg("-C")
+            .arg(clone)
+            .args(["merge-base", "--is-ancestor", &full, &tip])
+            .status()
+            .map_err(|e| AppError::Io(clone.to_path_buf(), e))?;
+        if !reached.success() {
+            return invalid(format!("--commit {commit} is not reachable from {git_ref} (now {}): a branch verdict is about a commit of that branch", &tip[..12.min(tip.len())]));
+        }
+    }
+    Ok(())
+}
+
 fn check_input(disposition: &str, why: &str, by: &str) -> Result<()> {
     if !["adopt", "reject", "park"].contains(&disposition) {
         return invalid(format!(
@@ -104,6 +136,9 @@ pub fn decide_on(
         .repo_by_name(repo)?
         .ok_or_else(|| AppError::NotFound(format!("no repo named {repo}")))?;
     super::archive::refuse_if_archived(store, repo)?;
+    if let Some(v) = rv {
+        commit_reached(Path::new(&r.path), &v.git_ref, &v.commit)?;
+    }
     let rid = r.id.unwrap().0;
     let fid = match feature {
         Some(f) => Some(lookup_feature(store, f, family)?.0),

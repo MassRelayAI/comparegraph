@@ -329,12 +329,19 @@ pub fn restore_store(root: &Path, backup: &Path, apply: bool, by: &str) -> Resul
     let dir = root.join(".comparegraph");
     let db = dir.join("comparegraph.db");
     let exists = db.is_file();
+    let mut replaced_hwm: Vec<(&str, i64)> = vec![];
     let current_bytes = std::fs::metadata(&db).map(|m| m.len()).unwrap_or(0);
     if exists {
         // in use: another comparegraph process has it open, or another connection holds the write lock
         let s = Store::open_guarded(root)?;
         let others = s.other_holders();
         let lock_free = s.write_lock_free()?;
+        // the ids the store being replaced handed out: the restored store never hands them out again
+        for t in ["run", "node"] {
+            let max: i64 = s.conn().query_row(&format!("SELECT COALESCE(MAX(id), 0) FROM main.{t}"), [], |r| r.get(0)).unwrap_or(0);
+            let hwm = s.meta_get(&format!("id_hwm:{t}")).ok().flatten().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+            replaced_hwm.push((t, max.max(hwm)));
+        }
         drop(s);
         if !others.is_empty() || !lock_free {
             return Err(AppError::structured(
@@ -412,6 +419,9 @@ pub fn restore_store(root: &Path, backup: &Path, apply: bool, by: &str) -> Resul
     let entry = w.with_write_lock(|w| -> Result<Value> {
         let meta_head_in_backup = w.meta_get(governance::HEAD_KEY)?;
         governance::adopt_file_head(w, root)?;
+        for (t, n) in &replaced_hwm {
+            w.raise_id_hwm(t, *n)?;
+        }
         governance::append(w, root, &Action {
             verb: "restore-store".into(),
             by: by.into(),

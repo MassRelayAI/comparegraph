@@ -370,3 +370,33 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   UTF-8 is skipped with `non_utf8_path`, never renamed lossily. Tree limitations live in the `.complete` marker (JSON) so every
   build of the commit reports them. Not covered: Unicode normalisation collisions (NFC vs NFD) and Windows reserved device names
   (`aux.c`), which git refuses only on Windows itself. What would change it: a tree that must be read despite one of these paths.
+- **MINORs, round 2** (one test commit, one fix commit; each test red on the code before):
+  - blobs are streamed into the tree (`io::copy` over `take(size)`), and a blob over the build's `--max-file-bytes` is never read
+    from git (`skipped_oversize`, "not extracted from the ref's tree"). The `.complete` marker records the limit it was
+    extracted with; a read with a larger limit extracts the tree again (marker first, under the lock).
+  - submodule entries are counted: `submodule_skipped` with the count.
+  - a `.complete` marker whose folder is gone is not a tree: it is extracted again (never read as an empty tree).
+  - `gc --refs` removes a tree under its `<commit>.lock`, the marker before the folder; a run whose tree lock is live is kept,
+    listed in `busy`, and said in a `partial` limitation.
+  - the tree lock holds the holder's pid and a heartbeat (mtime every 2 s while held); it is taken over only when the heartbeat
+    stopped 120 s ago AND the holder is not known to run (`/proc/<pid>` on Linux; elsewhere the heartbeat alone). A recycled pid
+    can hold a dead lock until the 30-minute wait refuses (`store_busy`); remove the file by hand then.
+  - a ref run records the file limits it read with (`meta run_limits:<run>` = `{max_files, max_file_bytes}`; a meta row, no schema
+    change; removed by `gc --refs` with the run). `delta` refuses sides whose recorded limits differ (`invalid_arguments`, the
+    limits per side in `data`), says `partial` when a side has none recorded, and carries each side's run limitations
+    (`truncated_files`, `skipped_oversize`, `skipped_file`, `case_collision_skipped`, `non_utf8_path`, `submodule_skipped`) into its
+    own, naming the side, ref and run. A build does not reuse a ref run of other recorded limits.
+  - the `gc-refs` action-log line carries `inputs.id_hwm {run, node}`; `adopt_file_head` (restore-store) raises the store's marks
+    to the highest the log carries, and restore-store raises them to the replaced store's largest ids too.
+  - `delta` appends a `delta-record` line only when the kept value changes.
+  - a failed `git diff` is a `partial` limitation and the three file counts are null (not known), not zero.
+  - `repos --stale` filters BEFORE paging (pages and `total` count stale repos), asks the clone once per ref name, probes at most
+    5,000 ref runs per call (a `truncated` limitation names the repos left unjudged), and lists at most 100 ref runs per repo.
+  - `health --check` over a partial read (`files_skipped`, `cycles_truncated`) answers `check.partial: true` with
+    `partial_reasons` and a message starting `partial:`; the exit code stays the ratchet's (chosen over failing: a file edited since
+    the build would otherwise fail every gate, and the flag is machine-readable).
+  - `decide --ref R --commit C` refuses a C that names no single commit of the clone, or that R (while it resolves) does not reach
+    (`git merge-base --is-ancestor`); a gone R is judged by C alone; an unreadable clone refuses (`clone_unavailable`).
+    `an_ambiguous_short_commit_for_a_branch_verdict_is_refused` now keys its two recorded deltas on feat's real sha prefix (its
+    fake commits are refused before the ambiguity is reached).
+  - bigrams are cached per side and symbol (`delta::Grams`; unit test only, no behaviour to turn red).

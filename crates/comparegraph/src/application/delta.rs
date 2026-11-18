@@ -66,7 +66,14 @@ struct Side {
     files: HashMap<String, Vec<String>>,
     unreadable: usize,
     duplicates: usize,
+    /// the file limits the run was read with (`build::run_limits`); None for a run recorded before they were
+    limits: Option<Value>,
+    /// what the run's own read left out (truncation, skipped files, the size limit, tree hazards): carried into the delta's
+    limitations: Vec<crate::domain::Limitation>,
 }
+
+/// The run limitation codes a delta carries from each side: each says the side's graph misses files.
+const CARRIED: &[&str] = &["truncated_files", "skipped_oversize", "skipped_file", "case_collision_skipped", "non_utf8_path", "submodule_skipped"];
 
 fn tokens(text: &str, name: &str) -> Vec<String> {
     let mut out = vec![];
@@ -316,7 +323,9 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         (None, None) => return Err(stale_refusal(&repo.name, label, commit, false)),
     };
     let run_id = run.id.expect("stored run has id").0;
-    let dir = gitref::materialise(clone, root, &repo.name, commit)?.dir;
+    let limits: Option<Value> = store.meta_get(&super::build::run_limits_key(run_id))?.and_then(|t| serde_json::from_str(&t).ok());
+    let max_bytes = limits.as_ref().and_then(|l| l["max_file_bytes"].as_u64()).unwrap_or(crate::providers::BuildOptions::default().max_file_bytes);
+    let dir = gitref::materialise(clone, root, &repo.name, commit, max_bytes)?.dir;
     let mut rows: Vec<NodeRow> = vec![];
     {
         let mut st = store.conn().prepare(
@@ -327,7 +336,8 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
             rows.push(r?);
         }
     }
-    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), files: HashMap::new(), unreadable: 0, duplicates: 0 };
+    let limitations = run.limitations.iter().filter(|l| CARRIED.contains(&l.code.as_str())).cloned().collect();
+    let mut side = Side { run: run_id, commit: commit.to_string(), syms: BTreeMap::new(), files: HashMap::new(), unreadable: 0, duplicates: 0, limits, limitations };
     for (kind, name, qn, path, ls, le, language) in rows {
         if !side.files.contains_key(&path) {
             let text = std::fs::read(dir.join(&path)).ok().and_then(|b| String::from_utf8(b).ok());
@@ -684,6 +694,9 @@ fn record_last(root: &Path, repo: &str, head_commit: &str, v: Value) {
     if let Ok(store) = Store::open_guarded(root) {
         let key = format!("delta:{repo}:{head_commit}");
         let _ = store.with_write_lock(|s| -> Result<Value> {
+            if s.meta_get(&key)?.as_deref() == Some(v.to_string().as_str()) {
+                return Ok(Value::Null); // the same value is already kept: no new line
+            }
             s.meta_set(&key, &v.to_string())?;
             super::governance::append(
                 s,
@@ -748,6 +761,18 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     let base = load_side(&store, root, &repo, o.base, &base_c, &want, mode, &mut rebuilt)?;
     let head = load_side(&store, root, &repo, o.head, &head_c, &want, mode, &mut rebuilt)?;
     let mb = load_side(&store, root, &repo, &mb_c, &mb_c, &want, mode, &mut rebuilt)?;
+    // one delta, one set of file limits: a side that read fewer files would make the other side's symbols look added or removed
+    let recorded: Vec<(&str, &Side)> = vec![("base", &base), ("head", &head), ("merge_base", &mb)];
+    let known: Vec<&(&str, &Side)> = recorded.iter().filter(|(_, s)| s.limits.is_some()).collect();
+    if known.windows(2).any(|w| w[0].1.limits != w[1].1.limits) {
+        let shown: Vec<String> = known.iter().map(|(n, s)| format!("{n} (run {}) max_files {} max_file_bytes {}", s.run, s.limits.as_ref().unwrap()["max_files"], s.limits.as_ref().unwrap()["max_file_bytes"])).collect();
+        return Err(AppError::structured(
+            "invalid_arguments",
+            format!("the sides of this delta were read with different file limits: {}; a delta never mixes them", shown.join("; ")),
+            Some(format!("rebuild the sides with the same --max-files and --max-file-bytes (`comparegraph build {repo_name} --ref <ref> --max-file-bytes N`)")),
+            Some(json!({ "limits": known.iter().map(|(n, s)| json!({ "side": n, "run": s.run, "limits": s.limits })).collect::<Vec<_>>() })),
+        ));
+    }
 
     // the branch's own work: merge base -> head, each row judged by the one rule
     let judge = Judge::new(&base, &head, Some(&mb));
@@ -820,9 +845,20 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
 
     // the files base deleted or rewrote since the merge base, among the ones the branch touched
     let (mut deleted, mut rewritten) = (vec![], vec![]);
-    let touched_head: BTreeSet<String> = git_lines(clone, &["diff", "--name-only", "--no-renames", &mb_c, &head_c]).unwrap_or_default().into_iter().collect();
+    let mut diff_failed: Vec<String> = vec![];
+    let touched_head: BTreeSet<String> = match git_lines(clone, &["diff", "--name-only", "--no-renames", &mb_c, &head_c]) {
+        Some(v) => v.into_iter().collect(),
+        None => {
+            diff_failed.push(format!("git diff {}..{} (the files the branch touched)", &mb_c[..12.min(mb_c.len())], &head_c[..12.min(head_c.len())]));
+            BTreeSet::new()
+        }
+    };
     let head_dir = gitref::cache_dir(root, &repo.name, &head_c);
-    for l in git_lines(clone, &["diff", "--name-status", "--no-renames", &mb_c, &base_c]).unwrap_or_default() {
+    let base_diff = git_lines(clone, &["diff", "--name-status", "--no-renames", &mb_c, &base_c]);
+    if base_diff.is_none() {
+        diff_failed.push(format!("git diff {}..{} (the files base deleted or rewrote)", &mb_c[..12.min(mb_c.len())], &base_c[..12.min(base_c.len())]));
+    }
+    for l in base_diff.unwrap_or_default() {
         let Some((st, path)) = l.split_once('\t') else { continue };
         if !touched_head.contains(path) {
             continue;
@@ -854,6 +890,13 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         "features_touched": touched.len(),
         "files_base_deleted": deleted.len(), "files_base_rewritten": rewritten.len(), "files_branch_touched": touched_head.len(),
     });
+    let mut summary = summary;
+    if !diff_failed.is_empty() {
+        // not known is not zero
+        for k in ["files_base_deleted", "files_base_rewritten", "files_branch_touched"] {
+            summary[k] = Value::Null;
+        }
+    }
     let mut feats: Vec<(String, usize)> = touched.into_iter().collect();
     feats.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
 
@@ -913,6 +956,24 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     if trivial_n > 0 {
         limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature (decorators and docstrings excluded): not matched by body hash or tokens (already_on_base: null)") }));
     }
+    if !diff_failed.is_empty() {
+        limitations.push(json!({ "code": "partial", "detail": format!("{} failed: base_files and the file counts are not known (null), not empty", diff_failed.join(" and ")) }));
+    }
+    // what each side's own read left out; the merge base is often the base's very run
+    let mut seen_runs: Vec<i64> = vec![];
+    for (s, r) in [(&base, o.base), (&head, o.head), (&mb, mb_c.as_str())] {
+        let names: Vec<&str> = [("base", base.run), ("head", head.run), ("merge_base", mb.run)].iter().filter(|(_, id)| *id == s.run).map(|(n, _)| *n).collect();
+        if seen_runs.contains(&s.run) {
+            continue;
+        }
+        seen_runs.push(s.run);
+        for l in &s.limitations {
+            limitations.push(json!({ "code": l.code, "detail": format!("{} ({}, run {}): {}", names.join(" and "), &r[..r.len().min(40)], s.run, l.detail), "data": { "sides": names, "run": s.run } }));
+        }
+    }
+    if recorded.iter().any(|(_, s)| s.limits.is_none()) {
+        limitations.push(json!({ "code": "partial", "detail": "a side's run was built before file limits were recorded: whether all sides read the same files is not known" }));
+    }
     for (n, what) in [
         (base.unreadable + head.unreadable + mb.unreadable, "symbols whose source could not be read from the cached tree were left out"),
         (base.duplicates + head.duplicates + mb.duplicates, "symbols share a kind and qualified name with another; the first by path and line is kept"),
@@ -960,7 +1021,7 @@ mod tests {
     use super::*;
 
     fn side(files: &[(&str, &str)], syms: &[(&str, &str, u32, u32)]) -> Side {
-        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), files: HashMap::new(), unreadable: 0, duplicates: 0 };
+        let mut s = Side { run: 1, commit: "c".into(), syms: BTreeMap::new(), files: HashMap::new(), unreadable: 0, duplicates: 0, limits: None, limitations: vec![] };
         for (p, t) in files {
             s.files.insert(p.to_string(), t.lines().map(String::from).collect());
         }

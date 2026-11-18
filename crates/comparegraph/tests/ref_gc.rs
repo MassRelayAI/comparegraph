@@ -300,15 +300,17 @@ fn the_previous_run_hook_is_ignored_by_a_head_build() {
 }
 
 /// MINOR: `decide --summary-from-delta` with a short commit that names two recorded deltas is refused, never the last one.
+/// (Review round 2: the commit must now be one feat reaches, so the two recorded deltas share the prefix of feat's real sha.)
 #[test]
 fn an_ambiguous_short_commit_for_a_branch_verdict_is_refused() {
     let fx = Fx::new();
-    for tail in ["aaaa", "bbbb"] {
-        fx.db().execute("INSERT INTO meta(key, value) VALUES (?1, ?2)", [format!("delta:r:abc1234{tail}"), "{\"summary\":{}}".to_string()]).unwrap();
+    let sha = git_out(&fx.clone(), &["rev-parse", "feat"]).trim().to_string();
+    for key in [sha.clone(), format!("{}zzzz", &sha[..7])] {
+        fx.db().execute("INSERT INTO meta(key, value) VALUES (?1, ?2)", [format!("delta:r:{key}"), "{\"summary\":{}}".to_string()]).unwrap();
     }
-    let e = err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", "abc1234", "--summary-from-delta"], "invalid_arguments");
+    let e = err(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha[..7], "--summary-from-delta"], "invalid_arguments");
     assert!(e["error"]["message"].as_str().unwrap().contains("ambiguous"), "{e}");
-    ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", "abc1234aaaa", "--summary-from-delta"]);
+    ok(fx.root(), &["decide", "r", "park", "--why", "w", "--by", "t", "--ref", "feat", "--commit", &sha, "--summary-from-delta"]);
 }
 
 /// MINOR: the meta row `delta` writes is an action-log line, and the log still verifies.

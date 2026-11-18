@@ -221,6 +221,9 @@ pub struct Options {
     pub ratchet_dead_code: bool,
 }
 
+/// Limitation codes that make a `--check` partial (`check.partial`): the read left files out or cut the cycle search short.
+const PARTIAL_CODES: &[&str] = &["files_skipped", "cycles_truncated"];
+
 /// The answer, and the ratchet verdict: `failed` is set when `--check` found a new finding.
 pub struct Outcome {
     pub data: Value,
@@ -986,8 +989,13 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
         } else {
             "no new findings; the baseline matches".to_string()
         };
+        // a check over a partial read (files left out, a cycle search cut short) cannot see every finding: it says so
+        let partial_reasons: Vec<&Limitation> = lims.iter().filter(|l| PARTIAL_CODES.contains(&l.code.as_str())).collect();
+        let partial = !partial_reasons.is_empty();
+        let message = if partial { format!("partial: {message} (over a partial read: {})", partial_reasons.iter().map(|l| l.code.as_str()).collect::<Vec<_>>().join(", ")) } else { message };
         data["check"] = json!({
             "baseline": p, "message": message, "new_total": new.len(), "fixed_total": fixed.len(),
+            "partial": partial, "partial_reasons": partial_reasons,
             "new": new.iter().take(o.limit).map(|f| f.to_json()).collect::<Vec<_>>(),
             "fixed": fixed.iter().take(o.limit).collect::<Vec<_>>(),
         });

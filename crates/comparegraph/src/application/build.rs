@@ -106,7 +106,7 @@ pub fn build_repo(
     // what extraction left out (unsafe-for-this-OS names never get here: such a tree is refused) goes to the run's limitations
     let (read_path, tree_limitations): (String, Vec<Limitation>) = match &ref_commit {
         Some(c) => {
-            let t = super::gitref::materialise(Path::new(&repo.path), root, repo_name, c)?;
+            let t = super::gitref::materialise(Path::new(&repo.path), root, repo_name, c, opts.max_file_bytes)?;
             (t.dir.to_string_lossy().into_owned(), t.limitations)
         }
         None => (repo.path.clone(), vec![]),
@@ -152,6 +152,10 @@ pub fn build_repo(
     let head = head_of(&repo.path);
     store.set_run_head(run, head.as_deref())?;
     store.set_run_ref(run, opts.git_ref.as_deref(), ref_commit.as_deref())?;
+    if ref_commit.is_some() {
+        // the file limits a ref run was read with: `delta` never mixes sides read with different ones (a meta row, no schema change)
+        store.meta_set(&run_limits_key(run.0), &run_limits(opts).to_string())?;
+    }
     let mut opts = opts.clone();
     let mut prev_comms: Option<PrevComms> = None;
     let mut incremental_from: Option<i64> = None;
@@ -434,6 +438,15 @@ fn load_prev(store: &Store, last: &crate::domain::Run) -> Result<(crate::provide
 
 /// The no-op rule: the (path, content hash) set the walker would parse equals the latest done run's file nodes, and the provider
 /// version is the same. Nothing is parsed; a file the build would skip (unreadable, not UTF-8, minified) is skipped here too.
+/// The meta key of a ref run's file limits.
+pub fn run_limits_key(run: i64) -> String {
+    format!("run_limits:{run}")
+}
+/// The file limits a build reads with, as recorded for a ref run.
+pub fn run_limits(opts: &BuildOptions) -> serde_json::Value {
+    serde_json::json!({ "max_files": opts.max_files, "max_file_bytes": opts.max_file_bytes })
+}
+
 fn try_reuse(
     store: &Store,
     repo_id: crate::domain::RepoId,
@@ -462,6 +475,14 @@ fn try_reuse(
     let (inc, exc) = store.run_subset(last_id)?;
     if (norm(inc), norm(exc)) != (opts.include.clone(), opts.exclude.clone()) {
         return Ok(None);
+    }
+    // a ref run read with other file limits is not this build's answer either
+    if commit.is_some() {
+        if let Some(rec) = store.meta_get(&run_limits_key(last_id.0))? {
+            if serde_json::from_str::<serde_json::Value>(&rec).ok() != Some(run_limits(opts)) {
+                return Ok(None);
+            }
+        }
     }
     let nodes = store.nodes_of_run(last_id)?;
     let mut recorded: HashMap<&str, &str> = HashMap::new();

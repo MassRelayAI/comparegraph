@@ -2013,6 +2013,43 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 .filter(|r| if *archived { arch.contains(&r.name) } else { *all || !arch.contains(&r.name) })
                 .filter(|r| !*no_port || !crate::domain::licence::no_port_reasons(r.licence.as_deref(), &r.lane, &extra).is_empty())
                 .collect();
+            // ref runs per repo, each ref asked once; with --stale the repos are filtered BEFORE paging (so pages and the total
+            // count stale repos), and the probing stops after MAX_STALE_PROBED ref runs (said in a `truncated` limitation)
+            const MAX_STALE_PROBED: usize = 5_000;
+            const MAX_REF_RUNS_LISTED: usize = 100;
+            let mut ref_lims: Vec<serde_json::Value> = vec![];
+            let mut ref_runs_of: std::collections::HashMap<String, (Vec<serde_json::Value>, usize)> = Default::default();
+            let mut probed = 0usize;
+            let mut unjudged = 0usize;
+            let mut all_rows = all_rows;
+            if *stale {
+                let mut keep = vec![];
+                for r in all_rows {
+                    let Some(id) = r.id else { continue };
+                    let rows = store.ref_run_rows(id)?;
+                    if probed + rows.len() > MAX_STALE_PROBED {
+                        unjudged += 1;
+                        continue;
+                    }
+                    probed += rows.len();
+                    let st = crate::application::refgc::statuses_of(std::path::Path::new(&r.path), &rows);
+                    let listed: Vec<serde_json::Value> = rows
+                        .iter()
+                        .zip(st)
+                        .filter(|(_, s)| *s != "current")
+                        .map(|(x, s)| serde_json::json!({ "run": x.id, "ref": x.git_ref, "ref_commit": x.commit, "status": s }))
+                        .collect();
+                    if !listed.is_empty() {
+                        let n = listed.len();
+                        ref_runs_of.insert(r.name.clone(), (listed, n));
+                        keep.push(r);
+                    }
+                }
+                all_rows = keep;
+                if unjudged > 0 {
+                    ref_lims.push(serde_json::json!({"code": "truncated", "detail": format!("--stale probes at most {MAX_STALE_PROBED} ref runs per call; {unjudged} repo(s) past that were not judged and are not listed")}));
+                }
+            }
             let total = all_rows.len();
             for r in all_rows.into_iter().skip(offset).take(limit) {
                 let run = match r.id {
@@ -2037,20 +2074,20 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     "head": r.head, "source_commit": r.source_commit, "moved_to": r.moved_to,
                     "include": r.include, "exclude": r.exclude, "latest_run": latest,
                 });
-                let ref_runs: Vec<serde_json::Value> = match r.id {
-                    Some(id) => store
-                        .ref_run_rows(id)?
-                        .into_iter()
-                        .map(|x| {
-                            let status = crate::application::refgc::status_of(std::path::Path::new(&r.path), &x.git_ref, &x.commit);
-                            serde_json::json!({ "run": x.id, "ref": x.git_ref, "ref_commit": x.commit, "status": status })
-                        })
-                        .filter(|x| !*stale || x["status"] != "current")
-                        .collect(),
-                    None => vec![],
+                let (mut ref_runs, n): (Vec<serde_json::Value>, usize) = match (ref_runs_of.remove(&r.name), r.id) {
+                    (Some(x), _) => x,
+                    (None, Some(id)) => {
+                        let rows = store.ref_run_rows(id)?;
+                        let st = crate::application::refgc::statuses_of(std::path::Path::new(&r.path), &rows);
+                        let v: Vec<serde_json::Value> = rows.iter().zip(st).map(|(x, s)| serde_json::json!({ "run": x.id, "ref": x.git_ref, "ref_commit": x.commit, "status": s })).collect();
+                        let n = v.len();
+                        (v, n)
+                    }
+                    (None, None) => (vec![], 0),
                 };
-                if *stale && ref_runs.is_empty() {
-                    continue;
+                if n > MAX_REF_RUNS_LISTED {
+                    ref_runs.truncate(MAX_REF_RUNS_LISTED);
+                    ref_lims.push(serde_json::json!({"code": "truncated", "detail": format!("{}: {n} ref runs, the first {MAX_REF_RUNS_LISTED} listed (by ref, newest first); `gc --refs` lists them all", r.name)}));
                 }
                 row["ref_runs"] = serde_json::json!(ref_runs);
                 if *archived || *all {
@@ -2066,6 +2103,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             if skipped > 0 {
                 lims.push(serde_json::json!({"code": "archived_skipped", "detail": format!("{skipped} archived repo(s) not listed; --archived or --all lists them")}));
             }
+            lims.extend(ref_lims);
             serde_json::json!({ "items": out, "page": { "next": next, "total": total }, "limitation_items": lims })
         }
         Cmd::Communities {

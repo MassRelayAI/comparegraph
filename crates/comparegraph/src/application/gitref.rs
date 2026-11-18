@@ -162,7 +162,7 @@ impl From<String> for TreeError {
 /// The blob entries of `commit`'s tree, and the limitations of what is left out: paths that are not UTF-8 (never renamed
 /// lossily), and every path of a group that folds to one name on a case-insensitive file system (both are skipped, on every
 /// platform). A path that breaks a `verify_path` rule refuses the tree.
-fn list_tree(clone: &Path, commit: &str) -> std::result::Result<(Vec<Entry>, Vec<Limitation>), TreeError> {
+fn list_tree(clone: &Path, commit: &str, max_file_bytes: u64) -> std::result::Result<(Vec<Entry>, Vec<Limitation>), TreeError> {
     let out = Command::new("git")
         .arg("-C")
         .arg(clone)
@@ -174,13 +174,18 @@ fn list_tree(clone: &Path, commit: &str) -> std::result::Result<(Vec<Entry>, Vec
     }
     let mut v: Vec<(String, String, u64, String)> = vec![];
     let (mut non_utf8, mut non_utf8_first) = (0usize, None::<String>);
+    let (mut submodules, mut oversize) = (0usize, 0usize);
     for rec in out.stdout.split(|b| *b == 0).filter(|r| !r.is_empty()) {
         let tab = rec.iter().position(|b| *b == b'\t').ok_or_else(|| format!("unreadable ls-tree line: {}", String::from_utf8_lossy(rec)))?;
         let meta = String::from_utf8_lossy(&rec[..tab]).into_owned();
         let mut m = meta.split_whitespace();
         let (mode, kind, oid, size) = (m.next().unwrap_or(""), m.next().unwrap_or(""), m.next().unwrap_or(""), m.next().unwrap_or(""));
+        if kind == "commit" {
+            submodules += 1; // a submodule: another repository's commit, no content here
+            continue;
+        }
         if kind != "blob" {
-            continue; // a submodule (commit) entry has no content here
+            continue;
         }
         let Ok(path) = std::str::from_utf8(&rec[tab + 1..]) else {
             non_utf8 += 1;
@@ -190,7 +195,12 @@ fn list_tree(clone: &Path, commit: &str) -> std::result::Result<(Vec<Entry>, Vec
         if let Err(rule) = safe_rel_path(path) {
             return Err(TreeError::Unsafe { path: path.to_string(), rule });
         }
-        v.push((mode.to_string(), oid.to_string(), size.parse().unwrap_or(0), path.to_string()));
+        let size: u64 = size.parse().unwrap_or(0);
+        if size > max_file_bytes {
+            oversize += 1; // the walker would skip it: it is never read from git at all
+            continue;
+        }
+        v.push((mode.to_string(), oid.to_string(), size, path.to_string()));
     }
     // case-folded collisions: a file path or any of its folders spelled two ways that fold to one name
     let mut spellings: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
@@ -229,6 +239,12 @@ fn list_tree(clone: &Path, commit: &str) -> std::result::Result<(Vec<Entry>, Vec
                 if skipped.len() > shown.len() { ", ..." } else { "" }
             ),
         ));
+    }
+    if oversize > 0 {
+        lims.push(Limitation::new("skipped_oversize", format!("{oversize} file(s) over max_file_bytes ({max_file_bytes}) not extracted from the ref's tree")));
+    }
+    if submodules > 0 {
+        lims.push(Limitation::new("submodule_skipped", format!("{submodules} submodule(s) skipped: a submodule is another repository's commit and is not read")));
     }
     if non_utf8 > 0 {
         lims.push(Limitation::new(
@@ -270,10 +286,7 @@ fn write_blobs(clone: &Path, into: &Path, entries: &[Entry]) -> std::result::Res
             if got != oid || kind != "blob" {
                 return Err(format!("git cat-file: expected blob {oid}, got {}", header.trim_end()));
             }
-            let size: usize = size.parse().map_err(|_| format!("git cat-file: bad size in {}", header.trim_end()))?;
-            let mut buf = vec![0u8; size + 1]; // the content and its trailing newline
-            rd.read_exact(&mut buf).map_err(|e| format!("git cat-file: {e}"))?;
-            buf.pop();
+            let size: u64 = size.parse().map_err(|_| format!("git cat-file: bad size in {}", header.trim_end()))?;
             let dest = into.join(rel);
             if !dest.starts_with(into) {
                 return Err(format!("{} would land outside the cache folder", rel.display()));
@@ -281,8 +294,14 @@ fn write_blobs(clone: &Path, into: &Path, entries: &[Entry]) -> std::result::Res
             if let Some(p) = dest.parent() {
                 std::fs::create_dir_all(p).map_err(|e| format!("{}: {e}", p.display()))?;
             }
-            // mode 120000 (a symlink): `buf` is its target, written as the content of a regular file
-            std::fs::write(&dest, &buf).map_err(|e| format!("{}: {e}", dest.display()))?;
+            // streamed, never held whole in memory; mode 120000 (a symlink): the content is its target, written as a regular file
+            let mut f = std::fs::File::create(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+            let n = std::io::copy(&mut (&mut rd).take(size), &mut f).map_err(|e| format!("{}: {e}", dest.display()))?;
+            if n != size {
+                return Err(format!("git cat-file: {oid} ended after {n} of {size} bytes"));
+            }
+            let mut nl = [0u8; 1]; // the trailing newline of each object
+            rd.read_exact(&mut nl).map_err(|e| format!("git cat-file: {e}"))?;
             #[cfg(unix)]
             if mode == "100755" {
                 use std::os::unix::fs::PermissionsExt;
@@ -304,15 +323,60 @@ fn write_blobs(clone: &Path, into: &Path, entries: &[Entry]) -> std::result::Res
     Ok(())
 }
 
-/// The lock beside a tree folder: held by one extractor at a time, removed on drop. A lock older than `STALE_LOCK_SECS` is a
-/// crashed holder's and is taken over.
-struct TreeLock(PathBuf);
-const STALE_LOCK_SECS: u64 = 600;
+/// The lock beside a tree folder: held by one extractor (or `gc --refs`) at a time, removed on drop. It holds the holder's pid,
+/// and a heartbeat thread refreshes its mtime every `HEARTBEAT_SECS` while held, so a long extraction never looks stale. A lock
+/// is taken over only when its heartbeat stopped `STALE_LOCK_SECS` ago AND its holder is not known to be running (on Linux the
+/// pid is looked up in `/proc`; elsewhere the heartbeat alone decides).
+pub struct TreeLock {
+    path: PathBuf,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    beat: Option<std::thread::JoinHandle<()>>,
+}
+const HEARTBEAT_SECS: u64 = 2;
+const STALE_LOCK_SECS: u64 = 120;
 const LOCK_WAIT_SECS: u64 = 1800;
+impl TreeLock {
+    fn hold(path: &Path) -> TreeLock {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (p, s) = (path.to_path_buf(), stop.clone());
+        let beat = std::thread::spawn(move || {
+            while !s.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::park_timeout(std::time::Duration::from_secs(HEARTBEAT_SECS));
+                if s.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                if let Ok(f) = std::fs::File::options().write(true).open(&p) {
+                    let _ = f.set_modified(std::time::SystemTime::now());
+                }
+            }
+        });
+        TreeLock { path: path.to_path_buf(), stop, beat: Some(beat) }
+    }
+}
 impl Drop for TreeLock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(b) = self.beat.take() {
+            b.thread().unpark();
+            let _ = b.join();
+        }
+        let _ = std::fs::remove_file(&self.path);
     }
+}
+/// Whether the process that wrote `lock` still runs: Some on Linux (`/proc/<pid>`), None where that cannot be told.
+fn holder_alive(lock: &Path) -> Option<bool> {
+    let pid: u32 = std::fs::read_to_string(lock).ok()?.trim().parse().ok()?;
+    if cfg!(target_os = "linux") {
+        Some(Path::new(&format!("/proc/{pid}")).exists())
+    } else {
+        None
+    }
+}
+/// A lock file that a waiter must respect: it exists, and its heartbeat is fresh or its holder is known to run.
+fn lock_is_live(lock: &Path) -> bool {
+    let Ok(m) = std::fs::metadata(lock) else { return false };
+    let stale = m.modified().ok().and_then(|t| t.elapsed().ok()).is_some_and(|a| a.as_secs() > STALE_LOCK_SECS);
+    !stale || holder_alive(lock) == Some(true)
 }
 /// Take the lock, or None when the tree was completed by another holder while waiting.
 fn lock_tree(lock: &Path, marker: &Path) -> Result<Option<TreeLock>> {
@@ -321,15 +385,14 @@ fn lock_tree(lock: &Path, marker: &Path) -> Result<Option<TreeLock>> {
         match std::fs::OpenOptions::new().write(true).create_new(true).open(lock) {
             Ok(mut f) => {
                 let _ = write!(f, "{}", std::process::id());
-                return Ok(Some(TreeLock(lock.to_path_buf())));
+                return Ok(Some(TreeLock::hold(lock)));
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 if marker.is_file() {
                     return Ok(None);
                 }
-                let age = std::fs::metadata(lock).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
-                if age.is_some_and(|a| a.as_secs() > STALE_LOCK_SECS) {
-                    let _ = std::fs::remove_file(lock);
+                if !lock_is_live(lock) {
+                    let _ = std::fs::remove_file(lock); // a crashed holder's: no heartbeat, no running holder
                     continue;
                 }
                 if start.elapsed().as_secs() > LOCK_WAIT_SECS {
@@ -355,33 +418,48 @@ pub struct Tree {
     pub limitations: Vec<Limitation>,
 }
 
-/// The tree behind a `.complete` marker: JSON `{commit, limitations}`, or (an older marker) the commit alone.
-fn read_marker(marker: &Path, dir: PathBuf) -> Option<Tree> {
+/// The tree behind a `.complete` marker, when it serves a read with `max_file_bytes`: the folder exists and the marker's own
+/// limit is at least that (an older marker, the commit alone, extracted everything). The marker is JSON
+/// `{commit, max_file_bytes, limitations}`.
+fn read_marker(marker: &Path, dir: &Path, max_file_bytes: u64) -> Option<Tree> {
     let text = std::fs::read_to_string(marker).ok()?;
-    let limitations = serde_json::from_str::<serde_json::Value>(&text)
-        .ok()
-        .and_then(|v| serde_json::from_value::<Vec<Limitation>>(v["limitations"].clone()).ok())
-        .unwrap_or_default();
-    Some(Tree { dir, limitations })
+    if !dir.is_dir() {
+        return None; // the folder went (by hand, or a gc cut short): extracted again, never read as an empty tree
+    }
+    let v = serde_json::from_str::<serde_json::Value>(&text).ok();
+    let limit = v.as_ref().map_or(Some(u64::MAX), |v| v["max_file_bytes"].as_u64());
+    if limit.is_none_or(|l| l < max_file_bytes) {
+        return None; // extracted with a smaller size limit than this read needs
+    }
+    let limitations = v.and_then(|v| serde_json::from_value::<Vec<Limitation>>(v["limitations"].clone()).ok()).unwrap_or_default();
+    Some(Tree { dir: dir.to_path_buf(), limitations })
 }
 
-/// Extract the tree of `commit` into its cache folder (a no-op when a complete one exists) and return it.
-pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str) -> Result<Tree> {
+/// Extract the tree of `commit` into its cache folder (a no-op when a complete one serves `max_file_bytes`) and return it.
+/// Blobs over `max_file_bytes` (the walker's size limit) are never read from git; a later read with a larger limit extracts
+/// the tree again.
+pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str, max_file_bytes: u64) -> Result<Tree> {
     let dir = cache_dir(store_root, repo, commit);
     let marker = dir.with_file_name(format!("{commit}.complete")); // beside the tree, so the walker never sees it
-    if let Some(t) = read_marker(&marker, dir.clone()) {
+    if let Some(t) = read_marker(&marker, &dir, max_file_bytes) {
         return Ok(t);
     }
     let parent = dir.parent().expect("cache dir has a parent").to_path_buf();
     std::fs::create_dir_all(&parent).map_err(|e| AppError::Io(parent.clone(), e))?;
-    let done = |marker: &Path, dir: &Path| read_marker(marker, dir.to_path_buf()).ok_or_else(|| AppError::Io(marker.to_path_buf(), std::io::Error::other("unreadable tree marker")));
-    let Some(_lock) = lock_tree(&dir.with_file_name(format!("{commit}.lock")), &marker)? else {
-        return done(&marker, &dir);
-    };
-    if marker.is_file() {
-        return done(&marker, &dir); // completed by the holder before us
+    let lock = lock_tree(&dir.with_file_name(format!("{commit}.lock")), &marker)?;
+    if let Some(t) = read_marker(&marker, &dir, max_file_bytes) {
+        return Ok(t); // completed by the holder before us (or while we waited)
     }
+    let _lock = match lock {
+        Some(l) => l,
+        // another holder completed a tree that does not serve this read: wait for the lock (no marker ends that wait) to extract it again
+        None => lock_tree(&dir.with_file_name(format!("{commit}.lock")), Path::new(""))?.expect("a wait without a marker ends with the lock"),
+    };
     let io = |p: &Path, e: std::io::Error| AppError::Io(p.to_path_buf(), e);
+    // the marker goes first: a tree without it is never read as complete
+    if marker.exists() {
+        std::fs::remove_file(&marker).map_err(|e| io(&marker, e))?;
+    }
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| io(&dir, e))?; // a half-written folder of a crashed run: ours, rebuilt whole
     }
@@ -394,7 +472,7 @@ pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str) ->
         let _ = std::fs::remove_dir_all(&tmp);
         AppError::structured("io_error", msg, Some("the clone must be a git repository that holds this commit".into()), None)
     };
-    let (entries, limitations) = match list_tree(clone, commit) {
+    let (entries, limitations) = match list_tree(clone, commit, max_file_bytes) {
         Ok(x) => x,
         Err(TreeError::Other(m)) => return Err(fail(m)),
         Err(TreeError::Unsafe { path, rule }) => {
@@ -412,9 +490,45 @@ pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str) ->
         let _ = std::fs::remove_dir_all(&tmp);
         io(&dir, e)
     })?;
-    let body = serde_json::json!({ "commit": commit, "limitations": limitations }).to_string();
+    let body = serde_json::json!({ "commit": commit, "max_file_bytes": max_file_bytes, "limitations": limitations }).to_string();
     std::fs::write(&marker, body).map_err(|e| io(&marker, e))?;
     Ok(Tree { dir, limitations })
+}
+
+/// Whether a live holder has the lock of `commit`'s tree (an extraction is running): `gc --refs` then leaves the tree and its
+/// runs alone.
+pub fn tree_locked(store_root: &Path, repo: &str, commit: &str) -> bool {
+    let dir = cache_dir(store_root, repo, commit);
+    lock_is_live(&dir.with_file_name(format!("{commit}.lock")))
+}
+
+/// Remove `commit`'s tree under its lock: the `.complete` marker first (so no reader takes a half-removed tree as complete),
+/// then the folder. Ok(false) when a live holder has the lock (nothing is removed), Ok(true) when the folder was there and went.
+pub fn remove_tree(store_root: &Path, repo: &str, commit: &str) -> Result<bool> {
+    let dir = cache_dir(store_root, repo, commit);
+    let lock = dir.with_file_name(format!("{commit}.lock"));
+    if lock_is_live(&lock) {
+        return Ok(false);
+    }
+    let _ = std::fs::remove_file(&lock); // a crashed holder's
+    let held = match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock) {
+        Ok(mut f) => {
+            let _ = write!(f, "{}", std::process::id());
+            TreeLock::hold(&lock)
+        }
+        Err(_) => return Ok(false), // taken in between
+    };
+    let marker = dir.with_file_name(format!("{commit}.complete"));
+    let io = |p: &Path, e: std::io::Error| AppError::Io(p.to_path_buf(), e);
+    if marker.exists() {
+        std::fs::remove_file(&marker).map_err(|e| io(&marker, e))?;
+    }
+    let had = dir.is_dir();
+    if had {
+        std::fs::remove_dir_all(&dir).map_err(|e| io(&dir, e))?;
+    }
+    drop(held);
+    Ok(had)
 }
 
 #[cfg(test)]
@@ -489,7 +603,7 @@ mod race_tests {
             let handles: Vec<_> = (0..8)
                 .map(|_| {
                     let (c, s, k) = (clone.path().to_path_buf(), store.path().to_path_buf(), commit.clone());
-                    std::thread::spawn(move || materialise(&c, &s, "r", &k).map(|t| files_under(&t.dir)))
+                    std::thread::spawn(move || materialise(&c, &s, "r", &k, u64::MAX).map(|t| files_under(&t.dir)))
                 })
                 .collect();
             for h in handles {

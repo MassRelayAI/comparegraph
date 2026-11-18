@@ -33,6 +33,19 @@ pub fn status_of(clone: &Path, git_ref: &str, commit: &str) -> &'static str {
     }
 }
 
+/// The status of each of `rows` (one repo's ref runs), asking the clone once per ref name, not once per run.
+pub fn statuses_of(clone: &Path, rows: &[crate::store::RefRunRow]) -> Vec<&'static str> {
+    let mut probes: std::collections::HashMap<&str, gitref::Probe> = Default::default();
+    rows.iter()
+        .map(|row| match probes.entry(row.git_ref.as_str()).or_insert_with(|| gitref::probe(clone, &row.git_ref)) {
+            gitref::Probe::Commit(c) if *c == row.commit => "current",
+            gitref::Probe::Commit(_) => "moved",
+            gitref::Probe::Missing => "gone",
+            gitref::Probe::Unreadable(_) => "unknown",
+        })
+        .collect()
+}
+
 fn short(c: &str) -> String {
     c.chars().take(7).collect()
 }
@@ -63,6 +76,7 @@ fn delete_runs(store: &Store, ids: &[i64]) -> Result<()> {
         c.execute("DELETE FROM embedding WHERE owner_kind='node' AND owner_id IN (SELECT id FROM node WHERE run_id=?1)", [id])?;
         c.execute("DELETE FROM node WHERE run_id=?1", [id])?;
         c.execute("DELETE FROM run WHERE id=?1", [id])?;
+        c.execute("DELETE FROM main.meta WHERE key=?1", [format!("run_limits:{id}")])?;
     }
     Ok(())
 }
@@ -83,6 +97,7 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
     let mut cited: Vec<Value> = vec![];
     let mut kept = 0usize;
     let mut unknown: Vec<Value> = vec![];
+    let mut busy: Vec<Value> = vec![];
     let mut ids: Vec<i64> = vec![];
     let mut trees: BTreeMap<(String, String), bool> = BTreeMap::new(); // (repo, commit) -> still used by a run that stays
     for repo in store.repos()? {
@@ -126,6 +141,12 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
                 trees.insert((repo.name.clone(), row.commit.clone()), true);
                 continue;
             }
+            if gitref::tree_locked(root, &repo.name, &row.commit) {
+                // an extraction of its tree is running: the run and the tree stay until a later gc
+                busy.push(json!({ "run": row.id, "repo": repo.name, "ref": row.git_ref, "ref_commit": row.commit, "why": why }));
+                trees.insert((repo.name.clone(), row.commit.clone()), true);
+                continue;
+            }
             trees.entry((repo.name.clone(), row.commit.clone())).or_insert(false);
             ids.push(row.id);
             cands.push(item);
@@ -138,9 +159,12 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
     if !unknown.is_empty() {
         lims.push(json!({ "code": "partial", "detail": format!("{} ref run(s) skipped, status unknown: their clone cannot be read (moved, unmounted, or git not runnable); nothing of them is removed until it can", unknown.len()) }));
     }
+    if !busy.is_empty() {
+        lims.push(json!({ "code": "partial", "detail": format!("{} ref run(s) kept because their tree's lock is held (an extraction is running): {}; run gc --refs again when it has finished", busy.len(), busy.iter().map(|c| c["run"].to_string()).collect::<Vec<_>>().join(", ")) }));
+    }
     let mut base = json!({
         "keep": keep, "older_than_days": older_than_days, "candidates": cands, "kept": kept,
-        "cited": cited, "unknown": unknown, "limitation_items": lims,
+        "cited": cited, "unknown": unknown, "busy": busy, "limitation_items": lims,
     });
     if !apply {
         base["dry_run"] = json!(true);
@@ -155,6 +179,9 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
         // the ids of the rows removed here are never handed out again (`Store::next_id_past_hwm`)
         s.record_id_hwm("run")?;
         s.record_id_hwm("node")?;
+        // the marks ride in the log line too, so a store restored from an older backup takes them back (`adopt_file_head`)
+        let hwm = |t: &str| -> Result<Value> { Ok(s.meta_get(&format!("id_hwm:{t}"))?.and_then(|v| v.parse::<i64>().ok()).map_or(Value::Null, |n| json!(n))) };
+        let id_hwm = json!({ "run": hwm("run")?, "node": hwm("node")? });
         delete_runs(s, &ids)?;
         governance::append(
             s,
@@ -162,23 +189,30 @@ pub fn gc_refs(root: &Path, keep: usize, older_than_days: Option<u64>, apply: bo
             &governance::Action {
                 verb: "gc-refs".into(),
                 by: by.into(),
-                inputs: json!({ "keep": keep, "older_than_days": older_than_days, "runs": base["candidates"] }),
+                inputs: json!({ "keep": keep, "older_than_days": older_than_days, "runs": base["candidates"], "id_hwm": id_hwm }),
                 bytes_before: Some(bytes),
                 ..Default::default()
             },
         )
     })?;
     let mut removed_trees = vec![];
+    let mut busy_trees = vec![];
     for ((repo, commit), used) in &trees {
         if *used {
             continue;
         }
-        let dir = gitref::cache_dir(root, repo, commit);
-        let marker = dir.with_file_name(format!("{commit}.complete"));
-        if dir.is_dir() && std::fs::remove_dir_all(&dir).is_ok() {
-            removed_trees.push(dir.display().to_string());
+        // under the tree's lock, marker first: a reader never takes a half-removed tree as complete
+        match gitref::remove_tree(root, repo, commit) {
+            Ok(true) => removed_trees.push(gitref::cache_dir(root, repo, commit).display().to_string()),
+            Ok(false) if gitref::cache_dir(root, repo, commit).is_dir() => busy_trees.push(gitref::cache_dir(root, repo, commit).display().to_string()),
+            Ok(false) => {}
+            Err(e) => busy_trees.push(format!("{}: {e}", gitref::cache_dir(root, repo, commit).display())),
         }
-        let _ = std::fs::remove_file(marker);
+    }
+    if !busy_trees.is_empty() {
+        if let Some(l) = base["limitation_items"].as_array_mut() {
+            l.push(json!({ "code": "partial", "detail": format!("{} tree folder(s) left: their lock was taken while gc ran, or removal failed ({}); gc --refs removes no run twice, delete them by hand once free", busy_trees.len(), busy_trees.join(", ")) }));
+        }
     }
     base["dry_run"] = json!(false);
     base["removed_runs"] = json!(ids);

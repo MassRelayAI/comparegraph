@@ -570,6 +570,16 @@ impl Store {
         let max: i64 = self.conn.query_row(&format!("SELECT COALESCE(MAX(id), 0) FROM {table}"), [], |r| r.get(0))?;
         Ok((max < hwm).then_some(hwm + 1))
     }
+    /// Raise the high-water mark of `table` to `to` when it is lower (a restored store takes back the marks of ids handed out
+    /// after its backup: `governance::adopt_file_head`, `restore-store`).
+    pub fn raise_id_hwm(&self, table: &str, to: i64) -> Result<()> {
+        let key = format!("id_hwm:{table}");
+        let old = self.meta_get(&key)?.and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+        if to > old {
+            self.meta_set(&key, &to.to_string())?;
+        }
+        Ok(())
+    }
     /// Raise the high-water mark of `table` to its current largest id (before rows are removed).
     pub fn record_id_hwm(&self, table: &str) -> Result<()> {
         let max: i64 = self.conn.query_row(&format!("SELECT COALESCE(MAX(id), 0) FROM {table}"), [], |r| r.get(0))?;
