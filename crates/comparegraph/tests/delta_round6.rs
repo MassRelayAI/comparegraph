@@ -186,6 +186,9 @@ fn r6_modify_delete_non_utf8_path() {
     commit(&d, "mod");
     let v = fx.delta();
     assert_ne!(v["data"]["summary"]["share_on_base_exact"].as_f64(), Some(1.0), "{}", s(&v));
+    // round 7: the conflict is read from `merge-tree -z` and keyed raw (C-quoted): the conflicts limitation names it so
+    let lim = v["evidence"]["limitations"].as_array().unwrap().iter().find(|l| l["code"] == "merge_conflicts").cloned().unwrap_or_default();
+    assert_eq!(lim["data"]["paths"], serde_json::json!(["\"src/caf\\351.py\""]), "{}", v["evidence"]["limitations"]);
 }
 
 /// B1 pin: the plain modify/delete row is turned unknown by the per-row conflict check itself (a conflict path is always a
