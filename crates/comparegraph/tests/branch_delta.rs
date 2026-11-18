@@ -716,3 +716,164 @@ fn the_mcp_tools_carry_delta_and_ref() {
     drop(child.stdin.take());
     let _ = child.wait();
 }
+
+// ---------------------------------------------------------------- review round 2: ONE rule for "already on base" (every row type)
+
+/// `long_process` under another name (the name is a placeholder in the body hash, so bodies compare across names).
+fn long_named(name: &str, guard: bool) -> String {
+    long_process(guard, "").replacen("def process(", &format!("def {name}("), 1)
+}
+fn on_base_of(row: &Value) -> Option<&Value> {
+    row.get("already_on_base").filter(|v| !v.is_null())
+}
+fn row_of<'a>(v: &'a Value, section: &str, qn: &str) -> &'a Value {
+    branch(v)[section].as_array().unwrap().iter().find(|r| r["qualified_name"] == qn).unwrap_or_else(|| panic!("no {section} row {qn}: {}", branch(v)))
+}
+
+/// R2-1: the branch moves `process` to b.py and adds a guard; base moves it, unchanged, to c.py. Base's copy is the merge-base
+/// body: nearer the merge base than the branch, so the guard is not on base.
+#[test]
+fn r2_branch_moves_and_guards_while_base_moves_unchanged_is_not_on_base() {
+    let fx = Fx::new(&[("src/a.py", &long_process(false, ""))]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    git(&d, &["rm", "-q", "src/a.py"]);
+    write(&d, "src/b.py", &long_process(true, ""));
+    commit(&d, "lane moves to b and guards");
+    git(&d, &["checkout", "-q", "main"]);
+    git(&d, &["mv", "src/a.py", "src/c.py"]);
+    commit(&d, "base moves to c");
+    let v = fx.delta("main", "feat");
+    let s = &v["data"]["summary"];
+    assert!(on_base_of(row_of(&v, "added", "src/b.py::process")).is_none(), "{}", branch(&v));
+    assert_eq!((s["already_on_base"].as_i64(), s["share_already_on_base"].as_f64()), (Some(0), Some(0.0)), "the guard is not on base: {s}");
+}
+
+/// R2-2: the branch only moves and changes `process`; base is untouched (its copy is the merge-base copy itself).
+#[test]
+fn r2_branch_moves_and_changes_with_base_untouched_is_not_on_base() {
+    let fx = Fx::new(&[("src/a.py", &long_process(false, ""))]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    git(&d, &["rm", "-q", "src/a.py"]);
+    write(&d, "src/c.py", &long_process(true, ""));
+    commit(&d, "lane moves and guards process");
+    git(&d, &["checkout", "-q", "main"]);
+    let v = fx.delta("main", "feat");
+    assert!(on_base_of(row_of(&v, "added", "src/c.py::process")).is_none(), "the branch's guarded copy is said to be on base: {}", branch(&v));
+    // the removal half of the move is not on base either: base still holds the body under src/a.py
+    let rm = row_of(&v, "removed", "src/a.py::process");
+    assert!(rm.get("base_removed").is_none(), "{rm}");
+    assert_eq!(v["data"]["summary"]["share_already_on_base"].as_f64(), Some(0.0));
+}
+
+/// R2-3: the branch deletes `process`; base `git mv`s the file. Base still holds the function (moved): the deletion is not on base,
+/// and `base_moved_to` says where base keeps it. Base keeping it in place is not on base either.
+#[test]
+fn r2_a_deletion_base_only_moved_is_not_on_base_and_names_where_base_keeps_it() {
+    let keep = "def keep():\n    return 1\n";
+    for moved in [true, false] {
+        let fx = Fx::new(&[("src/a.py", &format!("{}\n{keep}", long_process(false, "")))]);
+        let d = fx.clone();
+        git(&d, &["checkout", "-q", "-b", "feat"]);
+        write(&d, "src/a.py", keep);
+        commit(&d, "lane deletes process");
+        git(&d, &["checkout", "-q", "main"]);
+        if moved {
+            git(&d, &["mv", "src/a.py", "src/b.py"]);
+            commit(&d, "base moves the file");
+        }
+        let v = fx.delta("main", "feat");
+        let s = &v["data"]["summary"];
+        assert_eq!(s["share_already_on_base"].as_f64(), Some(0.0), "moved={moved}: the deletion is said to be on base though base holds the function: {s}");
+        let row = row_of(&v, "removed", "src/a.py::process");
+        if moved {
+            assert_eq!(row["base_moved_to"][0]["qualified_name"], "src/b.py::process", "{row}");
+        } else {
+            assert!(row.get("base_moved_to").is_none(), "base keeps it in place, not moved: {row}");
+        }
+    }
+}
+
+/// R2-4: the branch makes `f` equal to the helper `g`, which the merge base already had and base never changed. Old code on base
+/// never shows the branch's work.
+#[test]
+fn r2_a_change_equal_to_an_unchanged_helper_is_not_on_base() {
+    let g = long_named("g", true);
+    let fx = Fx::new(&[("src/a.py", &format!("{}\n{g}", long_named("f", false)))]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", &format!("{}\n{g}", long_named("f", true)));
+    commit(&d, "lane makes f guard like g");
+    git(&d, &["checkout", "-q", "main"]);
+    let v = fx.delta("main", "feat");
+    let row = row_of(&v, "changed", "src/a.py::f");
+    assert!(on_base_of(row).is_none(), "base's f is unchanged and g is old, yet: {row}");
+    assert_eq!(v["data"]["summary"]["already_on_base"].as_i64(), Some(0));
+}
+
+/// R2-5: base took the branch's change after a rename (an added row this time: the branch moved and changed): on base, exactly
+/// and nearly.
+#[test]
+fn r2_base_took_a_moved_change_under_another_path_exactly_and_nearly() {
+    for (base_body, via) in [(long_process(true, ""), "body_hash"), (long_process(true, " + 1"), "name_and_tokens")] {
+        let fx = Fx::new(&[("src/a.py", &long_process(false, ""))]);
+        let d = fx.clone();
+        git(&d, &["checkout", "-q", "-b", "feat"]);
+        git(&d, &["rm", "-q", "src/a.py"]);
+        write(&d, "src/b.py", &long_process(true, ""));
+        commit(&d, "lane moves to b and guards");
+        git(&d, &["checkout", "-q", "main"]);
+        git(&d, &["rm", "-q", "src/a.py"]);
+        write(&d, "src/c.py", &base_body);
+        commit(&d, "base takes the guard, at c");
+        let v = fx.delta("main", "feat");
+        let row = row_of(&v, "added", "src/b.py::process");
+        assert_eq!(on_base_of(row).map(|m| m["via"].clone()), Some(json!(via)), "{row}");
+        assert_eq!(row["already_on_base"]["matches"][0]["qualified_name"], "src/c.py::process", "{row}");
+        // the removal half: base no longer holds the merge-base body anywhere
+        assert!(row_of(&v, "removed", "src/a.py::process").get("base_removed").is_some(), "{}", branch(&v));
+        assert_eq!(v["data"]["summary"]["share_already_on_base"].as_f64(), Some(1.0), "{}", v["data"]["summary"]);
+    }
+}
+
+/// R2-6: changed on both sides, differently: a stale conflict, not on base.
+#[test]
+fn r2_changed_differently_on_both_sides_is_a_stale_conflict() {
+    let fx = Fx::new(&[("src/a.py", &long_process(false, ""))]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", &long_process(true, ""));
+    commit(&d, "lane guards");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/a.py", &long_process(false, " + 1"));
+    commit(&d, "base tweaks");
+    let v = fx.delta("main", "feat");
+    let s = &v["data"]["summary"];
+    assert_eq!((s["already_on_base"].as_i64(), s["stale_conflicts"].as_i64()), (Some(0), Some(1)), "{s}");
+    assert_eq!(row_of(&v, "changed", "src/a.py::process")["base_also_changed"], true);
+}
+
+/// R2-7 (review probe): the branch made two edits, base took the first only. The rule reads base's copy as nearer the branch than
+/// the merge base, so it may be on base by tokens, never exactly: `already_on_base_exact` stays 0 and the confidence is below 1.
+#[test]
+fn r2_base_took_the_first_of_two_edits_is_near_never_exact() {
+    let fx = Fx::new(&[("src/a.py", &long_process(false, ""))]);
+    let d = fx.clone();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", &long_process(true, ""));
+    commit(&d, "edit 1");
+    write(&d, "src/a.py", &long_process(true, " * 2"));
+    commit(&d, "edit 2");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/a.py", &long_process(true, ""));
+    commit(&d, "base takes edit 1");
+    let v = fx.delta("main", "feat");
+    let s = &v["data"]["summary"];
+    assert_eq!(s["already_on_base_exact"].as_i64(), Some(0), "{s}");
+    let row = row_of(&v, "changed", "src/a.py::process");
+    if let Some(m) = on_base_of(row) {
+        assert_eq!(m["via"], "name_and_tokens", "{row}");
+        assert!(m["confidence"].as_f64().unwrap() < 1.0, "{row}");
+    }
+}
