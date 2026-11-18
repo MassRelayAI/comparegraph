@@ -2,11 +2,14 @@
 //! and written by this code into a cache folder under the store (`.comparegraph/refs/<repo>/<commit>/`). The clone is never checked
 //! out and its index and working tree are never touched; nothing the clone configures runs (no smudge or lfs filter, no eol
 //! conversion, no export-ignore: `git archive` applied all three). A symlink is written as a regular file holding its target (as
-//! git does with `core.symlinks=false`), never followed; a submodule entry is skipped. A path that is absolute, holds `..` or `.git`,
-//! or would land outside the folder refuses the tree. The folder is keyed by the commit, so it is immutable and shared by every
+//! git does with `core.symlinks=false`), never followed; a submodule entry is skipped. A path that breaks git's `verify_path` rules
+//! (absolute, `..`, `.git` in any NTFS/HFS spelling, a stream colon, a trailing dot or space: `unsafe_component`) refuses the tree
+//! (`unsafe_tree`); paths that fold to one name on a case-insensitive file system, and paths that are not UTF-8, are left out with a
+//! limitation. The folder is keyed by the commit, so it is immutable and shared by every
 //! name for it; a lock file beside it makes two builds of one commit extract it once, and the tree is extracted into a temporary
 //! sibling and renamed into place before it is marked complete.
 use super::{AppError, Result};
+use crate::domain::Limitation;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -75,48 +78,165 @@ pub fn cache_dir(store_root: &Path, repo: &str, commit: &str) -> PathBuf {
     store_root.join(".comparegraph").join("refs").join(safe).join(commit)
 }
 
-/// A tree path as a relative path inside the cache folder, or None when it is not one: empty, absolute, a `.`/`..`/empty
-/// component, a backslash or NUL, a `.git` component, or (on Windows) a drive or stream colon.
-pub fn safe_rel_path(p: &str) -> Option<PathBuf> {
-    if p.is_empty() || p.starts_with('/') || p.contains('\\') || p.contains('\0') {
-        return None;
+/// HFS+ ignores these code points when it compares names, so `.g\u{200c}it` opens `.git` there (git's `is_hfs_dotgit` set).
+fn hfs_ignorable(c: char) -> bool {
+    matches!(c as u32, 0x200c..=0x200f | 0x202a..=0x202e | 0x206a..=0x206f | 0xfeff)
+}
+
+/// Why one tree path component is refused, by git's `verify_path` rules with core.protectNTFS and core.protectHFS on (applied on
+/// every platform, so one tree gives one answer everywhere); None when it is safe.
+/// - `dot_component`: empty, `.` or `..`
+/// - `dotgit`: `.git` in any case
+/// - `hfs_dotgit`: `.git` once HFS-ignorable code points are dropped
+/// - `ntfs_dotgit`: `.git` followed by dots or spaces only (NTFS drops them: `.git.`, `.git `)
+/// - `ntfs_8dot3_dotgit`: `git~1`, the 8.3 short name of `.git` (with trailing dots or spaces too)
+/// - `ntfs_stream`: a `:` (an NTFS alternate data stream such as `.git::$INDEX_ALLOCATION`, or a drive letter)
+/// - `trailing_dot_or_space`: Windows drops them, so the name would alias another path
+pub fn unsafe_component(c: &str) -> Option<&'static str> {
+    if c.is_empty() || c == "." || c == ".." {
+        return Some("dot_component");
+    }
+    if c.eq_ignore_ascii_case(".git") {
+        return Some("dotgit");
+    }
+    let hfs: String = c.chars().filter(|ch| !hfs_ignorable(*ch)).collect();
+    if hfs.len() != c.len() && hfs.eq_ignore_ascii_case(".git") {
+        return Some("hfs_dotgit");
+    }
+    if c.contains(':') {
+        return Some("ntfs_stream");
+    }
+    let trimmed = c.trim_end_matches(['.', ' ']);
+    if trimmed.eq_ignore_ascii_case(".git") {
+        return Some("ntfs_dotgit");
+    }
+    if trimmed.eq_ignore_ascii_case("git~1") {
+        return Some("ntfs_8dot3_dotgit");
+    }
+    if trimmed.len() != c.len() {
+        return Some("trailing_dot_or_space");
+    }
+    None
+}
+
+/// A tree path as a relative path inside the cache folder, or the rule it breaks: `empty`, `absolute`, `backslash`, `nul`, or a
+/// component rule of `unsafe_component`.
+pub fn safe_rel_path(p: &str) -> std::result::Result<PathBuf, &'static str> {
+    if p.is_empty() {
+        return Err("empty");
+    }
+    if p.starts_with('/') {
+        return Err("absolute");
+    }
+    if p.contains('\\') {
+        return Err("backslash");
+    }
+    if p.contains('\0') {
+        return Err("nul");
     }
     let mut out = PathBuf::new();
     for c in p.split('/') {
-        if c.is_empty() || c == "." || c == ".." || c.eq_ignore_ascii_case(".git") || (cfg!(windows) && c.contains(':')) {
-            return None;
+        if let Some(rule) = unsafe_component(c) {
+            return Err(rule);
         }
         out.push(c);
     }
-    Some(out)
+    Ok(out)
 }
 
-/// One blob entry of the tree: (mode, object id, relative path).
-type Entry = (String, String, PathBuf);
+/// One blob entry of the tree: (mode, object id, size in bytes, relative path).
+type Entry = (String, String, u64, PathBuf);
 
-fn list_tree(clone: &Path, commit: &str) -> std::result::Result<Vec<Entry>, String> {
+/// Why a tree is not extracted.
+enum TreeError {
+    /// a path breaks a `verify_path` rule: the whole tree is refused (`unsafe_tree`)
+    Unsafe { path: String, rule: &'static str },
+    Other(String),
+}
+impl From<String> for TreeError {
+    fn from(s: String) -> Self {
+        TreeError::Other(s)
+    }
+}
+
+/// The blob entries of `commit`'s tree, and the limitations of what is left out: paths that are not UTF-8 (never renamed
+/// lossily), and every path of a group that folds to one name on a case-insensitive file system (both are skipped, on every
+/// platform). A path that breaks a `verify_path` rule refuses the tree.
+fn list_tree(clone: &Path, commit: &str) -> std::result::Result<(Vec<Entry>, Vec<Limitation>), TreeError> {
     let out = Command::new("git")
         .arg("-C")
         .arg(clone)
-        .args(["ls-tree", "-r", "-z", "--full-tree", commit])
+        .args(["ls-tree", "-r", "-z", "-l", "--full-tree", commit])
         .output()
         .map_err(|e| format!("cannot run git ls-tree: {e}"))?;
     if !out.status.success() {
-        return Err(format!("git ls-tree {commit} failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(format!("git ls-tree {commit} failed: {}", String::from_utf8_lossy(&out.stderr).trim()).into());
     }
-    let mut v = vec![];
+    let mut v: Vec<(String, String, u64, String)> = vec![];
+    let (mut non_utf8, mut non_utf8_first) = (0usize, None::<String>);
     for rec in out.stdout.split(|b| *b == 0).filter(|r| !r.is_empty()) {
-        let rec = String::from_utf8_lossy(rec);
-        let (meta, path) = rec.split_once('\t').ok_or_else(|| format!("unreadable ls-tree line: {rec}"))?;
-        let mut m = meta.split(' ');
-        let (mode, kind, oid) = (m.next().unwrap_or(""), m.next().unwrap_or(""), m.next().unwrap_or(""));
+        let tab = rec.iter().position(|b| *b == b'\t').ok_or_else(|| format!("unreadable ls-tree line: {}", String::from_utf8_lossy(rec)))?;
+        let meta = String::from_utf8_lossy(&rec[..tab]).into_owned();
+        let mut m = meta.split_whitespace();
+        let (mode, kind, oid, size) = (m.next().unwrap_or(""), m.next().unwrap_or(""), m.next().unwrap_or(""), m.next().unwrap_or(""));
         if kind != "blob" {
             continue; // a submodule (commit) entry has no content here
         }
-        let rel = safe_rel_path(path).ok_or_else(|| format!("the tree of {commit} holds an unsafe path, refused: {path:?}"))?;
-        v.push((mode.to_string(), oid.to_string(), rel));
+        let Ok(path) = std::str::from_utf8(&rec[tab + 1..]) else {
+            non_utf8 += 1;
+            non_utf8_first.get_or_insert_with(|| String::from_utf8_lossy(&rec[tab + 1..]).into_owned());
+            continue;
+        };
+        if let Err(rule) = safe_rel_path(path) {
+            return Err(TreeError::Unsafe { path: path.to_string(), rule });
+        }
+        v.push((mode.to_string(), oid.to_string(), size.parse().unwrap_or(0), path.to_string()));
     }
-    Ok(v)
+    // case-folded collisions: a file path or any of its folders spelled two ways that fold to one name
+    let mut spellings: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
+    for (_, _, _, p) in &v {
+        let mut prefix = String::new();
+        for (i, c) in p.split('/').enumerate() {
+            if i > 0 {
+                prefix.push('/');
+            }
+            prefix.push_str(c);
+            spellings.entry(prefix.to_lowercase()).or_default().insert(prefix.clone());
+        }
+    }
+    let colliding: std::collections::BTreeSet<&String> = spellings.iter().filter(|(_, s)| s.len() > 1).map(|(k, _)| k).collect();
+    let mut skipped: Vec<String> = vec![];
+    let mut kept = vec![];
+    for (mode, oid, size, p) in v {
+        let folded = p.to_lowercase();
+        let hit = colliding.iter().any(|k| folded == **k || folded.starts_with(&format!("{k}/")));
+        if hit {
+            skipped.push(p);
+        } else {
+            let rel = safe_rel_path(&p).expect("checked above");
+            kept.push((mode, oid, size, rel));
+        }
+    }
+    let mut lims = vec![];
+    if !skipped.is_empty() {
+        let shown: Vec<&String> = skipped.iter().take(10).collect();
+        lims.push(Limitation::new(
+            "case_collision_skipped",
+            format!(
+                "{} path(s) fold to the same name on a case-insensitive file system and were all left out (on every platform): {}{}",
+                skipped.len(),
+                shown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
+                if skipped.len() > shown.len() { ", ..." } else { "" }
+            ),
+        ));
+    }
+    if non_utf8 > 0 {
+        lims.push(Limitation::new(
+            "non_utf8_path",
+            format!("{non_utf8} path(s) are not UTF-8 and were left out, never renamed (first: {:?})", non_utf8_first.unwrap_or_default()),
+        ));
+    }
+    Ok((kept, lims))
 }
 
 /// Write every blob of `entries` under `into`, reading them raw through one `git cat-file --batch`.
@@ -142,7 +262,7 @@ fn write_blobs(clone: &Path, into: &Path, entries: &[Entry]) -> std::result::Res
     let mut rd = BufReader::new(child.stdout.take().expect("piped"));
     let res = (|| -> std::result::Result<(), String> {
         let mut header = String::new();
-        for (mode, oid, rel) in entries {
+        for (mode, oid, _size, rel) in entries {
             header.clear();
             rd.read_line(&mut header).map_err(|e| format!("git cat-file: {e}"))?;
             let mut h = header.trim_end().split(' ');
@@ -227,20 +347,39 @@ fn lock_tree(lock: &Path, marker: &Path) -> Result<Option<TreeLock>> {
     }
 }
 
-/// Extract the tree of `commit` into its cache folder (a no-op when a complete one exists) and return the folder.
-pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str) -> Result<PathBuf> {
+/// An extracted tree: its folder, and the limitations of what extraction left out (kept in the `.complete` marker, so a tree
+/// extracted once reports them to every build that reads it).
+#[derive(Debug)]
+pub struct Tree {
+    pub dir: PathBuf,
+    pub limitations: Vec<Limitation>,
+}
+
+/// The tree behind a `.complete` marker: JSON `{commit, limitations}`, or (an older marker) the commit alone.
+fn read_marker(marker: &Path, dir: PathBuf) -> Option<Tree> {
+    let text = std::fs::read_to_string(marker).ok()?;
+    let limitations = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| serde_json::from_value::<Vec<Limitation>>(v["limitations"].clone()).ok())
+        .unwrap_or_default();
+    Some(Tree { dir, limitations })
+}
+
+/// Extract the tree of `commit` into its cache folder (a no-op when a complete one exists) and return it.
+pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str) -> Result<Tree> {
     let dir = cache_dir(store_root, repo, commit);
     let marker = dir.with_file_name(format!("{commit}.complete")); // beside the tree, so the walker never sees it
-    if marker.is_file() {
-        return Ok(dir);
+    if let Some(t) = read_marker(&marker, dir.clone()) {
+        return Ok(t);
     }
     let parent = dir.parent().expect("cache dir has a parent").to_path_buf();
     std::fs::create_dir_all(&parent).map_err(|e| AppError::Io(parent.clone(), e))?;
+    let done = |marker: &Path, dir: &Path| read_marker(marker, dir.to_path_buf()).ok_or_else(|| AppError::Io(marker.to_path_buf(), std::io::Error::other("unreadable tree marker")));
     let Some(_lock) = lock_tree(&dir.with_file_name(format!("{commit}.lock")), &marker)? else {
-        return Ok(dir);
+        return done(&marker, &dir);
     };
     if marker.is_file() {
-        return Ok(dir); // completed by the holder before us
+        return done(&marker, &dir); // completed by the holder before us
     }
     let io = |p: &Path, e: std::io::Error| AppError::Io(p.to_path_buf(), e);
     if dir.exists() {
@@ -255,14 +394,27 @@ pub fn materialise(clone: &Path, store_root: &Path, repo: &str, commit: &str) ->
         let _ = std::fs::remove_dir_all(&tmp);
         AppError::structured("io_error", msg, Some("the clone must be a git repository that holds this commit".into()), None)
     };
-    let entries = list_tree(clone, commit).map_err(fail)?;
+    let (entries, limitations) = match list_tree(clone, commit) {
+        Ok(x) => x,
+        Err(TreeError::Other(m)) => return Err(fail(m)),
+        Err(TreeError::Unsafe { path, rule }) => {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(AppError::structured(
+                "unsafe_tree",
+                format!("the tree of {commit} holds a path git refuses to check out ({rule}): {path:?}; nothing of it was written"),
+                Some("this commit cannot be read safely; build another ref, or remove the path in a new commit".into()),
+                Some(serde_json::json!({ "commit": commit, "path": path, "rule": rule })),
+            ));
+        }
+    };
     write_blobs(clone, &tmp, &entries).map_err(fail)?;
     std::fs::rename(&tmp, &dir).map_err(|e| {
         let _ = std::fs::remove_dir_all(&tmp);
         io(&dir, e)
     })?;
-    std::fs::write(&marker, commit).map_err(|e| io(&marker, e))?;
-    Ok(dir)
+    let body = serde_json::json!({ "commit": commit, "limitations": limitations }).to_string();
+    std::fs::write(&marker, body).map_err(|e| io(&marker, e))?;
+    Ok(Tree { dir, limitations })
 }
 
 #[cfg(test)]
@@ -272,11 +424,30 @@ mod tests {
     #[test]
     fn only_relative_paths_inside_the_folder_are_accepted() {
         assert_eq!(safe_rel_path("src/a.py").unwrap(), std::path::PathBuf::from("src").join("a.py"));
-        for bad in ["", "/etc/passwd", "../x", "a/../../x", "a/./b", "a//b", "a\\b", ".git/config", "x/.GIT/hooks/pre-commit", "a\0b"] {
-            assert!(safe_rel_path(bad).is_none(), "{bad:?} accepted");
+        for bad in ["", "/etc/passwd", "../x", "a/../../x", "a/./b", "a//b", "a\\b", ".git/config", "x/.GIT/hooks/pre-commit", "a\0b", "C:/x", "a/b:stream"] {
+            assert!(safe_rel_path(bad).is_err(), "{bad:?} accepted");
         }
-        if cfg!(windows) {
-            assert!(safe_rel_path("C:/x").is_none() && safe_rel_path("a/b:stream").is_none());
+    }
+
+    /// git's verify_path rules (protectNTFS + protectHFS), one rule per spelling of `.git`, on every platform.
+    #[test]
+    fn every_spelling_of_dotgit_is_refused_with_its_rule() {
+        for (p, rule) in [
+            (".git./config", "ntfs_dotgit"),
+            (".GIT/x", "dotgit"),
+            ("git~1/x", "ntfs_8dot3_dotgit"),
+            ("GIT~1. /x", "ntfs_8dot3_dotgit"),
+            ("a/.git /x", "ntfs_dotgit"),
+            ("a/.git::$INDEX_ALLOCATION/x", "ntfs_stream"),
+            ("a/.g\u{200c}it/x", "hfs_dotgit"),
+            ("a/\u{feff}.GIT/x", "hfs_dotgit"),
+            ("a/name./x", "trailing_dot_or_space"),
+            ("a/name /x", "trailing_dot_or_space"),
+        ] {
+            assert_eq!(safe_rel_path(p), Err(rule), "{p:?}");
+        }
+        for ok in [".gitignore", ".github/workflows/ci.yml", "git~2/x", "a/.git-blame-ignore-revs", "x.y/z", "...a"] {
+            assert!(safe_rel_path(ok).is_ok(), "{ok:?} refused");
         }
     }
 }
@@ -318,7 +489,7 @@ mod race_tests {
             let handles: Vec<_> = (0..8)
                 .map(|_| {
                     let (c, s, k) = (clone.path().to_path_buf(), store.path().to_path_buf(), commit.clone());
-                    std::thread::spawn(move || materialise(&c, &s, "r", &k).map(|d| files_under(&d)))
+                    std::thread::spawn(move || materialise(&c, &s, "r", &k).map(|t| files_under(&t.dir)))
                 })
                 .collect();
             for h in handles {

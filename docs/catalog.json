@@ -8633,7 +8633,8 @@
     "provider_unavailable",
     "repo_archived",
     "store_busy",
-    "store_error"
+    "store_error",
+    "unsafe_tree"
   ],
   "error_recovery": {
     "already_archived": {
@@ -8753,6 +8754,10 @@
       "kind": "inspect",
       "retryable": false,
       "operation": "check"
+    },
+    "unsafe_tree": {
+      "kind": "none",
+      "retryable": false
     }
   }
 }

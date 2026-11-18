@@ -28,6 +28,7 @@ pub const ERROR_CODES: &[&str] = &[
     "repo_archived",
     "store_busy",
     "store_error",
+    "unsafe_tree",
 ];
 
 /// Next-step kinds a caller can branch on without reading prose (bounded, like REA's `AnalysisErrorRecovery`):
@@ -63,6 +64,7 @@ pub const RECOVERY: &[(&str, &str, &str, bool)] = &[
     ("repo_archived", "run_command", "restore", false),
     ("store_busy", "retry", "", true),
     ("store_error", "inspect", "check", false),
+    ("unsafe_tree", "none", "", false),
 ];
 
 /// The recovery of an error code (`error.recovery`); an unknown code gets `inspect` `doctor`, never nothing.

@@ -103,9 +103,13 @@ pub fn build_repo(
         Some(r) => Some(super::gitref::resolve(Path::new(&repo.path), r)?),
         None => None,
     };
-    let read_path: String = match &ref_commit {
-        Some(c) => super::gitref::materialise(Path::new(&repo.path), root, repo_name, c)?.to_string_lossy().into_owned(),
-        None => repo.path.clone(),
+    // what extraction left out (unsafe-for-this-OS names never get here: such a tree is refused) goes to the run's limitations
+    let (read_path, tree_limitations): (String, Vec<Limitation>) = match &ref_commit {
+        Some(c) => {
+            let t = super::gitref::materialise(Path::new(&repo.path), root, repo_name, c)?;
+            (t.dir.to_string_lossy().into_owned(), t.limitations)
+        }
+        None => (repo.path.clone(), vec![]),
     };
     let head_of = |p: &str| match &ref_commit {
         Some(c) => Some(c.chars().take(7).collect::<String>()),
@@ -213,6 +217,7 @@ pub fn build_repo(
             format!("{} parsed the whole clone; {} of its {before} nodes outside --include/--exclude were dropped, files_parsed counts the whole clone", provider.name(), before - out.nodes.len()),
         ));
     }
+    out.limitations.extend(tree_limitations);
     out.limitations = collapse_limitations(std::mem::take(&mut out.limitations));
     let incremental_fallback: Option<String> = out.limitations.iter().find(|l| l.code == "incremental_fallback").map(|l| l.detail.clone());
     if incremental_fallback.is_some() {

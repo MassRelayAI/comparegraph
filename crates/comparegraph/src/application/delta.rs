@@ -316,7 +316,7 @@ fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &s
         (None, None) => return Err(stale_refusal(&repo.name, label, commit, false)),
     };
     let run_id = run.id.expect("stored run has id").0;
-    let dir = gitref::materialise(clone, root, &repo.name, commit)?;
+    let dir = gitref::materialise(clone, root, &repo.name, commit)?.dir;
     let mut rows: Vec<NodeRow> = vec![];
     {
         let mut st = store.conn().prepare(

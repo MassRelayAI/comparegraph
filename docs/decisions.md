@@ -359,3 +359,14 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   the parameters; else the first line. A leading Python docstring is not body. The provider records no body start, so there is
   none to prefer. Why: a `pass` stub with a multi-line signature and a docstring + `pass` matched at 1.0. Pinned by a boundary
   test (7 tokens `trivial_body`, 8 a match). What would change it: a provider body-start column.
+- **Tree path safety (security, amends M1)**: every path of a ref's tree passes git's `verify_path` rules with core.protectNTFS
+  and core.protectHFS on, on EVERY platform (one tree, one answer; git itself defaults protectNTFS on everywhere since 2.24):
+  `.git` in any case, after HFS-ignorable code points are dropped (`hfs_dotgit`), with trailing dots or spaces (`ntfs_dotgit`),
+  its 8.3 alias `git~1` (`ntfs_8dot3_dotgit`), any `:` (an NTFS stream or a drive, `ntfs_stream`), any component ending in a dot
+  or space (`trailing_dot_or_space`), plus absolute, `..`, backslash and NUL. One such path refuses the whole tree with the new
+  code `unsafe_tree` (`data.path`, `data.rule`; recovery `none`) and nothing is written. Case-folded duplicates (`A.txt` and
+  `a.txt`, or folders `Dir/` and `dir/`) are SKIPPED, all of them, with a `case_collision_skipped` limitation (chosen over a
+  refusal: real trees carry them, the Linux kernel among them, and skipping both writes nothing ambiguous). A path that is not
+  UTF-8 is skipped with `non_utf8_path`, never renamed lossily. Tree limitations live in the `.complete` marker (JSON) so every
+  build of the commit reports them. Not covered: Unicode normalisation collisions (NFC vs NFD) and Windows reserved device names
+  (`aux.c`), which git refuses only on Windows itself. What would change it: a tree that must be read despite one of these paths.
