@@ -318,12 +318,14 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             cursor: str_arg(a, "cursor")?,
         },
         "comparegraph_show" => Cmd::Show {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             qualified_name: req(a, "qualified_name")?,
             detail: str_arg(a, "detail")?,
             max_callers: uint_arg(a, "max_callers", 50)?,
         },
         "comparegraph_traverse" => Cmd::Traverse {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             qualified_name: req(a, "qualified_name")?,
             direction: str_arg(a, "direction")?.unwrap_or_else(|| "both".into()),
@@ -335,6 +337,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             cursor: str_arg(a, "cursor")?,
         },
         "comparegraph_impact" => Cmd::Impact {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             qualified_name: str_arg(a, "qualified_name")?,
             file: match a.get("files") {
@@ -356,6 +359,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             cursor: str_arg(a, "cursor")?,
         },
         "comparegraph_tests_for" => Cmd::TestsFor {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             qualified_name: req(a, "qualified_name")?,
             max_nodes: uint_arg(a, "max_nodes", 200)?,
@@ -364,12 +368,14 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             cursor: str_arg(a, "cursor")?,
         },
         "comparegraph_entry_points" => Cmd::EntryPoints {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             limit: limit_arg(a)?,
             cursor: str_arg(a, "cursor")?,
             min_confidence: conf_arg(a)?,
         },
         "comparegraph_dead_code" => Cmd::DeadCode {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             limit: limit_arg(a)?,
             cursor: str_arg(a, "cursor")?,
@@ -386,6 +392,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             what: FamilyCmd::List,
         },
         "comparegraph_map" => Cmd::Map {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             family: req(a, "family")?,
             feature: str_arg(a, "feature")?,
@@ -398,6 +405,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             },
         },
         "comparegraph_absent_check" => Cmd::AbsentCheck {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             family: req(a, "family")?,
             feature: req(a, "feature")?,
@@ -523,6 +531,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             }
         }
         _ => Cmd::Communities {
+            git_ref: None, // the MCP adapter carries `ref` on the Cli
             repo: req(a, "repo")?,
             limit: limit_arg(a)?,
             cursor: str_arg(a, "cursor")?,

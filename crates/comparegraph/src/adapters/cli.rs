@@ -33,9 +33,8 @@ pub struct Cli {
     /// seconds a writer waits for another writer's store lock before failing (default 30, at most 3600; env COMPAREGRAPH_WAIT)
     #[arg(long, global = true, value_name = "SECS")]
     pub wait: Option<u64>,
-    /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run.
-    /// The graph read verbs (search excepted): answer from the latest run built from this ref (default: the clone's head run)
-    #[arg(long = "ref", global = true, value_name = "REF")]
+    /// Set by the MCP adapter; on the command line `--ref` is an option of each verb that takes it (a global flag would clash with `ui diff --ref`)
+    #[arg(skip)]
     pub git_ref: Option<String>,
     #[command(subcommand)]
     pub cmd: Cmd,
@@ -260,6 +259,9 @@ pub enum Cmd {
     },
     /// Parse a registered clone into the graph (one run)
     Build {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         #[arg(long, default_value = "reference")]
         provider: String,
@@ -441,6 +443,9 @@ pub enum Cmd {
     },
     /// A symbol with callers, callees, community, licence lane; --detail full adds its current lines
     Show {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         qualified_name: String,
         #[arg(long)]
@@ -451,6 +456,9 @@ pub enum Cmd {
     },
     /// Nodes reachable from a symbol over calls/extends/implements, with hop distance and the path to each
     Traverse {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         qualified_name: String,
         #[arg(long, default_value = "both")]
@@ -471,6 +479,9 @@ pub enum Cmd {
     },
     /// Everything that transitively depends on a symbol or file(s), by hop, plus the tests that reach it
     Impact {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         qualified_name: Option<String>,
         #[arg(long = "file")]
@@ -489,6 +500,9 @@ pub enum Cmd {
     },
     /// Tests linked to a symbol directly or through at most 3 call hops
     TestsFor {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         qualified_name: String,
         #[arg(long, default_value_t = 200)]
@@ -503,6 +517,9 @@ pub enum Cmd {
     },
     /// Symbols nothing calls that are exported, handlers or main
     EntryPoints {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         #[arg(long, default_value_t = 50)]
         limit: usize,
@@ -513,6 +530,9 @@ pub enum Cmd {
     },
     /// Candidates nothing references (dynamic dispatch is invisible)
     DeadCode {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         #[arg(long, default_value_t = 50)]
         limit: usize,
@@ -584,6 +604,9 @@ pub enum Cmd {
     },
     /// Module clusters of a repo's latest run
     Communities {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         #[arg(long, default_value_t = 50)]
         limit: usize,
@@ -594,6 +617,9 @@ pub enum Cmd {
     Mcp,
     /// Candidate symbols and communities per feature of a family in one clone; writes nothing
     Map {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         family: String,
         #[arg(long)]
@@ -604,6 +630,9 @@ pub enum Cmd {
     /// Is a feature absent from a clone's graph? Four channels (symbols, paths, communities, kinds) plus the ranked
     /// `read_set` a `none` must read; reads, writes nothing
     AbsentCheck {
+        /// `build`: read this git ref's tree (`git archive`, nothing checked out) and record `ref` and `ref_commit` on the run. Graph read verbs: answer from the latest run built from this ref (default: the clone's head run)
+        #[arg(long = "ref", value_name = "REF")]
+        git_ref: Option<String>,
         repo: String,
         family: String,
         feature: String,
@@ -1166,30 +1195,26 @@ fn progress_on(flag: bool) -> bool {
 
 type Failure = (AppError, Option<serde_json::Value>);
 
-/// The verbs `--ref` means something to: `build` (which ref to read) and the graph read verbs (which run to answer from).
-fn takes_ref(c: &Cmd) -> bool {
-    matches!(
-        c,
-        Cmd::Build { .. }
-            | Cmd::Show { .. }
-            | Cmd::Traverse { .. }
-            | Cmd::Impact { .. }
-            | Cmd::TestsFor { .. }
-            | Cmd::EntryPoints { .. }
-            | Cmd::DeadCode { .. }
-            | Cmd::Communities { .. }
-            | Cmd::Map { .. }
-            | Cmd::AbsentCheck { .. }
-    )
+/// The `--ref` the verb was given: `build` names the tree to read, the graph read verbs name the run to answer from.
+fn cmd_ref(c: &Cmd) -> Option<&str> {
+    match c {
+        Cmd::Build { git_ref, .. }
+        | Cmd::Show { git_ref, .. }
+        | Cmd::Traverse { git_ref, .. }
+        | Cmd::Impact { git_ref, .. }
+        | Cmd::TestsFor { git_ref, .. }
+        | Cmd::EntryPoints { git_ref, .. }
+        | Cmd::DeadCode { git_ref, .. }
+        | Cmd::Communities { git_ref, .. }
+        | Cmd::Map { git_ref, .. }
+        | Cmd::AbsentCheck { git_ref, .. } => git_ref.as_deref(),
+        _ => None,
+    }
 }
 
 fn dispatch(cli: &Cli) -> Result<serde_json::Value, Failure> {
-    if cli.git_ref.is_some() && !takes_ref(&cli.cmd) {
-        let e = AppError::InvalidArguments(format!("--ref applies to build and the graph read verbs, not {}", verb_of(&cli.cmd)));
-        return Err((e, None));
-    }
     // `build --ref` names the tree to read; every other verb names the run to answer from
-    let pin = if matches!(cli.cmd, Cmd::Build { .. }) { None } else { cli.git_ref.as_deref() };
+    let pin = if matches!(cli.cmd, Cmd::Build { .. }) { None } else { cmd_ref(&cli.cmd).or(cli.git_ref.as_deref()) };
     crate::store::with_run_ref(pin, || dispatch_inner(cli).map_err(|e| (e, None)).and_then(|r| r))
 }
 
@@ -1243,8 +1268,9 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             progress,
             include,
             exclude,
+            ..
         } if !providers.is_empty() => {
-            if cli.git_ref.is_some() {
+            if cmd_ref(&cli.cmd).is_some() {
                 return Err(AppError::InvalidArguments("--ref reads one provider's run; drop --providers".into()));
             }
             let rep = crate::application::build::build_many(
@@ -1258,7 +1284,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     progress: progress_on(*progress),
                     include: include.clone(),
                     exclude: exclude.clone(),
-                    git_ref: cli.git_ref.clone(),
+                    git_ref: cmd_ref(&cli.cmd).map(String::from),
                     ..BuildOptions::default()
                 },
             )?;
@@ -1286,7 +1312,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 progress: progress_on(*progress),
                 include: include.clone(),
                 exclude: exclude.clone(),
-                git_ref: cli.git_ref.clone(),
+                git_ref: cmd_ref(&cli.cmd).map(String::from),
                 ..BuildOptions::default()
             },
         )?)
@@ -1426,6 +1452,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             qualified_name,
             detail,
             max_callers,
+            ..
         } => {
             let full = match detail.as_deref() {
                 None | Some("compact") => false,
@@ -1448,6 +1475,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             min_confidence,
             limit,
             cursor,
+            ..
         } => g::traverse(
             &cli.root,
             repo,
@@ -1471,6 +1499,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             min_confidence,
             limit,
             cursor,
+            ..
         } => g::impact(
             &cli.root,
             repo,
@@ -1491,24 +1520,28 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             min_confidence,
             limit,
             cursor,
+            ..
         } => g::tests_for(&cli.root, repo, qualified_name, *max_nodes, *min_confidence, *limit, cursor.as_deref())?,
         Cmd::EntryPoints {
             repo,
             limit,
             cursor,
             min_confidence,
+            ..
         } => g::entry_points(&cli.root, repo, *limit, cursor.as_deref(), *min_confidence)?,
         Cmd::DeadCode {
             repo,
             limit,
             cursor,
             min_confidence,
+            ..
         } => g::dead_code(&cli.root, repo, *limit, cursor.as_deref(), *min_confidence)?,
         Cmd::Map {
             repo,
             family,
             feature,
             limit,
+            ..
         } => serde_json::to_value(crate::application::map::map(
             &cli.root,
             repo,
@@ -1540,6 +1573,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             feature,
             searched,
             include_non_code,
+            ..
         } => serde_json::to_value(crate::application::absent::absent_check(
             &cli.root, repo, family, feature, searched.as_deref(), *include_non_code,
         )?)
@@ -1905,6 +1939,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             repo,
             limit,
             cursor,
+            ..
         } => {
             let offset = match cursor {
                 Some(c) => c
