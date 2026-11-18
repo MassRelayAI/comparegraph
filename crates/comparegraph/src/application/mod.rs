@@ -16,6 +16,7 @@ pub mod export;
 pub mod gitref;
 pub mod governance;
 pub mod graph;
+pub mod health;
 pub mod family;
 pub mod lines;
 pub mod map;

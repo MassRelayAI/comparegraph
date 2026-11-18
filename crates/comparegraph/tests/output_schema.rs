@@ -201,6 +201,7 @@ fn calls() -> Vec<(&'static str, Value, usize)> {
         ("comparegraph_tests_for", json!({"repo":"a","qualified_name":q}), 0),
         ("comparegraph_entry_points", json!({"repo":"a"}), 0),
         ("comparegraph_dead_code", json!({"repo":"a"}), 0),
+        ("comparegraph_health", json!({"repo":"a"}), 0),
         ("comparegraph_doctor", json!({}), 0),
         ("comparegraph_ui_limits", json!({}), 0),
         ("comparegraph_ui_products", json!({}), 0),
@@ -324,5 +325,5 @@ fn the_advertised_schemas_are_compact_and_share_their_definitions() {
         assert!(s.len() <= 1700, "{} output schema is {} bytes", t["name"], s.len());
         assert!(t["outputSchema"]["$defs"].is_object());
     }
-    assert!(total <= 56_000, "all output schemas together are {total} bytes");
+    assert!(total <= 58_000, "all output schemas together are {total} bytes");
 }

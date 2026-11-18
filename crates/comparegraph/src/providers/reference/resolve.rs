@@ -961,6 +961,11 @@ pub(super) fn par_map<T: Send>(n: usize, name: &(dyn Fn(usize) -> String + Sync)
 fn thread_cap(env: Option<&str>) -> usize {
     env.and_then(|v| v.trim().parse::<usize>().ok()).filter(|n| (1..=64).contains(n)).unwrap_or(8)
 }
+/// Stack of each per-file resolution worker. Rust's default for a spawned thread is 2 MiB, and `build` of the massrelay repo
+/// (7,012 files) overflowed it in the per-file pass right after `resolve:js` (`thread '<unknown>' has overflowed its stack`);
+/// 8 MiB was the smallest size measured to pass, so 16 MiB keeps a margin. Virtual memory only: pages are touched on use.
+pub(super) const WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
+
 fn par_map_capped<T: Send>(cap: usize, n: usize, name: &(dyn Fn(usize) -> String + Sync), f: &(dyn Fn(usize) -> T + Sync)) -> Vec<T> {
     let threads = std::thread::available_parallelism().map_or(1, |p| p.get()).min(cap).min(n.max(1));
     if threads <= 1 {
@@ -970,17 +975,20 @@ fn par_map_capped<T: Send>(cap: usize, n: usize, name: &(dyn Fn(usize) -> String
     let parts: Vec<Vec<(usize, std::thread::Result<T>)>> = std::thread::scope(|sc| {
         let hs: Vec<_> = (0..threads)
             .map(|_| {
-                sc.spawn(|| {
-                    let mut mine = Vec::new();
-                    loop {
-                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        if i >= n {
-                            break;
+                std::thread::Builder::new()
+                    .stack_size(WORKER_STACK_BYTES)
+                    .spawn_scoped(sc, || {
+                        let mut mine = Vec::new();
+                        loop {
+                            let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            if i >= n {
+                                break;
+                            }
+                            mine.push((i, std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(i)))));
                         }
-                        mine.push((i, std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(i)))));
-                    }
-                    mine
-                })
+                        mine
+                    })
+                    .expect("spawn a resolution worker")
             })
             .collect();
         hs.into_iter().map(|h| h.join().expect("worker panics are caught per item")).collect()
@@ -1855,6 +1863,19 @@ mod tests {
         assert_eq!(one, many);
         assert_eq!(one, (0..100).map(|i| i * 2).collect::<Vec<_>>());
     }
+    #[test]
+    fn par_map_workers_have_a_stack_that_survives_deep_recursion() {
+        // about 4 MiB of frames: a default 2 MiB thread would abort the whole process here
+        #[inline(never)]
+        fn deep(n: usize) -> usize {
+            let pad = [n as u8; 1024];
+            if n == 0 { 0 } else { deep(n - 1) + usize::from(std::hint::black_box(pad)[0] == 255) }
+        }
+        let name = |i: usize| format!("f{i}");
+        let out = par_map_capped(4, 8, &name, &|_| deep(4096));
+        assert_eq!(out.len(), 8);
+    }
+
     #[test]
     fn par_map_keeps_index_order_and_names_a_panicking_file() {
         let v = par_map(100, &|i| i.to_string(), &|i| i * 2);

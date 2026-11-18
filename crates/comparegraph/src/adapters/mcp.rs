@@ -140,6 +140,8 @@ fn tools_base() -> Vec<Value> {
         tool("comparegraph_dead_code", "Dead-code CANDIDATES (confidence unknown: dynamic dispatch is invisible). Paged.", schema(json!({
             "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500}, "cursor": {"type":"string"},
             "min_confidence": {"type":"number","enum":[0.5,1.0]} }), &["repo"])),
+        tool("comparegraph_health", "Structural findings of a repo's latest run, each with path and line evidence: import and extends cycles, dead imports, duplicate function bodies, size and coupling outliers, boundary-rule violations (comparegraph.toml [[health.boundary]]) and dead-code candidates. Counts per section plus the first `limit` findings of each. Reads only; baselines are written by the CLI (`health --baseline`).", schema(json!({
+            "repo": {"type":"string"}, "limit": {"type":"integer","minimum":1,"maximum":500,"description":"findings listed per section, default 50"} }), &["repo"])),
         tool("comparegraph_ui_limits", "UI evidence: every cap the ui tools apply (max_nodes, file size, page size, path length) with its unit, control and what is reported when it is hit. Reads nothing.", ui_schema(json!({}), &[])),
         tool("comparegraph_ui_products", "UI evidence: products with screens, evidence files, states, flows, menu trees. Reads files under ui_root/ui only.", ui_schema(json!({}), &[])),
         tool("comparegraph_ui_screens", "UI evidence: the screens of a product with archetype, states and captures.", ui_schema(json!({"product":{"type":"string"}}), &["product"])),
@@ -239,6 +241,7 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
         "comparegraph_entry_points" | "comparegraph_dead_code" => {
             &["repo", "limit", "cursor", "min_confidence"]
         }
+        "comparegraph_health" => &["repo", "limit"],
         "comparegraph_families" => &[],
         "comparegraph_map" => &["repo", "family", "feature", "limit"],
         "comparegraph_delta" => &["repo", "base", "head", "family", "max_nodes", "whole_tree", "build_missing", "refresh"],
@@ -395,6 +398,14 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
             whole_tree: a.get("whole_tree").and_then(Value::as_bool).unwrap_or(false),
             build_missing: a.get("build_missing").and_then(Value::as_bool).unwrap_or(false),
             refresh: a.get("refresh").and_then(Value::as_bool).unwrap_or(false),
+        },
+        "comparegraph_health" => Cmd::Health {
+            repo: req(a, "repo")?,
+            limit: limit_arg(a)?,
+            top: None,
+            baseline: None,
+            check: None,
+            ratchet_dead_code: false,
         },
         "comparegraph_families" => Cmd::Family {
             what: FamilyCmd::List,
