@@ -451,3 +451,64 @@ fn s4_the_same_file_on_head_and_base_makes_its_rows_yes() {
     }
     assert_eq!(exact_share(&v), Some(1.0), "{}", v["data"]["summary"]);
 }
+
+// ---------------------------------------------------------------- the remaining round-3 probes (guards: no false exact)
+
+/// P6: a name defined twice in one file (a Python redefinition: `f` and `f#2`); the branch changes the FIRST definition and
+/// adds k, which base also added. The change to the first f must not vanish: k is yes, f is not.
+#[test]
+fn p6_duplicate_name_change_to_the_first_definition_is_not_lost() {
+    let first = long_named("f", false);
+    let second = long_named("f", false).replace("total = 0", "total = 100");
+    let fx = Fx::new(&[("src/a.py", &format!("{first}\n{second}"))]);
+    let d = fx.d();
+    let k = long_named("k", false).replace("total = 0", "total = 7");
+    fx.feat();
+    write(&d, "src/a.py", &format!("{}\n{second}", long_named("f", true)));
+    write(&d, "src/k.py", &k);
+    commit(&d, "lane changes the first f and adds k");
+    fx.main();
+    write(&d, "src/k.py", &k);
+    commit(&d, "base adds k");
+    let v = fx.delta();
+    assert_ne!(row_of(&v, "changed", "src/a.py::f")["on_base"], "yes", "{}", branch(&v));
+    assert_eq!(exact_share(&v), Some(0.5), "{}", v["data"]["summary"]);
+}
+
+/// P6c: the same, the branch changing the SECOND definition (`f#2`).
+#[test]
+fn p6c_duplicate_name_change_to_the_second_definition_is_not_lost() {
+    let first = long_named("f", false);
+    let second = long_named("f", false).replace("total = 0", "total = 100");
+    let fx = Fx::new(&[("src/a.py", &format!("{first}\n{second}"))]);
+    let d = fx.d();
+    let k = long_named("k", false).replace("total = 0", "total = 7");
+    fx.feat();
+    write(&d, "src/a.py", &format!("{first}\n{}", second.replace("total = 100", "total = 200")));
+    write(&d, "src/k.py", &k);
+    commit(&d, "lane changes the second f and adds k");
+    fx.main();
+    write(&d, "src/k.py", &k);
+    commit(&d, "base adds k");
+    let v = fx.delta();
+    assert_ne!(row_of(&v, "changed", "src/a.py::f#2")["on_base"], "yes", "{}", branch(&v));
+    assert_eq!(exact_share(&v), Some(0.5), "{}", v["data"]["summary"]);
+}
+
+/// P7: base took the branch's change and then reverted it.
+#[test]
+fn p7_base_took_then_reverted() {
+    let fx = Fx::new(&[("src/a.py", &long_process(false, ""))]);
+    let d = fx.d();
+    fx.feat();
+    write(&d, "src/a.py", &long_process(true, ""));
+    commit(&d, "lane guards");
+    fx.main();
+    write(&d, "src/a.py", &long_process(true, ""));
+    commit(&d, "base takes");
+    write(&d, "src/a.py", &long_process(false, ""));
+    commit(&d, "base reverts");
+    let v = fx.delta();
+    assert_eq!(row_of(&v, "changed", "src/a.py::process")["on_base"], "no", "{}", branch(&v));
+    assert_eq!(exact_share(&v), Some(0.0), "{}", branch(&v));
+}
