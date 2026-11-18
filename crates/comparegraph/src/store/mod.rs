@@ -655,9 +655,11 @@ impl Store {
         let rows = st.query_map(params![repo.0, provider, version, limit as i64], row_to_run)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
-    /// The latest done reference run that read exactly this commit (any name it was built under).
-    pub fn done_run_at_commit(&self, repo: RepoId, commit: &str) -> Result<Option<Run>> {
-        Ok(self.conn.query_row(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND ref_commit=?2 AND provider='reference' ORDER BY id DESC LIMIT 1"), params![repo.0, commit], row_to_run).optional()?)
+    /// Every done reference run that read exactly this commit (any name it was built under, any options), newest first.
+    pub fn done_runs_at_commit(&self, repo: RepoId, commit: &str) -> Result<Vec<Run>> {
+        let mut st = self.conn.prepare(&format!("SELECT {RUN_COLS} FROM run WHERE repo_id=?1 AND status='done' AND ref_commit=?2 AND provider='reference' ORDER BY id DESC"))?;
+        let rows = st.query_map(params![repo.0, commit], row_to_run)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
     /// Record the ref a run was built from and the commit it named.
     pub fn set_run_ref(&self, id: RunId, git_ref: Option<&str>, commit: Option<&str>) -> Result<()> {

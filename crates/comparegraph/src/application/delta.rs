@@ -113,6 +113,51 @@ fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
 
 type NodeRow = (String, String, String, String, i64, i64);
 
+/// The options every side of one delta is read with: the running reference provider's version and the repo's `add` subset
+/// (sorted), exactly what `build --ref` uses when given none. A run read otherwise is never mixed into the delta.
+struct Want {
+    version: String,
+    include: Vec<String>,
+    exclude: Vec<String>,
+}
+
+/// The first of `runs` (newest first) read with the wanted options, else the newest one's options for the refusal.
+fn pick_run(store: &Store, runs: Vec<crate::domain::Run>, w: &Want) -> Result<(Option<crate::domain::Run>, Option<Value>)> {
+    let mut other: Option<Value> = None;
+    for r in runs {
+        let id = r.id.expect("stored run has id");
+        let (mut inc, mut exc) = store.run_subset(id)?;
+        for v in [&mut inc, &mut exc] {
+            v.sort();
+            v.dedup();
+        }
+        if r.provider_version == w.version && inc == w.include && exc == w.exclude {
+            return Ok((Some(r), None));
+        }
+        other.get_or_insert_with(|| json!({ "run": id.0, "provider_version": r.provider_version, "include": inc, "exclude": exc }));
+    }
+    Ok((None, other))
+}
+
+fn options_refusal(repo: &str, label: &str, commit: &str, w: &Want, found: Value) -> AppError {
+    let mut diff = vec![];
+    if found["provider_version"] != json!(w.version) {
+        diff.push(format!("provider_version {} (wanted {})", found["provider_version"], w.version));
+    }
+    if found["include"] != json!(w.include) {
+        diff.push(format!("include {} (wanted {})", found["include"], json!(w.include)));
+    }
+    if found["exclude"] != json!(w.exclude) {
+        diff.push(format!("exclude {} (wanted {})", found["exclude"], json!(w.exclude)));
+    }
+    AppError::structured(
+        "not_found",
+        format!("{repo}'s run at {label} ({}) was read with other options: {}; a delta never mixes runs of different options", &commit[..12.min(commit.len())], diff.join(", ")),
+        Some(format!("pass --build-missing (or --refresh) to build {label} with the delta's options (the repo's `add` subset and this engine version), or `comparegraph build {repo} --ref {label}`")),
+        Some(json!({ "ref": label, "commit": commit, "repo": repo, "found": found, "wanted": { "provider_version": w.version, "include": w.include, "exclude": w.exclude } })),
+    )
+}
+
 /// How a ref without a run at its current commit is treated.
 #[derive(Clone, Copy)]
 struct Mode {
@@ -137,21 +182,30 @@ fn stale_refusal(repo: &str, label: &str, commit: &str, moved: bool) -> AppError
 }
 
 /// The side of one ref: its run at the commit the ref names now (built here when the mode allows), and its symbols.
-fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &str, commit: &str, mode: Mode, rebuilt: &mut Vec<Value>) -> Result<Side> {
+#[allow(clippy::too_many_arguments)]
+fn load_side(store: &Store, root: &Path, repo: &crate::store::RepoRow, label: &str, commit: &str, want: &Want, mode: Mode, rebuilt: &mut Vec<Value>) -> Result<Side> {
     let clone = Path::new(&repo.path);
     let rid = repo.id.expect("stored repo has id");
-    let mut run = store.done_run_at_commit(rid, commit)?;
+    let (mut run, mut other) = pick_run(store, store.done_runs_at_commit(rid, commit)?, want)?;
     if run.is_none() {
-        let moved = store.ref_runs(rid)?.iter().any(|(_, r, _)| r == label);
+        // a run at this commit read with other options is a missing run of the wanted options, not a moved ref
+        let moved = other.is_none() && store.ref_runs(rid)?.iter().any(|(_, r, _)| r == label);
         if !(mode.refresh || (mode.build_missing && !moved)) {
-            return Err(stale_refusal(&repo.name, label, commit, moved));
+            return Err(match other {
+                Some(found) => options_refusal(&repo.name, label, commit, want, found),
+                None => stale_refusal(&repo.name, label, commit, moved),
+            });
         }
         let opts = crate::providers::BuildOptions { git_ref: Some(label.to_string()), ..Default::default() };
         super::build::build_repo(root, &repo.name, "reference", &opts)?;
         rebuilt.push(json!({ "ref": label, "commit": commit }));
-        run = store.done_run_at_commit(rid, commit)?;
+        (run, other) = pick_run(store, store.done_runs_at_commit(rid, commit)?, want)?;
     }
-    let run = run.ok_or_else(|| stale_refusal(&repo.name, label, commit, false))?;
+    let run = match (run, other) {
+        (Some(r), _) => r,
+        (None, Some(found)) => return Err(options_refusal(&repo.name, label, commit, want, found)),
+        (None, None) => return Err(stale_refusal(&repo.name, label, commit, false)),
+    };
     let run_id = run.id.expect("stored run has id").0;
     let dir = gitref::materialise(clone, root, &repo.name, commit)?;
     let mut rows: Vec<NodeRow> = vec![];
@@ -327,10 +381,18 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         .and_then(|v| v.into_iter().next())
         .ok_or_else(|| AppError::InvalidArguments(format!("{} and {} have no merge base (unrelated histories)", o.base, o.head)))?;
     let mode = Mode { build_missing: o.build_missing, refresh: o.refresh };
+    let norm = |v: &[String]| {
+        let mut v = v.to_vec();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let version = crate::providers::by_name_in(root, "reference").map(|p| p.version()).unwrap_or_default();
+    let want = Want { version, include: norm(&repo.include), exclude: norm(&repo.exclude) };
     let mut rebuilt = vec![];
-    let base = load_side(&store, root, &repo, o.base, &base_c, mode, &mut rebuilt)?;
-    let head = load_side(&store, root, &repo, o.head, &head_c, mode, &mut rebuilt)?;
-    let mb = load_side(&store, root, &repo, &mb_c, &mb_c, mode, &mut rebuilt)?;
+    let base = load_side(&store, root, &repo, o.base, &base_c, &want, mode, &mut rebuilt)?;
+    let head = load_side(&store, root, &repo, o.head, &head_c, &want, mode, &mut rebuilt)?;
+    let mb = load_side(&store, root, &repo, &mb_c, &mb_c, &want, mode, &mut rebuilt)?;
 
     let mut by_hash: HashMap<&str, Vec<&Sym>> = HashMap::new();
     let mut by_name: HashMap<(&str, &str), Vec<&Sym>> = HashMap::new();

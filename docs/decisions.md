@@ -287,3 +287,7 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   (a token minimum, not health's `min_lines`: lines would make every two-statement fixture and real helper trivial, and a
   one-line stub is the case that matched at 1.0). Below it the row answers `already_on_base: null`, `note: trivial_body`;
   `same_symbol` (identity) still applies. What would change it: a measured false match above 8 tokens.
+- **M2** one delta, one set of options: base, head and merge base are read from runs of the running engine's provider version and
+  the repo's `add` subset (what `build --ref` uses when given none). A run of the commit read otherwise is refused, naming the
+  difference; `--build-missing` / `--refresh` build the side with the delta's options. Why: a `--include src/**` base and a whole
+  head made everything outside `src/` look added. What would change it: `delta --include/--exclude` (the wanted subset given).
