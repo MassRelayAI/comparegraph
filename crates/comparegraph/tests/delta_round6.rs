@@ -302,17 +302,23 @@ fn r6_a_jsx_class_extends_edge_is_found_in_tsx() {
     let fx = Fx::new(&[
         ("src/Base.tsx", "export class Base {\n  hello() { return 1; }\n}\n"),
         ("src/Card.tsx", "import { Base } from './Base';\nexport class Card extends Base {\n  render() { return <div className=\"c\">{this.hello()}</div>; }\n}\n"),
+        // JSX ahead of a class, in the shapes the TypeScript grammar cannot read (the class after it must still be found)
+        ("src/C1.tsx", "import { Base } from './Base';\nexport const top = <div className=\"top\"><Base /></div>;\nexport class C1 extends Base {}\n"),
+        ("src/C2.tsx", "import { Base } from './Base';\nexport function W() { return <><span>{1}</span></>; }\nexport class C2 extends Base {}\n"),
+        ("src/C3.tsx", "import { Base } from './Base';\nexport const id = <T,>(x: T): T => x;\nexport const el = <div {...{ a: 1 }}>{id(2)}</div>;\nexport class C3 extends Base {}\n"),
     ]);
     ok(fx.ws.path(), &["build", "r"]);
     let db = rusqlite::Connection::open(fx.ws.path().join(".comparegraph/comparegraph.db")).unwrap();
-    let n: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM edge e JOIN node a ON a.id = e.source_node_id JOIN node b ON b.id = e.target_node_id WHERE e.kind = 'extends' AND a.qualified_name = 'src/Card.tsx::Card' AND b.qualified_name = 'src/Base.tsx::Base'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(n, 1, "no extends edge Card -> Base");
+    for sub in ["src/Card.tsx::Card", "src/C1.tsx::C1", "src/C2.tsx::C2", "src/C3.tsx::C3"] {
+        let n: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM edge e JOIN node a ON a.id = e.source_node_id JOIN node b ON b.id = e.target_node_id WHERE e.kind = 'extends' AND a.qualified_name = ?1 AND b.qualified_name = 'src/Base.tsx::Base'",
+                [sub],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "no extends edge {sub} -> Base");
+    }
 }
 
 /// MINOR: no stale `tmp-merge-*` folder survives in the store (a crashed run's is swept by the next delta).

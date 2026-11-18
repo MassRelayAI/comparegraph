@@ -592,3 +592,25 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
 - **`NO_SYMBOL_LANGUAGES` = `sql`**: the vendored SQL extractor yields no symbol (its node names do not match the SQL grammar it
   is given; the fixture's CREATE TABLE and VIEW give none), so a `.sql` file cannot hide one and its parse errors do not count
   as unread (43 of the 428). `html`'s fixture has no symbol either, but its extractor can yield one, so it stays under the rule.
+
+## Plan 14 round 6 (2026-11-19, branch feat/plan-14)
+- **B1** the backstop reads `git merge-tree -z`: conflicted paths come raw from the NUL-separated output and are keyed like the
+  tree listing (`path_key`), so a path with a `"`, a tab, a newline or a non-UTF-8 byte is matched; and a share of 1.0 needs no
+  conflict at all (`merge_conflict` item), since a modify/delete conflict keeps base's side and the tree check alone passes.
+  The share-level item backs a per-row key that misses: a conflict path is always one the branch touched, so on a plain path
+  the per-row check (`merge_changes_file`) answers first.
+- **B2** work base merged and then took back lies before the merge base. F is the newest commit of base's first-parent chain
+  that head reaches; when F is not the merge base, every path whose entry differs between F and head and between head and
+  base is one unknown item, `merged_into_base_before`, unless an item names it already. A listing git cannot give is one
+  `diff_failed` item.
+- **The merge is not the clone's to shape**: `--attr-source=<the empty tree>` (git >= 2.42; with an older git the backstop is
+  unavailable, every yes unknown), `core.attributesFile=/dev/null`, `merge.renormalize=false`, `merge.renames=true`,
+  `merge.directoryRenames=conflict`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`: no attribute applies, so no
+  merge driver, textconv or renormalisation.
+- **Minors**: the temporary object folder is a Drop guard and stale `tmp-merge-*` folders are swept (a dead holder by pid and
+  start time on Linux, else older than an hour); `inherit.rs` reads `tsx` with the TSX grammar (a JSX class's `extends` is
+  found); the SQL pin also checks the grammar has none of the four node kinds the vendored SQL extractor matches
+  (`id_for_node_kind` 0); a test pins the provider version's `+tsx`.
+- **Pinned** (each removed alone turns a test red; `mut7.json`): the per-row conflict check, the entry comparison, the 1.0
+  tree rule (base renames the changed file away and holds the new body elsewhere), `-z` with raw-path keys, the
+  `merged_into_base_before` items, `--attr-source`, the sweep, the tsx inheritance grammar.
