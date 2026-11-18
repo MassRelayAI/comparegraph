@@ -578,7 +578,7 @@ mod vault_tests {
             )
             .unwrap();
         }
-        decide(ws.path(), "alpha", "adopt", "good fit", "me", None, None).unwrap();
+        decide(ws.path(), "alpha", "adopt", "good fit", "me", None, None, None).unwrap();
         (ws, c)
     }
 
