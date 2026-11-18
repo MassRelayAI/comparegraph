@@ -50,6 +50,8 @@ impl Finding {
     }
 }
 
+type RuleDraft = Option<(Option<String>, Option<String>)>;
+
 #[derive(Debug, Clone)]
 pub struct Boundary {
     pub from: String,
@@ -115,8 +117,8 @@ impl Config {
         }
         let bad = |m: String| AppError::InvalidArguments(format!("comparegraph.toml: {m}"));
         let mut c = Self::default();
-        let (mut sect, mut cur): (S, Option<(Option<String>, Option<String>)>) = (S::Other, None);
-        let flush = |cur: &mut Option<(Option<String>, Option<String>)>, c: &mut Self| -> Result<()> {
+        let (mut sect, mut cur): (S, RuleDraft) = (S::Other, None);
+        let flush = |cur: &mut RuleDraft, c: &mut Self| -> Result<()> {
             if let Some((f, n)) = cur.take() {
                 match (f, n) {
                     (Some(from), Some(never)) => c.boundaries.push(Boundary { from, never }),
