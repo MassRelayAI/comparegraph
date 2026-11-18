@@ -179,19 +179,30 @@ fn a_non_utf8_path_is_skipped_with_a_limitation_not_renamed() {
     assert!(all.iter().all(|p| !p.to_string_lossy().contains('\u{fffd}') && !p.to_string_lossy().contains("caf")), "{all:?}");
 }
 
-/// Review round 3: a Windows reserved device name (any case, with or without an extension) refuses the tree on every platform:
-/// a tree must extract the same everywhere.
+/// Review round 3 (amended): a Windows reserved device name (any case, with or without an extension) is not an attack: the path
+/// is skipped on every platform, never written, and listed in a `windows_reserved_skipped` limitation; the build goes on.
 #[test]
-fn a_windows_reserved_device_name_refuses_the_tree_everywhere() {
+fn windows_reserved_device_names_are_skipped_and_listed_everywhere() {
     let fx = Fx::new();
-    for (i, path) in ["src/aux.c", "NUL.txt", "a/Com1/x", "lpt9.h", "con", "docs/PRN.md"].into_iter().enumerate() {
-        let name = format!("dev{i}");
-        let commit = fx.hostile(&name, &[path.as_bytes()]);
-        let v = err(fx.root(), &["build", "r", "--ref", &name], "unsafe_tree");
-        assert_eq!((v["error"]["data"]["path"].as_str(), v["error"]["data"]["rule"].as_str()), (Some(path), Some("windows_reserved_name")), "{v}");
-        assert_nothing_written(&fx, &commit, path.rsplit('/').next().unwrap());
+    let reserved = ["src/aux.c", "NUL.txt", "a/Com1/x", "lpt9.h", "con", "docs/PRN.md"];
+    let fine = ["src/console.c", "src/com10.c", "src/com0", "src/auxiliary.py", "src/nul_check.py"];
+    let all: Vec<&[u8]> = reserved.iter().chain(fine.iter()).map(|p| p.as_bytes()).collect();
+    let commit = fx.hostile("dev", &all);
+    let v = ok(fx.root(), &["build", "r", "--ref", "dev"]);
+    let lim = v["evidence"]["limitations"].as_array().unwrap().iter().find(|l| l["code"] == "windows_reserved_skipped").unwrap_or_else(|| panic!("no windows_reserved_skipped: {}", limits(&v))).clone();
+    let detail = lim["detail"].as_str().unwrap();
+    assert!(detail.starts_with("6 "), "{detail}");
+    for p in reserved {
+        assert!(detail.contains(p), "{p} not listed: {detail}");
     }
-    // names that only start like one are fine
-    fx.hostile("fine", &[b"src/console.c", b"src/com10.c", b"src/auxiliary.py", b"src/nul_check.py"]);
-    ok(fx.root(), &["build", "r", "--ref", "fine"]);
+    let tree = fx.refs_dir().join(&commit);
+    let mut got = vec![];
+    files_under(&tree, Path::new(""), &mut got);
+    let names: Vec<String> = got.iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
+    for p in reserved {
+        assert!(!names.contains(&p.to_string()), "{p} was written: {names:?}");
+    }
+    for p in fine {
+        assert!(names.contains(&p.to_string()), "{p} was not extracted: {names:?}");
+    }
 }
