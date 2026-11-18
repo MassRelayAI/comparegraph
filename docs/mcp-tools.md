@@ -46,7 +46,7 @@ envelope as the CLI. 41 tools: 40 read-only, one write (`comparegraph_claim`). T
 | `comparegraph_tests_for` | Tests linked to a symbol, summary first, then one page | `repo`, `qualified_name`, `max_nodes`, `min_confidence`, `limit`, `cursor` |
 | `comparegraph_entry_points` | Exported, handler or main symbols nothing calls | `repo`, `limit`, `cursor`, `min_confidence` |
 | `comparegraph_dead_code` | Dead-code candidates (never proof) | `repo`, `limit`, `cursor`, `min_confidence`, `ref` |
-| `comparegraph_delta` | What a branch introduced since the merge base and whether base has it now: added, changed, removed, share on base, stale conflicts, features, files base deleted or rewrote among the branch's (facts, no verdict; refs built with `build --ref`, or `build_missing`/`refresh` WRITE them) | `repo`, `base`, `head`, `family`, `max_nodes`, `whole_tree`, `build_missing`, `refresh` |
+| `comparegraph_delta` | What a branch introduced since the merge base and whether base has it now: added, changed, removed, each `on_base` yes / no / unknown (`via`, `why`), the work outside symbols (`branch.residue`), the exact share (unknown counts against it) and `unknown {count, by_why}` (any unknown: a person reads the branch before it is retired), stale conflicts, features, files base deleted or rewrote among the branch's (facts, no verdict; refs built with `build --ref`, or `build_missing`/`refresh` WRITE them) | `repo`, `base`, `head`, `family`, `max_nodes`, `whole_tree`, `build_missing`, `refresh` |
 | `comparegraph_health` | Structural findings with evidence: cycles, dead imports, duplicate bodies, size and coupling outliers, boundary violations, dead-code candidates | `repo`, `limit` |
 | `comparegraph_doctor` | Store and provider status | none |
 

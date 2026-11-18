@@ -415,3 +415,99 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   (`gitref::reserved_component`). This supersedes the "not covered" note on reserved names above. **Known and unhandled:**
   Unicode normalisation collisions (an NFC and an NFD spelling of one name, which HFS+ and some macOS file systems fold to one
   file) are neither refused nor skipped.
+
+## Plan 14: the delta model (2026-11-19, branch feat/plan-14)
+- **Ruling: the delta "already on base" model** (the orchestrator's design read of 2026-11-19, `comparegraph-notes/plans/
+  2026-11-19-delta-model-design.md`; code: `delta.rs::Judge::judge_heads`, `Judge::removed`, and the backing checks in
+  `delta`). It **supersedes** the round-2 ruling "one rule for already on base" and the round-3 ruling "near matches are never
+  landed work" as rules of judgement (the round-3 field names `share_on_base_exact`, `share_already_on_base` and
+  `near_on_base` stay). Why: three rounds of patching `Judge::rule` each leaked a false exact in a new shape; its one provenance
+  test (`fresh`, the base symbol's own key on the merge base) broke on any base file move, one base copy vouched for many branch
+  rows, a removed row resolved when base merely did not read the file, and limitations were display-only. A false exact retires
+  real work. What would change it: a rename-aware identity, or a measured false unknown rate that blocks real retirements.
+
+  > **Copy counts.** Count copies per `(kind, body hash)` over the whole tree, in three trees: `m(x)` the merge base, `h(x)`
+  > head, `b(x)` base. Count every symbol (stop dropping duplicate keys in `load_side`).
+  >
+  > **The unread set.** `U(T)` is the set of blob oids from `git ls-tree -r` at T's commit: inside the repo's subset; in a
+  > parsed language; with no `file` node in T's run. This one mechanism covers oversize files, non-UTF-8 content and paths,
+  > reserved names, case collisions, truncation and minified files.
+  >
+  > Each row answers `on_base: yes | no | unknown`, with `via` and `why`.
+  >
+  > **Added or changed row (head hash x):**
+  >
+  > | step | rule | answer |
+  > |---|---|---|
+  > | A1 | base holds the row's `(kind, qn)` with hash x, and no `#n` duplicate name exists in that file on either side | yes, `same_symbol` |
+  > | A2 | fewer than 8 body tokens, and not A1 | unknown, `trivial_body` |
+  > | A3 | `h(x) - m(x) <= 0` (a copy, move or swap of merge-base code) | unknown, `body_on_merge_base` |
+  > | A4 | `credits = min(h-m, b-m)`, less x's A1 rows; r rows remain | `credits >= r`: yes, `body_hash`; `credits <= 0`: no; otherwise all r rows unknown, `shared_credit` |
+  > | A5 | an A4 yes also needs `U(mb) ⊆ U(base)` and `U(mb) ⊆ U(head)` (as multisets) | otherwise unknown, `merge_base_unread` |
+  > | A6 | a `name_and_tokens` hit | never yes; turns a no into unknown, `near` |
+  >
+  > **Removed row (merge-base hash y):**
+  >
+  > | step | rule | answer |
+  > |---|---|---|
+  > | R1 | base still holds the key | no (a stale conflict if base changed it) |
+  > | R2 | `b(y) >= m(y)` | no; `base_moved_to` lists every base symbol with hash y |
+  > | R3 | `0 < b(y) < m(y)`, or a near copy exists, or `h(y) >= m(y)` (the branch only moved it) | unknown |
+  > | R4 | `b(y) = 0`, and `U(base) ⊆ U(mb)`, and base added or changed no gitlink since the fork | yes |
+  > | R5 | `b(y) = 0`, but base gained an unread blob or a gitlink | unknown, `base_unread` |
+  >
+  > **The summary.** `share_on_base_exact = yes rows / all rows`. Unknown counts against the share and is reported as
+  > `unknown {count, by_why}`. A branch with any unknown row is read by a person before it is retired.
+  >
+  > **Backing checks (git, coarser).** Blob equality: a branch-touched path with the same blob oid on head and base makes every
+  > row in it yes (`same_file`). Residue outside symbols: for each path in `git diff mb..head` whose head and base blobs differ,
+  > every `-U0` hunk outside the judged symbol spans becomes one unknown item in the denominator. So does every touched file with
+  > no rows (top-level code, SQL, config).
+  >
+  > **Delete:** `fresh`, and its use in `body_hash` and `copies_of`; `removal_resolved` as "no copies found"; the three-way
+  > `already_on_base` encoding; `CARRIED` as a code list (carry every limitation of every side); the dropping of duplicate keys
+  > in `load_side`. **Keep:** the near machinery, as evidence for unknown only.
+
+  Read this way where the design left it open, each stated so a reader can overturn it:
+  - A1's "no `#n` duplicate name": the row's name is defined at most once in that file on base and on head (the provider names a
+    redefinition `name#2`, ...; the numbering shifts when a copy is added or removed). Excluded rows go on to A2-A4.
+  - A4's "less x's A1 rows" counts A1 rows of added and changed rows together (one body's copies are credited across both
+    sections). The whole-tree comparison has no merge base: m = 0, U(mb) is empty, and the head symbols base holds as they are
+    play A1's part (base's copy of such a body is that symbol's own).
+  - R3's whys: `base_copies` (0 < b < m), `near` (a base symbol of the removed one's name and kind, under another key, with
+    J >= 0.9 to its merge-base body), `branch_moved` (h >= m). R4's via: `absent_on_base`. Checked in that order.
+  - "base added or changed no gitlink": every (path, commit) gitlink of base is on the merge base as it is.
+  - A side whose tree git cannot list has an unknown unread set: it is never within another (no A5 or R4 yes) and the delta says
+    `partial`; it is not a refusal. A side with unread files says how many.
+  - `base_moved_to` lists every base copy (sorted by path), bounded by `--max-nodes` with a `truncated` line.
+  - `same_file` applies after the symbol rules (a row already yes keeps its `via`); a path absent on both head and base is not
+    the same blob (base may have moved it). A yes by `same_file` drops the row's near evidence.
+  - Residue: a hunk is outside the symbol spans when one of its non-blank lines (removed lines against the merge base's spans,
+    added lines against head's) lies in no symbol of that side (unchanged symbols included: a reformat inside a symbol is judged
+    by its tokens, not its lines). A touched file in which neither side has a symbol is ONE item (`file_without_symbols`), not
+    one per hunk; others give `outside_symbols` items with the hunk header. A touched rowless file that holds the same blob on
+    both sides adds nothing (the design gives no yes item for it). A failed diff is an item (`diff_failed`).
+  - The summary's `on_base {yes, no, unknown}`, `unknown {count, by_why}` and the share's denominator `branch_items` count rows
+    and residue items; `branch_symbols` stays the row count.
+  - Every limitation of every side is carried, naming the side; the first `--max-nodes` per side, then one `truncated` line
+    counting the rest by code.
+- **Changed tests** (each with its reason in the test): `r2_base_took_a_moved_change_under_another_path_exactly_and_nearly`
+  (the removal half of a move base also took reads unknown, `near`: shares 0.5 and 0.0, were 1.0 and 0.5, as the design's
+  "moves the branch made that base also took read unknown" says); every `branch_delta.rs` assertion on `already_on_base` /
+  `note` reads `on_base`, `via`, `why`, `matches`, `near`; `decide --summary-from-delta` callers pass `--base`.
+- **Probe answers** (round 1-3 review probes, `tests/delta_model.rs` and `tests/branch_delta.rs`; none is a yes):
+  P1 changed f `no` (credits 0), share 0.0; P2 and P2b both rows `unknown, body_on_merge_base`, 0.0; P3 `no`, 0.0; P4 removed
+  `unknown, base_unread`, 0.0; P4b not yes, 0.0; P5 `unknown, base_unread` with `windows_reserved_skipped` carried, 0.0; P6 and
+  P6c the changed definition not yes, 0.5; P7 `no`, 0.0; P8 `whole_tree.summary.share_on_base_exact` present; P9 f `no`, k
+  `yes, same_symbol`, 0.5; the round-2 probes as the `r2_*` tests state.
+- **MINORs, round 3** (one test commit, one fix commit):
+  - tree locks hold `<pid> <token>`; a stale one is taken over by an atomic rename aside and a check that the moved file is the
+    one seen stale (a live one is put back); a holder removes its file only after reading its own token back; the heartbeat
+    keeps only its own file fresh; the extraction temp folder is unique per process and per call.
+  - readers: `materialise` registers a heartbeated reader file under the lock; a build and each side of a delta hold it while
+    reading. A re-extraction waits (lock held, bounded by the 30-minute wait) for the old tree's readers; `remove_tree` never
+    waits: a live lock (held, or being created) or a live reader means not now (`gc --refs` lists the run as busy).
+  - the near rows' cap at `--max-nodes` has a test.
+  - the duplicate-key limitation says what the code keeps (every copy counts; the first by path and line is the row).
+  - `decide --summary-from-delta` needs `--base <ref>` (batch rows `base`): the kept delta must have used that base (the same
+    name, and the commit it names now when it resolves), else `invalid_arguments` naming the base it used.

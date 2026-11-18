@@ -1183,7 +1183,7 @@
     },
     {
       "name": "comparegraph_delta",
-      "description": "What a branch holds that its base does not, per symbol: added, removed, changed (normalised body hash), how many head-only symbols the base already has elsewhere (same body at confidence 1.0, same name and kind with >= 0.9 token similarity at that confidence), the families and features they map to, and the files the base deleted or rewrote since the merge base. Both refs must be built (`build --ref`). Facts only, no verdict; bounded by max_nodes.",
+      "description": "What a branch introduced since the merge base and whether its base has it now: added, changed and removed symbols (normalised body hash), each answering on_base yes, no or unknown (via on a yes: same_symbol, body_hash, absent_on_base, same_file; why on an unknown), from copy counts of each body over the whole trees of merge base, head and base, credited one to one; the branch's work outside symbols (branch.residue, each an unknown); summary.share_on_base_exact (yes over all items: unknown counts against it) and summary.unknown {count, by_why}; a branch with any unknown is read by a person before it is retired. Near matches (same name and kind, >= 0.9 token similarity) are unknown, never landed. Also the families and features they map to, and the files the base deleted or rewrote. The refs must be built (`build --ref`, or build_missing). Facts only, no verdict; bounded by max_nodes.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

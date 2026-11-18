@@ -82,10 +82,14 @@ working tree never change.
 ```bash
 comparegraph delta myrepo --base origin/main --head origin/feature-x --build-missing --pretty
 # summary.branch_symbols: symbols the branch added, changed or removed since the merge base
-# summary.share_on_base_exact: how many of those base has now EXACTLY (same body hash, any name or path; 1.0 = all)
-# summary.share_already_on_base: the same number (kept for older readers)
+# summary.branch_items: those rows plus the branch's work outside symbols (branch.residue: a hunk of top-level code, a
+#   touched .sql or config file), each residue item one unknown
+# every row answers on_base: yes (base holds the branch's change; `via` says how), no, or unknown (`why` says why)
+# summary.share_on_base_exact: yes over branch_items (1.0 = all); unknown counts AGAINST it
+# summary.unknown: {count, by_why}: what could not be told, and why
+# summary.share_already_on_base: the same number as share_on_base_exact (kept for older readers)
 # summary.near_on_base: rows base holds only nearly (J >= 0.9, nearer the branch than the merge base), each with its
-#   j_head and j_merge_base: never counted as landed, for a person to read
+#   j_head and j_merge_base: unknown (why near), never landed, for a person to read
 # summary.stale_conflicts: symbols the branch changed that base changed differently, removed or moved (not on base)
 # base_files.deleted: files base deleted that the branch touched
 comparegraph delta myrepo --base origin/main --head origin/feature-x --refresh   # after either ref moved: rebuilds only what moved
@@ -95,16 +99,29 @@ comparegraph show myrepo src/a.py::bar --ref origin/feature-x    # a graph read 
 ```
 
 The fields are facts; whether to restack, take parts or retire the branch is the reader's call. A verdict reads the exact
-share (`share_on_base_exact`); the `near_on_base` rows are for a person to read, one by one, before a branch with any of them is
-retired.
+share (`share_on_base_exact`), in which only a `yes` counts: `no` and `unknown` both count against it. **A branch with any
+unknown row or residue item (`summary.unknown.count` above 0) is read by a person before it is retired**: unknown means the model
+could not tell (a copy of code the merge base already had, one base copy for several branch rows, a near match, a file a run
+could not read, a submodule, work outside symbols), never that base has it. The `near_on_base` rows are among them.
+
+How a row is answered (docs/decisions.md, "Plan 14: the delta model"): copies of each body (kind + normalised body hash) are
+counted over the whole tree of the merge base (m), head (h) and base (b). An added or changed row is `yes, same_symbol` when base
+holds the very symbol with the branch's body; `unknown, trivial_body` under 8 body tokens; `unknown, body_on_merge_base` when the
+branch made no new copy of the body (h - m <= 0: a copy, move or swap of old code); else base's new copies (b - m) credit the
+branch's new ones one to one: enough for every row of the body is `yes, body_hash`, none is `no`, some is `unknown,
+shared_credit`. A removed row is `no` while base keeps the symbol or as many copies of its body as the merge base had, `unknown`
+when base keeps fewer, a near copy, or the branch only moved it, and `yes, absent_on_base` only when base holds no copy AND base's
+run read every file the merge base's did not (no new unread file, no new submodule). A path that holds the same blob on head and
+base makes every row in it `yes, same_file`.
 
 ## From a branch to a verdict to a deleted branch
 
 ```bash
 comparegraph build myrepo --ref origin/feature-x               # the branch's tree, read as raw git blobs
 comparegraph delta myrepo --base origin/main --head origin/feature-x --build-missing
-comparegraph decide myrepo reject --why "already on main as bar2" --by me --ref origin/feature-x --commit <sha> --summary-from-delta --bundle D:/bundles/feature-x.bundle
-# the record keeps the exact share and the near rows; the verdict is read off the exact share, the near rows by a person
+comparegraph decide myrepo reject --why "already on main as bar2" --by me --ref origin/feature-x --commit <sha> --summary-from-delta --base origin/main --bundle D:/bundles/feature-x.bundle
+# the record keeps the exact share, the unknown count and the near rows; the verdict is read off the exact share, every
+# unknown by a person; --base must name the base the stored delta used
 git bundle create D:/bundles/feature-x.bundle origin/feature-x   # outside CompareGraph: the only archive of the branch
 git branch -D feature-x                                          # then the branch can go
 comparegraph gc --refs                                           # dry run: what is gone, superseded or old
