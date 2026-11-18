@@ -235,11 +235,11 @@ fn load_nodes(store: &Store, run: i64) -> Result<Vec<N>> {
 }
 
 type Edges = Vec<(i64, i64)>;
-fn load_edges(store: &Store, run: i64, kind: &str) -> Result<Edges> {
+fn load_edges(store: &Store, run: i64, kind: &str, min_conf: f64) -> Result<Edges> {
     let mut st = store
         .conn()
-        .prepare("SELECT source_node_id, target_node_id FROM edge WHERE run_id=?1 AND kind=?2 AND confidence >= 0.5")?;
-    let rows = st.query_map(params![run, kind], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        .prepare("SELECT source_node_id, target_node_id FROM edge WHERE run_id=?1 AND kind=?2 AND confidence >= ?3")?;
+    let rows = st.query_map(params![run, kind, min_conf], |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
@@ -569,7 +569,8 @@ fn rs_imports(src: &str) -> Vec<Import> {
         let compact: String = c[2].split_whitespace().collect::<Vec<_>>().join(" ");
         let mut names = vec![];
         rust_use_names(&compact, None, &mut names);
-        names.retain(|n| !RUST_TRAIT_NAMES.contains(&n.as_str()) && !n.ends_with("Ext"));
+        // a capitalised name may be a trait used only through its methods (`sqlx::Row`, `base64::Engine`): the text cannot tell, so only lowercase names (functions, modules, macros) are judged
+        names.retain(|n| !RUST_TRAIT_NAMES.contains(&n.as_str()) && !n.ends_with("Ext") && !n.starts_with(char::is_uppercase));
         let start = m.start() + (m.as_str().len() - m.as_str().trim_start().len());
         out.push(Import { names, module: compact, line: line_of(src, start), range: (start, m.end()) });
     }
@@ -664,7 +665,7 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
 
     // cycles
     if on("cycles") {
-        let raw = load_edges(&store, run_id, "imports")?;
+        let raw = load_edges(&store, run_id, "imports", 0.5)?;
         let mut fi: HashMap<String, HashSet<i64>> = HashMap::new();
         for (a, b) in &raw {
             if let (Some(_), Some(nb)) = (by_id.get(a), by_id.get(b)) {
@@ -680,13 +681,13 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
             })
             .collect();
         let mut f = cycle_findings("imports", &imports, &by_id, &|n| n.path.clone(), false, &fan_in, &mut lims)?;
-        let ext = load_edges(&store, run_id, "extends")?;
+        let ext = load_edges(&store, run_id, "extends", 0.5)?;
         f.extend(cycle_findings("extends", &ext, &by_id, &|n| format!("{}@{}", n.qn, n.path), true, &HashMap::new(), &mut lims)?);
         sections.insert("cycles", f);
     }
 
     // imports adjacency for coupling and boundaries
-    let imports = if on("coupling_outliers") || on("boundary_violations") { load_edges(&store, run_id, "imports")? } else { vec![] };
+    let imports = if on("coupling_outliers") || on("boundary_violations") { load_edges(&store, run_id, "imports", 0.5)? } else { vec![] };
 
     // size
     if on("size_outliers") {
@@ -721,7 +722,9 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
         let mut f = vec![];
         let (mut fin, mut fout): (HashMap<i64, HashSet<i64>>, HashMap<i64, HashSet<i64>>) = Default::default();
         for (a, b) in &imports {
-            if a != b {
+            // `mod x;` and `use super::`/`use crate::` between a Rust module and the modules it declares are not coupling
+            let declared = matches!((by_id.get(a), by_id.get(b)), (Some(x), Some(y)) if rust_ancestor(&x.path, &y.path) || rust_ancestor(&y.path, &x.path));
+            if a != b && !declared {
                 fout.entry(*a).or_default().insert(*b);
                 fin.entry(*b).or_default().insert(*a);
             }
@@ -744,7 +747,8 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
             push("file-fan-out", n, fout.get(&n.id).map_or(0, HashSet::len), cfg.max_file_fan_out, &mut f)?;
         }
         let (mut cin, mut cout): (HashMap<i64, HashSet<i64>>, HashMap<i64, HashSet<i64>>) = Default::default();
-        for (a, b) in load_edges(&store, run_id, "calls")? {
+        // only resolved calls (1.0): a name-guessed edge (0.5) would make `new`, `from` or `start` look like the most-called code
+        for (a, b) in load_edges(&store, run_id, "calls", 1.0)? {
             if a != b {
                 cout.entry(a).or_default().insert(b);
                 cin.entry(b).or_default().insert(a);

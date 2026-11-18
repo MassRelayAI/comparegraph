@@ -337,3 +337,48 @@ fn findings_are_ranked_by_impact_and_top_shortens_the_report() {
     assert_eq!(v["data"]["sections"]["size_outliers"]["items"].as_array().unwrap().len(), 1);
     assert_eq!(v["data"]["summary"]["size_outliers"], 2, "the count still covers every finding");
 }
+
+#[test]
+fn rust_trait_imports_and_module_declarations_are_not_findings() {
+    // `Row` is used only through a method call: its name never appears in the body
+    let (ws, _c) = ws_with(
+        &[
+            ("Cargo.toml", CARGO),
+            ("src/lib.rs", "use foo::Row;\nuse std::mem::swap;\npub fn f(r: &dyn Fn() -> u8, a: &mut u8, b: &mut u8) -> u8 {\n    swap(a, b);\n    r.get()\n}\n"),
+        ],
+        "",
+    );
+    assert_eq!(count(ws.path(), "dead_imports"), 0);
+    let (ws, _c) = ws_with(
+        &[("Cargo.toml", CARGO), ("src/lib.rs", "use std::mem::replace;\npub fn f() {}\n")],
+        "",
+    );
+    assert_eq!(count(ws.path(), "dead_imports"), 1, "an unused lowercase import is still found");
+}
+
+#[test]
+fn module_declarations_and_name_guessed_calls_do_not_count_as_coupling() {
+    let toml = "[health]\nmax_file_fan_out = 1\nmax_function_fan_in = 2\n";
+    let (ws, _c) = ws_with(
+        &[
+            ("Cargo.toml", CARGO),
+            ("src/lib.rs", "pub mod a;\npub mod b;\npub mod c;\n"),
+            ("src/a.rs", "pub fn a() {}\n"),
+            ("src/b.rs", "pub fn b() {}\n"),
+            ("src/c.rs", "pub fn c() {}\n"),
+        ],
+        toml,
+    );
+    assert_eq!(count(ws.path(), "coupling_outliers"), 0, "mod a; mod b; mod c; is a declaration, not fan-out");
+    // `target` is called by name from three files that do not import it: guessed edges (0.5)
+    let (ws, _c) = ws_with(
+        &[
+            ("t.ts", "export function target() { return 1; }\n"),
+            ("u1.ts", "export function one() { return target(); }\n"),
+            ("u2.ts", "export function two() { return target(); }\n"),
+            ("u3.ts", "export function three() { return target(); }\n"),
+        ],
+        toml,
+    );
+    assert_eq!(count(ws.path(), "coupling_outliers"), 0, "only resolved (1.0) calls count");
+}
