@@ -1384,15 +1384,33 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
 
     // round 6 (B2): the merge base is the newest common commit, but base may have merged the branch's earlier work and taken
     // it back (a revert), which lies before the merge base and so outside merge base -> head. F is the newest commit of base's
-    // first-parent chain that head reaches: every path whose entry differs between F and head, and between head and base, is
-    // one unknown item (`merged_into_base_before`) unless an item names it already.
+    // first-parent chain that head reaches. When F is not the merge base, git merges head into base with F as the merge base
+    // (`--merge-base=F`, the same hardened options): every path that merge changes on base, or conflicts on, is one unknown item
+    // (`merged_into_base_before`) unless an item names it already; work base merged and kept merges to base's own entry. If
+    // that merge cannot be had (git < 2.40, an error), the broad rule: every path whose entry differs between F and head, and
+    // between head and base.
     let ancestors: Option<HashSet<String>> = git_lines(clone, &["rev-list", &head_c]).map(|v| v.into_iter().collect());
     let first_parent = git_lines(clone, &["rev-list", "--first-parent", &base_c]);
     let fork_f = match (&ancestors, &first_parent) {
         (Some(a), Some(fp)) => fp.iter().find(|c| a.contains(*c)).cloned(),
         _ => None,
     };
+    let from_f = fork_f.as_ref().filter(|f| **f != mb_c).and_then(|f| gitref::merge_tree_from(clone, root, &base_c, &head_c, Some(f)).ok());
     match (&fork_f, &eh, &eb) {
+        (Some(f), Some(_), Some(b)) if *f != mb_c && from_f.is_some() => {
+            let m = from_f.as_ref().expect("checked above");
+            let mut me: BTreeMap<String, (String, String)> = m.index.blobs.clone();
+            for (p, c) in &m.index.gitlinks {
+                me.insert(p.clone(), ("160000".into(), c.clone()));
+            }
+            let named: HashSet<String> = residue.iter().map(|r| r.path.clone()).collect();
+            let paths: BTreeSet<&String> = me.keys().chain(b.keys()).chain(m.conflicts.iter()).collect();
+            for p in paths {
+                if (me.get(p) != b.get(p) || m.conflicts.contains(p)) && !named.contains(p) {
+                    residue.push(Residue { path: p.clone(), why: "merged_into_base_before", hunk: None });
+                }
+            }
+        }
         (Some(f), Some(h), Some(b)) if *f != mb_c => {
             let ef = gitref::tree_index(clone, f).ok().map(|t| {
                 let mut m = t.blobs;

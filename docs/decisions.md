@@ -600,9 +600,12 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   The share-level item backs a per-row key that misses: a conflict path is always one the branch touched, so on a plain path
   the per-row check (`merge_changes_file`) answers first.
 - **B2** work base merged and then took back lies before the merge base. F is the newest commit of base's first-parent chain
-  that head reaches; when F is not the merge base, every path whose entry differs between F and head and between head and
-  base is one unknown item, `merged_into_base_before`, unless an item names it already. A listing git cannot give is one
-  `diff_failed` item.
+  that head reaches. When F is not the merge base, git merges head into base with F as the merge base
+  (`merge-tree --merge-base=F`, git >= 2.40, the same hardened options): every path that merge changes on base, or conflicts
+  on, is one unknown item, `merged_into_base_before`, unless an item names it already; work base merged and kept (even if
+  changed since) merges to base's own entry and is no item (the coordinator approved this over the first, broad rule, which
+  made 374 items on massrelay's loop-remind delta). If that merge cannot be had, the broad rule stands in: every path whose
+  entry differs between F and head and between head and base. A listing git cannot give is one `diff_failed` item.
 - **The merge is not the clone's to shape**: `--attr-source=<the empty tree>` (git >= 2.42; with an older git the backstop is
   unavailable, every yes unknown), `core.attributesFile=/dev/null`, `merge.renormalize=false`, `merge.renames=true`,
   `merge.directoryRenames=conflict`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`: no attribute applies, so no

@@ -369,6 +369,12 @@ pub struct Merged {
 
 /// `git merge-tree` of `base` and `head`; Err (with why) when git cannot give it (too old, an error, a missing object).
 pub fn merge_tree(clone: &Path, store_root: &Path, base: &str, head: &str) -> std::result::Result<Merged, String> {
+    merge_tree_from(clone, store_root, base, head, None)
+}
+
+/// `merge_tree` with an explicit merge base (`--merge-base`, git >= 2.40): what merging `head` into `base` gives when their
+/// common history is taken to end at `from`.
+pub fn merge_tree_from(clone: &Path, store_root: &Path, base: &str, head: &str, from: Option<&str>) -> std::result::Result<Merged, String> {
     let objects = Command::new("git")
         .arg("-C")
         .arg(clone)
@@ -409,9 +415,9 @@ pub fn merge_tree(clone: &Path, store_root: &Path, base: &str, head: &str) -> st
             "--write-tree",
             "--no-messages",
             "-z",
-            base,
-            head,
         ])
+        .args(from.map(|f| format!("--merge-base={f}")))
+        .args([base, head])
         .output()
         .map_err(|e| format!("cannot run git merge-tree: {e}"))?;
     // 0: clean, 1: conflicts (the tree is still written); anything else is an error (a git older than 2.42 knows no
