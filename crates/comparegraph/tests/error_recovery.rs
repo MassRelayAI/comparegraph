@@ -6,7 +6,13 @@ use serde_json::Value;
 
 #[test]
 fn every_error_code_has_one_recovery_of_a_known_kind_naming_a_real_verb() {
-    let subs: Vec<String> = comparegraph::adapters::cli::Cli::command().get_subcommands().map(|c| c.get_name().to_string()).collect();
+    // building the clap tree of ~60 verbs is deep in a debug build: give it a stack of its own (a test thread has 2 MB)
+    let subs: Vec<String> = std::thread::Builder::new()
+        .stack_size(32 << 20)
+        .spawn(|| comparegraph::adapters::cli::Cli::command().get_subcommands().map(|c| c.get_name().to_string()).collect())
+        .unwrap()
+        .join()
+        .unwrap();
     for code in ERROR_CODES {
         let rows: Vec<_> = RECOVERY.iter().filter(|r| r.0 == *code).collect();
         assert_eq!(rows.len(), 1, "{code} needs exactly one RECOVERY row");
