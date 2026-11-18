@@ -11,6 +11,7 @@
 //! reader file under the lock, and neither `gc --refs` nor a re-extraction deletes a tree while a live reader holds it.
 use super::{AppError, Result};
 use crate::domain::Limitation;
+use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -410,10 +411,31 @@ const HEARTBEAT_SECS: u64 = 2;
 const STALE_LOCK_SECS: u64 = 120;
 const LOCK_WAIT_SECS: u64 = 1800;
 /// `<pid> <pid>-<n>`: what a lock or reader file holds, unique per process and per call
+/// `<pid> <start>_<pid>-<n>`: `<start>` is the process's start time where the system tells it (Linux: field 22 of
+/// `/proc/<pid>/stat`, in clock ticks since boot), else a nonce drawn once per process; a recycled pid then never reads as the
+/// holder (M1). Windows gives no start time without a system call this crate does not make: there the heartbeat alone decides.
 fn new_token() -> String {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    static START: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let pid = std::process::id();
-    format!("{pid} {pid}-{}", N.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    let start = START.get_or_init(|| {
+        proc_start(pid).unwrap_or_else(|| {
+            let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+            let mut h = Sha256::new();
+            h.update(format!("{t} {pid} {:p}", &N).as_bytes());
+            format!("n{}", &hex::encode(h.finalize())[..16])
+        })
+    });
+    format!("{pid} {start}_{pid}-{}", N.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+}
+/// A process's start time on Linux (field 22 of `/proc/<pid>/stat`, read after the `)` that ends its name), else None.
+fn proc_start(pid: u32) -> Option<String> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let after = &stat[stat.rfind(')')? + 1..];
+    after.split_whitespace().nth(19).map(String::from)
 }
 /// The token part of a lock file's text (`<pid> <token>`), or the whole text for an older file.
 fn token_of(text: &str) -> &str {
@@ -470,9 +492,16 @@ impl Drop for TreeLock {
 }
 /// Whether the process that wrote `lock` still runs: Some on Linux (`/proc/<pid>`), None where that cannot be told.
 fn holder_alive(lock: &Path) -> Option<bool> {
-    let pid: u32 = std::fs::read_to_string(lock).ok()?.split_whitespace().next()?.parse().ok()?;
+    let text = std::fs::read_to_string(lock).ok()?;
+    let mut f = text.split_whitespace();
+    let pid: u32 = f.next()?.parse().ok()?;
+    // the start time the holder recorded (`<start>_...`), when it is a start time and not a nonce
+    let recorded = f.next().and_then(|t| t.split_once('_')).map(|(s, _)| s.to_string()).filter(|s| !s.starts_with('n'));
     if cfg!(target_os = "linux") {
-        Some(Path::new(&format!("/proc/{pid}")).exists())
+        Some(match proc_start(pid) {
+            None => false,
+            Some(now) => recorded.is_none_or(|r| r == now), // a recycled pid has another start time
+        })
     } else {
         None
     }
