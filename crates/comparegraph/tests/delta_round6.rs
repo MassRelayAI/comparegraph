@@ -346,3 +346,44 @@ fn git_out(dir: &Path, args: &[&str]) -> String {
     assert!(o.status.success(), "git {args:?}");
     String::from_utf8_lossy(&o.stdout).trim().to_string()
 }
+
+// ================================================================ round 6, the tighter B2: a merge from F
+
+/// feat adds g; base merges feat (--no-ff) and keeps g, then changes a.py elsewhere; feat goes on with h, which base takes.
+fn merged_then(base_after: impl Fn(&Path)) -> Value {
+    let fx = Fx::new(&[("src/a.py", K5), ("src/c.py", "X = 1\n")]);
+    let d = fx.d();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", &format!("{K5}\n{G5}"));
+    write(&d, "src/c.py", &format!("X = 1\n\n{H5}"));
+    commit(&d, "add g and h");
+    git(&d, &["checkout", "-q", "main"]);
+    git(&d, &["-c", "user.email=t@t", "-c", "user.name=t", "merge", "-q", "--no-ff", "-m", "merge feat", "feat"]);
+    base_after(&d);
+    commit(&d, "base goes on");
+    git(&d, &["checkout", "-q", "feat"]);
+    write(&d, "src/b.py", "def later(q):\n    r = q + 7\n    return r * 3\n");
+    commit(&d, "add later");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/b.py", "def later(q):\n    r = q + 7\n    return r * 3\n");
+    commit(&d, "take later");
+    fx.delta()
+}
+
+/// Base merged the branch and kept its work (it changed a.py elsewhere since): no `merged_into_base_before` for that work.
+#[test]
+fn r6_merged_and_kept_is_no_item() {
+    let v = merged_then(|d| write(d, "src/a.py", &format!("# base note\n{K5}\n{G5}")));
+    assert_eq!(v["data"]["summary"]["unknown"]["by_why"].get("merged_into_base_before"), None, "{}", s(&v));
+}
+
+/// Base merged the branch, kept a.py's g and reverted c.py's h: an item for c.py only.
+#[test]
+fn r6_merged_kept_part_and_reverted_part() {
+    let v = merged_then(|d| {
+        write(d, "src/a.py", &format!("# base note\n{K5}\n{G5}"));
+        write(d, "src/c.py", "X = 1\n");
+    });
+    let items: Vec<String> = v["data"]["branch"]["residue"].as_array().unwrap().iter().filter(|r| r["why"] == "merged_into_base_before").map(|r| r["path"].as_str().unwrap().to_string()).collect();
+    assert_eq!(items, vec!["src/c.py".to_string()], "{}", s(&v));
+}
