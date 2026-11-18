@@ -382,3 +382,30 @@ fn module_declarations_and_name_guessed_calls_do_not_count_as_coupling() {
     );
     assert_eq!(count(ws.path(), "coupling_outliers"), 0, "only resolved (1.0) calls count");
 }
+
+#[test]
+fn exclude_globs_drop_findings_from_counts_sections_and_the_ratchet() {
+    let same = ["+", "*", "-", "/"];
+    let other = ["-", "+", "*", "+"];
+    let files = [
+        ("src/one.ts", body("one", same)),
+        ("src/two.ts", body("two", same)),
+        ("tools/_archive/a.ts", body("a", other)),
+        ("tools/_archive/b.ts", body("b", other)),
+    ];
+    let files: Vec<(&str, &str)> = files.iter().map(|(p, c)| (*p, c.as_str())).collect();
+    let (plain, _c1) = ws_with(&files, "");
+    assert_eq!(count(plain.path(), "duplicate_bodies"), 2);
+    let (ex, _c2) = ws_with(&files, "[health]\nexclude = [\"tools/_archive/**\", \"**/*.generated.*\"]  # keep the archive out\n");
+    assert_eq!(count(ex.path(), "duplicate_bodies"), 1, "the excluded pair is gone, the other stays");
+    let v = json(cc(ex.path()).args(["health", "r"]).assert().success());
+    let lims = v["evidence"]["limitations"].as_array().unwrap();
+    assert!(lims.iter().any(|l| l["code"] == "excludes"), "the excludes are named: {lims:?}");
+    assert_eq!(v["data"]["thresholds"]["exclude"][0], "tools/_archive/**");
+    let b = ex.path().join("b.json");
+    json(cc(ex.path()).args(["health", "r", "--baseline", b.to_str().unwrap()]).assert().success());
+    assert_eq!(serde_json::from_str::<Value>(&std::fs::read_to_string(&b).unwrap()).unwrap()["keys"].as_array().unwrap().len(), 1);
+    // a bad entry is refused
+    let (bad, _c3) = ws_with(&files, "[health]\nexclude = [src/one.ts]\n");
+    cc(bad.path()).args(["health", "r"]).assert().code(1);
+}

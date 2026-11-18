@@ -77,6 +77,8 @@ pub struct Config {
     pub max_function_fan_in: usize,
     pub max_function_fan_out: usize,
     pub boundaries: Vec<Boundary>,
+    /// globs of paths left out of every section, the counts and the ratchet
+    pub exclude: Vec<String>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -89,6 +91,7 @@ impl Default for Config {
             max_function_fan_in: 50,
             max_function_fan_out: 40,
             boundaries: vec![],
+            exclude: vec![],
         }
     }
 }
@@ -166,6 +169,18 @@ impl Config {
                         _ => return Err(bad(format!("unknown key `{k}` in [[health.boundary]] (from, never)"))),
                     }
                 }
+                S::Health if k == "exclude" => {
+                    let inner = v
+                        .strip_prefix('[')
+                        .and_then(|x| x.strip_suffix(']'))
+                        .ok_or_else(|| bad("[health] exclude must be a list of quoted globs on one line".into()))?;
+                    c.exclude = inner
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(|x| unquote(x).ok_or_else(|| bad("[health] exclude holds quoted globs".into())))
+                        .collect::<Result<_>>()?;
+                }
                 S::Health => {
                     let n: usize = v.parse().map_err(|_| bad(format!("[health] {k} must be a non-negative integer")))?;
                     match k {
@@ -189,7 +204,7 @@ impl Config {
             "min_lines": self.min_lines, "max_file_lines": self.max_file_lines, "max_function_lines": self.max_function_lines,
             "max_file_fan_in": self.max_file_fan_in, "max_file_fan_out": self.max_file_fan_out,
             "max_function_fan_in": self.max_function_fan_in, "max_function_fan_out": self.max_function_fan_out,
-            "boundaries": self.boundaries.iter().map(|b| json!({"from": b.from, "never": b.never})).collect::<Vec<_>>(),
+            "exclude": self.exclude, "boundaries": self.boundaries.iter().map(|b| json!({"from": b.from, "never": b.never})).collect::<Vec<_>>(),
         })
     }
 }
@@ -657,7 +672,17 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
     let run_id = run.id.unwrap().0;
     let on = |s: &str| !o.disable.iter().any(|d| d == s);
     let mut lims: Vec<Limitation> = vec![];
-    let nodes = load_nodes(&store, run_id)?;
+    let mut nodes = load_nodes(&store, run_id)?;
+    let excludes: Vec<Regex> = cfg.exclude.iter().map(|g| glob_regex(g)).collect::<Result<_>>()?;
+    let excluded = |p: &str| excludes.iter().any(|r| r.is_match(p));
+    if !excludes.is_empty() {
+        let before = nodes.len();
+        nodes.retain(|n| !excluded(&n.path));
+        lims.push(Limitation::new(
+            "excludes",
+            format!("[health] exclude {:?} left {} of {} nodes out of every section", cfg.exclude, before - nodes.len(), before),
+        ));
+    }
     let by_id: HashMap<i64, &N> = nodes.iter().map(|n| (n.id, n)).collect();
     let is_file = |n: &N| n.kind == "file" || n.kind == "test";
     let is_fn = |n: &N| n.kind == "function" || n.kind == "method";
@@ -873,6 +898,9 @@ pub fn health(root: &Path, repo: &str, o: &Options) -> Result<Outcome> {
             // the query pages at 500; the ratchet needs every candidate
             let v = super::graph::dead_code(root, repo, 500, cursor.as_deref(), 0.5)?;
             for it in v["items"].as_array().into_iter().flatten() {
+                if excluded(it["path"].as_str().unwrap_or("")) {
+                    continue;
+                }
                 let (qn, path, line) = (it["qualified_name"].as_str().unwrap_or(""), it["path"].as_str().unwrap_or(""), it["line_start"].as_u64().unwrap_or(0) as u32);
                 f.push(Finding::new(
                     "dead-code",
