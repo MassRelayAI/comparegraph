@@ -320,3 +320,106 @@ fn r8_head_reaching_no_commit_of_base_first_parent_chain_is_the_item() {
     assert_eq!(b2_reason(&v).as_deref(), Some("no_first_parent_fork"), "{}", s(&v));
     assert_ne!(share(&v), Some(1.0), "{}", s(&v));
 }
+
+// ================================================================ the last review of round 8: a second-level merge; the known limit
+
+fn lane_g(fx: &Fx) -> PathBuf {
+    let d = fx.d();
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/a.py", &format!("{K5}\n{G5}"));
+    commit(&d, "add g");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/m.py", O5);
+    commit(&d, "base work");
+    d
+}
+/// base reverts g, the lane adds h, base takes h
+fn finish(d: &Path) {
+    git(d, &["checkout", "-q", "main"]);
+    write(d, "src/a.py", K5);
+    commit(d, "base reverts g");
+    git(d, &["checkout", "-q", "feat"]);
+    write(d, "src/b.py", H5);
+    commit(d, "add h");
+    git(d, &["checkout", "-q", "main"]);
+    write(d, "src/b.py", H5);
+    commit(d, "take h");
+    assert!(file_on(d, "feat", "src/a.py").contains("def g") && !file_on(d, "main", "src/a.py").contains("def g"));
+}
+/// a delta with the B2 path list switched off (a debug-only test seam), so only the by-construction rule can raise the item
+fn delta_without_path_list(fx: &Fx) -> Value {
+    let o = common::cc(fx.ws.path()).env("COMPAREGRAPH_TEST_SKIP_B2_PATHS", "1").args(["delta", "r", "--base", "main", "--head", "feat", "--refresh"]).output().unwrap();
+    serde_json::from_slice(&o.stdout).unwrap()
+}
+
+/// P1: a side branch merges the lane, base merges the side branch, base reverts the lane's g. The merge that brought the lane
+/// into base is a second-level one (its non-first parent is side, not the lane), so no merge on base's chain has a parent head
+/// reaches; the merge base (the lane's commit) is off that chain, which only a merge's non-first parent can explain.
+#[test]
+fn r8_p1_a_second_level_merge_carries_the_item_without_the_path_list() {
+    let fx = Fx::new(&[("src/a.py", K5)]);
+    let d = lane_g(&fx);
+    git(&d, &["checkout", "-q", "-b", "side", "main"]);
+    write(&d, "src/n.py", N5);
+    commit(&d, "side work");
+    gc(&d, &["merge", "-q", "--no-ff", "-m", "side takes feat", "feat"]);
+    git(&d, &["checkout", "-q", "main"]);
+    gc(&d, &["merge", "-q", "--no-ff", "-m", "main takes side", "side"]);
+    finish(&d);
+    let v = delta_without_path_list(&fx);
+    assert_eq!(b2_reason(&v).as_deref(), Some("merged_before"), "{}", s(&v));
+    assert_ne!(share(&v), Some(1.0), "{}", s(&v));
+}
+
+/// Control: with the path list off, an ordinary lane and a lane that back-merged base (base never merged it) carry no item.
+#[test]
+fn r8_ordinary_and_back_merging_lanes_carry_no_item_without_the_path_list() {
+    let fx = Fx::new(&[("src/a.py", K5)]);
+    let d = lane_g(&fx);
+    let v = delta_without_path_list(&fx);
+    assert_eq!(b2_reason(&v), None, "ordinary lane: {}", s(&v));
+    git(&d, &["checkout", "-q", "feat"]);
+    gc(&d, &["merge", "-q", "--no-ff", "-m", "back-merge main", "main"]);
+    write(&d, "src/b.py", H5);
+    commit(&d, "add h");
+    git(&d, &["checkout", "-q", "main"]);
+    write(&d, "src/c.py", N5);
+    commit(&d, "base goes on");
+    let v = delta_without_path_list(&fx);
+    assert_eq!(b2_reason(&v), None, "back-merging lane: {}", s(&v));
+}
+
+/// A KNOWN LIMIT (docs/decisions.md, Plan 14 round 8): a foxtrot merge (the lane merges base, base fast-forwards to that
+/// merge, so the lane is base's first parent), then base reverts g. The graph cannot tell it from base reverting its own
+/// commit: the delta reads 1.0, and this test asserts it so a change is seen.
+#[test]
+fn known_limit_foxtrot_merge_then_revert_reads_one() {
+    let fx = Fx::new(&[("src/a.py", K5)]);
+    let d = lane_g(&fx);
+    git(&d, &["checkout", "-q", "-b", "tmp", "feat"]);
+    gc(&d, &["merge", "-q", "--no-ff", "-m", "foxtrot: the lane merges main", "main"]);
+    git(&d, &["checkout", "-q", "main"]);
+    gc(&d, &["merge", "-q", "--ff-only", "tmp"]);
+    finish(&d);
+    let v = fx.delta();
+    assert_eq!(share(&v), Some(1.0), "the known limit changed (good, if on purpose): {}", s(&v));
+}
+
+/// Not limits: a squash or a cherry-pick of the lane into base, then a revert, reads below 1.0 (the lane's g is a row base
+/// does not hold).
+#[test]
+fn squash_or_cherry_pick_then_revert_reads_below_one() {
+    for how in ["squash", "cherry-pick"] {
+        let fx = Fx::new(&[("src/a.py", K5)]);
+        let d = lane_g(&fx);
+        if how == "squash" {
+            gc(&d, &["merge", "-q", "--squash", "feat"]);
+            gc(&d, &["commit", "-q", "-m", "squash feat"]);
+        } else {
+            gc(&d, &["cherry-pick", "feat"]);
+        }
+        finish(&d);
+        let v = fx.delta();
+        assert_ne!(share(&v), Some(1.0), "{how}: {}", s(&v));
+    }
+}
