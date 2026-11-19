@@ -393,7 +393,9 @@ fn merged_then(base_after: impl Fn(&Path)) -> Value {
 #[test]
 fn r6_merged_and_kept_is_no_item() {
     let v = merged_then(|d| write(d, "src/a.py", &format!("# base note\n{K5}\n{G5}")));
-    assert_eq!(v["data"]["summary"]["unknown"]["by_why"].get("merged_into_base_before"), None, "{}", s(&v));
+    // round 8: base merged this branch, so the item holds by construction (reason `merged_before`); the path list shows the
+    // kept work is none of it (was: no item at all)
+    assert_eq!(b2(&v), Some((1, vec![])), "{}", s(&v));
 }
 
 /// Base merged the branch, kept a.py's g and reverted c.py's h: an item for c.py only.
@@ -423,7 +425,9 @@ fn r6_post_merge_base_work_on_a_path_base_merged_before_is_no_b2_item() {
     commit(&d, "add h, after the merge base");
     git(&d, &["checkout", "-q", "main"]);
     let v = fx.delta();
-    assert_eq!(v["data"]["summary"]["unknown"]["by_why"].get("merged_into_base_before"), None, "{}", s(&v));
+    // round 8: base merged this branch, so the item holds by construction (reason `merged_before`); the path list shows the
+    // kept work is none of it (was: no item at all)
+    assert_eq!(b2(&v), Some((1, vec![])), "{}", s(&v));
     let h = v["data"]["branch"]["added"].as_array().unwrap().iter().find(|r| r["qualified_name"] == "src/a.py::h").unwrap().clone();
     assert_eq!(h["on_base"], "no", "{h}");
 }

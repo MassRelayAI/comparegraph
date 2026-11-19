@@ -975,7 +975,13 @@ struct Residue {
     /// the hunk header, `@@ -a,b +c,d @@`
     #[serde(skip_serializing_if = "Option::is_none")]
     hunk: Option<String>,
+    /// `merged_into_base_before`: why (`merged_before`, `no_first_parent_fork`, `shallow_history`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
 }
+
+/// The longest base first-parent chain the B2 path list walks (the item does not depend on it).
+const B2_WALK_CAP: usize = 5000;
 
 /// One hunk of the branch's change to one path: its header, and its removed (old line number, text) and added (new line
 /// number, text) lines.
@@ -1339,7 +1345,7 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     // merge-base symbol of changed rows on the merge base's side.
     let mut residue: Vec<Residue> = vec![];
     if diff_failed.iter().any(|d| d.contains("the files the branch touched")) {
-        residue.push(Residue { path: String::new(), why: "diff_failed", hunk: None });
+        residue.push(Residue { path: String::new(), why: "diff_failed", hunk: None, reason: None });
     }
     let (mut jh, mut jm): (Spans, Spans) = (HashMap::new(), HashMap::new());
     for r in added.iter().chain(changed.iter()) {
@@ -1358,25 +1364,25 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     for p in touched_head.iter().map(String::as_str).filter(|p| !same.contains(p)) {
         let (old, new) = (blob_of(&em, p), blob_of(&eh, p));
         if old.as_ref().is_some_and(|x| x.0 == "160000") || new.as_ref().is_some_and(|x| x.0 == "160000") {
-            residue.push(Residue { path: p.to_string(), why: "gitlink_changed", hunk: None });
+            residue.push(Residue { path: p.to_string(), why: "gitlink_changed", hunk: None, reason: None });
             continue;
         }
         let mode_moved = matches!((&old, &new), (Some(o), Some(n)) if o.0 != n.0) && blob_of(&eb, p).map(|b| b.0) != new.as_ref().map(|n| n.0.clone());
         if mode_moved || old.as_ref().map(|x| &x.1) == new.as_ref().map(|x| &x.1) {
-            residue.push(Residue { path: p.to_string(), why: "mode_changed", hunk: None });
+            residue.push(Residue { path: p.to_string(), why: "mode_changed", hunk: None, reason: None });
         }
         if old.as_ref().map(|x| &x.1) == new.as_ref().map(|x| &x.1) {
             continue;
         }
         if !has_syms.contains(p) {
-            residue.push(Residue { path: p.to_string(), why: "file_without_symbols", hunk: None });
+            residue.push(Residue { path: p.to_string(), why: "file_without_symbols", hunk: None, reason: None });
             continue;
         }
         let hunks = match hunks_of(clone, old.as_ref().map(|x| x.1.as_str()), new.as_ref().map(|x| x.1.as_str())) {
             Ok(h) if !h.is_empty() => h,
             _ => {
                 u0_failed = true;
-                residue.push(Residue { path: p.to_string(), why: "diff_failed", hunk: None });
+                residue.push(Residue { path: p.to_string(), why: "diff_failed", hunk: None, reason: None });
                 continue;
             }
         };
@@ -1386,98 +1392,83 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             let lines_ok = h.old.iter().all(|(n, t)| t.trim().is_empty() || inside(jm.get(p), *n)) && h.new.iter().all(|(n, t)| t.trim().is_empty() || inside(jh.get(p), *n));
             let touches = h.old.iter().any(|(n, _)| inside(jm.get(p), *n)) || h.new.iter().any(|(n, _)| inside(jh.get(p), *n));
             if !(lines_ok && touches) {
-                residue.push(Residue { path: p.to_string(), why: "outside_symbols", hunk: Some(h.header.clone()) });
+                residue.push(Residue { path: p.to_string(), why: "outside_symbols", hunk: Some(h.header.clone()), reason: None });
             }
         }
     }
 
-    // round 6 (B2): the merge base is the newest common commit, but base may have merged the branch's earlier work and taken
-    // it back (a revert), which lies before the merge base and so outside merge base -> head. F is the newest commit of base's
-    // first-parent chain that head reaches. When F is not the merge base, git merges head into base with F as the merge base
-    // (`--merge-base=F`, the same hardened options): every path that merge changes on base, or conflicts on, is one unknown item
-    // (`merged_into_base_before`) unless an item names it already; work base merged and kept merges to base's own entry. If
-    // that merge cannot be had (git < 2.40, an error), the broad rule: every path whose entry differs between F and head, and
-    // between head and base.
+    // B2 (docs/decisions.md, Plan 14 rounds 6-8): base may have merged the branch's earlier work and taken it back, which lies
+    // before the merge base and so outside merge base -> head.
+    // BY CONSTRUCTION (round 8): if any merge on base's first-parent chain has a non-first parent head reaches (head was ever
+    // merged into base), or no commit of that chain is reachable from head while a merge base exists, or the clone is shallow,
+    // the delta carries ONE unknown item `merged_into_base_before`, its `reason` `merged_before`, `no_first_parent_fork` or
+    // `shallow_history`. The guarantee "such a branch never reads 1.0" does not depend on F.
+    // For the person: the paths that hold such work, from F = the first commit of the chain head reaches older than the
+    // oldest merge that took head's work: git merges F -> merge base into base (`merge-tree --merge-base=F`), and a path that
+    // merge changes on base (or conflicts on), where head differs from base, is listed. Skipped (and said) when the chain is
+    // longer than `B2_WALK_CAP` commits or that merge cannot be had.
     let ancestors: Option<HashSet<String>> = git_lines(clone, &["rev-list", &head_c]).map(|v| v.into_iter().collect());
     // `<commit> <parent>...` along base's first-parent chain, newest first
     let first_parent = git_lines(clone, &["rev-list", "--first-parent", "--parents", &base_c]);
-    // round 7: a merge on base whose other parent head reaches is where head's work entered base (a back-merge carries it into
-    // head too): it is stepped past, so F is the first commit of the chain head reaches that is not such a merge
-    let fork_f = match (&ancestors, &first_parent) {
-        (Some(a), Some(fp)) => fp
-            .iter()
+    let chain: Option<Vec<(String, Vec<String>)>> = first_parent.as_ref().map(|v| {
+        v.iter()
             .filter_map(|l| {
-                let mut it = l.split_whitespace();
+                let mut it = l.split_whitespace().map(String::from);
                 let c = it.next()?;
                 let _first = it.next();
-                let entered = it.any(|p| a.contains(p));
-                (a.contains(c) && !entered).then(|| c.to_string())
+                Some((c, it.collect()))
             })
-            .next(),
-        _ => None,
-    };
-    // round 7: a shallow clone cuts the history B2 reads: its answer is not known
+            .collect()
+    });
     let shallow = git_lines(clone, &["rev-parse", "--is-shallow-repository"]).is_none_or(|v| v.first().map(String::as_str) != Some("false"));
-    let mut b2_why: Option<&str> = None;
-    // the regular merge (the real merge base), shared by B2 and the backstop below
+    let (mut b2_reason, mut fork_f, mut b2_note): (Option<&'static str>, Option<String>, Option<String>) = (None, None, None);
+    if let (Some(a), Some(ch)) = (&ancestors, &chain) {
+        let took = |others: &Vec<String>| others.iter().any(|p| a.contains(p));
+        let oldest_took = ch.iter().rposition(|(_, o)| took(o));
+        let from = oldest_took.map_or(0, |i| i + 1);
+        fork_f = ch.iter().skip(from).find(|(c, o)| a.contains(c) && !took(o)).map(|(c, _)| c.clone());
+        if oldest_took.is_some() {
+            b2_reason = Some("merged_before");
+        } else if !ch.iter().any(|(c, _)| a.contains(c)) {
+            b2_reason = Some("no_first_parent_fork");
+        }
+        if ch.len() > B2_WALK_CAP {
+            b2_note = Some(format!("base's first-parent chain has {} commits (more than {B2_WALK_CAP}): the path list is skipped", ch.len()));
+        }
+    } else {
+        residue.push(Residue { path: String::new(), why: "diff_failed", hunk: None, reason: None });
+    }
+    if shallow {
+        b2_reason = Some("shallow_history");
+    }
+    // the regular merge (the real merge base), shared by the path list and the backstop below
     let merged = gitref::merge_tree(clone, root, &base_c, &head_c);
     let merged_entries = merged.as_ref().ok().map(merge_entries);
-    // the branch's work before the merge base is F -> mb: merged into base from F, does it change base? (a revert: yes)
-    let from_f = fork_f.as_ref().filter(|f| **f != mb_c).and_then(|f| gitref::merge_tree_from(clone, root, &base_c, &mb_c, Some(f)).ok());
-    // the ruling of round 6: the paths are collected, and reported as ONE item and a limitation listing them
     let mut b2_paths: Vec<String> = vec![];
     let named: HashSet<String> = residue.iter().map(|x| x.path.clone()).collect();
-    match (&fork_f, &eh, &eb) {
-        // an item where base lacks some of that earlier work (the merge from F of base and the merge base changes base's
-        // entry, or conflicts) and head still differs from base there; base's kept earlier work merges to base's own entry,
-        // and the branch's ordinary work after the merge base is not in F -> mb at all
-        (Some(f), Some(h), Some(b)) if *f != mb_c && from_f.is_some() => {
-            let m = from_f.as_ref().expect("checked above");
-            let me = merge_entries(m);
-            let paths: BTreeSet<&String> = me.keys().chain(b.keys()).chain(m.conflicts.iter()).collect();
-            for p in paths {
-                if (me.get(p) != b.get(p) || m.conflicts.contains(p)) && h.get(p) != b.get(p) && !named.contains(p) {
-                    b2_paths.push(p.clone());
-                }
-            }
-        }
-        (Some(f), Some(h), Some(b)) if *f != mb_c => {
-            let ef = gitref::tree_index(clone, f).ok().map(|t| {
-                let mut m = t.blobs;
-                for (p, c) in t.gitlinks {
-                    m.insert(p, ("160000".into(), c));
-                }
-                m
-            });
-            match ef {
-                Some(ef) => {
-                    let paths: BTreeSet<&String> = ef.keys().chain(h.keys()).collect();
+    if let (Some(f), Some(h), Some(b), None) = (&fork_f, &eh, &eb, &b2_note) {
+        if *f != mb_c {
+            match gitref::merge_tree_from(clone, root, &base_c, &mb_c, Some(f)) {
+                Ok(m) => {
+                    let me = merge_entries(&m);
+                    let paths: BTreeSet<&String> = me.keys().chain(b.keys()).chain(m.conflicts.iter()).collect();
                     for p in paths {
-                        if ef.get(p) != h.get(p) && h.get(p) != b.get(p) && !named.contains(p) {
+                        if (me.get(p) != b.get(p) || m.conflicts.contains(p)) && h.get(p) != b.get(p) && !named.contains(p) {
                             b2_paths.push(p.clone());
                         }
                     }
                 }
-                None => b2_paths.push(String::new()),
+                Err(e) => b2_note = Some(format!("the merge from F ({}) could not be had ({e}): the path list is skipped", &f[..12.min(f.len())])),
             }
         }
-        (None, _, _) if ancestors.is_none() || first_parent.is_none() => residue.push(Residue { path: String::new(), why: "diff_failed", hunk: None }),
-        // round 7: head reaches no commit of base's first-parent chain, yet the two share history (unrelated histories joined
-        // by a merge): what base did with the branch's earlier work is not known
-        (None, _, _) => {
-            b2_paths.push(String::new());
-            b2_why = Some("head reaches no commit of base's first-parent chain (histories joined by a merge): whether base keeps the branch's earlier work is not known");
-        }
-        _ => {}
     }
-    if shallow {
-        b2_paths.push(String::new());
-        b2_why = Some("shallow_history");
+    if !b2_paths.is_empty() && b2_reason.is_none() {
+        b2_reason = Some("merged_before"); // listed paths are work base took back, whatever the chain showed
     }
     b2_paths.sort();
     b2_paths.dedup();
-    if let Some(first) = b2_paths.first() {
-        residue.push(Residue { path: first.clone(), why: "merged_into_base_before", hunk: None });
+    if let Some(r) = b2_reason {
+        residue.push(Residue { path: b2_paths.first().cloned().unwrap_or_default(), why: "merged_into_base_before", hunk: None, reason: Some(r) });
     }
 
     // THE BACKSTOP (docs/decisions.md, "Plan 14 round 5"): a yes is checked against git's own merge, the thing it predicts.
@@ -1516,13 +1507,13 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             let items = added.len() + changed.len() + removed.len() + residue.len();
             // round 6: a conflict anywhere means the merge is not base, whatever tree git wrote (modify/delete keeps base's side)
             if items > 0 && resolved_now == items && !m.conflicts.is_empty() {
-                residue.push(Residue { path: m.conflicts.iter().next().cloned().unwrap_or_default(), why: "merge_conflict", hunk: None });
+                residue.push(Residue { path: m.conflicts.iter().next().cloned().unwrap_or_default(), why: "merge_conflict", hunk: None, reason: None });
             } else if items > 0 && resolved_now == items && gitref::tree_of(clone, &base_c).as_deref() != Some(m.tree.as_str()) {
                 let first = match (&merged_entries, &eb) {
                     (Some(me), Some(b)) => me.keys().chain(b.keys()).find(|p| me.get(*p) != b.get(*p)).cloned().unwrap_or_default(),
                     _ => String::new(),
                 };
-                residue.push(Residue { path: first, why: "merge_changes_tree", hunk: None });
+                residue.push(Residue { path: first, why: "merge_changes_tree", hunk: None, reason: None });
             }
         }
     }
@@ -1644,10 +1635,10 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
     if trivial_n > 0 {
         limitations.push(json!({ "code": "trivial_body", "detail": format!("{trivial_n} branch symbol(s) have fewer than {MIN_BODY_TOKENS} tokens after their signature (decorators and docstrings excluded): not matched by body hash or tokens (on_base: unknown, why: trivial_body)") }));
     }
-    if b2_why == Some("shallow_history") {
-        limitations.push(json!({ "code": "shallow_history", "detail": "the clone is shallow: the history B2 reads (work base merged and took back before the merge base) is cut, so its answer is not known (one unknown item, `merged_into_base_before`)" }));
-    } else if let Some(why) = b2_why {
-        limitations.push(json!({ "code": "merged_into_base_before_paths", "detail": why, "data": { "count": 0, "paths": [] } }));
+    match b2_reason {
+        Some("shallow_history") => limitations.push(json!({ "code": "shallow_history", "detail": "the clone is shallow: the history B2 reads (work base merged and took back before the merge base) is cut, so whether base keeps the branch's earlier work is not known (one unknown item, `merged_into_base_before`)" })),
+        Some("no_first_parent_fork") => limitations.push(json!({ "code": "merged_into_base_before_paths", "detail": "head reaches no commit of base's first-parent chain, yet the two share history (histories joined by a merge): whether base keeps the branch's earlier work is not known (one unknown item, `merged_into_base_before`)", "data": { "count": 0, "paths": [], "reason": "no_first_parent_fork" } })),
+        _ => {}
     }
     if let Ok(m) = &merged {
         if !m.conflicts.is_empty() {
@@ -1655,15 +1646,18 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
             limitations.push(json!({ "code": "merge_conflicts", "detail": format!("git's merge of head into base conflicts on {} path(s): every yes is unknown (`merge_conflict`)", m.conflicts.len()), "data": { "count": m.conflicts.len(), "paths": shown } }));
         }
     }
-    let b2_named: Vec<String> = b2_paths.iter().filter(|p| !p.is_empty()).cloned().collect();
-    if !b2_named.is_empty() {
-        let b2_paths = b2_named;
+    if b2_reason == Some("merged_before") {
         let shown: Vec<&String> = b2_paths.iter().take(20).collect();
-        limitations.push(json!({
-            "code": "merged_into_base_before_paths",
-            "detail": format!("{} path(s) hold work base merged before the merge base and no longer holds as it was (one unknown item, `merged_into_base_before`; a person reads the branch): {}{}", b2_paths.len(), shown.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", "), if b2_paths.len() > shown.len() { ", ..." } else { "" }),
-            "data": { "count": b2_paths.len(), "paths": shown },
-        }));
+        let detail = match &b2_note {
+            Some(n) => format!("base merged this branch before (one unknown item, `merged_into_base_before`; a person reads the branch): {n}"),
+            None => format!(
+                "base merged this branch before (one unknown item, `merged_into_base_before`; a person reads the branch): {} path(s) hold work base no longer holds as it was{}{}",
+                b2_paths.len(),
+                if shown.is_empty() { "" } else { ": " },
+                shown.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ") + if b2_paths.len() > shown.len() { ", ..." } else { "" }
+            ),
+        };
+        limitations.push(json!({ "code": "merged_into_base_before_paths", "detail": detail, "data": { "count": b2_paths.len(), "paths": shown, "reason": "merged_before", "skipped": b2_note } }));
     }
     if let Some(n) = merge_note {
         limitations.push(json!({ "code": "partial", "detail": n }));

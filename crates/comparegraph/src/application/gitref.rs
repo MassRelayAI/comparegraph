@@ -375,7 +375,8 @@ pub fn merge_tree(clone: &Path, store_root: &Path, base: &str, head: &str) -> st
 /// `merge_tree` with an explicit merge base (`--merge-base`, git >= 2.40): what merging `head` into `base` gives when their
 /// common history is taken to end at `from`.
 pub fn merge_tree_from(clone: &Path, store_root: &Path, base: &str, head: &str, from: Option<&str>) -> std::result::Result<Merged, String> {
-    // a test hook (tests/delta_round7.rs): a git without `--merge-base`, so the B2 fallback runs
+    // a test hook (tests/delta_round7.rs), compiled into debug builds only: a git without `--merge-base`
+    #[cfg(debug_assertions)]
     if from.is_some() && std::env::var_os("COMPAREGRAPH_TEST_NO_MERGE_BASE").is_some() {
         return Err("--merge-base refused (COMPAREGRAPH_TEST_NO_MERGE_BASE)".into());
     }

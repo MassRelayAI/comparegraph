@@ -174,7 +174,10 @@ fn p3_unrelated_histories_joined_then_revert() {
     assert!(file_on(&d, "feat", "src/g.py").contains("def g") && !file_on(&d, "main", "src/g.py").contains("def g"));
     assert_ne!(share(&v), Some(1.0), "P3 false 1.0: {}", s(&v));
     assert_eq!(v["data"]["summary"]["unknown"]["by_why"]["merged_into_base_before"].as_i64(), Some(1), "{}", s(&v));
-    assert!(v["evidence"]["limitations"].to_string().contains("reaches no commit of base's first-parent chain"), "{}", v["evidence"]["limitations"]);
+    // round 8: the join is a merge on base's first-parent chain whose other parent head reaches: base merged this branch
+    // before, so the item's reason is `merged_before` (was: the no-fork text of round 7)
+    let item = v["data"]["branch"]["residue"].as_array().unwrap().iter().find(|r| r["why"] == "merged_into_base_before").cloned().unwrap();
+    assert_eq!(item["reason"], "merged_before", "{item}");
 }
 
 /// P4: the round-6 merged-then-reverted shape, but base's first-parent chain is cut by a shallow boundary (.git/shallow)
@@ -418,6 +421,13 @@ fn r7_the_b2_fallback_stands_in_when_the_merge_from_f_fails() {
     let (seam, _) = mk(true);
     assert_eq!(seam["data"]["summary"]["unknown"]["by_why"]["merged_into_base_before"].as_i64(), Some(1), "{}", s(&seam));
     let (seam, tight) = mk(false);
-    assert_eq!(seam["data"]["summary"]["unknown"]["by_why"]["merged_into_base_before"].as_i64(), Some(1), "the broad rule flags kept work: {}", s(&seam));
-    assert_eq!(tight["data"]["summary"]["unknown"]["by_why"].get("merged_into_base_before"), None, "{}", s(&tight));
+    assert_eq!(seam["data"]["summary"]["unknown"]["by_why"]["merged_into_base_before"].as_i64(), Some(1), "{}", s(&seam));
+    // round 8: the item holds by construction (base merged the branch); when the merge from F cannot be had, the path list is
+    // skipped and said so (was: the broad rule); with it, kept work lists no path
+    let v = &seam;
+    let l = v["evidence"]["limitations"].as_array().unwrap().iter().find(|l| l["code"] == "merged_into_base_before_paths").cloned().unwrap_or_default();
+    assert!(l["data"]["skipped"].as_str().unwrap_or("").contains("could not be had"), "{l}");
+    let v = &tight;
+    let l = v["evidence"]["limitations"].as_array().unwrap().iter().find(|l| l["code"] == "merged_into_base_before_paths").cloned().unwrap_or_default();
+    assert_eq!((v["data"]["summary"]["unknown"]["by_why"]["merged_into_base_before"].as_i64(), l["data"]["count"].as_i64()), (Some(1), Some(0)), "{}", s(v));
 }

@@ -71,8 +71,6 @@ fn file_on(d: &Path, rev: &str, p: &str) -> String {
     String::from_utf8_lossy(&o.stdout).into_owned()
 }
 
-/// P1: base merges feat (--no-ff), feat fast-forwards to that merge (a back-merge), base reverts g, feat adds h, base takes h.
-/// mb = F = the merge: the B2 check is skipped. head holds g, base does not.
 
 const C5: &str = "def c(items):\n    r = 4\n    for u in items:\n        r = r * u - 13 + len(items)\n        shout(r, u, items)\n    return r\n";
 const N5: &str = "def n(items):\n    e = 6\n    for v in items:\n        e = e - v * 17 + len(items)\n        whisper(e, v, items)\n    return e\n";
@@ -295,4 +293,30 @@ fn r8_a_branch_never_merged_into_base_has_no_such_item() {
     commit(&d, "base after the fork");
     let v = fx.delta();
     assert_eq!(b2_reason(&v), None, "{}", s(&v));
+}
+
+/// `no_first_parent_fork`: the branch forked from a side history S that base merged only at a later commit of S; base's own
+/// first-parent chain has another root, so head reaches none of it, and no merge on it took head's work.
+#[test]
+fn r8_head_reaching_no_commit_of_base_first_parent_chain_is_the_item() {
+    let fx = Fx::new(&[("src/a.py", K5)]);
+    let d = fx.d();
+    git(&d, &["checkout", "-q", "--orphan", "side"]);
+    git(&d, &["rm", "-rq", "--cached", "."]);
+    for f in ["src/a.py", "LICENSE"] {
+        let _ = std::fs::remove_file(d.join(f));
+    }
+    write(&d, "src/s.py", O5);
+    commit(&d, "s1");
+    git(&d, &["checkout", "-q", "-b", "feat"]);
+    write(&d, "src/b.py", H5);
+    commit(&d, "add h on top of s1");
+    git(&d, &["checkout", "-q", "side"]);
+    write(&d, "src/t.py", N5);
+    commit(&d, "s2");
+    git(&d, &["checkout", "-q", "main"]);
+    gc(&d, &["merge", "-q", "--no-ff", "--allow-unrelated-histories", "-m", "join side at s2", "side"]);
+    let v = fx.delta();
+    assert_eq!(b2_reason(&v).as_deref(), Some("no_first_parent_fork"), "{}", s(&v));
+    assert_ne!(share(&v), Some(1.0), "{}", s(&v));
 }
