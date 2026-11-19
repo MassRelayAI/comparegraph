@@ -108,11 +108,13 @@ nothing was judged. Every line the branch changed is accounted for by a judged r
 a re-indent, whitespace inside a string, a `.sql` file, a submodule bump. **Every yes is then checked against git's own merge**
 (`git merge-tree`, git 2.38 or newer, read-only): a yes in a file the merge would change, or that conflicts, is unknown
 (`merge_changes_file`, with `model_via` saying how the model had it), and a share of 1.0 also needs the merged tree to be
-base's tree, and no conflict (else every yes is `merge_conflict`). **A 1.0 means git considers the branch fully merged
-and every change is accounted for. It does not prove base never reverted earlier branch work**: a fast-forward of base to
-the branch followed by a revert is undetectable (the graph cannot tell it from base reverting its own commit). Work base
-merged and later took back otherwise is one unknown item, `merged_into_base_before` (the paths in the
-`merged_into_base_before_paths` limitation); a shallow clone makes that check unknown (`shallow_history`). A person
+base's tree, and no conflict (else every yes is `merge_conflict`). **A 1.0 means git's merge of the branch into base
+would change nothing on base, and every change is accounted for. It does not prove base never reverted earlier branch
+work**: a fast-forward of base to the branch followed by a revert is undetectable (the graph cannot tell it from base
+reverting its own commit). Any branch base ever merged before (a merge on base's first-parent chain took its work), and
+joined or shallow histories, always carry one unknown item for a person, `merged_into_base_before` (its `reason`:
+`merged_before`, `no_first_parent_fork`, `shallow_history`); the `merged_into_base_before_paths` limitation lists the paths
+that hold work base no longer holds, when it can tell. A person
 confirms before a branch is deleted, a deleted branch is always bundled first, and a null share (no item at all) is read
 by a person too. `--whole-tree`'s `share_identical` is how much
 of head base holds as it is: it has none of these checks and is never a retirement signal.

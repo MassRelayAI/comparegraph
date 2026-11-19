@@ -645,3 +645,24 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   seen. A 1.0 means git considers the branch fully merged and every change is accounted for, not that base never reverted
   earlier branch work: a person confirms before a branch is deleted, and a deleted branch is always bundled first.
 - **The B2 fallback** is pinned through a test hook, `COMPAREGRAPH_TEST_NO_MERGE_BASE` (a git without `--merge-base`).
+
+## Plan 14 round 8 (2026-11-19, branch feat/plan-14)
+- **Ruling: B2 holds by construction.** If ANY commit on base's first-parent chain is a merge whose non-first parent head
+  reaches (head was ever merged into base), OR no commit of that chain is reachable from head while a merge base exists, OR the
+  repository is shallow, the delta carries ONE unknown item `merged_into_base_before`, its `reason` `merged_before`,
+  `no_first_parent_fork` or `shallow_history`. The guarantee "such a branch never reads 1.0" does not depend on F being computed
+  precisely: round 7's step-past walk stopped too early on two back-merges with a base commit between, a back-merge with a
+  conflict resolution, a base commit on top of a back-merge, and histories joined twice (Q1, Q2, Q3, Q5, `tests/delta_round8.rs`).
+- **The path list, for the person**: from F = the first commit of base's first-parent chain head reaches older than the oldest
+  merge that took head's work, git merges F -> merge base into base; a path that merge changes on base (or conflicts on), where
+  head differs from base, is listed in `merged_into_base_before_paths` (count, the first 20). Skipped, and said in the
+  limitation (`skipped`), when the chain is longer than 5,000 commits or that merge cannot be had; the item stays. The broad
+  fallback rule of round 6 is gone: the item no longer needs it.
+- **Consequence**: work base merged and kept now also carries the item (with an empty path list); round 6's
+  `r6_merged_and_kept_is_no_item` and the post-merge-base test assert that, and round 7's P3 reads `merged_before` (the join is
+  such a merge).
+- **The seam** `COMPAREGRAPH_TEST_NO_MERGE_BASE` compiles into debug builds only (`cfg(debug_assertions)`); the verification
+  greps the release binary for it.
+- **Docs**: a 1.0 means git's merge of the branch into base would change nothing on base, and every change is accounted for;
+  any branch base ever merged before, and joined or shallow histories, always carry one unknown item for a person; the
+  fast-forward-then-revert known limit stands.
