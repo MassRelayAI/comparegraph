@@ -1,6 +1,6 @@
 # health: first precision measurement (2026-11-18)
 
-Measured with `comparegraph health` at commit 04c414a on a temp store (WSL, never the real store), repo `F:/repos/massrelay` at
+Measured with `comparegraph health` at commit 04c414a on a temp store (WSL, never the real store), repo `<a massrelay checkout>` at
 head c0c2fbe (89,473 nodes, 246,558 edges, 7,012 files parsed). Sampling: findings sorted by key, 20 taken at evenly spaced
 positions (`keys[int((i + 0.5) * N / 20)]`); a kind with 20 or fewer findings is read whole. Each sample was checked against the
 source files (the import line and the other occurrences of the name; both function bodies; the file's line count; the stored edges
@@ -64,7 +64,7 @@ lines), then 536; size `crates/mr-server/src/routes.rs` (27,114 lines), `0000_ba
 
 **Fixed in 04c9ec8** (16 MiB `par_map` worker stacks; massrelay builds on the default stack in 6m49s). The text below is the original finding.
 
-- Repro: `comparegraph --root <ws> add F:/repos/massrelay --name mr`, then
+- Repro: `comparegraph --root <ws> add <a massrelay checkout> --name mr`, then
   `COMPAREGRAPH_PROGRESS=1 comparegraph --root <ws> build mr` (Linux, debug build, 7,012 files). Result: `thread '<unknown>' has
   overflowed its stack`, `fatal runtime error: stack overflow`, abort (core dumped), about 2 minutes in. Reproduced on three runs
   across separate stores.

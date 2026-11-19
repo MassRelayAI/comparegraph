@@ -417,8 +417,7 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   file) are neither refused nor skipped.
 
 ## Plan 14: the delta model (2026-11-19, branch feat/plan-14)
-- **Ruling: the delta "already on base" model** (the orchestrator's design read of 2026-11-19, `comparegraph-notes/plans/
-  2026-11-19-delta-model-design.md`; code: `delta.rs::Judge::judge_heads`, `Judge::removed`, and the backing checks in
+- **Ruling: the delta "already on base" model** (the maintainer's design read of 2026-11-19, kept in the maintainer's private notes; code: `delta.rs::Judge::judge_heads`, `Judge::removed`, and the backing checks in
   `delta`). It **supersedes** the round-2 ruling "one rule for already on base" and the round-3 ruling "near matches are never
   landed work" as rules of judgement (the round-3 field names `share_on_base_exact`, `share_already_on_base` and
   `near_on_base` stay). Why: three rounds of patching `Judge::rule` each leaked a false exact in a new shape; its one provenance
