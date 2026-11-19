@@ -656,7 +656,7 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
 - **The path list, for the person**: from F = the first commit of base's first-parent chain head reaches older than the oldest
   merge that took head's work, git merges F -> merge base into base; a path that merge changes on base (or conflicts on), where
   head differs from base, is listed in `merged_into_base_before_paths` (count, the first 20). Skipped, and said in the
-  limitation (`skipped`), when the chain is longer than 5,000 commits or that merge cannot be had; the item stays. The broad
+  limitation (`skipped`), when the chain is longer than 50,000 commits (raised from 5,000 on review: massrelay main has 8,154) or that merge cannot be had; the item stays. The broad
   fallback rule of round 6 is gone: the item no longer needs it.
 - **Consequence**: work base merged and kept now also carries the item (with an empty path list); round 6's
   `r6_merged_and_kept_is_no_item` and the post-merge-base test assert that, and round 7's P3 reads `merged_before` (the join is

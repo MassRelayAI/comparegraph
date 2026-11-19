@@ -981,7 +981,7 @@ struct Residue {
 }
 
 /// The longest base first-parent chain the B2 path list walks (the item does not depend on it).
-const B2_WALK_CAP: usize = 5000;
+const B2_WALK_CAP: usize = 50_000;
 
 /// One hunk of the branch's change to one path: its header, and its removed (old line number, text) and added (new line
 /// number, text) lines.
