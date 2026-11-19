@@ -1435,6 +1435,12 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         if ch.len() > B2_WALK_CAP {
             b2_note = Some(format!("base's first-parent chain has {} commits (more than {B2_WALK_CAP}): the path list is skipped", ch.len()));
         }
+        // a test hook (tests/delta_round8.rs), compiled into debug builds only: the path list off, so the by-construction rule
+        // stands alone
+        #[cfg(debug_assertions)]
+        if std::env::var_os("COMPAREGRAPH_TEST_SKIP_B2_PATHS").is_some() {
+            b2_note = Some("the path list is skipped (COMPAREGRAPH_TEST_SKIP_B2_PATHS)".into());
+        }
     } else {
         residue.push(Residue { path: String::new(), why: "diff_failed", hunk: None, reason: None });
     }
