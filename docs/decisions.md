@@ -666,3 +666,13 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
 - **Docs**: a 1.0 means git's merge of the branch into base would change nothing on base, and every change is accounted for;
   any branch base ever merged before, and joined or shallow histories, always carry one unknown item for a person; the
   fast-forward-then-revert known limit stands.
+- **Last review of round 8**: a merge base off base's first-parent chain while head reaches some commit of it can only
+  have entered base through a merge's non-first parent, at any depth (a side branch merged the lane, then base merged the side
+  branch): that is `merged_before` too (`git merge-base --all`), so the item does not wait on the path list. Pinned with the
+  list switched off by a debug-only seam, `COMPAREGRAPH_TEST_SKIP_B2_PATHS` (absent from the release binary).
+- **The known limit, widened**: a fast-forward of base to the branch, or a merge that keeps the branch as its first parent (a
+  foxtrot merge, e.g. `git pull` on the branch then a push to base), followed by a revert reads 1.0
+  (`known_limit_foxtrot_merge_then_revert_reads_one` asserts it). A squash or a cherry-pick then a revert is not a limit: it
+  reads below 1.0 (`squash_or_cherry_pick_then_revert_reads_below_one`).
+- **A flaky test made robust**: in the criss-cross fixture git picks one of two merge bases by commit time; from one of them F
+  is the merge base and no path is listed. The test asserts the item, and `src/a.py` when a path is listed.

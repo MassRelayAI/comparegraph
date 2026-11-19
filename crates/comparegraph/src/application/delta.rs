@@ -1427,9 +1427,14 @@ pub fn delta(root: &Path, repo_name: &str, o: &DeltaOpts) -> Result<Value> {
         let oldest_took = ch.iter().rposition(|(_, o)| took(o));
         let from = oldest_took.map_or(0, |i| i + 1);
         fork_f = ch.iter().skip(from).find(|(c, o)| a.contains(c) && !took(o)).map(|(c, _)| c.clone());
-        if oldest_took.is_some() {
+        // a merge base off base's first-parent chain (while head reaches some commit of it) can only have entered base through
+        // some merge's non-first parent, at any depth (a side branch that merged the lane, then base merging the side branch)
+        let on_chain: HashSet<&str> = ch.iter().map(|(c, _)| c.as_str()).collect();
+        let reaches_chain = ch.iter().any(|(c, _)| a.contains(c));
+        let off_chain_base = reaches_chain && git_lines(clone, &["merge-base", "--all", &base_c, &head_c]).is_some_and(|v| v.iter().any(|m| !on_chain.contains(m.trim())));
+        if oldest_took.is_some() || off_chain_base {
             b2_reason = Some("merged_before");
-        } else if !ch.iter().any(|(c, _)| a.contains(c)) {
+        } else if !reaches_chain {
             b2_reason = Some("no_first_parent_fork");
         }
         if ch.len() > B2_WALK_CAP {

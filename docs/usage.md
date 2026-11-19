@@ -110,8 +110,9 @@ a re-indent, whitespace inside a string, a `.sql` file, a submodule bump. **Ever
 (`merge_changes_file`, with `model_via` saying how the model had it), and a share of 1.0 also needs the merged tree to be
 base's tree, and no conflict (else every yes is `merge_conflict`). **A 1.0 means git's merge of the branch into base
 would change nothing on base, and every change is accounted for. It does not prove base never reverted earlier branch
-work**: a fast-forward of base to the branch followed by a revert is undetectable (the graph cannot tell it from base
-reverting its own commit). Any branch base ever merged before (a merge on base's first-parent chain took its work), and
+work**: a fast-forward of base to the branch, or a merge that keeps the branch as its first parent (a foxtrot merge, e.g.
+`git pull` on the branch then a push to base), followed by a revert is undetectable (the graph cannot tell it from base
+reverting its own commit). A squash or a cherry-pick of the branch then a revert is not a limit: it reads below 1.0. Any branch base ever merged before (a merge on base's first-parent chain took its work), and
 joined or shallow histories, always carry one unknown item for a person, `merged_into_base_before` (its `reason`:
 `merged_before`, `no_first_parent_fork`, `shallow_history`); the `merged_into_base_before_paths` limitation lists the paths
 that hold work base no longer holds, when it can tell. A person

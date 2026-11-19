@@ -229,8 +229,12 @@ fn r6_criss_cross_with_a_revert_on_base() {
     let v = fx.delta();
     assert!(!std::fs::read_to_string(d.join("src/a.py")).unwrap().contains("def g"));
     assert_ne!(v["data"]["summary"]["share_on_base_exact"].as_f64(), Some(1.0), "{}", s(&v));
-    // the ruling of round 6: one item per delta, the paths in a limitation
-    assert_eq!(b2(&v), Some((1, vec!["src/a.py".to_string()])), "{}", s(&v));
+    // the ruling of round 6: one item per delta, the paths in a limitation. A criss-cross has two merge bases and git picks
+    // one by commit time, which the test cannot fix: from one of them F is the merge base itself and no path is listed (seen
+    // once in the round-8 runs). The item holds either way (round 8, by construction); a listed path is `src/a.py`.
+    let (n, paths) = b2(&v).expect("one merged_into_base_before item");
+    assert_eq!(n, 1, "{}", s(&v));
+    assert!(paths.is_empty() || paths == vec!["src/a.py".to_string()], "{}", s(&v));
 }
 
 fn paths_len(lim: &Value) -> usize {
