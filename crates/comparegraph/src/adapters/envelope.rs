@@ -84,7 +84,12 @@ impl Envelope {
                 message: e.to_string(),
                 hint: e.hint(),
                 data: e.data(),
-                recovery: Some(crate::application::catalog::recovery(e.code())),
+                recovery: Some(if verb == "backfill-head" && e.code() == "store_error" {
+                    // the generic store_error points at `check`; for this verb the state to look at is its own dry run
+                    serde_json::json!({ "kind": "inspect", "retryable": false, "operation": "backfill-head" })
+                } else {
+                    crate::application::catalog::recovery(e.code())
+                }),
             }),
         }
     }

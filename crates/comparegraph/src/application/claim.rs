@@ -383,6 +383,15 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
             }
         };
         let (Some(h), Some(commit)) = (run_head.as_deref(), run_commit.as_deref()) else {
+            if let Some(h) = run_head.as_deref() {
+                // the run names a commit the clone does not hold: never fall back to a working tree that may be elsewhere
+                return Err(AppError::structured(
+                    "clone_unavailable",
+                    format!("commit_unavailable: {h}, the commit the build of {} read, is not in the clone; the citation cannot be hashed there", repo.name),
+                    Some("fetch that commit (`git fetch --unshallow` for a shallow clone), or build the repo again".into()),
+                    Some(serde_json::json!({ "reason": "commit_unavailable", "commit": h, "repo": repo.name })),
+                ));
+            }
             return Ok((norm.clone(), worktree()?));
         };
         let committed = blobs.as_mut().and_then(|b| b.read(commit, &norm));

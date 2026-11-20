@@ -1,8 +1,11 @@
-//! `backfill-head`: pin a finished run that recorded no git head (it predates the `head` column) to a commit, by proof.
+//! `backfill-head`: pin a finished run that recorded no git head (it predates the `head` column) to a commit, by equivalence.
 //!
 //! The candidate is the repo's recorded head, resolved to a full commit in the clone. Every location of every claim that
 //! cites the run is hashed at that commit; only when ALL of them equal the recorded content hash is `run.head` set (and
-//! `run.head_source = 'inferred-by-hash'`, plus an action-log entry). One mismatch, no locations to prove, no recorded
+//! `run.head_source = 'equivalent-by-hash'`, plus an action-log entry). A match proves the cited spans are byte-identical
+//! at that commit, which is all `check` needs; it does not prove the build read that commit (`repo.head` is written only
+//! by `add`), hence "equivalent", not "inferred". Runs whose spans already mismatch stay unpinned: re-claim or rebuild.
+//! `--apply` first adds `run.head_source` to a store that predates it (a named step, reported and logged). One mismatch, no locations to prove, no recorded
 //! head, or a commit missing from the clone leaves the run NULL and names it as unverifiable. Never a guess (CG-1, D451).
 //! Dry run by default; `--apply` needs `--by`.
 use super::governance::{self, Action};
@@ -16,6 +19,7 @@ pub fn backfill_head(root: &Path, repo: Option<&str>, apply: bool, by: &str) -> 
         return Err(AppError::InvalidArguments("--by is required with --apply".into()));
     }
     let store = if apply { Store::open_guarded(root)? } else { Store::open_read_only(root)? };
+    let needs_column = !store.main_has_column("run", "head_source")?;
     let archived = super::archive::archived_names(&store)?;
     let repos = store.repos()?;
     if let Some(n) = repo {
@@ -82,27 +86,36 @@ pub fn backfill_head(root: &Path, repo: Option<&str>, apply: bool, by: &str) -> 
         "unverifiable": unverifiable,
     });
     if !apply {
+        if needs_column {
+            v["apply_will_add_column"] = json!("run.head_source");
+        }
         v["would_pin"] = json!(would_pin.iter().map(item).collect::<Vec<_>>());
         return Ok(v);
     }
     if would_pin.is_empty() {
         v["pinned"] = json!([]);
+        v["migrated"] = json!([]);
         return Ok(v);
     }
     let bytes = store.file_bytes();
+    let mut migrated: Vec<&str> = vec![];
     let entry = store.with_write_lock(|s| -> Result<Value> {
+        if s.add_declared_column("run", "head_source")? {
+            migrated.push("run.head_source");
+        }
         for p in &would_pin {
             s.set_run_head_inferred(p.0, &p.2)?;
         }
         governance::append(s, root, &Action {
             verb: "backfill-head".into(),
             by: by.into(),
-            inputs: json!({ "runs": would_pin.iter().map(item).collect::<Vec<_>>(), "unverifiable": unverifiable.len() }),
+            inputs: json!({ "runs": would_pin.iter().map(item).collect::<Vec<_>>(), "unverifiable": unverifiable.len(), "migrated": migrated }),
             bytes_before: Some(bytes),
             ..Default::default()
         })
     })?;
     v["pinned"] = json!(would_pin.iter().map(item).collect::<Vec<_>>());
+    v["migrated"] = json!(migrated);
     v["action_seq"] = entry["seq"].clone();
     Ok(v)
 }

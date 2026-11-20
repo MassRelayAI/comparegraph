@@ -263,6 +263,17 @@ pub fn check_with(root: &Path, o: &CheckOptions) -> Result<CheckReport> {
                 unpinned_locations
             ));
         }
+        let mut seen_runs: std::collections::BTreeSet<i64> = Default::default();
+        for (l, _) in &checkable {
+            if l.run_head.is_some() && seen_runs.insert(l.run_id) && store.run_head_source(l.run_id)?.as_deref() == Some("equivalent-by-hash") {
+                rep.notes.push(format!(
+                    "{}: run {} is pinned to {} (head_source equivalent-by-hash: `backfill-head` found its cited spans hash as recorded there; its build did not record the commit)",
+                    r.name,
+                    l.run_id,
+                    l.run_head.as_deref().unwrap_or("")
+                ));
+            }
+        }
         let mut blobs = if checkable.iter().any(|(_, f)| f.is_some()) { super::BlobReader::open(clone) } else { None };
         // a file cited by many locations is read once per (commit, path)
         let mut texts: std::collections::HashMap<(String, String), Option<String>> = std::collections::HashMap::new();

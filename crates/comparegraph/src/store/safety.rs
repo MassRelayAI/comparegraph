@@ -389,9 +389,34 @@ impl Store {
             .collect::<std::result::Result<_, _>>()?;
         Ok(rows)
     }
+    /// True when the real (main) table has the column, whatever a temp view shows.
+    pub fn main_has_column(&self, table: &str, col: &str) -> Result<bool> {
+        Ok(super::table_columns(&self.conn, table)?.iter().any(|n| n == col))
+    }
+    /// Add one declared column (`ADDED_COLUMNS`) to the real table: the explicit, named migration step of a verb that must
+    /// write it. Under the write lock; true when it added the column, false when it was already there.
+    pub fn add_declared_column(&self, table: &str, col: &str) -> Result<bool> {
+        if self.main_has_column(table, col)? {
+            return Ok(false);
+        }
+        let ty = super::ADDED_COLUMNS
+            .iter()
+            .find(|c| c.0 == table && c.1 == col)
+            .map(|c| c.2)
+            .ok_or_else(|| StoreError::Schema(format!("{table}.{col} is not a declared column")))?;
+        self.conn.execute_batch(&format!("ALTER TABLE main.{table} ADD COLUMN {col} {ty}"))?;
+        Ok(true)
+    }
+    /// How a run's head was recorded: None when the build recorded it (or the store predates the column).
+    pub fn run_head_source(&self, run: i64) -> Result<Option<String>> {
+        if !self.main_has_column("run", "head_source")? {
+            return Ok(None);
+        }
+        Ok(self.conn.query_row("SELECT head_source FROM main.run WHERE id = ?1", params![run], |r| r.get(0)).optional()?.flatten())
+    }
     /// Pin a run that recorded no head to a commit its locations were proven against (`backfill-head`).
     pub fn set_run_head_inferred(&self, id: i64, head: &str) -> Result<()> {
-        self.conn.execute("UPDATE run SET head = ?2, head_source = 'inferred-by-hash' WHERE id = ?1 AND head IS NULL", params![id, head])?;
+        self.conn.execute("UPDATE main.run SET head = ?2, head_source = 'equivalent-by-hash' WHERE id = ?1 AND head IS NULL", params![id, head])?;
         Ok(())
     }
     /// Set or clear one location's stale flag (the one column of `location` the triggers leave writable).
