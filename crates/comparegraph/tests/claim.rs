@@ -286,6 +286,10 @@ fn none_with_no_searchable_term_is_refused_and_nothing_is_written() {
 fn a_non_utf8_citation_is_invalid_arguments() {
     let (ws, a, _p) = setup();
     std::fs::write(a.path().join("bin.dat"), [0xff, 0xfe, 0x00, 0x0a, 0xff]).unwrap();
+    for args in [vec!["add", "."], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c2"]] {
+        assert!(Command::new("git").arg("-C").arg(a.path()).args(&args).status().unwrap().success());
+    }
+    cc(ws.path()).args(["build", "a"]).assert().success();
     let v = json(claim(ws.path(), &["has", "--author", "me", "--at", "bin.dat:1"]).failure());
     assert_eq!(v["error"]["code"], "invalid_arguments", "{v}");
     assert!(

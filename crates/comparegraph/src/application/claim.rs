@@ -365,14 +365,36 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
     fn res_keys(r: &[Resolved]) -> Vec<(String, i64, i64, String)> {
         r.iter().map(|x| (x.path.clone(), x.s as i64, x.e as i64, x.hash.clone())).collect()
     }
-    let read_text = |rel: &str| -> Result<(String, String)> {
+    // D451: a location is hashed at the commit the run read, because `check` reads it there; a claim over text that is not
+    // committed there is refused, so it can never go stale on its next `check`. A run with no recorded head is read from the
+    // working tree (`check` names it unpinned).
+    let run_head = store.run_head_opt(run)?;
+    let mut blobs = match &run_head {
+        Some(_) => super::BlobReader::open(Path::new(&repo.path)),
+        None => None,
+    };
+    let run_commit = run_head.as_deref().and_then(|h| super::git_commit_id(Path::new(&repo.path), h));
+    let mut read_text = |rel: &str| -> Result<(String, String)> {
         let (norm, full) = safe_path(Path::new(&repo.path), rel)?;
-        let text = match std::fs::read(&full) {
-            Ok(b) => String::from_utf8(b)
-                .map_err(|_| AppError::InvalidArguments(format!("{norm} is not UTF-8 text")))?,
-            Err(er) => return Err(AppError::Io(full.clone(), er)),
+        let worktree = || -> Result<String> {
+            match std::fs::read(&full) {
+                Ok(b) => String::from_utf8(b).map_err(|_| AppError::InvalidArguments(format!("{norm} is not UTF-8 text"))),
+                Err(er) => Err(AppError::Io(full.clone(), er)),
+            }
         };
-        Ok((norm, text))
+        let (Some(h), Some(commit)) = (run_head.as_deref(), run_commit.as_deref()) else {
+            return Ok((norm.clone(), worktree()?));
+        };
+        let committed = blobs.as_mut().and_then(|b| b.read(commit, &norm));
+        let Some(committed) = committed else {
+            return invalid(format!("{norm} is not committed at {h}, the commit the build of {} read; commit it and build again", repo.name));
+        };
+        let committed = String::from_utf8(committed).map_err(|_| AppError::InvalidArguments(format!("{norm} is not UTF-8 text")))?;
+        // line endings are normalised for the comparison only (a checkout may convert them)
+        if worktree().is_ok_and(|w| w.replace("\r\n", "\n") != committed.replace("\r\n", "\n")) {
+            return invalid(format!("{norm} has uncommitted changes against {h}, the commit the build of {} read; commit them and build again, or cite the committed text", repo.name));
+        }
+        Ok((norm, committed))
     };
     let expects: Vec<super::citation::Pattern> = ev
         .expect

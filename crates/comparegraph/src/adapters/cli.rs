@@ -409,6 +409,16 @@ pub enum Cmd {
         #[arg(long)]
         cursor: Option<String>,
     },
+    /// Pin finished runs that recorded no git head to a commit, only when every cited location hashes as recorded there (dry run by default)
+    BackfillHead {
+        /// only this repo's runs
+        #[arg(long)]
+        repo: Option<String>,
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        by: Option<String>,
+    },
     /// Soft-archive a repo: a manifest first, then a flag; its rows stay, it leaves the default views and `check`
     Archive {
         repo: String,
@@ -919,6 +929,7 @@ fn verb_of(c: &Cmd) -> &'static str {
         Cmd::RestoreStore { .. } => "restore-store",
         Cmd::Gc { .. } => "gc",
         Cmd::Relevance { .. } => "relevance",
+        Cmd::BackfillHead { .. } => "backfill-head",
         Cmd::Archive { .. } => "archive",
         Cmd::Restore { .. } => "restore",
         Cmd::Governance { .. } => "governance-verify",
@@ -1429,7 +1440,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     AppError::structured(
                         "clone_unavailable",
                         format!("{} clone(s) could not be read as their runs read them; nothing was written for them", r.clone_unavailable.len()),
-                        Some("put the clone back at the head its run read (data.clone_unavailable), or `archive` the repo".into()),
+                        Some("`commit_unavailable`: the cited commit is not in the clone (a shallow or pruned clone): `git fetch --unshallow`, or fetch that commit; `missing`/`head_moved`: put the clone back (data.clone_unavailable), or `archive` the repo".into()),
                         None,
                     )
                 } else {
@@ -1473,6 +1484,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                 cursor: cursor.as_deref(),
             },
         )?,
+        Cmd::BackfillHead { repo, apply, by } => crate::application::backfill::backfill_head(&cli.root, repo.as_deref(), *apply, by.as_deref().unwrap_or(""))?,
         Cmd::Archive { repo, why, by, policy, apply, force_with_reason } => crate::application::archive::archive(
             &cli.root,
             repo,

@@ -83,6 +83,16 @@ fn limitation_codes(v: &serde_json::Value) -> Vec<String> {
     c.sort();
     c
 }
+fn set_hash(root: &Path, hash: &str) {
+    let c = rusqlite::Connection::open(root.join(".comparegraph/comparegraph.db")).unwrap();
+    c.execute("DROP TRIGGER IF EXISTS location_no_update", []).unwrap();
+    c.execute("UPDATE location SET content_hash = ?1", [hash]).unwrap();
+}
+/// Commit what the test wrote and build again: a claim is hashed at the commit the run read (D451) and refuses uncommitted text.
+fn commit_and_rebuild(ws: &Path, d: &Path, msg: &str) {
+    commit(d, msg);
+    cc(ws).args(["build", "a"]).assert().success();
+}
 fn batch(ws: &Path, rows: &[String]) -> Vec<serde_json::Value> {
     let path = ws.join("rows.jsonl");
     std::fs::write(&path, rows.join("\n") + "\n").unwrap();
@@ -164,6 +174,7 @@ fn a_batch_rerun_after_the_cited_lines_changed_writes_a_new_claim() {
     assert_eq!(again[0]["data"]["skipped"], true, "{}", again[0]);
     // the cited lines change (same span, same run): a new claim with the new hash
     std::fs::write(a.path().join("src/agent.py"), AGENT.replace("compact(msg)\n\ndef", "compact(msg[1:])\n\ndef")).unwrap();
+    commit_and_rebuild(ws.path(), a.path(), "c2");
     let edited = batch(ws.path(), &row);
     assert!(edited[0]["data"]["skipped"].is_null(), "{}", edited[0]);
     assert_ne!(edited[0]["data"]["locations"][0]["content_hash"], h1, "{}", edited[0]);
@@ -175,13 +186,18 @@ fn a_batch_rerun_after_the_cited_lines_changed_writes_a_new_claim() {
 
 #[test]
 fn a_batch_rerun_over_a_stale_live_claim_writes_a_new_claim() {
-    let (ws, a, _p) = setup();
+    let (ws, _a, _p) = setup();
     let row = vec!["{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"has\",\"author\":\"me\",\"at\":[\"src/agent.py:4-5\"],\"no_reach\":true}".to_string()];
     batch(ws.path(), &row);
-    // `check` flags the location stale after an edit; the edit is then undone, so the hash agrees again
-    std::fs::write(a.path().join("src/agent.py"), AGENT.replace("compact(msg)\n\ndef", "compact(msg[1:])\n\ndef")).unwrap();
+    // a location whose recorded hash disagrees with the object at the cited commit is flagged by `check --mark` (no product path
+    // makes one now: `claim` refuses uncommitted text), then the hash agrees again
+    let good: String = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db"))
+        .unwrap()
+        .query_row("SELECT content_hash FROM location LIMIT 1", [], |r| r.get(0))
+        .unwrap();
+    set_hash(ws.path(), "drifted");
     let _ = cc(ws.path()).args(["check", "--mark", "--by", "t"]).output().unwrap();
-    std::fs::write(a.path().join("src/agent.py"), AGENT).unwrap();
+    set_hash(ws.path(), &good);
     let v = json(cc(ws.path()).args(["claims"]).assert().success());
     assert_eq!(v["data"]["items"][0]["locations"][0]["stale"], true, "{v}");
     let out = batch(ws.path(), &row);
@@ -216,6 +232,7 @@ fn a_long_line_is_matched_or_refused_with_an_envelope() {
     let (ws, a, _p) = setup();
     let long = "a".repeat(200_000);
     std::fs::write(a.path().join("src/big.py"), format!("x = '{long}'\ndef f():\n    return 1\n")).unwrap();
+    commit_and_rebuild(ws.path(), a.path(), "c2");
     for args in [
         vec!["has", "--author", "me", "--at", "src/big.py:1", "--expect", "a*b"],
         vec!["has", "--author", "me", "--anchor", "src/big.py::.*q"],
@@ -237,11 +254,14 @@ fn a_prose_file_line_is_refused_unless_allow_comment() {
     let (ws, a, _p) = setup();
     for f in ["README.md", "NOTES.txt", "doc.rst"] {
         std::fs::write(a.path().join(f), "The agent retries with backoff.\n").unwrap();
+    }
+    std::fs::write(a.path().join("src/doc.py"), "def f():\n    'Retry with backoff.'\n    return 1\n").unwrap();
+    commit_and_rebuild(ws.path(), a.path(), "c2");
+    for f in ["README.md", "NOTES.txt", "doc.rst"] {
         let m = refused(ws.path(), &["has", "--author", "me", "--at", &format!("{f}:1")]);
         assert!(m.contains("prose"), "{f}: {m}");
         claim(ws.path(), &["has", "--author", "me", "--at", &format!("{f}:1"), "--allow-comment", "--no-reach"]).success();
     }
-    std::fs::write(a.path().join("src/doc.py"), "def f():\n    'Retry with backoff.'\n    return 1\n").unwrap();
     let m = refused(ws.path(), &["has", "--author", "me", "--at", "src/doc.py:2"]);
     assert!(m.contains("docstring"), "{m}");
 }
@@ -278,7 +298,7 @@ const MAIN: &str = "def main():\n    return run_turn(\"hi\")\n\ndef run_turn(msg
 fn matrix_reach_treats_a_stale_cell_as_unknown() {
     let (ws, a, _p) = setup();
     std::fs::write(a.path().join("src/main.py"), MAIN).unwrap();
-    cc(ws.path()).args(["build", "a"]).assert().success();
+    commit_and_rebuild(ws.path(), a.path(), "c2");
     let v = json(claim(ws.path(), &["has", "--author", "me", "--at", "src/main.py:5"]).success());
     assert_eq!(v["data"]["reach"]["status"], "reached", "{v}");
     let rows = |want: &str| {
@@ -286,7 +306,8 @@ fn matrix_reach_treats_a_stale_cell_as_unknown() {
         m["data"]["rows"].as_array().unwrap().clone()
     };
     assert_eq!(rows("reached").len(), 1);
-    std::fs::write(a.path().join("src/main.py"), MAIN.replace("msg.upper()", "msg.lower()")).unwrap();
+    // no product path makes a hash that disagrees with the cited commit now (`claim` refuses uncommitted text)
+    set_hash(ws.path(), "drifted");
     let _ = cc(ws.path()).args(["check", "--mark", "--by", "t"]).output().unwrap();
     assert!(rows("reached").is_empty(), "a stale cell does not match --reach reached");
     let u = rows("unknown");

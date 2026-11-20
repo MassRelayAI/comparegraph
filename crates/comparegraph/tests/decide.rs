@@ -238,7 +238,6 @@ fn editing_cited_lines_turns_the_cell_into_unknown_star_and_out_of_prevalence() 
     claim(ws.path(), "c", "routing.retry", "has");
     let before = json(cc(ws.path()).args(["matrix", "fam"]).assert().success());
     assert_eq!(row(&before, "routing.retry")["prevalence"], 1.0);
-   
     // D451: drift is a hash that differs from the object at the cited commit; the working tree is not read
     {
         let c = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db")).unwrap();

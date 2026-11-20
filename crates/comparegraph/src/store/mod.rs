@@ -172,6 +172,8 @@ const ADDED_COLUMNS: &[(&str, &str, &str, &str)] = &[
     ("run", "exclude_json", "TEXT NOT NULL DEFAULT '[]'", "'[]'"),
     // the git head (short) of the clone the run read; `claim --at-commit` is checked against it
     ("run", "head", "TEXT", "NULL"),
+    // CG-1 (D451): how a head that the build did not record came to be (`inferred-by-hash`, by `backfill-head`); NULL when the build recorded it
+    ("run", "head_source", "TEXT", "NULL"),
     // CG-BR1: a run built from a git ref (`build --ref`): the ref as given and the commit it named; NULL on a head run
     ("run", "ref", "TEXT", "NULL"),
     ("run", "ref_commit", "TEXT", "NULL"),

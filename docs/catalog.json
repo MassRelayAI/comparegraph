@@ -216,7 +216,7 @@
     },
     {
       "name": "comparegraph_check",
-      "description": "Verify the store: schema, search index, citation locations, the action log. Reads only: it never writes a flag; a clone that is missing or at another head than its run read is reported clone_unavailable and its locations are not read. Returns a compact envelope listing problems, if any.",
+      "description": "Verify the store: schema, search index, citation locations, the action log. Reads only: it never writes a flag; each location is read at the commit its run read (git objects, never the working HEAD), so a moved HEAD is not a red; a missing clone or a cited commit absent from the clone is reported clone_unavailable and its locations are not read; runs with no recorded head are counted as unpinned_runs. Returns a compact envelope listing problems, if any.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

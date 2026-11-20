@@ -46,9 +46,7 @@ fn a_missing_clone_is_clone_unavailable_and_writes_nothing() {
 fn a_clone_at_another_head_is_still_checked_at_the_cited_commit() {
     // D451: HEAD moved upstream; the location is read from the commit the run read, so there is no red
     let w = Ws::new();
-    std::fs::write(w.clone_dir("a").join("src/net/b.py"), "def x():
-    return 9
-").unwrap();
+    std::fs::write(w.clone_dir("a").join("src/net/b.py"), "def x():\n    return 9\n").unwrap();
     commit_all(&w.clone_dir("a"));
     let v = ok(w.root(), &["check"]);
     assert_eq!(v["data"]["stale_locations"], 0);

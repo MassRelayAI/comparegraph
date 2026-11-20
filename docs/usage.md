@@ -40,7 +40,7 @@ check   {"repos":1,"runs_done":1,"stale_locations":0,"drifted_runs":0,"schema_ok
 export  {"written":"./vault","repos":1,"files":27,"communities":1,"symbols":10}
 ```
 
-`check` reads each cited location from the git objects of the commit its claim's run read, never from the clone's working HEAD, so fetching a newer upstream never reddens it; `behind_head` counts the locations read at a commit behind the clone's HEAD (the re-score backlog). A cited commit missing from the clone (shallow, pruned) is `clone_unavailable` with reason `commit_unavailable`, never a pass; a run with no git head falls back to the working tree.
+`check` reads each cited location from the git objects of the commit its claim's run read, never from the clone's working HEAD, so fetching a newer upstream never reddens it; `cited_commit_differs_from_head` counts the live locations read at a commit that is not the clone's HEAD (the re-score backlog). A cited commit missing from the clone (shallow, pruned) is `clone_unavailable` with reason `commit_unavailable`, never a pass; a run that records no head (one that predates the column) is read from the working tree and counted in `unpinned_runs`, so a green there is not pinned; `comparegraph backfill-head` (dry run first) pins such a run by hash, only when every cited location matches at the repo's recorded head. A shallow clone that lacks the cited commit is `commit_unavailable` (fetch it, or `git fetch --unshallow`); `claim` hashes at the same commit and refuses a file with uncommitted changes.
 
 
 `relate` says `unrelated`, as it should: a three-file fixture is not a code-graph tool, and `map` finds no candidates. The

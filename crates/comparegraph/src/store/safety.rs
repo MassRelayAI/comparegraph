@@ -27,6 +27,8 @@ pub struct LocationCheckRow {
     pub stale: bool,
     /// the git head the claim's run read: the commit this location is verified at (None: the run had no git head)
     pub run_head: Option<String>,
+    /// the run the claim cites
+    pub run_id: i64,
 }
 
 /// The tables a claims-only backup carries: everything that cannot be rebuilt from the clones, plus the run rows
@@ -349,7 +351,7 @@ impl Store {
     pub fn location_check_rows(&self, repo: crate::domain::RepoId) -> Result<Vec<LocationCheckRow>> {
         let mut st = self.conn.prepare(
             "SELECT l.id, l.path, l.line_start, l.line_end, l.content_hash, \
-             c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id), l.stale, COALESCE(u.head, u.ref_commit) \
+             c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id), l.stale, COALESCE(u.head, u.ref_commit), c.run_id \
              FROM location l JOIN claim c ON c.id = l.claim_id LEFT JOIN run u ON u.id = c.run_id WHERE c.repo_id = ?1 ORDER BY l.id",
         )?;
         let rows = st
@@ -363,10 +365,34 @@ impl Store {
                     live: x.get(5)?,
                     stale: x.get::<_, i64>(6)? != 0,
                     run_head: x.get(7)?,
+                    run_id: x.get(8)?,
                 })
             })?
             .collect::<std::result::Result<_, _>>()?;
         Ok(rows)
+    }
+    /// Finished head runs that record no git head (they predate the `head` column): (run id, repo id).
+    pub fn runs_without_head(&self) -> Result<Vec<(i64, crate::domain::RepoId)>> {
+        let mut st = self.conn.prepare("SELECT id, repo_id FROM run WHERE head IS NULL AND ref IS NULL AND status = 'done' ORDER BY id")?;
+        let rows = st
+            .query_map([], |x| Ok((x.get(0)?, crate::domain::RepoId(x.get(1)?))))?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(rows)
+    }
+    /// Every location cited by a claim of this run: (path, line start, line end, content hash).
+    pub fn locations_of_run(&self, run: i64) -> Result<Vec<(String, u32, u32, String)>> {
+        let mut st = self.conn.prepare(
+            "SELECT l.path, l.line_start, l.line_end, l.content_hash FROM location l JOIN claim c ON c.id = l.claim_id WHERE c.run_id = ?1 ORDER BY l.id",
+        )?;
+        let rows = st
+            .query_map(params![run], |x| Ok((x.get(0)?, x.get(1)?, x.get(2)?, x.get(3)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(rows)
+    }
+    /// Pin a run that recorded no head to a commit its locations were proven against (`backfill-head`).
+    pub fn set_run_head_inferred(&self, id: i64, head: &str) -> Result<()> {
+        self.conn.execute("UPDATE run SET head = ?2, head_source = 'inferred-by-hash' WHERE id = ?1 AND head IS NULL", params![id, head])?;
+        Ok(())
     }
     /// Set or clear one location's stale flag (the one column of `location` the triggers leave writable).
     pub fn set_location_stale(&self, id: i64, stale: bool) -> Result<()> {

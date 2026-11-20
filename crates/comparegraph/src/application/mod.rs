@@ -4,6 +4,7 @@ pub mod agreement;
 pub mod archive;
 pub mod backup;
 pub mod build;
+pub mod backfill;
 pub mod catalog;
 pub mod check;
 pub mod citation;
@@ -135,10 +136,64 @@ pub(crate) fn git(clone: &std::path::Path, args: &[&str]) -> Option<String> {
         Some(s)
     }
 }
-/// The bytes of `path` as committed at `commit` (a git object read; None when the commit or the path is not there).
-pub(crate) fn git_blob(clone: &std::path::Path, commit: &str, path: &str) -> Option<Vec<u8>> {
-    let out = std::process::Command::new("git").arg("-C").arg(clone).arg("show").arg(format!("{commit}:{path}")).output().ok()?;
-    out.status.success().then_some(out.stdout)
+/// The full commit id a (possibly short) rev names in the clone's objects; None when the object is not there.
+pub(crate) fn git_commit_id(clone: &std::path::Path, rev: &str) -> Option<String> {
+    git(clone, &["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")])
+}
+/// One `git cat-file --batch` process over a clone: many committed files read without one process per file. A path is
+/// relative to the clone, which may be a subfolder of a larger git repo, hence `<commit>:./<path>`.
+pub(crate) struct BlobReader {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    stdout: std::io::BufReader<std::process::ChildStdout>,
+}
+impl BlobReader {
+    pub(crate) fn open(clone: &std::path::Path) -> Option<BlobReader> {
+        let mut child = std::process::Command::new("git")
+            .arg("-C")
+            .arg(clone)
+            .args(["cat-file", "--batch"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        let stdin = child.stdin.take()?;
+        let stdout = std::io::BufReader::new(child.stdout.take()?);
+        Some(BlobReader { child, stdin, stdout })
+    }
+    /// The committed bytes of `path` at `commit`; None when either is missing or the object is not a file.
+    pub(crate) fn read(&mut self, commit: &str, path: &str) -> Option<Vec<u8>> {
+        use std::io::{BufRead, Read, Write};
+        if path.contains(['\n', '\r']) {
+            return None;
+        }
+        writeln!(self.stdin, "{commit}:./{path}").ok()?;
+        self.stdin.flush().ok()?;
+        let mut head = String::new();
+        self.stdout.read_line(&mut head).ok()?;
+        let mut it = head.split_whitespace();
+        let (_, kind, size) = (it.next()?, it.next()?, it.next()?);
+        if kind != "blob" {
+            // `missing` and `ambiguous` have no body; a tree or commit has one that must be drained
+            if matches!(kind, "tree" | "commit" | "tag") {
+                let n: u64 = size.parse().ok()?;
+                std::io::copy(&mut (&mut self.stdout).take(n + 1), &mut std::io::sink()).ok()?;
+            }
+            return None;
+        }
+        let n: usize = size.parse().ok()?;
+        let mut buf = vec![0u8; n + 1];
+        self.stdout.read_exact(&mut buf).ok()?;
+        buf.pop();
+        Some(buf)
+    }
+}
+impl Drop for BlobReader {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 impl From<rusqlite::Error> for AppError {
     fn from(e: rusqlite::Error) -> Self {

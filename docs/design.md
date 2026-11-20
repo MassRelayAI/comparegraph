@@ -249,8 +249,9 @@ no new dependency (decisions.md, "Store safety").
   (read-write, no `ALTER TABLE`) for the writes; a store an older binary wrote is read through temp views and its column set is
   left as it is, so that binary keeps reading it. The writes touch only what schema v1 already leaves writable: `meta` rows,
   `location.stale`, `run.status`, `parse_cache` rows - each named `main.<table>` so a temp view is never the target.
-- **`check` is a read** (CLI and MCP). An unreadable clone is `clone_unavailable` (folder missing, or HEAD not the head its run
-  read) and nothing is written for it; real drift is reported; `--mark` writes flags and `--mark --recompute` clears the ones
+- **`check` is a read** (CLI and MCP). Each cited location is read from the git objects of the commit its run read, not the working HEAD (CG-1, D451), so a moved
+  HEAD is not a red. A clone that cannot be read is `clone_unavailable` (folder missing, or a cited commit absent from the
+  clone) and nothing is written for it; a run with no recorded head is read from the working tree and counted `unpinned_runs`; real drift is reported; `--mark` writes flags and `--mark --recompute` clears the ones
   whose lines hash as recorded again (the reset the sticky flag never had). The `store_hash` re-hash is `--deep`.
 - **`backup`**: `VACUUM INTO` (consistent snapshot, compacted) verified by `quick_check` and row counts, or a claims-only JSONL
   read in one snapshot; `backup-manifest/1` beside it. **`restore-store`**: sha256 against the manifest, refused while the store is

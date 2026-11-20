@@ -12,7 +12,7 @@ envelope as the CLI. 41 tools: 40 read-only, one write (`comparegraph_claim`). T
 | `comparegraph_search` | Which symbols match these words | `query`, `repo`, `kind`, `limit`, `cursor` |
 | `comparegraph_show` | One symbol: callers, callees, community, licence lane | `repo`, `qualified_name`, `detail`, `max_callers` |
 | `comparegraph_communities` | Module clusters of a repo | `repo`, `limit`, `cursor` |
-| `comparegraph_check` | Is the store sound: schema, search index, citation locations, the action log. A true read: it writes no flag; a clone that is missing or at another head than its run read is `clone_unavailable` and its locations are not read | none |
+| `comparegraph_check` | Is the store sound: schema, search index, citation locations, the action log. A true read: it writes no flag; each location is read at the commit its run read (never the working HEAD), so a moved HEAD is not a red; a missing clone or a cited commit absent from the clone is `clone_unavailable` and its locations are not read; runs with no recorded head are counted as `unpinned_runs` | none |
 | `comparegraph_relevance` | Per repo: factor counts and, with the user's `relevance-policy/1` file, a score and a class (`unrated` without one); `explain` gives every term of one repo | `policy`, `family`, `explain`, `class`, `as_of`, `limit`, `cursor` |
 | `comparegraph_governance_verify` | Does the action log beside the store verify: each hash, a gapless seq, the head kept in the store, each archive flag against its manifest | none |
 | `comparegraph_families` | Which families, with feature counts | none |
