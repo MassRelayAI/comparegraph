@@ -112,3 +112,13 @@ fn a_run_with_no_recorded_head_is_named_unpinned_and_read_from_the_working_tree(
     assert_eq!(v["data"]["stale_locations"], 0, "{v}");
     assert!(v["data"]["notes"].as_array().unwrap().iter().any(|n| n.as_str().unwrap().contains("no recorded commit")), "{v}");
 }
+
+#[test]
+fn a_claim_on_a_run_whose_commit_is_not_in_the_clone_is_refused_not_read_from_the_working_tree() {
+    let w = Ws::new();
+    w.conn().execute("UPDATE run SET head = '1234567' WHERE repo_id = (SELECT id FROM repo WHERE name = 'a')", []).unwrap();
+    let v = run(w.root(), &["claim", "a", "routing.retry", "has", "--author", "t", "--at", "src/net/a.py:1-2", "--no-reach"]);
+    assert_eq!(v["ok"], false, "{v}");
+    assert_eq!(v["error"]["code"], "clone_unavailable", "{v}");
+    assert_eq!(v["error"]["data"]["reason"], "commit_unavailable", "{v}");
+}
