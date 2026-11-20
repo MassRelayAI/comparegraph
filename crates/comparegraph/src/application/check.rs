@@ -264,19 +264,25 @@ pub fn check_with(root: &Path, o: &CheckOptions) -> Result<CheckReport> {
             ));
         }
         let mut blobs = if checkable.iter().any(|(_, f)| f.is_some()) { super::BlobReader::open(clone) } else { None };
+        // a file cited by many locations is read once per (commit, path)
+        let mut texts: std::collections::HashMap<(String, String), Option<String>> = std::collections::HashMap::new();
         for (l, full) in checkable {
-            let src = match (&l.run_head, &full) {
-                (Some(c), Some(full)) => {
-                    if l.live && current.as_deref().is_none_or(|h| !(h.starts_with(c.as_str()) || c.starts_with(h))) {
-                        rep.cited_commit_differs_from_head += 1;
-                    }
-                    blobs.as_mut().and_then(|b| b.read(full, &l.path))
+            let key = (full.clone().unwrap_or_default(), l.path.clone());
+            if let (Some(c), Some(_)) = (&l.run_head, &full) {
+                if l.live && current.as_deref().is_none_or(|h| !(h.starts_with(c.as_str()) || c.starts_with(h))) {
+                    rep.cited_commit_differs_from_head += 1;
                 }
-                _ => std::fs::read(Path::new(&r.path).join(&l.path)).ok(),
-            };
+            }
+            let src = texts.entry(key).or_insert_with(|| {
+                let bytes = match &full {
+                    Some(full) => blobs.as_mut().and_then(|b| b.read(full, &l.path)),
+                    None => std::fs::read(Path::new(&r.path).join(&l.path)).ok(),
+                };
+                bytes.map(|b| String::from_utf8_lossy(&b).into_owned())
+            });
             // an unreadable cited file at the cited commit is real drift (deleted or renamed)
-            let stale = match src.map(|b| String::from_utf8_lossy(&b).into_owned()) {
-                Some(src) => super::lines::span_hash(&src, l.line_start as usize, l.line_end as usize).as_deref() != Some(l.content_hash.as_str()),
+            let stale = match src.as_deref() {
+                Some(src) => super::lines::span_hash(src, l.line_start as usize, l.line_end as usize).as_deref() != Some(l.content_hash.as_str()),
                 None => true,
             };
             if stale {
