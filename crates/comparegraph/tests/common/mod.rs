@@ -113,3 +113,12 @@ impl Ws {
         self.conn().query_row(sql, [], |r| r.get(0)).unwrap()
     }
 }
+
+/// Set the recorded content hash of the locations matching `where_sql` (e.g. `1=1`). The store's append-only trigger has
+/// no product path for this (a claim is refused when its lines differ from the commit it cites), so a test that needs a
+/// hash that disagrees with the object at the cited commit drops the trigger on its own connection.
+pub fn set_location_hash(root: &Path, where_sql: &str, hash: &str) {
+    let c = rusqlite::Connection::open(root.join(".comparegraph/comparegraph.db")).unwrap();
+    c.execute("DROP TRIGGER IF EXISTS location_no_update", []).unwrap();
+    c.execute(&format!("UPDATE location SET content_hash = ?1 WHERE {where_sql}"), [hash]).unwrap();
+}
