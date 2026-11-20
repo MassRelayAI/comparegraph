@@ -40,6 +40,9 @@ check   {"repos":1,"runs_done":1,"stale_locations":0,"drifted_runs":0,"schema_ok
 export  {"written":"./vault","repos":1,"files":27,"communities":1,"symbols":10}
 ```
 
+`check` reads each cited location from the git objects of the commit its claim's run read, never from the clone's working HEAD, so fetching a newer upstream never reddens it; `behind_head` counts the locations read at a commit behind the clone's HEAD (the re-score backlog). A cited commit missing from the clone (shallow, pruned) is `clone_unavailable` with reason `commit_unavailable`, never a pass; a run with no git head falls back to the working tree.
+
+
 `relate` says `unrelated`, as it should: a three-file fixture is not a code-graph tool, and `map` finds no candidates. The
 matrix has two claimed cells and eight unclaimed `-` cells.
 

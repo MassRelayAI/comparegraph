@@ -135,6 +135,13 @@ fn check_marks_locations_stale_after_content_change() {
     drop(store);
     assert_eq!(check(ws.path()).unwrap().stale_locations, 0);
     std::fs::write(c.path().join("src/a.py"), "def f():\n    return 2\n").unwrap();
+    // D451: a location is read at the commit its run read, so an uncommitted edit is not drift; a hash that differs
+    // from the object at the cited commit is
+    assert_eq!(check(ws.path()).unwrap().stale_locations, 0, "the working tree is not read when the run cites a commit");
+    let store = comparegraph::store::Store::open(ws.path()).unwrap();
+    store.conn().execute("DROP TRIGGER location_no_update", []).unwrap();
+    store.conn().execute("UPDATE location SET content_hash = 'other'", []).unwrap();
+    drop(store);
     let rep = check(ws.path()).unwrap();
     assert_eq!(rep.stale_locations, 1);
     assert!(!rep.ok());

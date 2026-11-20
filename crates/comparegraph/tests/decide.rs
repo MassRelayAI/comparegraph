@@ -233,13 +233,18 @@ fn without_a_root_there_is_no_gap_or_differentiator() {
 
 #[test]
 fn editing_cited_lines_turns_the_cell_into_unknown_star_and_out_of_prevalence() {
-    let (ws, k, _p) = setup();
+    let (ws, _k, _p) = setup();
     claim(ws.path(), "b", "routing.retry", "has");
     claim(ws.path(), "c", "routing.retry", "has");
     let before = json(cc(ws.path()).args(["matrix", "fam"]).assert().success());
     assert_eq!(row(&before, "routing.retry")["prevalence"], 1.0);
-    // k = [r, c, b]; edit b's clone
-    std::fs::write(k[2].path().join("a.py"), "changed\nlines\n").unwrap();
+   
+    // D451: drift is a hash that differs from the object at the cited commit; the working tree is not read
+    {
+        let c = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db")).unwrap();
+        c.execute("DROP TRIGGER location_no_update", []).unwrap();
+        c.execute("UPDATE location SET content_hash = 'drifted' WHERE claim_id IN (SELECT c.id FROM claim c JOIN repo r ON r.id = c.repo_id WHERE r.name = 'b')", []).unwrap();
+    }
     let chk = json(cc(ws.path()).args(["check", "--mark", "--by", "t"]).assert().failure());
     assert_eq!(chk["data"]["downgraded_claims"], 1, "{chk}");
     let v = json(cc(ws.path()).args(["matrix", "fam"]).assert().success());

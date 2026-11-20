@@ -213,13 +213,18 @@ fn a_second_claim_supersedes_and_history_shows_both() {
 
 #[test]
 fn a_stale_location_shows_the_claim_as_unknown() {
-    let (ws, a, _p) = setup();
+    let (ws, _a, _p) = setup();
     claim(
         ws.path(),
         &["has", "--author", "me", "--at", "src/net/a.py:1-2"],
     )
     .success();
-    std::fs::write(a.path().join("src/net/a.py"), "changed\nlines\n").unwrap();
+    // D451: drift is a hash that differs from the object at the cited commit; the working tree is not read
+    {
+        let c = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db")).unwrap();
+        c.execute("DROP TRIGGER location_no_update", []).unwrap();
+        c.execute("UPDATE location SET content_hash = 'drifted'", []).unwrap();
+    }
     cc(ws.path()).args(["check", "--mark", "--by", "t"]).assert().failure();
     let v = json(cc(ws.path()).args(["claims"]).assert().success());
     assert_eq!(v["data"]["items"][0]["confidence"], "unknown", "{v}");
@@ -291,13 +296,18 @@ fn a_non_utf8_citation_is_invalid_arguments() {
 
 #[test]
 fn vault_shows_a_stale_claim_as_unknown_star() {
-    let (ws, a, _p) = setup();
+    let (ws, _a, _p) = setup();
     claim(
         ws.path(),
         &["has", "--author", "me", "--at", "src/net/a.py:1-2"],
     )
     .success();
-    std::fs::write(a.path().join("src/net/a.py"), "changed\nlines\n").unwrap();
+    // D451: drift is a hash that differs from the object at the cited commit; the working tree is not read
+    {
+        let c = rusqlite::Connection::open(ws.path().join(".comparegraph/comparegraph.db")).unwrap();
+        c.execute("DROP TRIGGER location_no_update", []).unwrap();
+        c.execute("UPDATE location SET content_hash = 'drifted'", []).unwrap();
+    }
     cc(ws.path()).args(["check", "--mark", "--by", "t"]).assert().failure();
     let out = tempfile::tempdir().unwrap();
     cc(ws.path())

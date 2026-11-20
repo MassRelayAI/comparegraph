@@ -43,22 +43,28 @@ fn a_missing_clone_is_clone_unavailable_and_writes_nothing() {
 }
 
 #[test]
-fn a_clone_at_another_head_is_clone_unavailable() {
+fn a_clone_at_another_head_is_still_checked_at_the_cited_commit() {
+    // D451: HEAD moved upstream; the location is read from the commit the run read, so there is no red
     let w = Ws::new();
-    std::fs::write(w.clone_dir("a").join("src/net/b.py"), "def x():\n    return 9\n").unwrap();
+    std::fs::write(w.clone_dir("a").join("src/net/b.py"), "def x():
+    return 9
+").unwrap();
     commit_all(&w.clone_dir("a"));
-    let v = err(w.root(), &["check"], "clone_unavailable");
-    assert_eq!(v["data"]["clone_unavailable"][0]["reason"], "head_moved");
+    let v = ok(w.root(), &["check"]);
+    assert_eq!(v["data"]["stale_locations"], 0);
+    assert!(v["data"]["clone_unavailable"].as_array().unwrap().is_empty(), "{v}");
     assert_eq!(w.count("SELECT COUNT(*) FROM location WHERE stale = 1"), 0);
 }
 
 #[test]
 fn real_drift_is_reported_marked_with_mark_and_cleared_by_recompute() {
     let w = Ws::new();
-    let f = w.clone_dir("a").join("src/net/a.py");
-    let orig = std::fs::read_to_string(&f).unwrap();
-    // drift without a new commit: the head matches, the lines do not
-    std::fs::write(&f, orig.replace("return 1", "return 111")).unwrap();
+    // D451: drift is a recorded hash that differs from the object at the cited commit (the working tree is not read)
+    let c = w.conn();
+    c.execute("DROP TRIGGER location_no_update", []).unwrap();
+    let id: i64 = c.query_row("SELECT MIN(l.id) FROM location l JOIN claim k ON k.id = l.claim_id WHERE k.repo_id = (SELECT id FROM repo WHERE name = 'a')", [], |r| r.get(0)).unwrap();
+    let orig: String = c.query_row("SELECT content_hash FROM location WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+    c.execute("UPDATE location SET content_hash = 'drifted' WHERE id = ?1", [id]).unwrap();
     let v = err(w.root(), &["check"], "check_failed");
     assert_eq!(v["data"]["stale_locations"], 1);
     assert_eq!(w.count("SELECT COUNT(*) FROM location WHERE stale = 1"), 0, "default check is read-only");
@@ -67,7 +73,7 @@ fn real_drift_is_reported_marked_with_mark_and_cleared_by_recompute() {
     assert_eq!(m["data"]["marked"]["set_stale"], 1, "{m}");
     assert_eq!(w.count("SELECT COUNT(*) FROM location WHERE stale = 1"), 1);
     // the lines come back: the sticky flag is reported, then cleared by --recompute
-    std::fs::write(&f, &orig).unwrap();
+    c.execute("UPDATE location SET content_hash = ?2 WHERE id = ?1", rusqlite::params![id, orig]).unwrap();
     let n = ok(w.root(), &["check"]);
     assert!(n["data"]["notes"].as_array().unwrap().iter().any(|x| x.as_str().unwrap().contains("--recompute")), "{n}");
     assert_eq!(w.count("SELECT COUNT(*) FROM location WHERE stale = 1"), 1, "plain check never clears");

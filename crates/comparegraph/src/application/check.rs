@@ -1,8 +1,8 @@
 //! `check`: schema, the search index, unbuilt claim runs and citation locations, plus the action-log chain.
 //!
 //! Read-only by default (lane CG-STORE A3): the store is opened SQLITE_OPEN_READ_ONLY, so neither the MCP tool nor the
-//! CLI can write a flag, migrate the store or checkpoint it. A repo whose clone is missing, or whose HEAD is not the
-//! head its latest run read, is `clone_unavailable`: its locations are not read and nothing is written for it (an
+//! CLI can write a flag, migrate the store or checkpoint it. A repo whose clone is missing, or a cited commit that is not in its objects
+//! (`commit_unavailable`), is `clone_unavailable`. Locations are verified at the commit their run read (D451): a moved HEAD is not a red: its locations are not read and nothing is written for it (an
 //! environment failure is never recorded as content drift). `--mark` (CLI only) writes `stale = 1` on the locations
 //! found stale; `--mark --recompute` also clears `stale` where the cited lines hash as recorded again (the reset path
 //! the flag never had). `--deep` adds the per-run `store_hash` recomputation (all nodes and edges re-read).
@@ -43,6 +43,8 @@ pub struct CheckReport {
     pub clone_unavailable: Vec<CloneUnavailable>,
     /// archived repos (`archive`): never read by check
     pub archived_repos: usize,
+    /// Locations verified at a cited commit other than the clone's current HEAD (the re-score backlog, informational).
+    pub behind_head: usize,
     /// `--deep` was given: the store_hash of every latest run was recomputed
     pub deep: bool,
     /// what `--mark` wrote (null without it): flags set, flags cleared
@@ -58,7 +60,8 @@ pub struct CheckReport {
 pub struct CloneUnavailable {
     pub repo: String,
     pub path: String,
-    /// `missing` (no directory) or `head_moved` (HEAD is not the head the run read)
+    /// `missing` (no directory), `commit_unavailable` (a cited commit is not in the clone's objects: shallow or pruned) or
+    /// `head_moved` (a location whose run cites no commit, and the working tree is not at the recorded head)
     pub reason: String,
     pub expected_head: Option<String>,
     pub found_head: Option<String>,
@@ -82,20 +85,6 @@ impl CheckReport {
 /// The read-only check (MCP `comparegraph_check`, `comparegraph check`).
 pub fn check(root: &Path) -> Result<CheckReport> {
     check_with(root, &CheckOptions::default())
-}
-
-/// Is the clone there as the run read it? None when it is; the reason otherwise.
-fn availability(path: &str, expected: Option<&str>) -> Option<(String, Option<String>)> {
-    let p = Path::new(path);
-    if !p.is_dir() {
-        return Some(("missing".into(), None));
-    }
-    let expected = expected?;
-    let found = super::git(p, &["rev-parse", "--short=7", "HEAD"]);
-    match &found {
-        Some(f) if f.starts_with(expected) || expected.starts_with(f.as_str()) => None,
-        _ => Some(("head_moved".into(), found)),
-    }
 }
 
 pub fn check_with(root: &Path, o: &CheckOptions) -> Result<CheckReport> {
@@ -177,30 +166,99 @@ pub fn check_with(root: &Path, o: &CheckOptions) -> Result<CheckReport> {
         if rows.is_empty() {
             continue;
         }
+        // D451: a location is verified at the commit its claim's run read (git objects), never against the clone's working HEAD.
+        // A location whose run has no git head keeps the working-tree check, valid only while the clone is at the repo's recorded head.
         let expected = store.run_head_opt(run.id.unwrap())?.or_else(|| r.head.clone());
-        if let Some((reason, found)) = availability(&r.path, expected.as_deref()) {
-            rep.problems.push(format!(
-                "{}: clone unavailable ({reason}) at {}; its {} location(s) were not checked and nothing was written",
-                r.name,
-                r.path,
-                rows.len()
-            ));
+        let clone = Path::new(&r.path);
+        if !clone.is_dir() {
+            rep.problems.push(format!("{}: clone unavailable (missing) at {}; its {} location(s) were not checked and nothing was written", r.name, r.path, rows.len()));
             rep.clone_unavailable.push(CloneUnavailable {
                 repo: r.name.clone(),
                 path: r.path.clone(),
-                reason,
+                reason: "missing".into(),
                 expected_head: expected,
-                found_head: found,
+                found_head: None,
                 locations_not_checked: rows.len(),
             });
             continue;
         }
+        let current = super::git(clone, &["rev-parse", "--short=7", "HEAD"]);
+        let mut resolved: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+        let (mut missing_commits, mut missing_n) = (Vec::<String>::new(), 0usize);
+        let mut wt_n = 0usize;
+        let mut checkable = Vec::new();
         for l in rows {
-            let full = Path::new(&r.path).join(&l.path);
-            // the clone is present at its head: an unreadable cited file is real drift (deleted or renamed)
-            let stale = match std::fs::read_to_string(&full) {
-                Ok(src) => super::lines::span_hash(&src, l.line_start as usize, l.line_end as usize).as_deref() != Some(l.content_hash.as_str()),
-                Err(_) => true,
+            match &l.run_head {
+                Some(c) => {
+                    let found = *resolved
+                        .entry(c.clone())
+                        .or_insert_with(|| super::git(clone, &["rev-parse", "--verify", "--quiet", &format!("{c}^{{commit}}")]).is_some());
+                    if found {
+                        checkable.push(l);
+                    } else {
+                        if !missing_commits.contains(c) {
+                            missing_commits.push(c.clone());
+                        }
+                        missing_n += 1;
+                    }
+                }
+                None => {
+                    let moved = match (&expected, &current) {
+                        (Some(e), Some(f)) => !(f.starts_with(e.as_str()) || e.starts_with(f.as_str())),
+                        (Some(_), None) => true,
+                        _ => false,
+                    };
+                    if moved {
+                        wt_n += 1;
+                    } else {
+                        checkable.push(l);
+                    }
+                }
+            }
+        }
+        if missing_n > 0 {
+            rep.problems.push(format!(
+                "{}: clone unavailable (commit_unavailable) at {}; commit(s) {} cited by {} location(s) are not in the clone (shallow or pruned); not checked and nothing was written",
+                r.name, r.path, missing_commits.join(","), missing_n
+            ));
+            rep.clone_unavailable.push(CloneUnavailable {
+                repo: r.name.clone(),
+                path: r.path.clone(),
+                reason: "commit_unavailable".into(),
+                expected_head: Some(missing_commits.join(",")),
+                found_head: current.clone(),
+                locations_not_checked: missing_n,
+            });
+        }
+        if wt_n > 0 {
+            rep.problems.push(format!(
+                "{}: clone unavailable (head_moved) at {}; its {} location(s) cite no commit, so they are read from the working tree, which is not at the recorded head; not checked and nothing was written",
+                r.name, r.path, wt_n
+            ));
+            rep.clone_unavailable.push(CloneUnavailable {
+                repo: r.name.clone(),
+                path: r.path.clone(),
+                reason: "head_moved".into(),
+                expected_head: expected.clone(),
+                found_head: current.clone(),
+                locations_not_checked: wt_n,
+            });
+        }
+        let rows = checkable;
+        for l in rows {
+            let src = match &l.run_head {
+                Some(c) => {
+                    if current.as_deref().is_none_or(|h| !(h.starts_with(c.as_str()) || c.starts_with(h))) {
+                        rep.behind_head += 1;
+                    }
+                    super::git_blob(clone, c, &l.path)
+                }
+                None => std::fs::read(Path::new(&r.path).join(&l.path)).ok(),
+            };
+            // an unreadable cited file at the cited commit is real drift (deleted or renamed)
+            let stale = match src.map(|b| String::from_utf8_lossy(&b).into_owned()) {
+                Some(src) => super::lines::span_hash(&src, l.line_start as usize, l.line_end as usize).as_deref() != Some(l.content_hash.as_str()),
+                None => true,
             };
             if stale {
                 if !l.stale {

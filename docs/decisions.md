@@ -675,3 +675,4 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   reads below 1.0 (`squash_or_cherry_pick_then_revert_reads_below_one`).
 - **A flaky test made robust**: in the criss-cross fixture git picks one of two merge bases by commit time; from one of them F
   is the merge base and no path is listed. The test asserts the item, and `src/a.py` when a path is listed.
+| `check` verifies a location at the commit its claim's run read (`git show <commit>:<path>`), not the clone's working HEAD; a run with no git head keeps the working-tree check; the cited commit is the run's head (`run.head`, else `run.ref_commit`) because `location` stores no commit | store a commit on each location (schema change); pin the clone's HEAD | the run head is the only commit a location can reach today; a location made on a dirty tree reads stale (no staged claims, D451) | a claim made at a commit other than its run's head |

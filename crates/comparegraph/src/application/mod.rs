@@ -135,6 +135,11 @@ pub(crate) fn git(clone: &std::path::Path, args: &[&str]) -> Option<String> {
         Some(s)
     }
 }
+/// The bytes of `path` as committed at `commit` (a git object read; None when the commit or the path is not there).
+pub(crate) fn git_blob(clone: &std::path::Path, commit: &str, path: &str) -> Option<Vec<u8>> {
+    let out = std::process::Command::new("git").arg("-C").arg(clone).arg("show").arg(format!("{commit}:{path}")).output().ok()?;
+    out.status.success().then_some(out.stdout)
+}
 impl From<rusqlite::Error> for AppError {
     fn from(e: rusqlite::Error) -> Self {
         AppError::Store(e.into())

@@ -25,6 +25,8 @@ pub struct LocationCheckRow {
     pub content_hash: String,
     pub live: bool,
     pub stale: bool,
+    /// the git head the claim's run read: the commit this location is verified at (None: the run had no git head)
+    pub run_head: Option<String>,
 }
 
 /// The tables a claims-only backup carries: everything that cannot be rebuilt from the clones, plus the run rows
@@ -347,8 +349,8 @@ impl Store {
     pub fn location_check_rows(&self, repo: crate::domain::RepoId) -> Result<Vec<LocationCheckRow>> {
         let mut st = self.conn.prepare(
             "SELECT l.id, l.path, l.line_start, l.line_end, l.content_hash, \
-             c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id), l.stale \
-             FROM location l JOIN claim c ON c.id = l.claim_id WHERE c.repo_id = ?1 ORDER BY l.id",
+             c.id = (SELECT MAX(id) FROM claim x WHERE x.repo_id = c.repo_id AND x.feature_id = c.feature_id), l.stale, COALESCE(u.head, u.ref_commit) \
+             FROM location l JOIN claim c ON c.id = l.claim_id LEFT JOIN run u ON u.id = c.run_id WHERE c.repo_id = ?1 ORDER BY l.id",
         )?;
         let rows = st
             .query_map(params![repo.0], |x| {
@@ -360,6 +362,7 @@ impl Store {
                     content_hash: x.get(4)?,
                     live: x.get(5)?,
                     stale: x.get::<_, i64>(6)? != 0,
+                    run_head: x.get(7)?,
                 })
             })?
             .collect::<std::result::Result<_, _>>()?;
