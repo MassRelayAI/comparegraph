@@ -704,3 +704,18 @@ Provisional choices, each open to a later round:
   neither rows nor the snapshot (and creates no store). A single plain `claim --dry-run` is refused.
 - **A closed pipe** (`comparegraph claims | head -1`) ends with exit 0 and no output: one writer for stdout handles
   `BrokenPipe`; any other write error exits 1.
+
+### CG-2 round 2 (2026-11-21)
+
+- **Re-anchor is one write transaction**: `BEGIN IMMEDIATE` before the spans are located, the claim is written inside it, and every
+  written location's hash must equal the old one, else "the cited code changed during re-anchor" and nothing lands. A debug-only
+  seam, `COMPAREGRAPH_TEST_REANCHOR_HOOK`, runs a script between locate and write so the test can rebuild at that moment.
+- **A dry run writes nothing, ever.** `claim --batch --dry-run` and `claim --reanchor --dry-run` use `Store::open_for_dry_run`: a
+  missing store is refused ("store missing"), a store that predates this binary's columns is refused ("store needs migration:
+  run any writing verb once"). `family add --dry-run` opens the store `SQLITE_OPEN_READ_ONLY` (no checkpoint on close).
+- **A re-anchored claim is labelled as a machine carry**: confidence `inferred` (never `derived`/`observed`) and a `reanchored`
+  limitation naming the source claim and commit. Exact hashing cannot see a line that moved past a `return`; the label says so.
+- **A file-level citation is not re-anchored**: the narrowest symbol (file and module nodes set aside, since a file that is one
+  function ties with its own file node) must exist in the claim's run; otherwise a person re-claims.
+- **A vacuous `--expect` is also one that every non-blank line of the cited file satisfies** (two or more such lines), so `..`,
+  `\S+`, `\w` are refused; a failed `--expect-literal` reports the text as written.

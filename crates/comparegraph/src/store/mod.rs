@@ -448,6 +448,28 @@ impl Store {
     pub fn open(root: &Path) -> Result<Store> {
         Store::open_as(root, false)
     }
+    /// The store for a dry run: never created, never migrated. A missing store, or one that predates this binary's columns,
+    /// is refused naming the step, so a dry run writes nothing (the rollback covers only rows, not a migration).
+    pub fn open_for_dry_run(root: &Path) -> Result<Store> {
+        let path = root.join(".comparegraph").join("comparegraph.db");
+        if !path.is_file() {
+            return Err(StoreError::NotFound(format!(
+                "store missing: no workspace at {}; a dry run does not create one, run `comparegraph add` first",
+                root.join(".comparegraph").display()
+            )));
+        }
+        {
+            let open_err = |source| StoreError::Open { path: path.clone(), source };
+            let c = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(open_err)?;
+            if needs_migration(&c).map_err(open_err)? {
+                return Err(StoreError::Schema(format!(
+                    "store needs migration: {} predates columns this binary adds, and a dry run does not migrate; run any writing verb once (a claim, a build) first",
+                    path.display()
+                )));
+            }
+        }
+        Store::open(root)
+    }
     /// `reader`: a read verb, which still opens a read-only store that would need migrating (see `shadow_missing_columns`).
     fn open_as(root: &Path, reader: bool) -> Result<Store> {
         let dir = root.join(".comparegraph");

@@ -274,3 +274,155 @@ fn a_closed_pipe_ends_quietly() {
     assert!(!err.contains("panicked"), "{err}");
     assert_eq!(out.status.code(), Some(0), "{err}");
 }
+
+// ---- round 2: atomic re-anchor, dry runs that write nothing, machine-carried labels
+
+fn db_bytes(ws: &std::path::Path) -> Vec<u8> {
+    std::fs::read(ws.join(".comparegraph").join("comparegraph.db")).unwrap()
+}
+
+#[cfg(unix)]
+fn claim_with_env(ws: &std::path::Path, extra: &[&str], hook: &std::path::Path) -> std::process::Output {
+    let mut c = cc(ws);
+    c.args(["claim", "a", "routing.retry"]).args(extra);
+    c.env("COMPAREGRAPH_TEST_REANCHOR_HOOK", hook).env("COMPAREGRAPH_WAIT", "1");
+    c.output().unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn reanchor_is_atomic_a_rebuild_between_locate_and_write_cannot_change_the_hash() {
+    use std::os::unix::fs::PermissionsExt;
+    let (ws, a, _p) = moved_ws();
+    let old = history(ws.path());
+    std::fs::write(a.path().join("src/net/a.py"), format!("import os\n\n{V1}")).unwrap();
+    commit_all(a.path(), "v2");
+    rebuild(ws.path());
+    // the hook runs between locating the spans and writing the claim: it moves the block again and rebuilds
+    let hook = ws.path().join("hook.sh");
+    let bin = assert_cmd::cargo::cargo_bin("comparegraph");
+    let script = format!(
+        "#!/bin/sh\ncd \"{c}\" || exit 0\nprintf 'import sys\\nimport re\\n' > tmp.py\ncat src/net/a.py >> tmp.py\nmv tmp.py src/net/a.py\ngit add src/net/a.py\ngit -c user.email=t@t -c user.name=t commit -q -m hook\n\"{b}\" --root \"{w}\" build a >/dev/null 2>&1 || true\n",
+        c = a.path().display(),
+        b = bin.display(),
+        w = ws.path().display()
+    );
+    std::fs::write(&hook, script).unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = claim_with_env(ws.path(), &["--reanchor", "--author", "me"], &hook);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    if v["ok"] == true {
+        // written: it must be exactly the located text
+        assert_eq!(v["data"]["locations"][0]["content_hash"], old[0]["locations"][0]["content_hash"], "{v}");
+    }
+    let h = history(ws.path());
+    for c in h.iter().skip(1) {
+        assert_eq!(c["locations"][0]["content_hash"], old[0]["locations"][0]["content_hash"], "a claim carried other code: {c}");
+    }
+}
+
+#[test]
+fn dry_runs_never_create_a_store() {
+    let ws = tempfile::tempdir().unwrap();
+    let path = ws.path().join("d.jsonl");
+    std::fs::write(&path, "{\"repo\":\"a\",\"feature\":\"x\",\"verdict\":\"unknown\",\"author\":\"me\"}\n").unwrap();
+    cc(ws.path()).args(["claim", "--batch"]).arg(&path).arg("--dry-run").assert().failure();
+    assert!(!ws.path().join(".comparegraph").exists(), "claim --batch --dry-run created a store");
+    cc(ws.path()).args(["claim", "a", "x", "--reanchor", "--dry-run", "--author", "me"]).assert().failure();
+    assert!(!ws.path().join(".comparegraph").exists(), "claim --reanchor --dry-run created a store");
+}
+
+#[test]
+fn dry_runs_never_migrate_an_older_store() {
+    let (ws, a, _p) = moved_ws();
+    std::fs::write(a.path().join("src/net/a.py"), format!("# c\n{V1}")).unwrap();
+    commit_all(a.path(), "v2");
+    rebuild(ws.path());
+    {
+        let c = rusqlite::Connection::open(ws.path().join(".comparegraph").join("comparegraph.db")).unwrap();
+        c.execute_batch("ALTER TABLE run DROP COLUMN head_source;").unwrap();
+    }
+    let before = db_bytes(ws.path());
+    let path = ws.path().join("d.jsonl");
+    std::fs::write(&path, "{\"repo\":\"a\",\"feature\":\"routing.retry\",\"verdict\":\"unknown\",\"author\":\"me\"}\n").unwrap();
+    let r = cc(ws.path()).args(["claim", "--batch"]).arg(&path).arg("--dry-run").output().unwrap();
+    assert!(!r.status.success());
+    assert!(String::from_utf8_lossy(&r.stdout).contains("needs migration"), "{}", String::from_utf8_lossy(&r.stdout));
+    assert_eq!(db_bytes(ws.path()), before, "batch dry run changed the store");
+    let r = claim(ws.path(), &["--reanchor", "--dry-run", "--author", "me"]).failure();
+    assert!(String::from_utf8_lossy(&r.get_output().stdout).contains("needs migration"));
+    assert_eq!(db_bytes(ws.path()), before, "reanchor dry run changed the store");
+    let pack = tempfile::tempdir().unwrap();
+    std::fs::write(pack.path().join("rows.md"), PACK).unwrap();
+    cc(ws.path()).args(["family", "add", "--dry-run"]).arg(pack.path()).assert().success();
+    assert_eq!(db_bytes(ws.path()), before, "family add dry run changed the store");
+}
+
+#[test]
+fn a_reanchored_claim_is_inferred_and_says_it_was_carried() {
+    let (ws, a, _p) = moved_ws();
+    std::fs::write(a.path().join("src/net/a.py"), format!("# c\n{V1}")).unwrap();
+    commit_all(a.path(), "v2");
+    rebuild(ws.path());
+    let r = json(claim(ws.path(), &["--reanchor", "--author", "me"]).success());
+    assert_eq!(r["data"]["confidence"], "inferred", "{r}");
+    assert_eq!(r["evidence"]["confidence"], "inferred", "{r}");
+    assert!(r["evidence"]["limitations"].to_string().contains("reanchored"), "{r}");
+}
+
+#[test]
+fn a_line_moved_past_a_return_is_carried_but_labelled() {
+    let (ws, a, _p) = setup();
+    std::fs::write(a.path().join("src/net/a.py"), "def retry_with_backoff():\n    y = compute()\n    return y\n").unwrap();
+    commit_all(a.path(), "v1");
+    rebuild(ws.path());
+    claim(ws.path(), &["has", "--author", "me", "--at", "src/net/a.py:2"]).success();
+    std::fs::write(a.path().join("src/net/a.py"), "def retry_with_backoff():\n    return 0\n    y = compute()\n").unwrap();
+    commit_all(a.path(), "v2 the line is now dead code");
+    rebuild(ws.path());
+    let r = json(claim(ws.path(), &["--reanchor", "--author", "me"]).success());
+    assert_eq!(r["data"]["confidence"], "inferred", "{r}");
+    assert!(r["evidence"]["limitations"].to_string().contains("reanchored"), "{r}");
+}
+
+#[test]
+fn a_file_level_citation_is_not_reanchored() {
+    let (ws, a, _p) = setup();
+    std::fs::write(a.path().join("src/net/a.py"), "VERSION = 1\nNAME = 'a'\n\ndef retry_with_backoff():\n    return 1\n").unwrap();
+    commit_all(a.path(), "v1");
+    rebuild(ws.path());
+    claim(ws.path(), &["has", "--author", "me", "--at", "src/net/a.py:1"]).success();
+    std::fs::write(a.path().join("src/net/a.py"), "# c\nVERSION = 1\nNAME = 'a'\n\ndef retry_with_backoff():\n    return 1\n").unwrap();
+    commit_all(a.path(), "v2");
+    rebuild(ws.path());
+    let r = json(claim(ws.path(), &["--reanchor", "--author", "me"]).failure());
+    assert!(r["error"]["message"].as_str().unwrap().contains("file scope"), "{r}");
+    assert_eq!(history(ws.path()).len(), 1);
+}
+
+#[test]
+fn reanchor_says_when_the_clone_is_ahead_of_its_build() {
+    let (ws, a, _p) = moved_ws();
+    std::fs::write(a.path().join("src/net/a.py"), format!("# c\n{V1}")).unwrap();
+    commit_all(a.path(), "v2");
+    rebuild(ws.path());
+    std::fs::write(a.path().join("src/net/a.py"), format!("# c\n# d\n{V1}")).unwrap();
+    commit_all(a.path(), "v3, not built");
+    let r = json(claim(ws.path(), &["--reanchor", "--author", "me"]).failure());
+    assert!(r["error"]["message"].as_str().unwrap().contains("ahead of its latest build"), "{r}");
+}
+
+#[test]
+fn an_expect_every_nonblank_line_satisfies_is_refused_and_a_failed_literal_reads_as_written() {
+    let (ws, _a, _p) = lit_ws();
+    for bad in ["..", r"\S+", r"\w"] {
+        let r = json(claim(ws.path(), &["has", "--author", "me", "--at", "src/net/a.py:1-2", "--expect", bad]).failure());
+        assert!(r["error"]["message"].as_str().unwrap().contains("every non-blank line"), "{bad}: {r}");
+    }
+    let r = json(
+        claim(ws.path(), &["has", "--author", "me", "--at", "src/net/a.py:2", "--expect", "a.b(c)[9]", "--expect-literal"]).failure(),
+    );
+    let m = r["error"]["message"].as_str().unwrap();
+    assert!(m.contains("a.b(c)[9]") && !m.contains("\\."), "{m}");
+    assert_eq!(history(ws.path()).len(), 0);
+}

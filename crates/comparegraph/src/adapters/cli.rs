@@ -1093,8 +1093,7 @@ fn doctor_brief(root: &std::path::Path, bin: Option<&str>) -> String {
 fn emit(s: &str, newline: bool) {
     use std::io::Write;
     let mut out = std::io::stdout().lock();
-    let r = out.write_all(s.as_bytes()).and_then(|_| if newline { out.write_all(b"
-") } else { Ok(()) }).and_then(|_| out.flush());
+    let r = out.write_all(s.as_bytes()).and_then(|_| if newline { out.write_all(b"\n") } else { Ok(()) }).and_then(|_| out.flush());
     if let Err(e) = r {
         if e.kind() == std::io::ErrorKind::BrokenPipe {
             std::process::exit(0);
@@ -1819,6 +1818,7 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     anchors: anchor,
                     expect,
                     expect_literal: *expect_literal,
+                    reanchored_from: None,
                     allow_comment: *allow_comment,
                     out_of_subset: out_of_subset.as_deref(),
                     no_reach: *no_reach,

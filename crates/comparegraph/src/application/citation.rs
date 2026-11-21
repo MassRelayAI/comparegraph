@@ -45,7 +45,9 @@ impl Pattern {
         if text.trim().is_empty() {
             return Err("an empty literal".into());
         }
-        Pattern::parse(&regex::escape(text))
+        let mut p = Pattern::parse(&regex::escape(text))?;
+        p.source = text.to_string(); // reported as the author wrote it, not as the escaped regex
+        Ok(p)
     }
     /// Does the pattern match anywhere in `line`?
     pub fn is_match(&self, line: &str) -> Result<bool, String> {

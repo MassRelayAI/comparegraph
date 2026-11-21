@@ -77,6 +77,9 @@ pub struct Evidence<'a> {
     pub expect: &'a [String],
     /// `--expect-literal`: every `--expect` is matched as literal text, not as a regex.
     pub expect_literal: bool,
+    /// set by `reanchor`: the claim this one was carried from by content hash. A machine-carried claim is `inferred`, never
+    /// a fresh read, and says so in a `reanchored` limitation.
+    pub reanchored_from: Option<i64>,
     /// `--allow-comment`: accept a citation that is only blank, comment or docstring lines.
     pub allow_comment: bool,
     /// `--out-of-subset <upstream path[:lines]>`: has/partial evidence that the exported tree does not contain.
@@ -443,6 +446,16 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
                 "{norm}:{s}-{e}: lines out of range (need 1 ≤ start ≤ end ≤ file lines)"
             ));
         };
+        if let Some(k) = ex {
+            // an expect that every non-blank line of the file satisfies checks nothing, however it is spelled
+            let body: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+            if body.len() >= 2 && body.iter().all(|l| expects[k].is_match(l).unwrap_or(false)) {
+                return invalid(format!(
+                    "--expect {:?} matches every non-blank line of {norm}, so it checks nothing; name what the cited lines hold",
+                    expects[k].source
+                ));
+            }
+        }
         let chk = super::citation::check_span(&norm, &text, s, e, ex.map(|k| &expects[k]), ev.allow_comment)
             .map_err(AppError::InvalidArguments)?;
         if chk.imports_only {
@@ -482,11 +495,19 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
         None
     };
 
+    if let Some(from) = ev.reanchored_from {
+        let at = run_commit.as_deref().map(|c| &c[..c.len().min(12)]).unwrap_or("unpinned");
+        limitation_items.push(Limitation::new(
+            "reanchored",
+            format!("carried from claim {from} by exact content hash to the commit the latest build read ({at}); the code was not re-read, so a line that moved past a return or into a dead branch still matches"),
+        ));
+    }
     let confidence = if i.verdict == "unknown" {
         "unknown"
     } else if read_confirmed {
         "observed"
-    } else if graph_absent || (out_of_subset.is_some() && res.is_empty()) {
+    } else if ev.reanchored_from.is_some() || graph_absent || (out_of_subset.is_some() && res.is_empty()) {
+        // a re-anchored claim is a machine carry, not a fresh read
         "inferred"
     } else {
         "derived"
@@ -848,7 +869,7 @@ pub fn run_batch_dry<L: serde::de::DeserializeOwned, T>(
     skipped_of: impl Fn(&T) -> bool,
     mut on_row: impl FnMut(BatchRow<T>),
 ) -> Result<BatchSummary> {
-    let store = Store::open(root)?;
+    let store = if dry_run { Store::open_for_dry_run(root)? } else { Store::open(root)? };
     store.conn().execute_batch("BEGIN IMMEDIATE")?;
     let mut sum = BatchSummary::default();
     for (n, line) in lines.lines().enumerate() {
@@ -987,6 +1008,7 @@ pub fn claim_batch_dry(
                     anchors: &l.anchor,
                     expect: &l.expect,
                     expect_literal: l.expect_literal,
+                    reanchored_from: None,
                     allow_comment: l.allow_comment,
                     out_of_subset: l.out_of_subset.as_deref(),
                     no_reach: l.no_reach,
@@ -1104,7 +1126,29 @@ pub fn reanchor(
     if author.trim().is_empty() {
         return invalid("--author is required");
     }
-    let store = Store::open(root)?;
+    // a dry run never creates or migrates the store
+    let store = if dry_run { Store::open_for_dry_run(root)? } else { Store::open(root)? };
+    // one write transaction around locating the spans AND writing the claim: a rebuild cannot land between the two reads
+    store.conn().execute_batch("BEGIN IMMEDIATE")?;
+    let res = reanchor_in(&store, repo_name, feature, family, author, no_reach, dry_run);
+    match &res {
+        Ok(_) if !dry_run => store.conn().execute_batch("COMMIT")?,
+        _ => {
+            let _ = store.conn().execute_batch("ROLLBACK");
+        }
+    }
+    res
+}
+
+fn reanchor_in(
+    store: &Store,
+    repo_name: &str,
+    feature: &str,
+    family: Option<&str>,
+    author: &str,
+    no_reach: bool,
+    dry_run: bool,
+) -> Result<ReanchorOut> {
     let repo = store
         .repo_by_name(repo_name)?
         .ok_or_else(|| AppError::NotFound(format!("no repo named {repo_name}")))?;
@@ -1117,7 +1161,7 @@ pub fn reanchor(
     if let (Some(r), _) = store.run_ref(run)? {
         return Err(super::refgc::claim_on_ref_refused(&r));
     }
-    let (fid, _fam) = lookup_feature(&store, feature, family)?;
+    let (fid, _fam) = lookup_feature(store, feature, family)?;
     let live: Option<(i64, i64, String, Option<String>, String)> = store
         .conn()
         .query_row(
@@ -1155,6 +1199,15 @@ pub fn reanchor(
     })?;
     let commit = super::git_commit_id(Path::new(&repo.path), &head)
         .ok_or_else(|| AppError::InvalidArguments(format!("{head}, the commit the latest build read, is not in the clone")))?;
+    if let Some(h) = super::git(Path::new(&repo.path), &["rev-parse", "HEAD"]) {
+        if h != commit {
+            return invalid(format!(
+                "the clone is ahead of its latest build ({} against the built {}): build it first",
+                &h[..h.len().min(12)],
+                &commit[..commit.len().min(12)]
+            ));
+        }
+    }
     let mut blobs = super::BlobReader::open(Path::new(&repo.path))
         .ok_or_else(|| AppError::InvalidArguments("git is unavailable: re-anchor reads the commit".into()))?;
     let mut at: Vec<String> = vec![];
@@ -1176,13 +1229,24 @@ pub fn reanchor(
             ));
         }
         // the reach check: the symbol holding the cited block is the old one or its container
-        let old_q: Option<String> = match node_id {
-            Some(id) => store
-                .conn()
-                .query_row("SELECT qualified_name FROM node WHERE id = ?1", params![id], |r| r.get(0))
-                .optional()?,
-            None => None,
-        };
+        // the narrowest SYMBOL that held the cited lines in the run the claim read (a file that is one function ties the
+        // function with its own file node, so the file and module nodes are set aside)
+        let _ = node_id;
+        let old_q: Option<String> = store
+            .conn()
+            .query_row(
+                "SELECT qualified_name FROM node WHERE run_id = ?1 AND path = ?2 AND line_start <= ?3 AND line_end >= ?4 \
+                 AND kind NOT IN ('file', 'module') ORDER BY (line_end - line_start), id LIMIT 1",
+                params![old_run, path, s, e],
+                |r| r.get(0),
+            )
+            .optional()?;
+        // a file-level span has no symbol to hold it: any unique match anywhere would pass, so a person re-claims it
+        if old_q.is_none() {
+            return invalid(format!(
+                "{label}: the citation sits at file scope, not inside a symbol, so a hash match cannot be checked against one; re-claim it by hand"
+            ));
+        }
         let mut kept: Vec<usize> = vec![];
         for st in &hits {
             // every node of the new run that encloses the span, not just the innermost: a block that is the whole body of
@@ -1234,6 +1298,11 @@ pub fn reanchor(
             format!("{old_note} — {how}")
         }
     };
+    // test seam (debug builds): runs between locating the spans and writing the claim
+    #[cfg(debug_assertions)]
+    if let Some(script) = std::env::var_os("COMPAREGRAPH_TEST_REANCHOR_HOOK") {
+        let _ = std::process::Command::new(script).status();
+    }
     let input = ClaimInput {
         repo: repo_name,
         feature,
@@ -1246,15 +1315,13 @@ pub fn reanchor(
         note: Some(&note),
         skip_equal: false,
         // the hash is identical, so the old citation's own checks (comments, imports) already passed
-        evidence: Evidence { allow_comment: true, no_reach, ..Default::default() },
+        evidence: Evidence { allow_comment: true, no_reach, reanchored_from: Some(old_id), ..Default::default() },
     };
-    let c = store.conn();
-    if dry_run {
-        c.execute_batch("BEGIN IMMEDIATE")?;
+    let out = claim_on_with(store, &input, &mut super::reach::ReachCache::default())?;
+    // what was written must be exactly what was located: the same hash on every span
+    let same = out.locations.len() == old.len() && out.locations.iter().zip(&old).all(|(l, o)| l.content_hash == o.4);
+    if !same {
+        return invalid("the cited code changed during re-anchor; nothing was written, run it again");
     }
-    let res = claim_on_with(&store, &input, &mut super::reach::ReachCache::default());
-    if dry_run {
-        c.execute_batch("ROLLBACK")?;
-    }
-    Ok(ReanchorOut { claim: res?, reanchored_from: old_id, moved, dry_run })
+    Ok(ReanchorOut { claim: out, reanchored_from: old_id, moved, dry_run })
 }

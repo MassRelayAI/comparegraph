@@ -225,7 +225,7 @@ pub fn add_family_opts(root: &Path, dir: &Path, accept_draft: bool, dry_run: boo
         let keep: Vec<String> = pack.rows.iter().map(|r| r.id.clone()).collect();
         // no store yet: everything is added, and opening one would create it
         let before: Vec<String> = if root.join(".comparegraph").join("comparegraph.db").is_file() {
-            Store::open_existing(root)?
+            Store::open_read_only(root)?
                 .features_of(&pack.family)?
                 .iter()
                 .filter(|f| f.tier != "retired")
