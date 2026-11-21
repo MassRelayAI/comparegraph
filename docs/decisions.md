@@ -676,3 +676,31 @@ No `store/schema.sql`, `Cargo.toml` or `Cargo.lock` change in this lane; each ro
   reads below 1.0 (`squash_or_cherry_pick_then_revert_reads_below_one`).
 - **A flaky test made robust**: in the criss-cross fixture git picks one of two merge bases by commit time; from one of them F
   is the merge base and no path is listed. The test asserts the item, and `src/a.py` when a path is listed.
+
+## CG-2 claim ergonomics (2026-11-21, branch feat/claim-ergonomics)
+
+Provisional choices, each open to a later round:
+
+- **Re-anchor is a new superseding claim, not a new location on the old claim** (`claim <repo> <feature> --reanchor --author X`).
+  A location is checked against the commit of its claim's run, so a location appended to the old claim would be read at the
+  wrong commit. The superseding claim is written through the ordinary `claim` path (same commit read, same reach computation),
+  and the old claim and its locations are never touched (append-only, D452).
+- **Exact hash only.** Each cited span is looked up in the same file at the latest run's commit by the stored content hash. No
+  match: refused, "the block changed", and the author re-claims. Never by symbol name (D452).
+- **The reach check** keeps a hash match only where a node of the latest run that encloses it is the node the old location
+  cited (every enclosing node counts, not the innermost: a block that is a whole function body is also the whole file when the
+  file holds nothing else). Where the old location cited the file or a class as its narrowest node, that node is the symbol. A
+  hash found at several places under the cited symbol is refused as ambiguous. The file standing in for "its container" was tried
+  and dropped: the file contains every symbol, so a move to another function passed.
+- **Only has/partial claims with in-tree locations** are re-anchored; a none, unknown or out-of-subset claim is refused.
+  `allow_comment` is on for the new claim, because the identical hash means the old citation's own checks already passed.
+- **A vacuous `--expect` is refused at parse time**: a pattern that matches the empty line, or every one of a fixed set of probe
+  lines (`.*`, `^`, `.+`, `(?s).*`). A pattern that is merely broad (`\S+`) is not refused. `--expect-literal` (batch
+  `expect_literal`) escapes the text, so `a.b(c)[0]` means that text.
+- **`read_hits` is accepted as the old name of `hits_read`** in a `claim --batch` row, with a stderr line and a
+  `deprecated_field` limitation on the row; both names in one row is refused.
+- **`--dry-run`** on `claim --batch` rolls the transaction back (the summary says `committed: false, dry_run: true`), on
+  `claim --reanchor` rolls back the one claim, and on `family add` computes added and retired from the store as it is and writes
+  neither rows nor the snapshot (and creates no store). A single plain `claim --dry-run` is refused.
+- **A closed pipe** (`comparegraph claims | head -1`) ends with exit 0 and no output: one writer for stdout handles
+  `BrokenPipe`; any other write error exits 1.

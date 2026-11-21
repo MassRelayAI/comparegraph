@@ -183,6 +183,9 @@ pub struct FamilyAdded {
     pub features: usize,
     pub added: Vec<String>,
     pub retired: Vec<String>,
+    /// `--dry-run`: the pack was read and checked and nothing was written (no row, no snapshot)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub dry_run: bool,
 }
 
 /// The workspace-relative snapshot path of a family's pack (forward slashes).
@@ -200,6 +203,10 @@ pub fn add_family(root: &Path, dir: &Path) -> Result<FamilyAdded> {
 /// `accept_draft`: add a pack whose front matter says `draft: true`; without it such a pack is refused, because a draft
 /// lists only the rows it drafts and adding it would retire every other row of the family.
 pub fn add_family_with(root: &Path, dir: &Path, accept_draft: bool) -> Result<FamilyAdded> {
+    add_family_opts(root, dir, accept_draft, false)
+}
+/// `dry_run`: validate the pack and report what it would add and retire, against the store as it is; write nothing.
+pub fn add_family_opts(root: &Path, dir: &Path, accept_draft: bool, dry_run: bool) -> Result<FamilyAdded> {
     let dir = dir
         .canonicalize()
         .map_err(|e| AppError::Io(dir.to_path_buf(), e))?;
@@ -213,6 +220,30 @@ pub fn add_family_with(root: &Path, dir: &Path, accept_draft: bool) -> Result<Fa
             file.display(),
             pack.family
         )));
+    }
+    if dry_run {
+        let keep: Vec<String> = pack.rows.iter().map(|r| r.id.clone()).collect();
+        // no store yet: everything is added, and opening one would create it
+        let before: Vec<String> = if root.join(".comparegraph").join("comparegraph.db").is_file() {
+            Store::open_existing(root)?
+                .features_of(&pack.family)?
+                .iter()
+                .filter(|f| f.tier != "retired")
+                .map(|f| f.key())
+                .collect()
+        } else {
+            vec![]
+        };
+        return Ok(FamilyAdded {
+            definition_path: snapshot_rel(&pack.family),
+            family: pack.family,
+            definition_hash: crate::providers::reference::hex_sha256(text.as_bytes()),
+            source_path: dir.to_string_lossy().to_string(),
+            features: keep.len(),
+            added: keep.iter().filter(|k| !before.contains(k)).cloned().collect(),
+            retired: before.iter().filter(|b| !keep.contains(b)).cloned().collect(),
+            dry_run: true,
+        });
     }
     let store = Store::open(root)?;
     // IMMEDIATE takes the write lock up front, where the busy timeout (`--wait`) applies. A deferred transaction that
@@ -271,6 +302,7 @@ pub fn add_family_with(root: &Path, dir: &Path, accept_draft: bool) -> Result<Fa
         features: keep.len(),
         added,
         retired,
+        dry_run: false,
     })
 }
 

@@ -75,6 +75,8 @@ pub struct Evidence<'a> {
     pub anchors: &'a [String],
     /// `--expect`: one pattern for every `--at`, or one per `--at` in order; checked against the cited lines.
     pub expect: &'a [String],
+    /// `--expect-literal`: every `--expect` is matched as literal text, not as a regex.
+    pub expect_literal: bool,
     /// `--allow-comment`: accept a citation that is only blank, comment or docstring lines.
     pub allow_comment: bool,
     /// `--out-of-subset <upstream path[:lines]>`: has/partial evidence that the exported tree does not contain.
@@ -409,8 +411,13 @@ pub fn claim_on_with(store: &Store, i: &ClaimInput, reach_cache: &mut super::rea
         .expect
         .iter()
         .map(|x| {
-            super::citation::Pattern::parse(x)
-                .map_err(|m| AppError::InvalidArguments(format!("--expect {x:?}: the regex has {m}")))
+            if ev.expect_literal {
+                super::citation::Pattern::literal(x)
+                    .map_err(|m| AppError::InvalidArguments(format!("--expect-literal {x:?}: {m}")))
+            } else {
+                super::citation::Pattern::parse(x)
+                    .map_err(|m| AppError::InvalidArguments(format!("--expect {x:?}: the regex has {m}")))
+            }
         })
         .collect::<Result<_>>()?;
     // (path, start, end, file text, index of its --expect): every --at, then every --anchor resolved to its one line
@@ -824,6 +831,19 @@ pub struct BatchSummary {
 pub fn run_batch<L: serde::de::DeserializeOwned, T>(
     root: &Path,
     lines: impl std::io::BufRead,
+    each: impl FnMut(&Store, L) -> Result<T>,
+    skipped_of: impl Fn(&T) -> bool,
+    on_row: impl FnMut(BatchRow<T>),
+) -> Result<BatchSummary> {
+    run_batch_dry(root, lines, false, each, skipped_of, on_row)
+}
+
+/// `run_batch`, rolling the transaction back instead of committing when `dry_run`: every row is decided and reported as
+/// it would be, and nothing is written.
+pub fn run_batch_dry<L: serde::de::DeserializeOwned, T>(
+    root: &Path,
+    lines: impl std::io::BufRead,
+    dry_run: bool,
     mut each: impl FnMut(&Store, L) -> Result<T>,
     skipped_of: impl Fn(&T) -> bool,
     mut on_row: impl FnMut(BatchRow<T>),
@@ -865,7 +885,7 @@ pub fn run_batch<L: serde::de::DeserializeOwned, T>(
         }
         on_row(row);
     }
-    store.conn().execute_batch("COMMIT")?;
+    store.conn().execute_batch(if dry_run { "ROLLBACK" } else { "COMMIT" })?;
     Ok(sum)
 }
 
@@ -884,6 +904,9 @@ pub struct ClaimLine {
     pub searched: Option<String>,
     #[serde(default)]
     pub hits_read: Vec<String>,
+    /// the old name of `hits_read` (older briefs); accepted with a warning
+    #[serde(default)]
+    pub read_hits: Vec<String>,
     #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
@@ -892,6 +915,8 @@ pub struct ClaimLine {
     pub anchor: Vec<String>,
     #[serde(default)]
     pub expect: Vec<String>,
+    #[serde(default)]
+    pub expect_literal: bool,
     #[serde(default)]
     pub allow_comment: bool,
     #[serde(default)]
@@ -922,12 +947,29 @@ pub fn claim_batch_with(
     reach_cache: bool,
     on_row: impl FnMut(BatchRow<ClaimOut>),
 ) -> Result<BatchSummary> {
+    claim_batch_dry(root, lines, reach_cache, false, on_row)
+}
+
+/// `claim_batch_with` that writes nothing when `dry_run`.
+pub fn claim_batch_dry(
+    root: &Path,
+    lines: impl std::io::BufRead,
+    reach_cache: bool,
+    dry_run: bool,
+    on_row: impl FnMut(BatchRow<ClaimOut>),
+) -> Result<BatchSummary> {
     let mut cache = super::reach::ReachCache::new(reach_cache);
-    run_batch(root, lines, |store, l: ClaimLine| {
+    run_batch_dry(root, lines, dry_run, |store, l: ClaimLine| {
         if let Some(r) = &l.git_ref {
             return Err(super::refgc::claim_on_ref_refused(r));
         }
-        claim_on_with(
+        // the old field name is accepted with a warning, so an older brief does not silently lose its read list
+        let aliased = !l.read_hits.is_empty();
+        if aliased && !l.hits_read.is_empty() {
+            return invalid("both `hits_read` and its old name `read_hits` are given; use `hits_read` only");
+        }
+        let hits: &[String] = if aliased { &l.read_hits } else { &l.hits_read };
+        let mut out = claim_on_with(
             store,
             &ClaimInput {
                 repo: &l.repo,
@@ -937,20 +979,27 @@ pub fn claim_batch_with(
                 author: &l.author,
                 at: &l.at,
                 searched: l.searched.as_deref(),
-                read_hits: &l.hits_read,
+                read_hits: hits,
                 note: l.note.as_deref(),
                 skip_equal: true,
                 evidence: Evidence {
                     at_commit: l.at_commit.as_deref(),
                     anchors: &l.anchor,
                     expect: &l.expect,
+                    expect_literal: l.expect_literal,
                     allow_comment: l.allow_comment,
                     out_of_subset: l.out_of_subset.as_deref(),
                     no_reach: l.no_reach,
                 },
             },
             &mut cache,
-        )
+        )?;
+        if aliased {
+            const W: &str = "`read_hits` is the old name of `hits_read`; it was accepted, rename it in the brief";
+            eprintln!("comparegraph: {} {}: {W}", l.repo, l.feature);
+            out.limitation_items.push(Limitation::new("deprecated_field", W));
+        }
+        Ok(out)
     }, |o: &ClaimOut| o.skipped, on_row)
 }
 
@@ -1018,4 +1067,194 @@ pub fn claims_in(store: &Store, repo: Option<&str>, family: Option<&str>, featur
         }
     }
     Ok(out)
+}
+
+/// What `reanchor` carried forward: one cited span that moved, found again by its content hash.
+#[derive(Debug, Serialize, Clone)]
+pub struct Moved {
+    pub path: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// The new claim (a superseding row) plus where it came from. `dry_run`: nothing was written and `id` is not a stored claim.
+#[derive(Debug, Serialize, Clone)]
+pub struct ReanchorOut {
+    #[serde(flatten)]
+    pub claim: ClaimOut,
+    pub reanchored_from: i64,
+    pub moved: Vec<Moved>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub dry_run: bool,
+}
+
+/// Re-anchor the live has/partial claim of (repo, feature) to the latest run (D452). Every cited span must come back by
+/// EXACT content hash in the same file at the commit the latest run read; a hash found more than once is kept only where the
+/// enclosing symbol is the old one or its container (the reach check). Never by symbol name alone: a span whose text changed
+/// is refused and has to be re-claimed. Append-only: the result is a new claim superseding the old one, which is untouched.
+pub fn reanchor(
+    root: &Path,
+    repo_name: &str,
+    feature: &str,
+    family: Option<&str>,
+    author: &str,
+    no_reach: bool,
+    dry_run: bool,
+) -> Result<ReanchorOut> {
+    if author.trim().is_empty() {
+        return invalid("--author is required");
+    }
+    let store = Store::open(root)?;
+    let repo = store
+        .repo_by_name(repo_name)?
+        .ok_or_else(|| AppError::NotFound(format!("no repo named {repo_name}")))?;
+    let rid = repo.id.unwrap();
+    let run = store
+        .latest_done_run(rid)?
+        .ok_or_else(|| AppError::NotFound(format!("{repo_name} has no finished run; build it first")))?
+        .id
+        .unwrap();
+    if let (Some(r), _) = store.run_ref(run)? {
+        return Err(super::refgc::claim_on_ref_refused(&r));
+    }
+    let (fid, _fam) = lookup_feature(&store, feature, family)?;
+    let live: Option<(i64, i64, String, Option<String>, String)> = store
+        .conn()
+        .query_row(
+            "SELECT id, run_id, verdict, out_of_subset, note FROM claim WHERE id = (SELECT MAX(id) FROM claim WHERE repo_id = ?1 AND feature_id = ?2)",
+            params![rid.0, fid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .optional()?;
+    let Some((old_id, old_run, verdict, subset, old_note)) = live else {
+        return Err(AppError::NotFound(format!("{repo_name} has no claim for {feature}")));
+    };
+    if !matches!(verdict.as_str(), "has" | "partial") {
+        return invalid(format!("the live claim is {verdict}: it cites no code, so there is nothing to re-anchor; claim it again"));
+    }
+    if subset.is_some() {
+        return invalid("the live claim is out-of-subset evidence: re-claim it");
+    }
+    if old_run == run.0 {
+        return invalid("the live claim already reads the latest run; nothing to re-anchor");
+    }
+    let old: Vec<(Option<i64>, String, i64, i64, String)> = {
+        let mut st = store
+            .conn()
+            .prepare("SELECT node_id, path, line_start, line_end, content_hash FROM location WHERE claim_id = ?1 ORDER BY id")?;
+        let rows = st
+            .query_map(params![old_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        rows
+    };
+    if old.is_empty() {
+        return invalid("the live claim has no location to re-anchor");
+    }
+    let head = store.run_head_opt(run)?.ok_or_else(|| {
+        AppError::InvalidArguments(format!("the latest run of {repo_name} records no git head; re-anchor reads the commit, so build it again"))
+    })?;
+    let commit = super::git_commit_id(Path::new(&repo.path), &head)
+        .ok_or_else(|| AppError::InvalidArguments(format!("{head}, the commit the latest build read, is not in the clone")))?;
+    let mut blobs = super::BlobReader::open(Path::new(&repo.path))
+        .ok_or_else(|| AppError::InvalidArguments("git is unavailable: re-anchor reads the commit".into()))?;
+    let mut at: Vec<String> = vec![];
+    let mut moved: Vec<Moved> = vec![];
+    for (node_id, path, s, e, hash) in &old {
+        let label = super::citation::span_label(path, *s as usize, *e as usize);
+        let Some(bytes) = blobs.read(&commit, path) else {
+            return invalid(format!("{label}: {path} is not at {head} any more; the code moved to another file or was removed: re-claim it"));
+        };
+        let text = String::from_utf8(bytes).map_err(|_| AppError::InvalidArguments(format!("{path} is not UTF-8 text")))?;
+        let n = (*e - *s + 1) as usize;
+        let total = text.lines().count();
+        let hits: Vec<usize> = (1..=(total + 1).saturating_sub(n))
+            .filter(|st| super::lines::span_hash(&text, *st, st + n - 1).as_deref() == Some(hash.as_str()))
+            .collect();
+        if hits.is_empty() {
+            return invalid(format!(
+                "{label}: no span of {path} at {head} has the cited content hash; the block changed, so it is re-claimed, not re-anchored"
+            ));
+        }
+        // the reach check: the symbol holding the cited block is the old one or its container
+        let old_q: Option<String> = match node_id {
+            Some(id) => store
+                .conn()
+                .query_row("SELECT qualified_name FROM node WHERE id = ?1", params![id], |r| r.get(0))
+                .optional()?,
+            None => None,
+        };
+        let mut kept: Vec<usize> = vec![];
+        for st in &hits {
+            // every node of the new run that encloses the span, not just the innermost: a block that is the whole body of
+            // a function sits inside that function and its file alike, and the file must not stand in for the symbol
+            let mut q = store.conn().prepare(
+                "SELECT qualified_name FROM node WHERE run_id = ?1 AND path = ?2 AND line_start <= ?3 AND line_end >= ?4",
+            )?;
+            let enclosing: Vec<String> = q
+                .query_map(params![run.0, path, *st as i64, (st + n - 1) as i64], |r| r.get(0))?
+                .collect::<std::result::Result<_, _>>()?;
+            // the symbol the claim cited (a function, or the class or file when that was the narrowest it had) must still
+            // hold the block; a claim cited under no symbol keeps to no symbol
+            let ok = match &old_q {
+                Some(a) => enclosing.iter().any(|b| b == a),
+                None => enclosing.is_empty(),
+            };
+            if ok {
+                kept.push(*st);
+            }
+        }
+        let start = match kept.as_slice() {
+            [one] => *one,
+            [] => {
+                return invalid(format!(
+                    "{label}: the hash is found {} time(s) in {path} at {head}, but under none of the symbol the claim cited ({}); re-claim it",
+                    hits.len(),
+                    old_q.as_deref().unwrap_or("no symbol")
+                ))
+            }
+            many => {
+                return invalid(format!(
+                    "{label}: the hash is found at {} places in {path} under the cited symbol; re-claim it with the line you mean",
+                    many.len()
+                ))
+            }
+        };
+        let ne = start + n - 1;
+        moved.push(Moved { path: path.clone(), from: label, to: super::citation::span_label(path, start, ne) });
+        at.push(format!("{path}:{start}-{ne}"));
+    }
+    let note = {
+        let how = format!(
+            "re-anchored from claim {old_id} by exact content hash ({})",
+            moved.iter().map(|m| format!("{} -> {}", m.from, m.to)).collect::<Vec<_>>().join(", ")
+        );
+        if old_note.is_empty() {
+            how
+        } else {
+            format!("{old_note} — {how}")
+        }
+    };
+    let input = ClaimInput {
+        repo: repo_name,
+        feature,
+        family,
+        verdict: &verdict,
+        author,
+        at: &at,
+        searched: None,
+        read_hits: &[],
+        note: Some(&note),
+        skip_equal: false,
+        // the hash is identical, so the old citation's own checks (comments, imports) already passed
+        evidence: Evidence { allow_comment: true, no_reach, ..Default::default() },
+    };
+    let c = store.conn();
+    if dry_run {
+        c.execute_batch("BEGIN IMMEDIATE")?;
+    }
+    let res = claim_on_with(&store, &input, &mut super::reach::ReachCache::default());
+    if dry_run {
+        c.execute_batch("ROLLBACK")?;
+    }
+    Ok(ReanchorOut { claim: res?, reanchored_from: old_id, moved, dry_run })
 }

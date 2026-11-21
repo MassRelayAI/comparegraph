@@ -7,10 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Changed
+- `--expect` refuses a vacuous pattern (empty, or one that matches every line such as `.*`) (CG-2).
+- A closed stdout (`comparegraph claims | head -1`) ends quietly with exit 0 instead of panicking (CG-2).
 - `check` verifies each citation location at the git commit its claim's run read (objects, one `git cat-file --batch` per clone), never the clone's working HEAD: a moved HEAD is no longer `clone_unavailable`; a cited commit missing from the clone is `clone_unavailable` with reason `commit_unavailable`. New report fields `cited_commit_differs_from_head`, `unpinned_runs`, `unpinned_locations`. `claim` hashes at that commit too and refuses a file with uncommitted changes (CG-1, D451).
 - `ui`: accepts `net.readOnly {mode, blocked[]}` from the probe; `ui show` prints the blocked count. `--version` prints `0.1.3+<short git sha>`.
 
 ### Added
+- `claim <repo> <feature> --reanchor --author X`: carry the live has/partial claim to the latest build by EXACT content hash (never by symbol name), kept only under the symbol it was cited in; writes a superseding claim, never rewrites the old one (CG-2, D452).
+- `--expect-literal` (batch: `expect_literal`) matches `--expect` as text, not regex (CG-2).
+- `--dry-run` for `claim --batch`, `claim --reanchor` and `family add`: report what would be written, write nothing (CG-2).
+- `claim --batch` accepts `read_hits` as the old name of `hits_read`, with a warning and a `deprecated_field` limitation (CG-2).
 - `backfill-head [--repo R] [--apply --by W]`: pin finished runs that recorded no git head to a commit, only when every cited location hashes as recorded there (`run.head_source = 'equivalent-by-hash'`, action log); dry run by default.
 - `ui owners <screen>` and `ui screens-of <file>` (MCP `comparegraph_ui_owners`, `comparegraph_ui_screens_of`): join a registry screen to the files of the root repo's web app through the JSX route table, the page file and a depth-bounded render/import closure, and back. A screen with no route literal is `route_unmapped`, never guessed.
 

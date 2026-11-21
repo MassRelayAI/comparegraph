@@ -551,6 +551,9 @@ fn command(name: &str, a: &Value) -> Result<Cmd, String> {
                 allow_comment: false,
                 out_of_subset: None,
                 no_reach: false,
+                expect_literal: false,
+                reanchor: false,
+                dry_run: false,
             }
         }
         _ => Cmd::Communities {

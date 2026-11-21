@@ -14,6 +14,14 @@ pub struct Pattern {
     pub source: String,
 }
 
+/// Lines every real pattern fails on at least one of: a pattern that matches the empty line, or all of these, is
+/// match-everything (`.*`, `^`, `.+`, `(?s).*`).
+const PROBES: [&str; 7] = ["a", "Z", "0", "_", " ", "(", "fn main() {}"];
+
+fn is_vacuous(re: &regex::Regex) -> bool {
+    re.is_match("") || PROBES.iter().all(|p| re.is_match(p))
+}
+
 /// The largest compiled program, in bytes (a counted quantifier such as `(a{1000}){1000}` is refused past it).
 const SIZE_LIMIT: usize = 1 << 20;
 
@@ -27,7 +35,17 @@ impl Pattern {
             .dfa_size_limit(SIZE_LIMIT * 8)
             .build()
             .map_err(|e| e.to_string().split_whitespace().collect::<Vec<_>>().join(" "))?;
+        if is_vacuous(&re) {
+            return Err("a vacuous pattern: it matches every line, so it checks nothing; name the symbol or text the cited lines must hold".into());
+        }
         Ok(Pattern { re, source: src.to_string() })
+    }
+    /// A pattern that matches the text exactly, with no regex syntax (`--expect-literal`).
+    pub fn literal(text: &str) -> Result<Pattern, String> {
+        if text.trim().is_empty() {
+            return Err("an empty literal".into());
+        }
+        Pattern::parse(&regex::escape(text))
     }
     /// Does the pattern match anywhere in `line`?
     pub fn is_match(&self, line: &str) -> Result<bool, String> {

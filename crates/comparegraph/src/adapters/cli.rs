@@ -711,10 +711,21 @@ pub enum Cmd {
         repo: Option<String>,
         #[arg(required_unless_present = "batch")]
         feature: Option<String>,
-        #[arg(required_unless_present = "batch")]
+        #[arg(required_unless_present_any = ["batch", "reanchor"], conflicts_with = "reanchor")]
         verdict: Option<String>,
         #[arg(long, required_unless_present = "batch")]
         author: Option<String>,
+        /// carry the live has/partial claim of REPO FEATURE to the latest build: each cited block that moved is found again by
+        /// its exact content hash (never by symbol name), kept only under the symbol it was cited in; a changed block is refused.
+        /// Writes a new superseding claim; the old one is untouched. Takes no verdict
+        #[arg(long, conflicts_with_all = ["batch", "at", "searched", "read_hits", "anchor", "expect", "at_commit", "out_of_subset"])]
+        reanchor: bool,
+        /// with --batch or --reanchor: decide and report every row as it would be written, and write nothing
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        /// each --expect is literal text, not a regex
+        #[arg(long = "expect-literal", requires = "expect")]
+        expect_literal: bool,
         /// JSON lines, one claim per line (fields as the flags; `at` is an array), `-` for stdin; one store open, one
         /// transaction, one envelope line out per row in, then a summary line
         #[arg(long, value_name = "JSONL|-")]
@@ -871,6 +882,9 @@ pub enum FamilyCmd {
         /// add a pack whose front matter says `draft: true` (it would retire every row it does not list)
         #[arg(long)]
         accept_draft: bool,
+        /// read and validate the pack and report what it would add and retire; write nothing
+        #[arg(long = "dry-run")]
+        dry_run: bool,
     },
     /// Registered families
     List,
@@ -1020,22 +1034,22 @@ pub fn run() -> i32 {
         return 0;
     }
     if let Cmd::Catalog { check: false, .. } = cli.cmd {
-        print!("{}", crate::application::catalog::render(crate::adapters::mcp::tools()));
+        emit(&crate::application::catalog::render(crate::adapters::mcp::tools()), false);
         return 0;
     }
     if let Cmd::Claim { batch: Some(b), .. } | Cmd::Decide { batch: Some(b), .. } = &cli.cmd {
         return run_batch_cli(&cli, b);
     }
     if let Cmd::Doctor { bin, brief: true } = &cli.cmd {
-        print!("{}", doctor_brief(&cli.root, bin.as_deref()));
+        emit(&doctor_brief(&cli.root, bin.as_deref()), false);
         return 0;
     }
     let env = envelope_for(&cli);
     if cli.pretty {
         let v: serde_json::Value = serde_json::from_str(&env.to_json()).unwrap();
-        println!("{}", serde_json::to_string_pretty(&v).unwrap());
+        emit(&serde_json::to_string_pretty(&v).unwrap(), true);
     } else {
-        println!("{}", env.to_json());
+        emit(&env.to_json(), true);
     }
     if env.ok {
         0
@@ -1074,11 +1088,27 @@ fn doctor_brief(root: &std::path::Path, bin: Option<&str>) -> String {
     out
 }
 
+/// Write to stdout; a closed reader (`comparegraph claims | head -1`) ends the process quietly with 0, as a Unix filter does,
+/// where `println!` would panic on the broken pipe.
+fn emit(s: &str, newline: bool) {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    let r = out.write_all(s.as_bytes()).and_then(|_| if newline { out.write_all(b"
+") } else { Ok(()) }).and_then(|_| out.flush());
+    if let Err(e) = r {
+        if e.kind() == std::io::ErrorKind::BrokenPipe {
+            std::process::exit(0);
+        }
+        eprintln!("comparegraph: writing output: {e}");
+        std::process::exit(1);
+    }
+}
+
 fn print_line(v: &serde_json::Value, pretty: bool) {
     if pretty {
-        println!("{}", serde_json::to_string_pretty(v).unwrap());
+        emit(&serde_json::to_string_pretty(v).unwrap(), true);
     } else {
-        println!("{v}");
+        emit(&v.to_string(), true);
     }
 }
 
@@ -1089,10 +1119,10 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
     use std::io::BufRead;
     let verb = verb_of(&cli.cmd);
     let stray = match &cli.cmd {
-        Cmd::Claim { repo, feature, verdict, author, family, at, searched, read_hits, note, at_commit, anchor, expect, allow_comment, out_of_subset, no_reach, .. } => {
+        Cmd::Claim { repo, feature, verdict, author, family, at, searched, read_hits, note, at_commit, anchor, expect, allow_comment, out_of_subset, no_reach, expect_literal, .. } => {
             !(repo.is_none() && feature.is_none() && verdict.is_none() && author.is_none()
                 && family.is_none() && at.is_empty() && searched.is_none() && read_hits.is_empty() && note.is_none())
-                || at_commit.is_some() || !anchor.is_empty() || !expect.is_empty() || *allow_comment || out_of_subset.is_some() || *no_reach
+                || at_commit.is_some() || !anchor.is_empty() || !expect.is_empty() || *allow_comment || out_of_subset.is_some() || *no_reach || *expect_literal
         }
         Cmd::Decide { repo, disposition, why, by, feature, family, git_ref, commit, bundle, summary_from_delta, base, .. } => {
             !(repo.is_none() && disposition.is_none() && why.is_none() && by.is_none()
@@ -1120,6 +1150,7 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
         }
     };
     let pretty = cli.pretty;
+    let dry_run = matches!(&cli.cmd, Cmd::Claim { dry_run: true, .. });
     let print_row = |line: usize, res: Result<serde_json::Value, BatchErr>, conf: &'static str| {
         let env = match res {
             Ok(mut v) => {
@@ -1150,7 +1181,7 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
         print_line(&v, pretty);
     };
     let summary = match &cli.cmd {
-        Cmd::Claim { .. } => crate::application::claim::claim_batch(&cli.root, reader, |r| {
+        Cmd::Claim { dry_run, .. } => crate::application::claim::claim_batch_dry(&cli.root, reader, true, *dry_run, |r| {
             let conf = match r.data.as_ref().map(|d| d.confidence.as_str()) {
                 Some("observed") => "observed",
                 Some("derived") => "derived",
@@ -1159,18 +1190,24 @@ fn run_batch_cli(cli: &Cli, path: &str) -> i32 {
             };
             print_row(r.line, batch_value(r.data, r.error), conf)
         }),
-        _ => crate::application::decide::decide_batch(&cli.root, reader, |r| {
+        _ => if dry_run {
+            return fail(AppError::InvalidArguments("--dry-run applies to claim --batch".into()));
+        } else { crate::application::decide::decide_batch(&cli.root, reader, |r| {
             print_row(r.line, batch_value(r.data, r.error), "observed")
-        }),
+        }) },
     };
     // the last line is the summary: rows are durable only when it says committed
     let sum = match summary {
         Ok(s) => s,
         Err(e) => return fail(e),
     };
+    let mut body = serde_json::json!({ "rows": sum.rows, "ok": sum.ok, "skipped": sum.skipped, "failed": sum.failed, "committed": !dry_run });
+    if dry_run {
+        body["dry_run"] = serde_json::json!(true);
+    }
     let mut summary = Envelope::ok(
         verb,
-        serde_json::json!({ "rows": sum.rows, "ok": sum.ok, "skipped": sum.skipped, "failed": sum.failed, "committed": true }),
+        body,
         "observed",
         vec![],
         None,
@@ -1723,7 +1760,48 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
             allow_comment,
             out_of_subset,
             no_reach,
-        } => serde_json::to_value(crate::application::claim::claim(
+            expect_literal,
+            reanchor,
+            dry_run,
+        } if *reanchor => {
+            let _ = (verdict, at, searched, read_hits, note, at_commit, anchor, expect, allow_comment, out_of_subset, expect_literal);
+            serde_json::to_value(crate::application::claim::reanchor(
+                &cli.root,
+                repo.as_deref().unwrap_or_default(),
+                feature.as_deref().unwrap_or_default(),
+                family.as_deref(),
+                author.as_deref().unwrap_or_default(),
+                *no_reach,
+                *dry_run,
+            )?)
+            .unwrap()
+        }
+        Cmd::Claim {
+            repo,
+            feature,
+            verdict,
+            author,
+            family,
+            at,
+            searched,
+            read_hits,
+            note,
+            git_ref: _,
+            batch: _,
+            at_commit,
+            anchor,
+            expect,
+            allow_comment,
+            out_of_subset,
+            no_reach,
+            expect_literal,
+            reanchor: _,
+            dry_run,
+        } => {
+            if *dry_run {
+                return Err(AppError::InvalidArguments("--dry-run applies to claim --batch and claim --reanchor".into()));
+            }
+            serde_json::to_value(crate::application::claim::claim(
             &cli.root,
             &crate::application::claim::ClaimInput {
                 repo: repo.as_deref().unwrap_or_default(),
@@ -1740,13 +1818,15 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
                     at_commit: at_commit.as_deref(),
                     anchors: anchor,
                     expect,
+                    expect_literal: *expect_literal,
                     allow_comment: *allow_comment,
                     out_of_subset: out_of_subset.as_deref(),
                     no_reach: *no_reach,
                 },
             },
         )?)
-        .unwrap(),
+        .unwrap()
+        }
         Cmd::Claims {
             repo,
             family,
@@ -1875,8 +1955,8 @@ fn dispatch_inner(cli: &Cli) -> Result<Result<serde_json::Value, Failure>, AppEr
         Cmd::Family { what } => {
             use crate::application::family as fam;
             match what {
-                FamilyCmd::Add { dir, accept_draft } => {
-                    serde_json::to_value(fam::add_family_with(&cli.root, dir, *accept_draft)?).unwrap()
+                FamilyCmd::Add { dir, accept_draft, dry_run } => {
+                    serde_json::to_value(fam::add_family_opts(&cli.root, dir, *accept_draft, *dry_run)?).unwrap()
                 }
                 FamilyCmd::List => {
                     let items = fam::list_families(&cli.root)?;
